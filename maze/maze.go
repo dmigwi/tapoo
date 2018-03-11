@@ -27,16 +27,16 @@ func (config *Dimensions) generateMaze(intensity int) ([][]string, []int, []int,
 		cellsPath  = []int{startPos}
 	)
 
-	visitedCells[currentPos] = config.getCellAddress(currentPos)
-
-	cellsPath = append(cellsPath, currentPos)
-
 	if err != nil {
 		return [][]string{},
 			config.getCellAddress(startPos).MiddleCenter,
 			config.getCellAddress(finalPos[1]).MiddleCenter,
 			err
 	}
+
+	visitedCells[currentPos] = config.getCellAddress(currentPos)
+
+	cellsPath = append(cellsPath, currentPos)
 
 	for len(visitedCells) < (config.Length * config.Width) {
 		for {
@@ -170,16 +170,14 @@ func (config *Dimensions) replaceChar(point []int, replChar string, maze [][]str
 		lenTop, lenBottom = false, false
 	)
 	// checks if the top point in relation to the given point can be calculated
-	if point[0]-1 > 0 {
-		topPoint := []int{point[0] - 1, point[1]}
-		elemTop = maze[topPoint[0]][topPoint[1]]
+	if (point[0] - 1) > 0 {
+		elemTop = maze[point[0]-1][point[1]]
 		lenTop = true
 	}
 
 	// checks if the bottom point in relation to the given point can be calculated
-	if point[0]+1 <= (config.Width * 2) {
-		bottomPoint := []int{point[0] + 1, point[1]}
-		elemBottom = maze[bottomPoint[0]][bottomPoint[1]]
+	if (point[0] + 1) <= (config.Width * 2) {
+		elemBottom = maze[point[0]+1][point[1]]
 		lenBottom = true
 	}
 
