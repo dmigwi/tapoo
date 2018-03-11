@@ -31,6 +31,31 @@ func TestGenarateMazeArea(t *testing.T) {
 	})
 }
 
+// TestAppendFunc tests the functionality of appendFunc
+func TestAppendFunc(t *testing.T) {
+	var testFunc = func(rem float64, x, y, length int, tSize Dimensions) {
+		val := appendFunc(rem, x, y, tSize)
+
+		So(len(val), ShouldEqual, length)
+		So(cap(val), ShouldEqual, length)
+	}
+
+	Convey("TestAppendFunc: Given values ", t, func() {
+		Convey("where the remaider is not zero, the returned slice should be empty", func() {
+			testFunc(4, 2, 4, 0, Dimensions{Length: 5, Width: 5})
+		})
+
+		Convey("where the remaider is zero but the x and y values are not within the terminal size, the returned slice should be empty ", func() {
+			testFunc(0, 6, 4, 0, Dimensions{Length: 5, Width: 5})
+		})
+
+		Convey("where the remaider is zero the x and y values are within the terminal size, the returned slice should not be empty", func() {
+			testFunc(0, 2, 4, 2, Dimensions{Length: 5, Width: 5})
+		})
+	})
+
+}
+
 // TestFactorizeMazeArea tests the functionality of factorizeMazeArea
 func TestFactorizeMazeArea(t *testing.T) {
 	var testFunc = func(mazeArea float64, expectedSize int) {
@@ -53,7 +78,7 @@ func TestFactorizeMazeArea(t *testing.T) {
 // TestGetMazeDimension tests the functionality of getMazeDimension
 func TestGetMazeDimension(t *testing.T) {
 	var testFunc = func(level int, size Dimensions, errMsg string) {
-		mazeSize, err := getMazeDimension(level, size)
+		mazeSize, err := getMazeDimensions(level, size)
 
 		if len(errMsg) == 0 {
 			So(err, ShouldBeNil)
@@ -81,4 +106,15 @@ func TestGetMazeDimension(t *testing.T) {
 		})
 	})
 
+}
+
+// TestGetTerminalSize tests the functionality of getTerminalSize
+func TestGetTerminalSize(t *testing.T) {
+	Convey("TestGetTerminalSize: Given the actual terminal size ", t, func() {
+		Convey("It determines the largest possible size of the maze that can be created", func() {
+			val := getTerminalSize(202, 52)
+			So(val.Length, ShouldEqual, 50)
+			So(val.Width, ShouldEqual, 21)
+		})
+	})
 }

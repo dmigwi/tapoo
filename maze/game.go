@@ -15,17 +15,24 @@ import (
 // background or the foreground depending on its usage.
 const coldef = termbox.ColorDefault
 
+const (
+	succeeded = iota
+	proceed
+	failed
+	quit
+)
+
 var (
 	scores              int
 	startPos, targetPos []int
 
-	exit = make(chan int)
+	status = make(chan int)
 )
 
 // fill prints a string to the termbox view box on the given coordinates.
-func fill(x, y int, val string) {
+func fill(x, y int, val string, foreground termbox.Attribute) {
 	for index, char := range val {
-		termbox.SetCell(x+index, y, char, coldef, coldef)
+		termbox.SetCell(x+index, y, char, foreground, coldef)
 	}
 }
 
@@ -36,12 +43,12 @@ func drawMaze(config *Dimensions, data [][]string) {
 		panic(err)
 	}
 
-	fill(len(data[1])/3, 1, "You are playing the Maze runner, hide and seek game (Tapoo).")
-	fill(len(data[1])/2, 3, "Visit www.tapoo.com for more information.")
-	fill(len(data[1])/2, 5, "Use the Arrow Keys to navigate the player (in green)")
+	fill(len(data[1])/3, 1, "You are playing the Maze runner, hide and seek game (Tapoo).", coldef)
+	fill(len(data[1])/2, 3, "Visit www.tapoo.com for more information.", coldef)
+	fill(len(data[1])/2, 5, "Use the Arrow Keys to navigate the player (in green)", coldef)
 
 	for k, d := range data {
-		fill(3, 7+k, strings.Join(d, ""))
+		fill(3, 7+k, strings.Join(d, ""), coldef)
 	}
 }
 
@@ -52,12 +59,12 @@ func refreshUI(config *Dimensions, count int, data [][]string) {
 	termbox.SetCell((targetPos[1]*2)+3, targetPos[0]+7, '#', termbox.ColorRed, termbox.ColorRed)
 	termbox.SetCell((startPos[1]*2)+3, startPos[0]+7, '@', termbox.ColorGreen, termbox.ColorGreen)
 
-	fill(len(data[1])/2, len(data)+8, "Press ESC or Ctrl+C to quit.         Scores: "+strconv.Itoa(count))
+	fill(len(data[1])/2, len(data)+8, "Press ESC or Ctrl+C to quit.         Scores: "+strconv.Itoa(count), coldef)
 
 	// check if target has been located
 	go func() {
 		if reflect.DeepEqual(startPos, targetPos) {
-			exit <- 0
+			status <- succeeded
 		}
 	}()
 
@@ -66,16 +73,16 @@ func refreshUI(config *Dimensions, count int, data [][]string) {
 
 // gameOverUI displays some text indicating the game is
 // over after a user won or lost a given tapoo game level.
-func gameOverUI(msg string, config *Dimensions, data [][]string) {
+func gameOverUI(msg string, config *Dimensions, data [][]string, color termbox.Attribute) {
 	drawMaze(config, data)
 
-	fill(len(data[1])/3, len(data)/2+3, "                                                         ")
-	fill(len(data[1])/3, len(data)/2+4, "    Game Over! : "+msg)
-	fill(len(data[1])/3, len(data)/2+5, "                                                         ")
-	fill(len(data[1])/3, len(data)/2+6, "              High Scores: "+strconv.Itoa(scores)+"                        ")
-	fill(len(data[1])/3, len(data)/2+7, "                                                         ")
-	fill(len(data[1])/3, len(data)/2+8, "     Press ESC or Ctrl+C to quit.                             ")
-	fill(len(data[1])/3, len(data)/2+9, "                                                           ")
+	fill(len(data[1])/3, len(data)/2+3, "                                                         ", coldef)
+	fill(len(data[1])/3, len(data)/2+4, "    Game Over! : "+msg, color)
+	fill(len(data[1])/3, len(data)/2+5, "                                                         ", coldef)
+	fill(len(data[1])/3, len(data)/2+6, "              High Scores: "+strconv.Itoa(scores)+"                        ", color)
+	fill(len(data[1])/3, len(data)/2+7, "                                                         ", coldef)
+	fill(len(data[1])/3, len(data)/2+8, "     Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed       ", coldef)
+	fill(len(data[1])/3, len(data)/2+9, "                                                           ", coldef)
 
 	termbox.Flush()
 }
@@ -114,7 +121,10 @@ func handlePlayerMovement(config *Dimensions, data [][]string) {
 
 			switch ev.Key {
 			case termbox.KeyEsc, termbox.KeyCtrlC:
-				exit <- 2
+				status <- quit
+
+			case termbox.KeyCtrlP:
+				status <- proceed
 
 			case termbox.KeyArrowLeft:
 				playerMovement(config, data, "LEFT")
@@ -153,7 +163,7 @@ func Start() {
 	defer termbox.Close()
 	termbox.SetInputMode(termbox.InputEsc)
 
-	val, err := getMazeDimension(1, Dimensions{Length: 30, Width: 20})
+	val, err := getMazeDimensions(1, getTerminalSize(termbox.Size()))
 	errfunc(err)
 
 	data, startPos, targetPos, err = val.GenerateMaze(1)
@@ -176,18 +186,19 @@ mainloop:
 
 			refreshUI(val, scores, data)
 		case <-timeout.C:
-			go func() { exit <- 1 }()
+			go func() { status <- failed }()
 
-		case exitStatus := <-exit:
+		case returnedStatus := <-status:
 			timer.Stop()
 			timeout.Stop()
-			switch exitStatus {
-			case 0:
-				gameOverUI("You won after locating the target on time. ", val, data)
-			case 1:
-				gameOverUI("You failed to locate the target on time. ", val, data)
-			case 2:
+			switch returnedStatus {
+			case succeeded:
+				gameOverUI("You won after locating the target on time. ", val, data, termbox.ColorGreen)
+			case failed:
+				gameOverUI("You failed to locate the target on time. ", val, data, termbox.ColorRed)
+			case quit:
 				break mainloop
+			case proceed:
 			}
 		}
 	}
