@@ -1,9 +1,5 @@
 package maze
 
-import (
-	"strings"
-)
-
 // visitedCells represents the cells whose numbers are mapped to their respective addresses.
 // It is used in creating and navigating through the maze.
 var visitedCells = map[int]cellAddress{}
@@ -157,39 +153,6 @@ func (config *Dimensions) optimizeMaze(intensity int, maze [][]string) error {
 		addr  cellAddress
 		chars []string
 		err   error
-
-		// replaceChar switches left and right wall character
-		// with a top and bottom wall character.
-		replaceChar = func(point []int) {
-			var (
-				topPoint    = []int{}
-				bottomPoint = []int{}
-			)
-
-			if point[0]-1 > 0 {
-				topPoint = []int{point[0] - 1, point[1]}
-			}
-
-			if point[0]+1 <= (config.Width * 2) {
-				bottomPoint = []int{point[0] + 1, point[1]}
-			}
-
-			switch {
-			case len(topPoint) == 0 && len(bottomPoint) != 0:
-				if strings.Contains(maze[bottomPoint[0]][bottomPoint[1]], " ") {
-					maze[point[0]][point[1]] = chars[2]
-				}
-			case len(topPoint) != 0 && len(bottomPoint) == 0:
-				if strings.Contains(maze[topPoint[0]][topPoint[1]], " ") {
-					maze[point[0]][point[1]] = chars[2]
-				}
-			case len(topPoint) != 0 && len(bottomPoint) != 0:
-				if strings.Contains(maze[topPoint[0]][topPoint[1]], " ") &&
-					strings.Contains(maze[bottomPoint[0]][bottomPoint[1]], " ") {
-					maze[point[0]][point[1]] = chars[2]
-				}
-			}
-		}
 	)
 
 	if chars, err = getWallCharacters(intensity); err != nil {
@@ -199,11 +162,42 @@ func (config *Dimensions) optimizeMaze(intensity int, maze [][]string) error {
 	for cell := 1; cell <= (config.Length * config.Width); cell++ {
 		addr = config.getCellAddress(cell)
 
-		replaceChar(addr.BottomRight)
-		replaceChar(addr.BottomRight)
-		replaceChar(addr.TopRight)
-		replaceChar(addr.TopRight)
+		config.replaceChar(addr.BottomRight, chars[2], maze)
+		config.replaceChar(addr.TopRight, chars[2], maze)
 	}
 
 	return nil
+}
+
+// replaceChar switches left and right wall character with a top and bottom wall character.
+func (config *Dimensions) replaceChar(point []int, replChar string, maze [][]string) {
+	var (
+		elemTop, elemBottom = "", ""
+
+		lenTop, lenBottom = false, false
+	)
+	// checks if the top point in relation to the given point can be calculated
+	if point[0]-1 > 0 {
+		topPoint := []int{point[0] - 1, point[1]}
+		elemTop = maze[topPoint[0]][topPoint[1]]
+		lenTop = true
+	}
+
+	// checks if the bottom point in relation to the given point can be calculated
+	if point[0]+1 <= (config.Width * 2) {
+		bottomPoint := []int{point[0] + 1, point[1]}
+		elemBottom = maze[bottomPoint[0]][bottomPoint[1]]
+		lenBottom = true
+	}
+
+	switch {
+	case !lenTop && lenBottom && isSpaceFound(elemBottom):
+		maze[point[0]][point[1]] = replChar
+
+	case lenTop && !lenBottom && isSpaceFound(elemTop):
+		maze[point[0]][point[1]] = replChar
+
+	case lenTop && lenBottom && isSpaceFound(elemBottom) && isSpaceFound(elemTop):
+		maze[point[0]][point[1]] = replChar
+	}
 }
