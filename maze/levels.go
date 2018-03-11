@@ -44,14 +44,14 @@ func appendFunc(remaider float64, x, y int, tSize Dimensions) []Dimensions {
 // factorizeMazeArea factorizes the MazeArea using the trial division algorithm
 // to get all possible factors for the length and the width values.
 // The smallest value of either length or width can only be 5.
-func factorizeMazeArea(mazeArea float64, tSize Dimensions) []Dimensions {
+func factorizeMazeArea(mazeArea float64, c Dimensions) []Dimensions {
 	var size = make([]Dimensions, 0)
 
 	for i := int(math.Sqrt(mazeArea)); i > 4; i-- {
 		remaider := math.Remainder(mazeArea, float64(i))
 		val := int(mazeArea) / i
 
-		size = append(size, appendFunc(remaider, i, val, tSize)...)
+		size = append(size, appendFunc(remaider, i, val, c)...)
 	}
 
 	return size
@@ -81,5 +81,5 @@ func getMazeDimensions(level int, terminalSize Dimensions) (*Dimensions, error) 
 // getTerminalSize calculate the terminal size from the values captured by the
 // termbox.Size() function
 func getTerminalSize(h, w int) Dimensions {
-	return Dimensions{Length: h / 4, Width: (w - 10) / 2}
+	return Dimensions{Length: (h - 5) / 4, Width: (w - 10) / 2}
 }

@@ -113,7 +113,7 @@ func TestGetTerminalSize(t *testing.T) {
 	Convey("TestGetTerminalSize: Given the actual terminal size ", t, func() {
 		Convey("It determines the largest possible size of the maze that can be created", func() {
 			val := getTerminalSize(202, 52)
-			So(val.Length, ShouldEqual, 50)
+			So(val.Length, ShouldEqual, 49)
 			So(val.Width, ShouldEqual, 21)
 		})
 	})

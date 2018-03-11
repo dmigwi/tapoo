@@ -25,6 +25,9 @@ const (
 	// failed status is updated after the player fails to locate the target of time.
 	failed
 
+	// pause status is updated after the play voluntarity stops the game.
+	pause
+
 	// Status should be updated after the player voluntarily paused the game or won the level
 	// or even failed to finish the level successfully.
 	quit
@@ -34,7 +37,6 @@ var (
 	scores              int
 	startPos, targetPos []int
 
-	// paused status is updated after the play voluntarity stops the game.
 	paused = false
 
 	status = make(chan int)
@@ -69,14 +71,13 @@ func handlePlayerMovement(config *Dimensions, data [][]string) {
 
 			switch ev.Key {
 			case termbox.KeyEsc, termbox.KeyCtrlC:
-				if paused {
-					status <- quit
-				}
+				status <- quit
 
 			case termbox.KeyCtrlP:
-				if paused {
-					status <- proceed
-				}
+				status <- proceed
+
+			case termbox.KeySpace:
+				status <- pause
 
 			case termbox.KeyArrowLeft:
 				playerMovement(config, data, "LEFT")
@@ -144,23 +145,25 @@ mainloop:
 			timer.Stop()
 			timeout.Stop()
 
-			switch returnedStatus {
-			case succeeded:
-				gameOverUI("You won after locating the target on time. ", val, data, termbox.ColorGreen)
+			switch {
+			case returnedStatus == succeeded:
+				interruptUI(gameOverSucceed, val, data, termbox.ColorGreen)
 				paused = true
 
-			case failed:
-				gameOverUI("You failed to locate the target on time. ", val, data, termbox.ColorRed)
+			case returnedStatus == failed:
+				interruptUI(gameOverFailed, val, data, termbox.ColorRed)
 				paused = true
 
-			case quit:
+			case returnedStatus == quit && paused:
 				break mainloop
 
-			case proceed:
-			}
+			case returnedStatus == proceed && paused:
+				// paused = false
 
-		default:
-			paused = false
+			case returnedStatus == pause:
+				paused = true
+				interruptUI(pauseMsg, val, data, termbox.ColorBlue)
+			}
 		}
 	}
 }

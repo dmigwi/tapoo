@@ -199,11 +199,18 @@ func TestGetCeiledDivisor(t *testing.T) {
 			testFunc(map[int][]int{1: []int{4, 4}})
 		})
 
-		Convey("where both values are zero or either is zero, the output should always be zero or a complex number ", func() {
-			// -9223372036854775808 is a complex number that has been truncated to fit the memory location of an integer
-			testFunc(map[int][]int{-9223372036854775808: []int{0, 0}})
+		Convey("where both values are zero or either is zero, the output should always be zero or a -9223372036854775808 depending on the machine instruction size ", func() {
+			// -9223372036854775808 is the smallest int64 value returned when an integer is divided by zero on a 64 bit machine.
+			// On a 32 bit machine zero is returned when an integer is divided by zero
+			if strconv.IntSize == 64 {
+				testFunc(map[int][]int{-9223372036854775808: []int{0, 0}})
 
-			testFunc(map[int][]int{-9223372036854775808: []int{10, 0}})
+				testFunc(map[int][]int{-9223372036854775808: []int{10, 0}})
+			} else {
+				testFunc(map[int][]int{0: []int{0, 0}})
+
+				testFunc(map[int][]int{0: []int{10, 0}})
+			}
 
 			testFunc(map[int][]int{0: []int{0, 8}})
 		})
@@ -224,7 +231,7 @@ func TestGetWallCharacters(t *testing.T) {
 			}
 		})
 
-		Convey("that range between 1 and 3, 1 and 3 include, the three wall characters should be returned", func() {
+		Convey("that range between 1 and 3 with 1 and 3 are included, the three wall characters should be returned", func() {
 			testVal := map[int][]string{
 				1: []string{"|", "---", "-"},
 				2: []string{"╏", "╍╍╍", "╍"},
