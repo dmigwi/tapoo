@@ -1,6 +1,8 @@
 package maze
 
 import (
+	"fmt"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -135,27 +137,36 @@ func handlePlayerMovement(config *Dimensions, data [][]string) {
 // Start define where the tapoo game starts at.
 func Start() {
 	var (
-		data        [][]string
-		timer       = time.NewTicker(500 * time.Microsecond)
-		val         = &Dimensions{Length: 30, Width: 7}
-		totalCells  = val.Length * val.Width
-		timeout     = time.NewTimer(time.Duration(totalCells) * time.Second)
-		currentTime = time.Now().Unix()
-		err         = termbox.Init()
+		data [][]string
+
+		// If an error is thrown print it and exit
+		errfunc = func(err error) {
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+		}
 	)
 
-	if err != nil {
-		panic(err)
-	}
+	errfunc(termbox.Init())
 
 	defer termbox.Close()
 	termbox.SetInputMode(termbox.InputEsc)
 
-	if data, startPos, targetPos, err = val.GenerateMaze(1); err != nil {
-		panic(err)
-	}
+	val, err := getMazeDimension(1, Dimensions{Length: 30, Width: 20})
+	errfunc(err)
+
+	data, startPos, targetPos, err = val.GenerateMaze(1)
+	errfunc(err)
 
 	go handlePlayerMovement(val, data)
+
+	var (
+		timer       = time.NewTicker(500 * time.Microsecond)
+		totalCells  = val.Length * val.Width
+		timeout     = time.NewTimer(time.Duration(totalCells) * time.Second)
+		currentTime = time.Now().Unix()
+	)
 
 mainloop:
 	for {

@@ -55,21 +55,21 @@ func factorizeMazeArea(mazeArea float64, tSize Dimensions) []Dimensions {
 
 // getMazeDimension obtains the best length and width measurements for the
 // current level and terminal size provided.
-func getMazeDimension(level int, terminalSize Dimensions) (Dimensions, error) {
+func getMazeDimension(level int, terminalSize Dimensions) (*Dimensions, error) {
 	area := generateMazeArea(level)
 	errMsg := "terminal size is too small for the current level"
 
 	if int(area) > (terminalSize.Width * terminalSize.Length) {
-		return Dimensions{}, errors.New(errMsg)
+		return &Dimensions{}, errors.New(errMsg)
 	}
 
 	dimensions := factorizeMazeArea(area, terminalSize)
 	totalCount := len(dimensions)
 
 	for i := 0; i < totalCount; i++ {
-		return dimensions[getRandomNo(totalCount)], nil
+		return &dimensions[getRandomNo(totalCount)], nil
 	}
 
 	// If the terminal size hasn't been minimized, It should never get here
-	return Dimensions{}, errors.New(errMsg)
+	return &Dimensions{}, errors.New(errMsg)
 }
