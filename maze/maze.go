@@ -110,17 +110,10 @@ func (config *Dimensions) getPresentNeighbors(cellNo int) []int {
 		neighbors = config.getCellNeighbors(cellNo)
 	)
 
-	if _, ok = visitedCells[neighbors.Bottom]; !ok && neighbors.Bottom != 0 {
-		presentCells = append(presentCells, neighbors.Bottom)
-	}
-	if _, ok = visitedCells[neighbors.Left]; !ok && neighbors.Left != 0 {
-		presentCells = append(presentCells, neighbors.Left)
-	}
-	if _, ok = visitedCells[neighbors.Right]; !ok && neighbors.Right != 0 {
-		presentCells = append(presentCells, neighbors.Right)
-	}
-	if _, ok = visitedCells[neighbors.Top]; !ok && neighbors.Top != 0 {
-		presentCells = append(presentCells, neighbors.Top)
+	for _, neighbor := range []int{neighbors.Bottom, neighbors.Left, neighbors.Right, neighbors.Top} {
+		if _, ok = visitedCells[neighbor]; !ok && neighbor != 0 {
+			presentCells = append(presentCells, neighbor)
+		}
 	}
 
 	return presentCells
