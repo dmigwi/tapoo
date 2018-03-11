@@ -3,9 +3,6 @@ package maze
 import (
 	"fmt"
 	"os"
-	"reflect"
-	"strconv"
-	"strings"
 	"time"
 
 	termbox "github.com/nsf/termbox-go"
@@ -16,9 +13,20 @@ import (
 const coldef = termbox.ColorDefault
 
 const (
+	// succeeded status is update ONLY when the player locates the target successfully.
 	succeeded = iota
+
+	// proceed status should be updated if the player wants to continue playing the game after:
+	// 1. They paused the game.
+	// 2. They successfully located the target on time and would like to play the next level.
+	// 3. They failed to locate on time and would like to play the level again
 	proceed
+
+	// failed status is updated after the player fails to locate the target of time.
 	failed
+
+	// Status should be updated after the player voluntarily paused the game or won the level
+	// or even failed to finish the level successfully.
 	quit
 )
 
@@ -26,89 +34,29 @@ var (
 	scores              int
 	startPos, targetPos []int
 
+	// paused status is updated after the play voluntarity stops the game.
+	paused = false
+
 	status = make(chan int)
 )
-
-// fill prints a string to the termbox view box on the given coordinates.
-func fill(x, y int, val string, foreground termbox.Attribute) {
-	for index, char := range val {
-		termbox.SetCell(x+index, y, char, foreground, coldef)
-	}
-}
-
-// drawMaze draws the maze on the termbox view.
-func drawMaze(config *Dimensions, data [][]string) {
-	var err = termbox.Clear(coldef, coldef)
-	if err != nil {
-		panic(err)
-	}
-
-	fill(len(data[1])/3, 1, "You are playing the Maze runner, hide and seek game (Tapoo).", coldef)
-	fill(len(data[1])/2, 3, "Visit www.tapoo.com for more information.", coldef)
-	fill(len(data[1])/2, 5, "Use the Arrow Keys to navigate the player (in green)", coldef)
-
-	for k, d := range data {
-		fill(3, 7+k, strings.Join(d, ""), coldef)
-	}
-}
-
-// refreshUI refreshes the scores value and update the player positions.
-func refreshUI(config *Dimensions, count int, data [][]string) {
-	drawMaze(config, data)
-
-	termbox.SetCell((targetPos[1]*2)+3, targetPos[0]+7, '#', termbox.ColorRed, termbox.ColorRed)
-	termbox.SetCell((startPos[1]*2)+3, startPos[0]+7, '@', termbox.ColorGreen, termbox.ColorGreen)
-
-	fill(len(data[1])/2, len(data)+8, "Press ESC or Ctrl+C to quit.         Scores: "+strconv.Itoa(count), coldef)
-
-	// check if target has been located
-	go func() {
-		if reflect.DeepEqual(startPos, targetPos) {
-			status <- succeeded
-		}
-	}()
-
-	termbox.Flush()
-}
-
-// gameOverUI displays some text indicating the game is
-// over after a user won or lost a given tapoo game level.
-func gameOverUI(msg string, config *Dimensions, data [][]string, color termbox.Attribute) {
-	drawMaze(config, data)
-
-	fill(len(data[1])/3, len(data)/2+3, "                                                         ", coldef)
-	fill(len(data[1])/3, len(data)/2+4, "    Game Over! : "+msg, color)
-	fill(len(data[1])/3, len(data)/2+5, "                                                         ", coldef)
-	fill(len(data[1])/3, len(data)/2+6, "              High Scores: "+strconv.Itoa(scores)+"                        ", color)
-	fill(len(data[1])/3, len(data)/2+7, "                                                         ", coldef)
-	fill(len(data[1])/3, len(data)/2+8, "     Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed       ", coldef)
-	fill(len(data[1])/3, len(data)/2+9, "                                                           ", coldef)
-
-	termbox.Flush()
-}
 
 // playerMovement calculates the actual player position
 // depending on the navigation keys pressed.
 func playerMovement(config *Dimensions, data [][]string, direction string) {
 	var xVal, zVal = startPos[1], startPos[0]
 
-	switch direction {
-	case "LEFT":
-		if (xVal-2) > 0 && strings.Contains(data[zVal][xVal-1], " ") {
-			startPos[1] = xVal - 2
-		}
-	case "RIGHT":
-		if (xVal+2) <= config.Length*2 && strings.Contains(data[zVal][xVal+1], " ") {
-			startPos[1] = xVal + 2
-		}
-	case "UP":
-		if (zVal-2) > 0 && strings.Contains(data[zVal-1][xVal], " ") {
-			startPos[0] = zVal - 2
-		}
-	case "DOWN":
-		if (zVal+2) <= config.Width*2 && strings.Contains(data[zVal+1][xVal], " ") {
-			startPos[0] = zVal + 2
-		}
+	switch {
+	case (direction == "LEFT") && ((xVal - 2) > 0) && isSpaceFound(data[zVal][xVal-1]):
+		startPos[1] = xVal - 2
+
+	case (direction == "RIGHT") && ((xVal + 2) <= config.Length*2) && isSpaceFound(data[zVal][xVal+1]):
+		startPos[1] = xVal + 2
+
+	case (direction == "UP") && ((zVal - 2) > 0) && isSpaceFound(data[zVal-1][xVal]):
+		startPos[0] = zVal - 2
+
+	case (direction == "DOWN") && ((zVal + 2) <= config.Width*2) && isSpaceFound(data[zVal+1][xVal]):
+		startPos[0] = zVal + 2
 	}
 }
 
@@ -121,10 +69,14 @@ func handlePlayerMovement(config *Dimensions, data [][]string) {
 
 			switch ev.Key {
 			case termbox.KeyEsc, termbox.KeyCtrlC:
-				status <- quit
+				if paused {
+					status <- quit
+				}
 
 			case termbox.KeyCtrlP:
-				status <- proceed
+				if paused {
+					status <- proceed
+				}
 
 			case termbox.KeyArrowLeft:
 				playerMovement(config, data, "LEFT")
@@ -191,15 +143,24 @@ mainloop:
 		case returnedStatus := <-status:
 			timer.Stop()
 			timeout.Stop()
+
 			switch returnedStatus {
 			case succeeded:
 				gameOverUI("You won after locating the target on time. ", val, data, termbox.ColorGreen)
+				paused = true
+
 			case failed:
 				gameOverUI("You failed to locate the target on time. ", val, data, termbox.ColorRed)
+				paused = true
+
 			case quit:
 				break mainloop
+
 			case proceed:
 			}
+
+		default:
+			paused = false
 		}
 	}
 }
