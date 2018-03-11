@@ -33,7 +33,6 @@ jobs:
       - run: ./cc-test-reporter before-build
 
       - run: go test -v -coverprofile=out -race ./...
-      - run: gocov test -coverprofile=out 
       
       - run: ./cc-test-reporter format-coverage --input-type gocov out 
       - run: ./cc-test-reporter upload-coverage
