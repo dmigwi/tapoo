@@ -18,18 +18,18 @@ const (
 
 	checkTableExist = `SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1;`
 
-	createUsersTable = `CREATE TABLE users (uuid CHAR(36) NOT NULL, id VARCHAR(64) NOT NULL, email VARCHAR(256) NULL, ` +
+	createUsersTable = `CREATE TABLE users (uuid CHAR(36) NOT NULL, id VARCHAR(64) NOT NULL, email VARCHAR(64) NULL, ` +
 		`created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT  CURRENT_TIMESTAMP ON ` +
-		`UPDATE CURRENT_TIMESTAMP, PRIMARY KEY(uuid), KEY (id), KEY (email) )ENGINE=InnoDB DEFAULT CHARSET=latin1;`
+		`UPDATE CURRENT_TIMESTAMP, PRIMARY KEY(uuid), KEY (id), KEY (email), UNIQUE(id) )ENGINE=InnoDB DEFAULT CHARSET=latin1;`
 
-	createScoresTable = `CREATE TABLE scores (uuid CHAR(36) NOT NULL, user_id VARCHAR(64) NOT NULL, game_level INT NOT ` +
-		`NULL, high_scores INT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP ` +
+	createScoresTable = `CREATE TABLE scores (uuid CHAR(36) NOT NULL, user_id VARCHAR(64) NOT NULL, game_level INT ` +
+		`DEFAULT 0, high_scores INT DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP ` +
 		`DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY(uuid), FOREIGN KEY(user_id) REFERENCES ` +
-		`users(id), KEY(game_level), KEY(high_scores) )ENGINE=InnoDB DEFAULT CHARSET=latin1;`
+		`users(id), KEY(game_level), KEY(high_scores), UNIQUE(user_id, game_level) )ENGINE=InnoDB DEFAULT CHARSET=latin1;`
 )
 
-// Db defines a database connection pool that is safe concurrency use.
-var Db *sql.DB
+// db defines a database connection pool that is safe concurrency use.
+var db *sql.DB
 
 // The following variabls defines the database configuration that is mapped from
 // TAPOO_DB_NAME, TAPOO_DB_USER_NAME, TAPOO_DB_USER_PASSWORD and TAPOO_DB_HOST.
@@ -47,17 +47,17 @@ var config = new(dbConfig)
 // to access the database.
 func createDbConnection() error {
 	var err error
-	Db, err = sql.Open(config.Driver,
+	db, err = sql.Open(config.Driver,
 		fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true", config.DbUserName, config.DbUserPassword, config.DbHost, config.DbName))
 	if err != nil {
 		return err
 	}
 
-	if err = Db.Ping(); err != nil {
+	if err = db.Ping(); err != nil {
 		return fmt.Errorf("db connection: incorrect database configurations used :: %s", err.Error())
 	}
 
-	Db.SetConnMaxLifetime(time.Duration(10) * time.Second)
+	db.SetConnMaxLifetime(time.Duration(10) * time.Second)
 
 	return nil
 }
@@ -72,13 +72,13 @@ func checkTablesExit() error {
 	queries := []string{createUsersTable, createScoresTable}
 
 	for i, t := range []string{"users", "scores"} {
-		err := Db.QueryRow(checkTableExist, config.DbName, t).Scan(&result)
+		err := db.QueryRow(checkTableExist, config.DbName, t).Scan(&result)
 		if err == nil {
 			continue
 		}
 
 		if strings.Contains(err.Error(), "no rows in result set") {
-			_, err = Db.Query(queries[i])
+			_, err = db.Query(queries[i])
 		}
 
 		if err != nil {

@@ -57,7 +57,7 @@ func TestCheckTablesExist(t *testing.T) {
 		copyOfConfig = config
 
 		dropTable = func() error {
-			_, err := Db.Query("DROP TABLE IF EXISTS scores, users")
+			_, err := db.Query("DROP TABLE IF EXISTS scores, users")
 			return err
 		}
 	)
