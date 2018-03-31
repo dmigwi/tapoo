@@ -1,9 +1,6 @@
 package main
 
-import (
-	"github.com/dmigwi/tapoo/maze"
-	_ "github.com/dmigwi/tapoo/maze/db"
-)
+import "github.com/dmigwi/tapoo/maze"
 
 // Main defines where the program executions starts
 func main() {
