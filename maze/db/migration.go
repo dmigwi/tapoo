@@ -62,26 +62,23 @@ func createDbConnection() error {
 	return nil
 }
 
-// checkTablesExit checke if the users and the score table exists in the selected database.
-// If they don't exist they are created. A user should be created and assigned a password
-// before checkTablesExit() is run.
+// checkTablesExit checks if the users and the score tables exists in the selected database.
+// If they don't exist they are created.
 func checkTablesExit() error {
 	var result string
 
-	for _, t := range []string{"users", "scores"} {
+	// maps cannot guarantee a specific order of retrival thus two slices are used.
+	// Table users should always be created before table scores.
+	queries := []string{createUsersTable, createScoresTable}
+
+	for i, t := range []string{"users", "scores"} {
 		err := Db.QueryRow(checkTableExist, config.DbName, t).Scan(&result)
 		if err == nil {
 			continue
 		}
 
 		if strings.Contains(err.Error(), "no rows in result set") {
-			switch t {
-			case "users":
-				_, err = Db.Query(createUsersTable)
-
-			case "scores":
-				_, err = Db.Query(createScoresTable)
-			}
+			_, err = Db.Query(queries[i])
 		}
 
 		if err != nil {
