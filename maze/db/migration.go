@@ -33,14 +33,22 @@ var Db *sql.DB
 
 // The following variabls defines the database configuration that is mapped from
 // TAPOO_DB_NAME, TAPOO_DB_USER_NAME, TAPOO_DB_USER_PASSWORD and TAPOO_DB_HOST.
-var dbName, dbUserName, dbUserPassword, dbHost string
+type dbConfig struct {
+	DbHost         string
+	DbName         string
+	DbUserName     string
+	DbUserPassword string
+	Driver         string
+}
+
+var config = new(dbConfig)
 
 // createDbConnection creates a pool of connection that can be used concurrently
 // to access the database.
 func createDbConnection() error {
 	var err error
-	Db, err = sql.Open("mysql",
-		fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true", dbUserName, dbUserPassword, dbHost, dbName))
+	Db, err = sql.Open(config.Driver,
+		fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true", config.DbUserName, config.DbUserPassword, config.DbHost, config.DbName))
 	if err != nil {
 		return err
 	}
@@ -61,7 +69,7 @@ func checkTablesExit() error {
 	var result string
 
 	for _, t := range []string{"users", "scores"} {
-		err := Db.QueryRow(checkTableExist, dbName, t).Scan(&result)
+		err := Db.QueryRow(checkTableExist, config.DbName, t).Scan(&result)
 		if err == nil {
 			continue
 		}
@@ -80,7 +88,7 @@ func checkTablesExit() error {
 			return err
 		}
 
-		fmt.Printf(" Table '%s' successfully created \n", t)
+		fmt.Printf("Table '%s' successfully created \n", t)
 	}
 
 	return nil
@@ -91,21 +99,24 @@ func checkTablesExit() error {
 func getEnvVars() error {
 	ok := false
 
-	if dbName, ok = os.LookupEnv("TAPOO_DB_NAME"); !ok {
+	if config.DbName, ok = os.LookupEnv("TAPOO_DB_NAME"); !ok {
 		return fmt.Errorf("envVars: TAPOO_DB_NAME %s", errMsg)
 	}
 
-	if dbUserName, ok = os.LookupEnv("TAPOO_DB_USER_NAME"); !ok {
+	if config.DbUserName, ok = os.LookupEnv("TAPOO_DB_USER_NAME"); !ok {
 		return fmt.Errorf("envVars: TAPOO_DB_USER_NAME %s", errMsg)
 	}
 
-	if dbUserPassword, ok = os.LookupEnv("TAPOO_DB_USER_PASSWORD"); !ok {
+	if config.DbUserPassword, ok = os.LookupEnv("TAPOO_DB_USER_PASSWORD"); !ok {
 		return fmt.Errorf("envVars: TAPOO_DB_USER_PASSWORD %s", errMsg)
 	}
 
-	if dbHost, ok = os.LookupEnv("TAPOO_DB_HOST"); !ok {
+	if config.DbHost, ok = os.LookupEnv("TAPOO_DB_HOST"); !ok {
 		return fmt.Errorf("envVars: TAPOO_DB_HOST %s", errMsg)
 	}
+
+	// set the driver to mysql's go-sql-driver/mysql
+	config.Driver = "mysql"
 
 	return nil
 }
