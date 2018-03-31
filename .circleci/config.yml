@@ -9,6 +9,10 @@ jobs:
       - image: circleci/golang:1.10
         environment:
             CC_TEST_REPORTER_ID: 8049231953d791ee8c740f7d30134bc2b3fad03a7dcd9338b2f5987f46f40b30
+            TAPOO_DB_NAME: sample_database_name 
+            TAPOO_DB_USER_NAME: sample_username 
+            TAPOO_DB_USER_PASSWORD: sample_password 
+            TAPOO_DB_HOST: localhost
       
       # Specify service dependencies here if necessary
       # CircleCI maintains a library of pre-built images

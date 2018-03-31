@@ -1,6 +1,10 @@
 package: tapoo
 import:
+- package: github.com/go-sql-driver/mysql
 - package: github.com/nsf/termbox-go
+- package: github.com/ziutek/mymysql
+  subpackages:
+  - thrsafe
 testImport:
 - package: github.com/smartystreets/goconvey
   subpackages:
