@@ -40,7 +40,7 @@ func TestCreateDbConnection(t *testing.T) {
 
 			So(err, ShouldNotEqual, nil)
 			So(err, ShouldImplement, (*error)(nil))
-			So(err.Error(), ShouldContainSubstring, "Access denied for user 'test_user_tapoo'@'localhost'")
+			So(err.Error(), ShouldContainSubstring, "Access denied for user 'test_user_tapoo'@")
 		})
 
 		Convey("with the correct values a nil error value should be returned", func() {
