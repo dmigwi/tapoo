@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	// used by the database/sql package
 	_ "github.com/go-sql-driver/mysql"
@@ -48,7 +47,8 @@ var config = new(dbConfig)
 func createDbConnection() error {
 	var err error
 	db, err = sql.Open(config.Driver,
-		fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true", config.DbUserName, config.DbUserPassword, config.DbHost, config.DbName))
+		fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true&loc=Local",
+			config.DbUserName, config.DbUserPassword, config.DbHost, config.DbName))
 	if err != nil {
 		return err
 	}
@@ -56,8 +56,6 @@ func createDbConnection() error {
 	if err = db.Ping(); err != nil {
 		return fmt.Errorf("db connection: incorrect database configurations used :: %s", err.Error())
 	}
-
-	db.SetConnMaxLifetime(time.Duration(10) * time.Second)
 
 	return nil
 }

@@ -1,7 +1,6 @@
 package db
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -21,12 +20,12 @@ type UserInfor struct {
 
 // LevelScoreResponse defines the expected response of a level score request.
 type LevelScoreResponse struct {
-	CreatedAt  time.Time `db:"created_at"`
-	Email      string    `db:"email"`
-	HighScores int       `db:"high_scores"`
-	Level      int       `db:"game_level"`
-	TapooID    string    `db:"user_id"`
-	UpdateAt   time.Time `db:"updated_at"`
+	CreatedAt  time.Time `json:"created_at"`
+	Email      string    `json:"email"`
+	HighScores int       `json:"high_scores"`
+	Level      int       `json:"game_level"`
+	TapooID    string    `json:"user_id"`
+	UpdateAt   time.Time `json:"updated_at"`
 }
 
 const invalidData = "datastore: invalid %s found : '%v'"
@@ -38,7 +37,8 @@ var errGenUUID = errors.New("datastore: generating a new UUID failed")
 func (u *UserInfor) createLevelScore(uuid string) error {
 	query := `INSERT INTO scores (uuid, game_level, user_id) VALUES (?, ?, ?);`
 
-	return execPrepStmts(nil, noReturnVal, query, uuid, strconv.Itoa(u.Level), u.TapooID)
+	_, _, err := execPrepStmts(noReturnVal, query, uuid, strconv.Itoa(u.Level), u.TapooID)
+	return err
 }
 
 // getLevelScore fetches and returns the level scores for the provided tapoo user ID.
@@ -47,14 +47,15 @@ func (u *UserInfor) getLevelScore() (*LevelScoreResponse, error) {
 	query := `SELECT created_at, high_scores, game_level, user_id, updated_at` +
 		` FROM scores WHERE user_id = ? and game_level = ?;`
 
-	var scores LevelScoreResponse
-
-	err := execPrepStmts(&scores, singleRow, query, u.TapooID, strconv.Itoa(u.Level))
+	_, row, err := execPrepStmts(singleRow, query, u.TapooID, strconv.Itoa(u.Level))
 	if err != nil {
 		return nil, err
 	}
 
-	return &scores, nil
+	var s LevelScoreResponse
+
+	err = row.Scan(&s.CreatedAt, &s.HighScores, &s.Level, &s.TapooID, &s.UpdateAt)
+	return &s, err
 }
 
 // GetOrCreateLevelScore fetches or creates data about the user for the specific level.
@@ -68,7 +69,7 @@ func (u *UserInfor) GetOrCreateLevelScore() (*LevelScoreResponse, error) {
 		return nil, fmt.Errorf(invalidData, "Tapoo ID", u.TapooID+"(empty)")
 
 	case len(u.TapooID) > 64:
-		return nil, fmt.Errorf(invalidData, "Tapoo ID", u.TapooID[:10]+".... (Too long)")
+		return nil, fmt.Errorf(invalidData, "Tapoo ID", u.TapooID[:10]+"... (Too long)")
 	}
 
 	u2, err := uuid.NewV4()
@@ -79,7 +80,7 @@ func (u *UserInfor) GetOrCreateLevelScore() (*LevelScoreResponse, error) {
 	err = u.createLevelScore(u2.String())
 
 	switch {
-	case strings.Contains(err.Error(), "duplicate"):
+	case strings.Contains(err.Error(), "Duplicate entry"):
 	default:
 		return nil, err
 	}
@@ -96,29 +97,24 @@ func (u *UserInfor) GetTopFiveScores() ([]*LevelScoreResponse, error) {
 	}
 
 	query := `SELECT s.created_at, s.high_scores, s.game_level, s.user_id,` +
-		` s.updated_at, u.email FROM scores s users u WHERE s.game_level = ? ` +
+		` s.updated_at, u.email FROM scores s, users u WHERE s.game_level = ? ` +
 		`and s.user_id = u.id ORDER BY s.high_scores DESC LIMIT 5;`
 
-	var r interface{}
-
-	err := execPrepStmts(&r, multiRows, query, strconv.Itoa(u.Level))
+	rows, _, err := execPrepStmts(multiRows, query, strconv.Itoa(u.Level))
 	if err != nil {
 		return topScores, err
 	}
 
-	newRows := r.(sql.Rows)
-	rows := &newRows
-
 	// max of 5 result sets expected
-	for rows.NextResultSet() {
-		scores := new(LevelScoreResponse)
+	for rows.Next() {
+		s := new(LevelScoreResponse)
 
-		err = rows.Scan(scores)
+		err = rows.Scan(&s.CreatedAt, &s.HighScores, &s.Level, &s.TapooID, &s.UpdateAt, &s.Email)
 		if err != nil {
 			return topScores, err
 		}
 
-		topScores = append(topScores, scores)
+		topScores = append(topScores, s)
 	}
 
 	return topScores, rows.Err()
@@ -140,10 +136,11 @@ func (u *UserInfor) UpdateLevelScore(highScores int) error {
 		return fmt.Errorf(invalidData, "Tapoo ID", u.TapooID+"(empty)")
 
 	case len(u.TapooID) > 64:
-		return fmt.Errorf(invalidData, "Tapoo ID", u.TapooID[:10]+".... (Too long)")
+		return fmt.Errorf(invalidData, "Tapoo ID", u.TapooID[:10]+"... (Too long)")
 	}
 
 	query := `UPDATE scores SET high_scores = ? WHERE user_id = ? and game_level = ?;`
 
-	return execPrepStmts(nil, noReturnVal, query, strconv.Itoa(highScores), u.TapooID, strconv.Itoa(u.Level))
+	_, _, err := execPrepStmts(noReturnVal, query, strconv.Itoa(highScores), u.TapooID, strconv.Itoa(u.Level))
+	return err
 }

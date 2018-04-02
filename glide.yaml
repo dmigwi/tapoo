@@ -7,6 +7,7 @@ import:
 - package: github.com/nsf/termbox-go
 - package: github.com/satori/go.uuid
 testImport:
+- package: github.com/jinzhu/copier
 - package: github.com/smartystreets/goconvey
   subpackages:
   - convey

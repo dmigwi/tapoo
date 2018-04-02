@@ -1,11 +1,47 @@
 package db
 
 import (
+	"log"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	. "github.com/smartystreets/goconvey/convey"
 )
+
+// TestMain sets up the test environment
+func TestMain(m *testing.M) {
+	withErrorExit := func(err error) {
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	withErrorExit(db.Ping())
+
+	// drop the users and the scores tables if they exist
+	_, err := db.Query("DROP TABLE IF EXISTS scores, users;")
+	withErrorExit(err)
+
+	// recreate the tables
+	err = checkTablesExit()
+	withErrorExit(err)
+
+	// load mock data users mock data
+	loadData := func(filePath, table string) error {
+		mysql.RegisterLocalFile(filePath)
+		_, err = db.Exec(`LOAD DATA LOCAL INFILE '` + filePath +
+			`' INTO TABLE ` + table +
+			` FIELDS TERMINATED BY ',' LINES TERMINATED BY '\n' IGNORE 1 LINES;`)
+		return err
+	}
+
+	withErrorExit(loadData("sample_data_users.csv", "users"))
+	withErrorExit(loadData("sample_data_scores.csv", "scores"))
+
+	os.Exit(m.Run())
+}
 
 // TestCreateLevelScore tests the functionality of createLevelScore
 func TestCreateLevelScore(t *testing.T) {
@@ -17,11 +53,11 @@ func TestCreateLevelScore(t *testing.T) {
 
 			So(err, ShouldNotBeNil)
 			So(err, ShouldImplement, (*error)(nil))
-			So(err.Error(), ShouldContainSubstring, "duplicate")
+			So(err.Error(), ShouldContainSubstring, "Duplicate entry 'Vf2TqN5MB-1' for key 'user_id'")
 		})
 
-		Convey("creating a new game_level user_id combination should return a nil value", func() {
-			user := &UserInfor{TapooID: "06PE0LPzyCL", Level: 1}
+		Convey("creating a new game_level and user_id combination should return a nil value", func() {
+			user := &UserInfor{TapooID: "06PE0LPzyCL", Level: 20}
 			err := user.createLevelScore("sample_uuid_value")
 
 			So(err, ShouldBeNil)
@@ -30,7 +66,7 @@ func TestCreateLevelScore(t *testing.T) {
 
 			So(err, ShouldBeNil)
 			So(data.TapooID, ShouldEqual, "06PE0LPzyCL")
-			So(data.Level, ShouldEqual, 1)
+			So(data.Level, ShouldEqual, 20)
 			So(data.HighScores, ShouldEqual, 0)
 		})
 	})
@@ -38,28 +74,35 @@ func TestCreateLevelScore(t *testing.T) {
 
 // TestGetLevelScore tests the functionality of getLevelScore
 func TestGetLevelScore(t *testing.T) {
-	Convey("TestGetLevelScore: Given the UserInfor to get level scores with some incorrect data ", t, func() {
-		Convey("variable whose data contain invalid/unescaped charactes, "+
-			"should return a value that implements an error interface", func() {
-			user := &UserInfor{TapooID: "VZW   eOq2p", Level: 1}
+	Convey("TestGetLevelScore: Given the UserInfor to get level scores with", t, func() {
+		Convey("closed db connection is used, should return a value that implements"+
+			" an error interface", func() {
+			copyOfDb := cloneDb()
+			db.Close()
+
+			user := &UserInfor{TapooID: "VZWeOq2p", Level: 1}
 			data, err := user.getLevelScore()
+
+			db = copyOfDb
+
+			So(db.Ping(), ShouldBeNil)
 
 			So(data, ShouldEqual, nil)
 			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldContainSubstring, "You have an error in your SQL syntax;")
+			So(err.Error(), ShouldContainSubstring, "sql: database is closed")
 		})
 
-		Convey("if the tapoo id entry does not exist an error should be returned, "+
+		Convey("the tapoo id entry does not exist an error should be returned, "+
 			"should return a value that implements an error interface", func() {
 			user := &UserInfor{TapooID: "VZW2eOq2p", Level: 1}
 			data, err := user.getLevelScore()
 
-			So(data, ShouldEqual, nil)
+			So(data, ShouldResemble, new(LevelScoreResponse))
 			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldContainSubstring, "You have an error in your SQL syntax;")
+			So(err.Error(), ShouldContainSubstring, "sql: no rows in result set")
 		})
 
-		Convey("variables with properly escaped character should return a nil value error", func() {
+		Convey("variables whose tapoo ID entry exists in the db should return a nil value error", func() {
 			user := &UserInfor{TapooID: "VZWeOq2p", Level: 1}
 			data, err := user.getLevelScore()
 
@@ -91,19 +134,19 @@ func TestGetOrCreateLevelScore(t *testing.T) {
 		})
 
 		Convey("an empty tapoo ID, a value that implements an error interface should be returned", func() {
-			errfunc(&UserInfor{TapooID: "", Level: -1}, "invalid Tapoo ID found : ''(empty)")
+			errfunc(&UserInfor{TapooID: "", Level: 1}, "invalid Tapoo ID found : '(empty)'")
 		})
 
 		Convey("tapoo ID longer than 64 characters, a value that implements an error"+
 			" interface should be returned", func() {
 			user := &UserInfor{TapooID: "a6a1-b43d84afa437-d3140030-4a5c-4352-9a8a-8fe4d988502-9a8a-8fe4d9", Level: 3}
 
-			errfunc(user, "invalid game level found : 'a6a1-b43d8...(Too long)'")
+			errfunc(user, "invalid Tapoo ID found : 'a6a1-b43d8... (Too long)'")
 		})
 
-		Convey("variables having invalid characters like space, a value that implements an"+
+		Convey("tapoo ID that is not a foerign key in users table, a value that implements an"+
 			" error interface in returned", func() {
-			errfunc(&UserInfor{TapooID: "VZWe   Oq2p", Level: 3}, "You have an error in your SQL syntax;")
+			errfunc(&UserInfor{TapooID: "VZWe   Oq2p", Level: 3}, "Cannot add or update a child row: a foreign key constraint fails")
 		})
 
 		Convey("all variables correctly used and have no invalid characters, "+
@@ -138,16 +181,20 @@ func TestGetTopFiveScores(t *testing.T) {
 
 		Convey("the database connection used bieng invalid, a value that "+
 			"implements an error interface should be returned", func() {
-			copyOfDb := db
+			copyOfDb := cloneDb()
+			db.Close()
+
 			user := &UserInfor{Level: 3, TapooID: "fake_tapoo_id"}
 			data, err := user.GetTopFiveScores()
 
 			db = copyOfDb
 
+			So(db.Ping(), ShouldBeNil)
+
 			So(data, ShouldHaveLength, 0)
 			So(err, ShouldNotBeNil)
 			So(err, ShouldImplement, (*error)(nil))
-			So(err.Error(), ShouldContainSubstring, "Invalid connection used")
+			So(err.Error(), ShouldContainSubstring, "sql: database is closed")
 		})
 
 		Convey("the valid database connection and game level value used, the error value"+
@@ -166,8 +213,8 @@ func TestGetTopFiveScores(t *testing.T) {
 
 			for _, item := range data {
 				So(topScores, ShouldContain, item.HighScores)
-				So(userIDs, ShouldBeIn, item.TapooID)
-				So(userEmails, ShouldBeIn, item.Email)
+				So(userIDs, ShouldContain, item.TapooID)
+				So(userEmails, ShouldContain, item.Email)
 			}
 		})
 	})
@@ -184,36 +231,30 @@ func TestUpdateLevelScores(t *testing.T) {
 	}
 
 	Convey("TestUpdateLevelScores: Given the UserInfor and High Scores with", t, func() {
-		Convey("the game level provided is less than zero, a value that implements "+
+		Convey("the game level less than zero, a value that implements "+
 			"an error interface should be returned", func() {
 			user := &UserInfor{Level: -12, TapooID: "82hsgdj"}
 			errfunc(user, 3223, "invalid game level found : '-12'")
 		})
 
-		Convey("the high Scores provided is less than zero, a value that implements "+
+		Convey("the high Scores less than zero, a value that implements "+
 			"an error interface should be returned", func() {
 			user := &UserInfor{Level: 23, TapooID: "82hsgdj"}
 			errfunc(user, -326, "invalid high scores found : '-326'")
 		})
 
-		Convey("the tapoo ID provided is empty, a value that implements "+
+		Convey("the tapoo ID empty, a value that implements "+
 			"an error interface should be returned", func() {
 			user := &UserInfor{Level: 23, TapooID: ""}
-			errfunc(user, 326, "invalid Tapoo ID found : ''(empty)")
+			errfunc(user, 326, "invalid Tapoo ID found : '(empty)'")
 		})
 
-		Convey("the tapoo ID provided longer than 64 charactes, a value that implements "+
+		Convey("the tapoo ID longer than 64 charactes, a value that implements "+
 			"an error interface should be returned", func() {
 			user := &UserInfor{Level: 23,
 				TapooID: "a6a1-b43d84afa437-d3140030-4a5c-4352-9a8a-8fe4d988502-9a8a-8fe4d9"}
 
-			errfunc(user, 326, "invalid game level found : 'a6a1-b43d8...(Too long)'")
-		})
-
-		Convey("the tapoo ID that has  invalid characters like space, a value that implements "+
-			"an error interface should be returned", func() {
-			user := &UserInfor{Level: 23, TapooID: "82hs gdj"}
-			errfunc(user, 1000, "Your sql query has bugs;")
+			errfunc(user, 326, "invalid Tapoo ID found : 'a6a1-b43d8... (Too long)'")
 		})
 
 		Convey("the correct values provided, the error value returned should be nil", func() {
@@ -226,6 +267,7 @@ func TestUpdateLevelScores(t *testing.T) {
 
 			So(err, ShouldBeNil)
 			So(data.HighScores, ShouldEqual, 1000)
+			So(data.Level, ShouldEqual, 1)
 		})
 	})
 }

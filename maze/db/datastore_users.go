@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -24,10 +25,10 @@ const (
 
 // UserInfoResponse defines the expected response of a user infor request.
 type UserInfoResponse struct {
-	CreatedAt time.Time `db:"created_at"`
-	Email     string    `db:"email"`
-	TapooID   string    `db:"id"`
-	UpdateAt  time.Time `db:"updated_at"`
+	CreatedAt time.Time `json:"created_at"`
+	Email     string    `json:"email"`
+	TapooID   string    `json:"id"`
+	UpdateAt  time.Time `json:"updated_at"`
 }
 
 // createUser creates a new user using the tapoo ID provided.
@@ -36,18 +37,24 @@ type UserInfoResponse struct {
 func (u *UserInfor) createUser(uuid string) error {
 	query := `INSERT INTO users (uuid, id, email) VALUES (?, ?, ?);`
 
-	return execPrepStmts(nil, noReturnVal, query, uuid, u.TapooID, u.Email)
+	_, _, err := execPrepStmts(noReturnVal, query, uuid, u.TapooID, u.Email)
+	return err
 }
 
 // getUser checks if the tapoo ID provided exists in the users information records.
 func (u *UserInfor) getUser() (*UserInfoResponse, error) {
-	query := `SELECT id, email, created_at, updated_at WHERE id = ?;`
+	query := `SELECT id, email, created_at, updated_at FROM users WHERE id = ?;`
 
-	var user UserInfoResponse
+	var d UserInfoResponse
 
-	err := execPrepStmts(&user, singleRow, query, u.TapooID)
+	_, row, err := execPrepStmts(singleRow, query, u.TapooID)
+	if err != nil {
+		return nil, err
+	}
 
-	return &user, err
+	err = row.Scan(&d.TapooID, &d.Email, &d.CreatedAt, &d.UpdateAt)
+
+	return &d, err
 }
 
 // GetOrCreateUser creates the new user with provided tapoo ID provided if the
@@ -58,10 +65,10 @@ func (u *UserInfor) GetOrCreateUser() (*UserInfoResponse, error) {
 		return nil, fmt.Errorf(invalidData, "Tapoo ID", u.TapooID+"(empty)")
 
 	case len(u.TapooID) > 64:
-		return nil, fmt.Errorf(invalidData, "Tapoo ID", u.TapooID[:10]+".... (Too long)")
+		return nil, fmt.Errorf(invalidData, "Tapoo ID", u.TapooID[:10]+"... (Too long)")
 
 	case len(u.Email) > 64:
-		return nil, fmt.Errorf(invalidData, "Email", u.Email[:10]+".... (Too long)")
+		return nil, fmt.Errorf(invalidData, "Email", u.Email[:10]+"... (Too long)")
 	}
 
 	u4, err := uuid.NewV4()
@@ -72,7 +79,7 @@ func (u *UserInfor) GetOrCreateUser() (*UserInfoResponse, error) {
 	err = u.createUser(u4.String())
 
 	switch {
-	case strings.Contains(err.Error(), "duplicate"):
+	case strings.Contains(err.Error(), "Duplicate entry"):
 	default:
 		return nil, err
 	}
@@ -89,41 +96,45 @@ func (u *UserInfor) UpdateUser() error {
 		return fmt.Errorf(invalidData, "Tapoo ID", u.TapooID+"(empty)")
 
 	case len(u.TapooID) > 64:
-		return fmt.Errorf(invalidData, "Tapoo ID", u.TapooID[:10]+".... (Too long)")
+		return fmt.Errorf(invalidData, "Tapoo ID", u.TapooID[:10]+"... (Too long)")
 
 	case len(u.Email) == 0:
 		return fmt.Errorf(invalidData, "Email", u.Email+"(empty)")
 
 	case len(u.Email) > 64:
-		return fmt.Errorf(invalidData, "Email", u.Email[:10]+".... (Too long)")
+		return fmt.Errorf(invalidData, "Email", u.Email[:10]+"... (Too long)")
 	}
 
 	query := `UPDATE users SET email = ? WHERE id = ?;`
 
-	return execPrepStmts(nil, noReturnVal, query, u.Email, u.TapooID)
+	_, _, err := execPrepStmts(noReturnVal, query, u.Email, u.TapooID)
+	return err
 }
 
 // execPrepStmts executes the Prepared statement for the sql queries.
-func execPrepStmts(resp interface{}, queryType int, sqlQuery string, val ...string) error {
+func execPrepStmts(queryType int, sqlQuery string, val ...interface{}) (*sql.Rows, *sql.Row, error) {
 	stmt, err := db.Prepare(sqlQuery)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
+
+	defer stmt.Close()
 
 	switch queryType {
 	case noReturnVal:
-		_, err = stmt.Exec(val)
+		_, err = db.Exec(sqlQuery, val...)
+		return nil, nil, err
 
 	case singleRow:
-		err = stmt.QueryRow(val).Scan(resp)
+		row := db.QueryRow(sqlQuery, val...)
+		return nil, row, nil
 
 	case multiRows:
-		resp, err = stmt.Query(val)
-	}
+		rows, err := db.Query(sqlQuery, val...)
+		return rows, nil, err
 
-	if err != nil {
-		return err
+	default:
+		return nil, nil,
+			fmt.Errorf(invalidData, "queryType", queryType)
 	}
-
-	return stmt.Close()
 }
