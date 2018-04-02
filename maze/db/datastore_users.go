@@ -23,7 +23,7 @@ const (
 	multiRows
 )
 
-// UserInfoResponse defines the expected response of a user infor request.
+// UserInfoResponse defines the expected response from users.
 type UserInfoResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 	Email     string    `json:"email"`
@@ -32,8 +32,6 @@ type UserInfoResponse struct {
 }
 
 // createUser creates a new user using the tapoo ID provided.
-// A user can optional choose to visit the online website with there tapoo ID to
-// update there emails and other extra information
 func (u *UserInfor) createUser(uuid string) error {
 	query := `INSERT INTO users (uuid, id, email) VALUES (?, ?, ?);`
 
@@ -41,7 +39,7 @@ func (u *UserInfor) createUser(uuid string) error {
 	return err
 }
 
-// getUser checks if the tapoo ID provided exists in the users information records.
+// getUser checks if the tapoo ID provided exists in users.
 func (u *UserInfor) getUser() (*UserInfoResponse, error) {
 	query := `SELECT id, email, created_at, updated_at FROM users WHERE id = ?;`
 
@@ -57,8 +55,8 @@ func (u *UserInfor) getUser() (*UserInfoResponse, error) {
 	return &d, err
 }
 
-// GetOrCreateUser creates the new user with provided tapoo ID provided if the
-// tapoo ID provided does not exists. Email used can be empty or not.
+// GetOrCreateUser creates the new user with tapoo ID provided if the
+// it does not exists. Email used can be empty or not.
 func (u *UserInfor) GetOrCreateUser() (*UserInfoResponse, error) {
 	switch {
 	case len(u.TapooID) == 0:

@@ -11,14 +11,14 @@ import (
 )
 
 // UserInfor defines the default data that should identify every user
-// that is playing the tapoo game.
+// that is playing the tapoo game and the level they currently playing.
 type UserInfor struct {
 	Level   int
 	TapooID string
 	Email   string
 }
 
-// LevelScoreResponse defines the expected response of a level score request.
+// LevelScoreResponse defines the expected response of a request made to scores.
 type LevelScoreResponse struct {
 	CreatedAt  time.Time `json:"created_at"`
 	Email      string    `json:"email"`
@@ -32,8 +32,8 @@ const invalidData = "datastore: invalid %s found : '%v'"
 
 var errGenUUID = errors.New("datastore: generating a new UUID failed")
 
-// createLevelScore creates a new level with a default score of zero.
-// This function should always be executed everytime a user moves to a new level.
+// createLevelScore creates a new level with a default  high score value of zero.
+// This method should always be executed everytime a user moves to a new level.
 func (u *UserInfor) createLevelScore(uuid string) error {
 	query := `INSERT INTO scores (uuid, game_level, user_id) VALUES (?, ?, ?);`
 
@@ -41,7 +41,7 @@ func (u *UserInfor) createLevelScore(uuid string) error {
 	return err
 }
 
-// getLevelScore fetches and returns the level scores for the provided tapoo user ID.
+// getLevelScore fetches the level scores for the provided tapoo user ID.
 // This method should return data if the user want to try out the specific level again.
 func (u *UserInfor) getLevelScore() (*LevelScoreResponse, error) {
 	query := `SELECT created_at, high_scores, game_level, user_id, updated_at` +
@@ -59,7 +59,7 @@ func (u *UserInfor) getLevelScore() (*LevelScoreResponse, error) {
 }
 
 // GetOrCreateLevelScore fetches or creates data about the user for the specific level.
-// This methods is called every time a new game starts for every level except the training level.
+// This methods is called every time a new game starts for every level except the training level (level 0).
 func (u *UserInfor) GetOrCreateLevelScore() (*LevelScoreResponse, error) {
 	switch {
 	case u.Level < 0:
@@ -122,7 +122,7 @@ func (u *UserInfor) GetTopFiveScores() ([]*LevelScoreResponse, error) {
 
 // UpdateLevelScore updates the user high scores for the provided level.
 // This method should only be invoked when the specific level is completed successfully.
-// If a level is not completed successfully no scores update that is made and thus the
+// If a level is not completed successfully no scores update made and thus the
 // users status quo for the specific level remains.
 func (u *UserInfor) UpdateLevelScore(highScores int) error {
 	switch {

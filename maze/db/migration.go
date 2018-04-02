@@ -13,7 +13,7 @@ import (
 
 // migrations defines the location of the migration scripts
 const (
-	errMsg = "environment variable is not set"
+	errMsg = "envVars: %s environment variable is not set"
 
 	checkTableExist = `SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1;`
 
@@ -89,13 +89,13 @@ func checkTablesExit() error {
 	return nil
 }
 
-// getEnvVars fetch the database configuration from the set environment variables set.
-// An error message is returned if any of the environment id found missing.
+// getEnvVars fetches the database configuration from the set environment variables.
+// An error message is returned if any of the environment is found missing.
 func getEnvVars() error {
 	ok := false
 
 	if config.DbName, ok = os.LookupEnv("TAPOO_DB_NAME"); !ok {
-		return fmt.Errorf("envVars: TAPOO_DB_NAME %s", errMsg)
+		return fmt.Errorf(errMsg, "TAPOO_DB_NAME")
 	}
 
 	// getUserEnvVars checks if both Db username and password are set
@@ -104,7 +104,7 @@ func getEnvVars() error {
 	}
 
 	if config.DbHost, ok = os.LookupEnv("TAPOO_DB_HOST"); !ok {
-		return fmt.Errorf("envVars: TAPOO_DB_HOST %s", errMsg)
+		return fmt.Errorf(errMsg, "TAPOO_DB_HOST")
 	}
 
 	// set the driver to mysql's go-sql-driver/mysql
@@ -113,25 +113,25 @@ func getEnvVars() error {
 	return nil
 }
 
-// getUserEnvVars is part of getEnvVars function and is spit so as to
-// reduce the congnitive complexity of the function
+// getUserEnvVars is a part of getEnvVars function and is spit so as to
+// reduce the congnitive complexity of the function getEnvVars.
 func getUserEnvVars() error {
 	ok := false
 
 	if config.DbUserName, ok = os.LookupEnv("TAPOO_DB_USER_NAME"); !ok {
-		return fmt.Errorf("envVars: TAPOO_DB_USER_NAME %s", errMsg)
+		return fmt.Errorf(errMsg, "TAPOO_DB_USER_NAME")
 	}
 
 	if config.DbUserPassword, ok = os.LookupEnv("TAPOO_DB_USER_PASSWORD"); !ok {
-		return fmt.Errorf("envVars: TAPOO_DB_USER_PASSWORD %s", errMsg)
+		return fmt.Errorf(errMsg, "TAPOO_DB_USER_PASSWORD")
 	}
 
 	return nil
 }
 
-// This init function should run when the db packages is initialized
-// It should recreate the tables if they don't exits provided the db exists.
-// If the db does not the exist yet the function should exit with an error.
+// This init function should run when the db packages is initialized.
+// It should recreate the tables if they don't exits provided the db connection pool exists.
+// If the db does not the exist yet, the function should exit with an error.
 func init() {
 	withErrorExit := func(err error) {
 		if err != nil {

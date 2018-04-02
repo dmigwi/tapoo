@@ -10,7 +10,7 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 )
 
-// TestMain sets up the test environment
+// TestMain sets up the test environment by loading the mock data.
 func TestMain(m *testing.M) {
 	withErrorExit := func(err error) {
 		if err != nil {
