@@ -98,12 +98,9 @@ func getEnvVars() error {
 		return fmt.Errorf("envVars: TAPOO_DB_NAME %s", errMsg)
 	}
 
-	if config.DbUserName, ok = os.LookupEnv("TAPOO_DB_USER_NAME"); !ok {
-		return fmt.Errorf("envVars: TAPOO_DB_USER_NAME %s", errMsg)
-	}
-
-	if config.DbUserPassword, ok = os.LookupEnv("TAPOO_DB_USER_PASSWORD"); !ok {
-		return fmt.Errorf("envVars: TAPOO_DB_USER_PASSWORD %s", errMsg)
+	// getUserEnvVars checks if both Db username and password are set
+	if err := getUserEnvVars(); err != nil {
+		return err
 	}
 
 	if config.DbHost, ok = os.LookupEnv("TAPOO_DB_HOST"); !ok {
@@ -112,6 +109,22 @@ func getEnvVars() error {
 
 	// set the driver to mysql's go-sql-driver/mysql
 	config.Driver = "mysql"
+
+	return nil
+}
+
+// getUserEnvVars is part of getEnvVars function and is spit so as to
+// reduce the congnitive complexity of the function
+func getUserEnvVars() error {
+	ok := false
+
+	if config.DbUserName, ok = os.LookupEnv("TAPOO_DB_USER_NAME"); !ok {
+		return fmt.Errorf("envVars: TAPOO_DB_USER_NAME %s", errMsg)
+	}
+
+	if config.DbUserPassword, ok = os.LookupEnv("TAPOO_DB_USER_PASSWORD"); !ok {
+		return fmt.Errorf("envVars: TAPOO_DB_USER_PASSWORD %s", errMsg)
+	}
 
 	return nil
 }
