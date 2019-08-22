@@ -1,7 +1,6 @@
 package db
 
 import (
-	"log"
 	"os"
 	"testing"
 	"time"
@@ -14,7 +13,7 @@ import (
 func TestMain(m *testing.M) {
 	withErrorExit := func(err error) {
 		if err != nil {
-			log.Fatal(err)
+			panic(err)
 		}
 	}
 
