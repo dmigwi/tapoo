@@ -17,10 +17,14 @@ func TestMain(m *testing.M) {
 		}
 	}
 
-	withErrorExit(db.Ping())
+	config := utils.GetDBConfig()
+
+	withErrorExit(config.Ping())
+
+	withErrorExit(config.Ping())
 
 	// drop the users and the scores tables if they exist
-	_, err := db.Query("DROP TABLE IF EXISTS scores, users;")
+	_, err := config.Query("DROP TABLE IF EXISTS scores, users;")
 	withErrorExit(err)
 
 	// recreate the tables
@@ -30,14 +34,14 @@ func TestMain(m *testing.M) {
 	// load mock data users mock data
 	loadData := func(filePath, table string) error {
 		mysql.RegisterLocalFile(filePath)
-		_, err = db.Exec(`LOAD DATA LOCAL INFILE '` + filePath +
+		_, err = config.Exec(`LOAD DATA LOCAL INFILE '` + filePath +
 			`' INTO TABLE ` + table +
 			` FIELDS TERMINATED BY ',' LINES TERMINATED BY '\n' IGNORE 1 LINES;`)
 		return err
 	}
 
-	withErrorExit(loadData("sample_data_users.csv", "users"))
-	withErrorExit(loadData("sample_data_scores.csv", "scores"))
+	withErrorExit(loadData("sampleData/users.csv", "users"))
+	withErrorExit(loadData("sampleData/scores.csv", "scores"))
 
 	os.Exit(m.Run())
 }
@@ -66,7 +70,7 @@ func TestCreateLevelScore(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(data.TapooID, ShouldEqual, "06PE0LPzyCL")
 			So(data.Level, ShouldEqual, 20)
-			So(data.HighScores, ShouldEqual, 0)
+			So(data.LevelScores, ShouldEqual, 0)
 		})
 	})
 }
@@ -111,7 +115,7 @@ func TestGetLevelScore(t *testing.T) {
 			So(data.UpdateAt, ShouldHappenBefore, time.Now())
 			So(data.TapooID, ShouldEqual, "VZWeOq2p")
 			So(data.Level, ShouldEqual, 1)
-			So(data.HighScores, ShouldEqual, 533)
+			So(data.LevelScores, ShouldEqual, 533)
 		})
 	})
 }
@@ -154,7 +158,7 @@ func TestGetOrCreateLevelScore(t *testing.T) {
 			scores, err := user.GetOrCreateLevelScore()
 
 			So(err, ShouldBeNil)
-			So(scores.HighScores, ShouldEqual, 1203)
+			So(scores.LevelScores, ShouldEqual, 1203)
 			So(scores.TapooID, ShouldEqual, "06PE0LPzyCL")
 			So(scores.Email, ShouldEqual, "")
 			So(scores.Level, ShouldEqual, 3)
@@ -211,7 +215,7 @@ func TestGetTopFiveScores(t *testing.T) {
 			So(data, ShouldHaveLength, 5)
 
 			for _, item := range data {
-				So(topScores, ShouldContain, item.HighScores)
+				So(topScores, ShouldContain, item.LevelScores)
 				So(userIDs, ShouldContain, item.TapooID)
 				So(userEmails, ShouldContain, item.Email)
 			}
@@ -221,8 +225,8 @@ func TestGetTopFiveScores(t *testing.T) {
 
 // TestUpdateLevelScores tests the functionality of UpdateLevelScores
 func TestUpdateLevelScores(t *testing.T) {
-	errfunc := func(info *UserInfor, highScores int, errMsg string) {
-		err := info.UpdateLevelScore(highScores)
+	errfunc := func(info *UserInfor, LevelScores int, errMsg string) {
+		err := info.UpdateLevelScore(LevelScores)
 
 		So(err, ShouldNotBeNil)
 		So(err, ShouldImplement, (*error)(nil))
@@ -265,7 +269,7 @@ func TestUpdateLevelScores(t *testing.T) {
 			data, err := user.getLevelScore()
 
 			So(err, ShouldBeNil)
-			So(data.HighScores, ShouldEqual, 1000)
+			So(data.LevelScores, ShouldEqual, 1000)
 			So(data.Level, ShouldEqual, 1)
 		})
 	})

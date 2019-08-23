@@ -250,7 +250,7 @@ func TestExecPrepStmts(t *testing.T) {
 		Convey("query missing some arguments, a value that "+
 			"implements the error interface should be returned", func() {
 			_, _, err := execPrepStmts(noReturnVal,
-				"UPDATE scores SET high_scores = ? WHERE game_level = ? and user_id = ?;", "1000", "12")
+				"UPDATE scores SET scores = ? WHERE game_level = ? and user_id = ?;", "1000", "12")
 
 			errFunc(err, "sql: expected 3 arguments, got 2")
 		})
@@ -285,7 +285,7 @@ func TestExecPrepStmts(t *testing.T) {
 
 		Convey("noReturnVal queryType having the correct values, should return a nil error value", func() {
 			_, _, err := execPrepStmts(noReturnVal,
-				"UPDATE scores SET high_scores = ? WHERE game_level = ? and user_id = ?;", "1000", "12", "VZWeOq2p")
+				"UPDATE scores SET scores = ? WHERE game_level = ? and user_id = ?;", "1000", "12", "VZWeOq2p")
 
 			So(err, ShouldBeNil)
 
@@ -293,7 +293,7 @@ func TestExecPrepStmts(t *testing.T) {
 			data, err := user.getLevelScore()
 
 			So(err, ShouldBeNil)
-			So(data.HighScores, ShouldEqual, 1000)
+			So(data.LevelScores, ShouldEqual, 1000)
 		})
 
 		Convey("singleRow queryType having the correct values, should return the fetched data and a nil error value", func() {

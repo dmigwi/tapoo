@@ -5,13 +5,16 @@ import (
 	"log"
 	"net/http"
 	"text/template"
+
+	"github.com/dmigwi/tapoo/maze"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 //import "github.com/dmigwi/tapoo/maze"
 
 // Main defines where the program executions starts
 func main() {
-	//maze.Start()
+	maze.Start()
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./public"))))
 	http.HandleFunc("/", publicServer)
 

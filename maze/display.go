@@ -19,7 +19,7 @@ const (
 	gameOverSucceed    = "    Game Over! : Congratulations, Won by Locating the target on time.    "
 	gameOverFailed     = "      Game Over! : Ooops!!!, Failed to locate the target on time.        "
 	gameOverNavigation = "        Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed         "
-	highScores         = "                   High Scores: %d                             "
+	LevelScores        = "                   High Scores: %d                             "
 )
 
 // fill prints a string to the termbox view box on the given coordinates.
@@ -82,7 +82,7 @@ func interruptUI(msg string, config *Dimensions, data [][]string, color termbox.
 
 	scoresMsg := space
 	if !paused {
-		scoresMsg = fmt.Sprintf(highScores, scores)
+		scoresMsg = fmt.Sprintf(LevelScores, scores)
 	}
 
 	fill(xAxis, len(data)/2+6, scoresMsg, color)
