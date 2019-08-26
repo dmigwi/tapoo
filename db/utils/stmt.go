@@ -1,16 +1,8 @@
-package db
+package utils
 
 // Lists all the sql statements to be executed.
 
 const (
-	// MAX_EMAIL_LENGTH defines the maximum number of characters that can make up
-	// an email.
-	MAX_EMAIL_LENGTH = 64
-
-	// MAX_TAPOO_ID_LENGTH defines the maximum number of characters that can make
-	// up a username/tapoo ID.
-	MAX_TAPOO_ID_LENGTH = 20
-
 	// CheckTableExist checks the tables that exists in the current db.
 	CheckTableExist = `
 		SELECT TABLE_NAME FROM information_schema.tables 
@@ -21,12 +13,12 @@ const (
 	// CreateUsersTable creates the users table if it doesn't exists.
 	CreateUsersTable = `
 		CREATE TABLE IF NOT EXISTS users (
-			id VARCHAR(` + MAX_TAPOO_ID_LENGTH + `) NOT NULL, 
-			email VARCHAR(` + MAX_EMAIL_LENGTH + `) NULL, 
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, 
-			PRIMARY KEY(uuid), 
-			UNIQUE KEY(id), 
+			id VARCHAR(20) NOT NULL,
+			email VARCHAR(64) NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			PRIMARY KEY(uuid),
+			UNIQUE KEY(id),
 			KEY(email)
 		)
 		ENGINE=InnoDB DEFAULT CHARSET=latin1;`
@@ -35,16 +27,16 @@ const (
 	CreateScoresTable = `
 		CREATE TABLE IF NOT EXISTS scores (
 			uuid CHAR(36) NOT NULL,
-			user_id VARCHAR(` + MAX_TAPOO_ID_LENGTH + `) NOT NULL, 
+			user_id VARCHAR(20) NOT NULL,
 			game_level INT  DEFAULT 0,
 			level_scores INT DEFAULT 0,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-			PRIMARY KEY(uuid), 
+			PRIMARY KEY(uuid),
 			FOREIGN KEY(user_id) REFERENCES users(id),
 			KEY(game_level),
 			KEY(level_scores),
-			UNIQUE(user_id, game_level) 
+			UNIQUE(user_id, game_level)
 		)
 		ENGINE=InnoDB DEFAULT CHARSET=latin1;`
 	

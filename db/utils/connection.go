@@ -1,4 +1,4 @@
-package db
+package utils
 
 import (
 	"database/sql"
@@ -12,25 +12,29 @@ import (
 // The database connection is genarated here. If required tables do not exits
 // they are automatically on db package initialization.
 
-const errMsg = "envVars: %s environment variable is not set"
-
-// dbConfig defines the database configuration.
-type dbConfig struct {
+// DbConfig defines the database configuration.
+type DbConfig struct {
 	dbHost         string // set from  "TAPOO_DB_HOST" env value
 	dbName         string // set from  "TAPOO_DB_NAME" env value
 	dbUserName     string // set from  "TAPOO_DB_USER_NAME" env value
 	dbUserPassword string // set from  "TAPOO_DB_USER_PASSWORD" env value
 
-	mtx sync.Mutex
-	dbConn *sql.DB
+	DbConn *sql.DB
+	mtx    sync.Mutex
 }
 
-// Creating the dbConfig instance here guarrantees that only one db connection
+// queries lists the tables mapped to the specific sql query that sets its up.
+var queries = map[string]string{
+	"users":  CreateUsersTable,
+	"scores": CreateScoresTable,
+}
+
+// Creating the DbConfig instance here guarrantees that only one db connection
 // instance that can exist through a running project instance.
-var config  *dbConfig
+var config *DbConfig
 
 // createDbConnection creates db connection and checks if its active.
-func (config *dbConfig) createDbConnection() error {
+func (config *DbConfig) createDbConnection() error {
 	db, err := sql.Open("mysql",
 		fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true&loc=UTC",
 			config.dbUserName, config.dbUserPassword, config.dbHost, config.dbName))
@@ -42,35 +46,37 @@ func (config *dbConfig) createDbConnection() error {
 		return fmt.Errorf("db connection error: %s", err.Error())
 	}
 
+	config.DbConn = db
+
 	return nil
 }
 
-// CheckTablesExit checks if the users and scores tables exists in the db 
+// CheckTablesExit checks if the users and scores tables exists in the db
 // otherwise they are created.
-func (config *dbConfig) CheckTablesExit() error {
+func (config *DbConfig) CheckTablesExit() error {
 	var result string
 
-	queries := map[string]string{ 
-		"users": CreateUsersTable, 
-		"scores": CreateScoresTable,
-	}
-
 	// Table users should always be created before table scores.
-	for _, t := range []string{ "users", "scores" } {
-		err := config.dbConn.QueryRow(CheckTableExist, config.dbName, t).Scan(&result)
+	for _, t := range []string{"users", "scores"} {
+		query, ok := queries[t]
+		if !ok {
+			return fmt.Errorf("table %s is missing", t)
+		}
+
+		err := config.DbConn.QueryRow(CheckTableExist, config.dbName, t).Scan(&result)
 		if err == nil {
 			continue
 		}
 
 		if strings.Contains(err.Error(), "no rows in result set") {
-			_, err = config.dbConn.Query(queries[t])
+			_, err = config.DbConn.Query(query)
 		}
 
 		if err != nil {
 			return err
 		}
 
-		fmt.Printf("Table '%s' successfully created \n", t)
+		log.Printf("Table '%s' successfully created \n", t)
 	}
 
 	return nil
@@ -78,9 +84,10 @@ func (config *dbConfig) CheckTablesExit() error {
 
 // getEnvVars fetches the database configuration from the set environment variables.
 // An error message is returned if any of the environment is found missing.
-func (config *dbConfig) getEnvVars() error {
+func (config *DbConfig) getEnvVars() error {
 	var ok bool
 	var dbName, dbUserName, dbUserPassword, dbHost string
+	var errMsg = "envVars: %s environment variable is not set"
 
 	if dbName, ok = os.LookupEnv("TAPOO_DB_NAME"); !ok {
 		return fmt.Errorf(errMsg, "TAPOO_DB_NAME")
@@ -109,14 +116,19 @@ func (config *dbConfig) getEnvVars() error {
 // setUpDB creates the tables if they don't exits provided the db connection exists.
 // If the db does not the exist yet, the function should exit with an error.
 func setUpDB() error {
-	config = new(dbConfig)
+	// Create a new config pointer reference if none existed before
+	// otherwise just reset the current connection config values.
+	if config == nil {
+		config = new(DbConfig)
+	}
+
 	if err := config.getEnvVars(); err != nil {
 		return err
 	}
 
 	if err := config.createDbConnection(); err != nil {
 		return err
-	} 
+	}
 
 	if err := config.CheckTablesExit(); err != nil {
 		return err
@@ -128,13 +140,19 @@ func setUpDB() error {
 // This init function should run when the db packages is initialized.
 func init() {
 	if err := setUpDB(); err != nil {
-		log.Fatal(err)
+		log.Fatalf("Missing DB Config: %v", err)
 	}
 }
 
-// GetDBConfig returns the active db connection instance.
-func GetDBConfig() *sql.DB {
+// GetDBConfig returns the current active db connection instance.
+func GetDBConfig() (*DbConfig, error) {
 	config.mtx.Lock()
 	defer config.mtx.Unlock()
-	return config.dbConn
+
+	var err error
+	if config.DbConn == nil {
+		log.Println("Resetting the db connection instance")
+		err = setUpDB()
+	}
+	return config, err
 }
