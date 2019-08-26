@@ -3,337 +3,428 @@
 package db
 
 import (
-	"database/sql"
-	"reflect"
+	"strings"
 	"testing"
 	"time"
-
-	. "github.com/smartystreets/goconvey/convey"
 )
 
 // TestCreateUser tests the functionality of createUser
 func TestCreateUser(t *testing.T) {
-	Convey("TestCreateUser: Given the UserInfor when creating a user with", t, func() {
-		Convey("values that already exist in the database, a value that implements an error"+
-			" interface should be returned", func() {
-			user := &UserInfor{TapooID: "FbnnuznkFAN"}
-			err := user.createUser("ea49be59-b553-430c-a706-7860dcb3ea12")
+	type testData struct {
+		testName  string
+		user      *UserInfo
+		errSubStr string
+	}
 
-			So(err, ShouldNotBeNil)
-			So(err, ShouldImplement, (*error)(nil))
-			So(err.Error(), ShouldContainSubstring, "Duplicate entry 'ea49be59-b553-430c-a706-7860dcb3ea12'")
+	td := []testData{
+		{
+			testName:  "duplicate_user_id",
+			user:      &UserInfo{TapooID: "dmigwi"},
+			errSubStr: "Duplicate entry 'dmigwi'",
+		},
+		{
+			testName:  "empty_user_id",
+			user:      &UserInfo{TapooID: ""},
+			errSubStr: "empty Tapoo ID",
+		},
+		{
+			testName:  "too_long_user_id",
+			user:      &UserInfo{TapooID: "this-is-a-very-long-user-id"},
+			errSubStr: "too long Tapoo ID",
+		},
+		{
+			testName: "too_long_email",
+			user: &UserInfo{
+				TapooID: "prince-charles",
+				Email:   "charles-philip-arthur-george-mountbatten-windsor@royalfamily.co.uk",
+			},
+			errSubStr: "too long Email",
+		},
+		{
+			testName: "pass_correct_parameters",
+			user:     &UserInfo{TapooID: "msupaS"},
+		},
+	}
+
+	for _, d := range td {
+		t.Run(d.testName, func(t *testing.T) {
+			err := d.user.createUser()
+			if (err == nil) && d.errSubStr != "" {
+				t.Fatalf("expected no error but found: %v", err)
+			}
+
+			if (err != nil) && strings.Contains(err.Error(), d.errSubStr) {
+				t.Fatalf("expected error to contain (%v) but found (%v)", d.errSubStr, err)
+			}
+
+			if err == nil {
+				// User creation must have been successful.
+				newUser := &UserInfo{TapooID: d.user.TapooID}
+				data, err := newUser.getUser()
+				if (err != nil) || (data == nil) {
+					t.Fatalf("expect the user creation to have been successful but it wasn't: %v", err)
+				}
+
+				if data.User.Email != d.user.Email {
+					t.Fatalf("expected the user id to be %s but found %s", d.user.Email, data.User.Email)
+				}
+
+				var timeNow = time.Now()
+				if timeNow.After(data.CreatedAt) {
+					t.Fatalf("expected the user to have been created before %v but was created on %v", timeNow, data.CreatedAt)
+				}
+				if timeNow.After(data.UpdateAt) {
+					t.Fatalf("expected the user to have been updated before %v but was updated on %v", timeNow, data.UpdateAt)
+				}
+			}
 		})
-
-		Convey("values that have no invalid characters, a nil error value should"+
-			" be returned", func() {
-			user := &UserInfor{TapooID: "9a9a-7a9a5808e086", Email: "test@naihub.com"}
-			err := user.createUser("f538ab54-1692-41bf-9a9a-7a98808e086d")
-
-			So(err, ShouldBeNil)
-
-			data, err := user.getUser()
-
-			So(err, ShouldBeNil)
-			So(data.TapooID, ShouldEqual, "9a9a-7a9a5808e086")
-			So(data.Email, ShouldEqual, "test@naihub.com")
-		})
-	})
+	}
 }
 
 // TestGetUser tests the functionality of getUser
 func TestGetUser(t *testing.T) {
-	errFunc := func(user *UserInfor, errMsg string) {
-		data, err := user.getUser()
-
-		So(err, ShouldNotBeNil)
-		So(data, ShouldResemble, new(UserInfoResponse))
-		So(err, ShouldImplement, (*error)(nil))
-		So(err.Error(), ShouldContainSubstring, errMsg)
+	type testData struct {
+		testName  string
+		user      *UserInfo
+		errSubStr string
+		result    UserInfoResponse
 	}
 
-	Convey("TestGetUser: Given the UserInfor when fetching a user with", t, func() {
-		Convey("the tapoo id provided that does not exist, a value that implements an error"+
-			" interface should be returned", func() {
-			user := &UserInfor{Level: 23, TapooID: "fake_sample_id"}
+	td := []testData{
+		{
+			testName:  "empty_user_id",
+			user:      &UserInfo{TapooID: ""},
+			errSubStr: "missing Tapoo ID",
+		},
+		{
+			testName:  "too_long_user_id",
+			user:      &UserInfo{TapooID: "this-is-a-very-long-user-id"},
+			errSubStr: "too long Tapoo ID",
+		},
+		{
+			testName:  "missing_user_id",
+			user:      &UserInfo{TapooID: "fake_sample_id"},
+			errSubStr: "missing Tapoo ID",
+		},
+		{
+			testName: "fetch_using_correct_parameters",
+			user:     &UserInfo{TapooID: "dmigwi"},
+			result: UserInfoResponse{
+				User: UserInfo{
+					TapooID: "dmigwi",
+					Email:   "dmigwi@niahub.com",
+				},
+			},
+		},
+	}
 
-			errFunc(user, "sql: no rows in result set")
+	for _, d := range td {
+		t.Run(d.testName, func(t *testing.T) {
+			data, err := d.user.getUser()
+			if (err == nil) && d.errSubStr != "" {
+				t.Fatalf("expected no error but found: %v", err)
+			}
+
+			if (err != nil) && strings.Contains(err.Error(), d.errSubStr) {
+				t.Fatalf("expected error to contain (%v) but found (%v)", d.errSubStr, err)
+			}
+
+			if data != nil {
+				if data.User.TapooID != d.result.User.TapooID {
+					t.Fatalf("expected the user id to be %s but found %s", d.result.User.TapooID, data.User.TapooID)
+				}
+				if data.User.Email != d.result.User.Email {
+					t.Fatalf("expected the user id to be %s but found %s", d.result.User.Email, data.User.Email)
+				}
+
+				var timeNow = time.Now()
+				if timeNow.After(data.CreatedAt) {
+					t.Fatalf("expected the user to have been created before %v but was created on %v", timeNow, data.CreatedAt)
+				}
+				if timeNow.After(data.UpdateAt) {
+					t.Fatalf("expected the user to have been updated before %v but was updated on %v", timeNow, data.UpdateAt)
+				}
+			}
 		})
-
-		Convey("closed db connections, a value that implements an error interface should"+
-			" be returned", func() {
-			copyOfDb := cloneDb()
-			db.Close()
-			user := &UserInfor{Level: 2, TapooID: "fake_sample_id"}
-			data, err := user.getUser()
-
-			db = copyOfDb
-
-			So(db.Ping(), ShouldBeNil)
-
-			So(err, ShouldNotBeNil)
-			So(data, ShouldBeNil)
-			So(err, ShouldImplement, (*error)(nil))
-			So(err.Error(), ShouldContainSubstring, "sql: database is closed")
-		})
-
-		Convey("the values used are properly escaped and the tapoo id exists in the db, "+
-			"a nil error value should be returned", func() {
-			user := &UserInfor{Level: 18, TapooID: "GzlWAL0mP"}
-
-			data, err := user.getUser()
-
-			So(err, ShouldBeNil)
-			So(data.CreatedAt, ShouldHappenBefore, time.Now())
-			So(data.UpdateAt, ShouldHappenBefore, time.Now())
-			So(data.Email, ShouldEqual, "ckumaar0@tripod.com")
-			So(data.TapooID, ShouldEqual, "GzlWAL0mP")
-		})
-	})
+	}
 }
 
 // TestGetOrCreateUser tests the functionality of GetOrCreateUser
 func TestGetOrCreateUser(t *testing.T) {
-	errFunc := func(user *UserInfor, errMsg string) {
-		data, err := user.GetOrCreateUser()
-
-		So(err, ShouldNotBeNil)
-		So(data, ShouldBeNil)
-		So(err, ShouldImplement, (*error)(nil))
-		So(err.Error(), ShouldContainSubstring, errMsg)
+	type testData struct {
+		testName  string
+		user      *UserInfo
+		errSubStr string
+		result    UserInfoResponse
 	}
 
-	Convey("TestGetOrCreateUser: Given the UserInfor when fetching or creating"+
-		" a user with", t, func() {
-		Convey("the empty tapoo ID, a value that implements an error interface"+
-			" should be returned", func() {
-			user := &UserInfor{TapooID: ""}
+	td := []testData{
+		{
+			testName:  "empty_user_id",
+			user:      &UserInfo{TapooID: ""},
+			errSubStr: "invalid Tapoo ID found : '(empty)'",
+		},
+		{
+			testName:  "too_long_user_id",
+			user:      &UserInfo{TapooID: "this-is-a-very-long-user-id"},
+			errSubStr: "too long Tapoo ID",
+		},
+		{
+			testName: "too_long_email",
+			user: &UserInfo{
+				TapooID: "prince-charles",
+				Email:   "charles-philip-arthur-george-mountbatten-windsor@royalfamily.co.uk",
+			},
+			errSubStr: "too long Email",
+		},
+		{
+			testName: "fetch_newly_created_user_without_email",
+			user:     &UserInfo{TapooID: "user_without_email"},
+			result: UserInfoResponse{
+				User: UserInfo{TapooID: "user_without_email"},
+			},
+		},
+		{
+			testName: "fetch_newly_created_user_with_email",
+			user:     &UserInfo{TapooID: "user_with_email", Email: "new.email@test.co.ke"},
+			result: UserInfoResponse{
+				User: UserInfo{TapooID: "user_with_email", Email: "new.email@test.co.ke"},
+			},
+		},
+		{
+			testName: "fetch_using_correct_parameters",
+			user:     &UserInfo{TapooID: "dmigwi"},
+			result: UserInfoResponse{
+				User: UserInfo{
+					TapooID: "dmigwi",
+					Email:   "dmigwi@niahub.com",
+				},
+			},
+		},
+	}
 
-			errFunc(user, "invalid Tapoo ID found : '(empty)'")
+	for _, d := range td {
+		t.Run(d.testName, func(t *testing.T) {
+			data, err := d.user.getUser()
+			if (err == nil) && d.errSubStr != "" {
+				t.Fatalf("expected no error but found: %v", err)
+			}
+
+			if (err != nil) && strings.Contains(err.Error(), d.errSubStr) {
+				t.Fatalf("expected error to contain (%v) but found (%v)", d.errSubStr, err)
+			}
+
+			if data != nil {
+				if data.User.TapooID != d.result.User.TapooID {
+					t.Fatalf("expected the user id to be %s but found %s", d.result.User.TapooID, data.User.TapooID)
+				}
+				if data.User.Email != d.result.User.Email {
+					t.Fatalf("expected the user id to be %s but found %s", d.result.User.Email, data.User.Email)
+				}
+
+				var timeNow = time.Now()
+				if timeNow.After(data.CreatedAt) {
+					t.Fatalf("expected the user to have been created before %v but was created on %v", timeNow, data.CreatedAt)
+				}
+				if timeNow.After(data.UpdateAt) {
+					t.Fatalf("expected the user to have been updated before %v but was updated on %v", timeNow, data.UpdateAt)
+				}
+			}
 		})
-
-		Convey("the tapoo ID longer that 64 characters, a value that implements an error"+
-			"interface should be returned", func() {
-			user := &UserInfor{TapooID: "2af80406-5be2-4569-afba-b14e861-2af81406-5b42-893d-afba-6734grywu"}
-
-			errFunc(user, "invalid Tapoo ID found : '2af80406-5... (Too long)'")
-		})
-
-		Convey("the email longer than 64 characters, a value that implements an error"+
-			" interface should be returned", func() {
-			user := &UserInfor{TapooID: "SWfddew34",
-				Email: "2af80406-5be2-4569-afba-b14e861-2af81406-5b42-893d-a3f@niahub.com"}
-
-			errFunc(user, "invalid Email found : '2af80406-5... (Too long)'")
-		})
-
-		Convey("the db connection that is invalid, a value that implements an error"+
-			" interface should be returned", func() {
-			copyOfDb := cloneDb()
-			user := &UserInfor{TapooID: "SWfddew34"}
-
-			db.Close()
-			data, err := user.GetOrCreateUser()
-			db = copyOfDb
-
-			So(db.Ping(), ShouldBeNil)
-
-			So(err, ShouldNotBeNil)
-			So(data, ShouldBeNil)
-			So(err, ShouldImplement, (*error)(nil))
-			So(err.Error(), ShouldContainSubstring, "sql: database is closed")
-		})
-
-		Convey("the correct user infor used and the database connection is not invalid"+
-			" the error value returned should be a nil value", func() {
-			user := &UserInfor{TapooID: "FANVZWeOq2p"}
-			data, err := user.GetOrCreateUser()
-
-			So(err, ShouldBeNil)
-			So(data.Email, ShouldEqual, "test.user@naihub.com")
-			So(data.TapooID, ShouldEqual, "FANVZWeOq2p")
-			So(data.CreatedAt, ShouldHappenBefore, time.Now())
-			So(data.UpdateAt, ShouldHappenBefore, time.Now())
-		})
-	})
+	}
 }
 
 // TestUpdateUser tests the functionality of UpdateUser
 func TestUpdateUser(t *testing.T) {
-	errFunc := func(user *UserInfor, errMsg string) {
-		err := user.UpdateUser()
-
-		So(err, ShouldNotBeNil)
-		So(err, ShouldImplement, (*error)(nil))
-		So(err.Error(), ShouldContainSubstring, errMsg)
+	type testData struct {
+		testName  string
+		user      *UserInfo
+		errSubStr string
 	}
 
-	Convey("TestUpdateUser: Given the UserInfor while updating the user with", t, func() {
-		Convey("the empty tapoo ID, a value that implements the error interface is"+
-			" returned", func() {
-			user := &UserInfor{TapooID: "", Email: "sample_user@naihub.com"}
+	td := []testData{
+		{
+			testName:  "duplicate_user_id",
+			user:      &UserInfo{TapooID: "dmigwi"},
+			errSubStr: "Duplicate entry 'dmigwi'",
+		},
+		{
+			testName:  "empty_user_id",
+			user:      &UserInfo{TapooID: ""},
+			errSubStr: "empty Tapoo ID",
+		},
+		{
+			testName:  "too_long_user_id",
+			user:      &UserInfo{TapooID: "this-is-a-very-long-user-id"},
+			errSubStr: "too long Tapoo ID",
+		},
+		{
+			testName: "too_long_email",
+			user: &UserInfo{
+				TapooID: "prince-charles",
+				Email:   "charles-philip-arthur-george-mountbatten-windsor@royalfamily.co.uk",
+			},
+			errSubStr: "too long Email",
+		},
+		{
+			testName:  "empty_email",
+			user:      &UserInfo{TapooID: "rghirardi7"},
+			errSubStr: "empty_email",
+		},
+		{
+			testName:  "update_a_missing_user_id",
+			user:      &UserInfo{TapooID: "ironman", Email: "iron.man@gamer.net"},
+			errSubStr: "missing_user_id",
+		},
+		{
+			testName: "correct_parameters_are_used",
+			user:     &UserInfo{TapooID: "rghirardi7", Email: "iron.man@gamer.net"},
+		},
+	}
 
-			errFunc(user, "invalid Tapoo ID found : '(empty)'")
+	for _, d := range td {
+		t.Run(d.testName, func(t *testing.T) {
+			err := d.user.UpdateUserEmail()
+			if (err == nil) && d.errSubStr != "" {
+				t.Fatal("expected an error but found none")
+			}
+
+			if (err != nil) && strings.Contains(err.Error(), d.errSubStr) {
+				t.Fatalf("expected error to contain (%v) but found (%v)", d.errSubStr, err)
+			}
+
+			if err == nil {
+				// Update must have been successful.
+				newUser := &UserInfo{TapooID: d.user.TapooID}
+				data, err := newUser.getUser()
+				if (err != nil) || (data == nil) {
+					t.Fatalf("expect the email update to have been successful but it wasn't: %v", err)
+				}
+
+				if data.User.Email != d.user.Email {
+					t.Fatalf("expected the user id to be %s but found %s", d.user.Email, data.User.Email)
+				}
+
+				var timeNow = time.Now()
+				if timeNow.After(data.CreatedAt) {
+					t.Fatalf("expected the user to have been created before %v but was created on %v", timeNow, data.CreatedAt)
+				}
+				if timeNow.After(data.UpdateAt) {
+					t.Fatalf("expected the user to have been updated before %v but was updated on %v", timeNow, data.UpdateAt)
+				}
+			}
 		})
-
-		Convey("the tapoo ID having more that 64 characters, a value that implements"+
-			" the error interface is returned", func() {
-			user := &UserInfor{Email: "sample_user@naihub.com",
-				TapooID: "2af80406-5be2-4569-afba-b14e861-2af81406-5b42-893d-afba-6734grywu"}
-
-			errFunc(user, "invalid Tapoo ID found : '2af80406-5... (Too long)'")
-		})
-
-		Convey("the empty email, a value that implements the error interface is"+
-			" returned", func() {
-			user := &UserInfor{TapooID: "f80406-5be2", Email: ""}
-
-			errFunc(user, "invalid Email found : '(empty)'")
-		})
-
-		Convey("the email having more that 64 characters, a value that implements"+
-			" the error interface is returned", func() {
-			user := &UserInfor{TapooID: "SWfddew34",
-				Email: "2af80406-5be2-4569-afba-b14e861-2af81406-5b42-893d-a3f@niahub.com"}
-
-			errFunc(user, "invalid Email found : '2af80406-5... (Too long)'")
-		})
-
-		Convey("the correct values used, a nil value error should be returned", func() {
-			user := &UserInfor{TapooID: "Vf2TqN5MB", Email: "sample_user@naihub.com"}
-			err := user.UpdateUser()
-
-			So(err, ShouldBeNil)
-
-			data, err := user.getUser()
-
-			So(err, ShouldBeNil)
-			So(data.Email, ShouldEqual, "sample_user@naihub.com")
-			So(data.TapooID, ShouldEqual, "Vf2TqN5MB")
-		})
-	})
+	}
 }
 
 // TestExecPrepStmts tests the functionality of execPrepStmts
 func TestExecPrepStmts(t *testing.T) {
-	errFunc := func(err error, errMsg string) {
-		So(err, ShouldNotBeNil)
-		So(err, ShouldImplement, (*error)(nil))
-		So(err.Error(), ShouldContainSubstring, errMsg)
+	type testData struct {
+		testName  string
+		queryType int
+		query     string
+		params    []interface{}
+		errSubStr string
+		rowsCount int
+		rowCount  int
 	}
 
-	Convey("TestExecPrepStmts: Given a query and its other metadata with", t, func() {
-		Convey("closed database connection, a value that implements an error interface should be returned", func() {
-			copyOfDb := cloneDb()
-			db.Close()
+	td := []testData{
+		{
+			testName:  "invalid_query_type",
+			queryType: 50,
+			query:     "SELECT * FROM users;",
+			params:    []interface{}{""},
+			errSubStr: "invalid queryType found : '50'",
+		},
+		{
+			testName:  "query_missing_some_arguments",
+			queryType: singleRow,
+			query:     "SELECT email FROM users WHERE id = ?",
+			errSubStr: "sql: expected 0 arguments, got 1",
+		},
+		{
+			testName:  "query_having_extra_arguments",
+			queryType: singleRow,
+			query:     "SELECT email FROM users WHERE id LIKE ?;",
+			params:    []interface{}{"d", "a"},
+			errSubStr: "sql: expected 1 arguments, got 2",
+		},
+		{
+			testName:  "query_with_syntax_error",
+			queryType: singleRow,
+			query:     "SELECT email users WHERE id LIKE ?;",
+			params:    []interface{}{"d"},
+			errSubStr: "Error 1064: You have an error in your SQL syntax;",
+		},
+		{
+			testName:  "incorrect_noReturn_query_type_set",
+			queryType: noReturnVal,
+			query:     "SELECT email FROM users LIMIT 3",
+			params:    []interface{}{""},
+			errSubStr: "invalid query type 0 set",
+		},
+		{
+			testName:  "incorrect_singleRow_query_type_set",
+			queryType: singleRow,
+			query:     "SELECT email FROM users LIMIT 3;",
+			params:    []interface{}{""},
+			errSubStr: "invalid query type 1 set",
+		},
+		{
+			testName:  "incorrect_multiRow_query_type_set",
+			queryType: singleRow,
+			query:     "SELECT email FROM users LIMIT 1;",
+			params:    []interface{}{""},
+			errSubStr: "invalid query type 2 set",
+		},
+		{
+			testName:  "correct_noReturn_query_type_set",
+			queryType: noReturnVal,
+			query:     "UPDATE scores SET scores = ? WHERE game_level = ? and user_id = ?;",
+			params:    []interface{}{1000000, 74, "dmigwi"},
+		},
+		{
+			testName:  "correct_singleRow_query_type_set",
+			queryType: singleRow,
+			query:     "SELECT email FROM users WHERE id = ?",
+			params:    []interface{}{"dmigwi"},
+			rowCount:  1,
+		},
+		{
+			testName:  "correct_multiRow_query_type_set",
+			queryType: multiRows,
+			query:     "SELECT * FROM users;",
+			params:    []interface{}{""},
+			rowsCount: 10,
+		},
+	}
 
-			rows, _, err := execPrepStmts(multiRows, "SELECT * FROM users;", "")
-			db = copyOfDb
-
-			So(rows, ShouldBeNil)
-
-			errFunc(err, "sql: database is closed")
-
-			// Re-establish a connection if necessary
-			So(db.Ping(), ShouldBeNil)
-		})
-
-		Convey("singleRow queryType found no resultSet data match, a value that "+
-			"implements the error interface should be returned", func() {
-			_, row, err := execPrepStmts(singleRow, "SELECT email FROM users WHERE id = ?;", "VZW7274Oq2p")
-
-			So(row, ShouldNotBeNil)
-			So(err, ShouldBeNil)
-
-			err = row.Scan(nil)
-
-			errFunc(err, "sql: no rows in result set")
-		})
-
-		Convey("query missing some arguments, a value that "+
-			"implements the error interface should be returned", func() {
-			_, _, err := execPrepStmts(noReturnVal,
-				"UPDATE scores SET scores = ? WHERE game_level = ? and user_id = ?;", "1000", "12")
-
-			errFunc(err, "sql: expected 3 arguments, got 2")
-		})
-
-		Convey("query missing the only argument, a value that "+
-			"implements the error interface should be returned", func() {
-			_, row, err := execPrepStmts(singleRow, "SELECT email FROM users WHERE id = ?")
-
-			So(row, ShouldNotBeNil)
-			So(err, ShouldBeNil)
-
-			err = row.Scan(nil)
-
-			errFunc(err, "Error 1064: You have an error in your SQL syntax;")
-		})
-
-		Convey("query having extra arguments, a value that "+
-			"implements the error interface should be returned", func() {
-			rows, _, err := execPrepStmts(multiRows, "SELECT email FROM users WHERE id LIKE ?;", "V", "S")
-
-			So(rows, ShouldBeNil)
-
-			errFunc(err, "sql: expected 1 arguments, got 2")
-		})
-
-		Convey("queryType that is non existent, a value that "+
-			"implements the error interface should be returned", func() {
-			_, _, err := execPrepStmts(5, "SELECT email FROM users")
-
-			errFunc(err, "invalid queryType found : '5'")
-		})
-
-		Convey("noReturnVal queryType having the correct values, should return a nil error value", func() {
-			_, _, err := execPrepStmts(noReturnVal,
-				"UPDATE scores SET scores = ? WHERE game_level = ? and user_id = ?;", "1000", "12", "VZWeOq2p")
-
-			So(err, ShouldBeNil)
-
-			user := &UserInfor{Level: 12, TapooID: "VZWeOq2p"}
-			data, err := user.getLevelScore()
-
-			So(err, ShouldBeNil)
-			So(data.LevelScores, ShouldEqual, 1000)
-		})
-
-		Convey("singleRow queryType having the correct values, should return the fetched data and a nil error value", func() {
-			d := UserInfoResponse{}
-			_, row, err := execPrepStmts(singleRow, "SELECT email FROM users WHERE id = ?;", "VZWeOq2p")
-			So(err, ShouldBeNil)
-
-			err = row.Scan(&d.Email)
-
-			So(err, ShouldBeNil)
-			So(d.Email, ShouldEqual, "asainsberry4@amazon.com")
-		})
-
-		Convey("multiRows queryType having the correct values, should return the fetched data and a nil value error", func() {
-			rows, _, err := execPrepStmts(multiRows, "SELECT email FROM users LIMIT 5;")
-
-			So(err, ShouldBeNil)
-
-			count := 0
-
-			for rows.Next() {
-				count++
+	for _, d := range td {
+		t.Run(d.testName, func(t *testing.T) {
+			rows, row, err := execPrepStmts(d.queryType, d.query, d.params)
+			if (err == nil) && d.errSubStr != "" {
+				t.Fatal("expected an error but found none")
 			}
 
-			So(count, ShouldEqual, 5)
-		})
-	})
-}
+			if (err != nil) && strings.Contains(err.Error(), d.errSubStr) {
+				t.Fatalf("expected error to contain (%v) but found (%v)", d.errSubStr, err)
+			}
 
-// cloneDb makes a deep copy of the database connection
-// that is used exclusively for testing.
-func cloneDb() *sql.DB {
-	x := reflect.ValueOf(db)
-	copy := &sql.DB{}
-	starX := x.Elem()
-	y := reflect.New(starX.Type())
-	starY := y.Elem()
-	starY.Set(starX)
-	reflect.ValueOf(copy).Elem().Set(y.Elem())
-	return copy
+			if row != nil && d.rowCount != 1 {
+				t.Fatal("expected to find one row but none was returned")
+			}
+
+			if rows != nil {
+				count := 0
+				for rows.Next() {
+					count++
+				}
+
+				if count != d.rowsCount {
+					t.Fatalf("expect to find rows %d but found %d", d.rowsCount, count)
+				}
+			}
+		})
+	}
 }

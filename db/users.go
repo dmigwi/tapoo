@@ -91,9 +91,9 @@ func (u *UserInfo) GetOrCreateUser() (*UserInfoResponse, error) {
 	return u.getUser()
 }
 
-// UpdateUser should update the tapoo user information, the email should not be
+// UpdateUserEmail should update the tapoo user information, the email should not be
 // empty otherwise an error will be returned.
-func (u *UserInfo) UpdateUser() error {
+func (u *UserInfo) UpdateUserEmail() error {
 	if err := u.validateUserID(); err != nil {
 		return err
 	}

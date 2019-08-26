@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dmigwi/tapoo/db/utils"
 	"github.com/go-sql-driver/mysql"
@@ -53,7 +54,7 @@ func TestCreateLevelScore(t *testing.T) {
 	type testData struct {
 		testName  string
 		uuid      string
-		user      *UserInfor
+		user      *UserInfo
 		errSubStr string
 	}
 
@@ -61,18 +62,18 @@ func TestCreateLevelScore(t *testing.T) {
 		{
 			testName:  "create_duplicate_game_level_entry",
 			uuid:      "sample_uuid_value",
-			user:      &UserInfor{TapooID: "rghirardi7", Level: 98},
+			user:      &UserInfo{TapooID: "rghirardi7", Level: 98},
 			errSubStr: "Duplicate entry 'rghirardi7' for key 'user_id'",
 		},
 		{
 			testName: "create_correct_entry",
 			uuid:     "sample_unique_uuid_value",
-			user:     &UserInfor{TapooID: "dmigwi", Level: 20},
+			user:     &UserInfo{TapooID: "dmigwi", Level: 20},
 		},
 		{
 			testName:  "too_long_user_id",
 			uuid:      "sample_unique_uuid_value",
-			user:      &UserInfor{TapooID: "this_should_be_greater_than_20_characters", Level: 150},
+			user:      &UserInfo{TapooID: "this_should_be_greater_than_20_characters", Level: 150},
 			errSubStr: "'user_id' value provided exceeds 20 characters",
 		},
 	}
@@ -87,6 +88,36 @@ func TestCreateLevelScore(t *testing.T) {
 			if (err != nil) && strings.Contains(err.Error(), d.errSubStr) {
 				t.Fatalf("expected error to contain (%v) but found (%v)", d.errSubStr, err)
 			}
+
+			if err != nil {
+				// Creating a new Level entry must have been successful.
+				newUser := &UserInfo{TapooID: d.user.TapooID, Level: d.user.Level}
+				data, err := newUser.getLevelScore()
+
+				if err != nil {
+					t.Fatalf("expected no error but found %v", err)
+				}
+
+				if data.User.TapooID != d.user.TapooID {
+					t.Fatalf("expected user_id %s but found %s", d.user.TapooID, data.User.TapooID)
+				}
+
+				if data.User.Email != d.user.Email {
+					t.Fatalf("expected email %s but found %s", d.user.Email, data.User.Email)
+				}
+
+				if data.User.Level != d.user.Level {
+					t.Fatalf("expected game level %d but found %d", d.user.Level, data.User.Level)
+				}
+
+				var timeNow = time.Now()
+				if timeNow.After(data.CreatedAt) {
+					t.Fatalf("expected the user to have been created before %v but was created on %v", timeNow, data.CreatedAt)
+				}
+				if timeNow.After(data.UpdateAt) {
+					t.Fatalf("expected the user to have been updated before %v but was updated on %v", timeNow, data.UpdateAt)
+				}
+			}
 		})
 	}
 }
@@ -95,25 +126,26 @@ func TestCreateLevelScore(t *testing.T) {
 func TestGetLevelScore(t *testing.T) {
 	type testData struct {
 		testName  string
-		user      *UserInfor
+		user      *UserInfo
 		errSubStr string
-		result    *LevelScoreResponse
+		result    LevelScoreResponse
 	}
 
 	td := []testData{
 		{
 			testName:  "user_id_does_not_exists",
-			user:      &UserInfor{TapooID: "none-existent-ID", Level: 20},
+			user:      &UserInfo{TapooID: "none-existent-ID", Level: 20},
 			errSubStr: "'none-existent-ID' user_id provided does not exists",
-			result:    nil,
 		},
 		{
 			testName: "fetch_correctly_data_that_already_exists",
-			user:     &UserInfor{TapooID: "mmaxwell0", Level: 2},
-			result: &LevelScoreResponse{
-				TapooID:     "mmaxwell0",
-				Email:       "asainsberry4@amazon.com",
-				Level:       2,
+			user:     &UserInfo{TapooID: "mmaxwell0", Level: 2},
+			result: LevelScoreResponse{
+				User: UserInfo{
+					TapooID: "mmaxwell0",
+					Email:   "asainsberry4@amazon.com",
+					Level:   2,
+				},
 				LevelScores: 785578,
 			},
 		},
@@ -130,29 +162,29 @@ func TestGetLevelScore(t *testing.T) {
 				t.Fatalf("expected error to contain (%v) but found (%v)", d.errSubStr, err)
 			}
 
-			if (data == nil) && (d.result != nil) {
-				t.Fatal("expected a none nil result to be returned but its wasn't")
-			}
-
-			if (data != nil) && (d.result == nil) {
-				t.Fatal("expected a nil data result to be returned but it wasn't")
-			}
-
-			if (data != nil) && (d.result != nil) {
-				if data.TapooID != d.result.TapooID {
-					t.Fatalf("expected user_id %s but found %s", d.result.TapooID, data.TapooID)
+			if data != nil {
+				if data.User.TapooID != d.result.User.TapooID {
+					t.Fatalf("expected user_id %s but found %s", d.result.User.TapooID, data.User.TapooID)
 				}
 
-				if data.Email != d.result.Email {
-					t.Fatalf("expected email %s but found %s", d.result.Email, data.Email)
+				if data.User.Email != d.result.User.Email {
+					t.Fatalf("expected email %s but found %s", d.result.User.Email, data.User.Email)
 				}
 
-				if data.Level != d.result.Level {
-					t.Fatalf("expected game level %s but found %s", d.result.Level, data.Level)
+				if data.User.Level != d.result.User.Level {
+					t.Fatalf("expected game level %d but found %d", d.result.User.Level, data.User.Level)
 				}
 
 				if data.LevelScores != d.result.LevelScores {
-					t.Fatalf("expected user_id %s but found %s", d.result.LevelScores, data.LevelScores)
+					t.Fatalf("expected user_id %d but found %d", d.result.LevelScores, data.LevelScores)
+				}
+
+				var timeNow = time.Now()
+				if timeNow.After(data.CreatedAt) {
+					t.Fatalf("expected the user to have been created before %v but was created on %v", timeNow, data.CreatedAt)
+				}
+				if timeNow.After(data.UpdateAt) {
+					t.Fatalf("expected the user to have been updated before %v but was updated on %v", timeNow, data.UpdateAt)
 				}
 			}
 		})
@@ -163,49 +195,50 @@ func TestGetLevelScore(t *testing.T) {
 func TestGetOrCreateLevelScore(t *testing.T) {
 	type testData struct {
 		testName  string
-		user      *UserInfor
+		user      *UserInfo
 		errSubStr string
-		result    *LevelScoreResponse
+		result    LevelScoreResponse
 	}
 
 	td := []testData{
 		{
 			testName:  "user_id_does_not_exists",
-			user:      &UserInfor{TapooID: "none-existent-ID", Level: 20},
+			user:      &UserInfo{TapooID: "none-existent-ID", Level: 20},
 			errSubStr: "'none-existent-ID' user_id provided does not exists",
-			result:    nil,
 		},
 		{
 
 			testName:  "empty_user_id",
-			user:      &UserInfor{TapooID: "", Level: 1},
+			user:      &UserInfo{TapooID: "", Level: 1},
 			errSubStr: "invalid Tapoo ID found : '(empty)'",
-			result:    nil,
 		},
 		{
 
 			testName:  "too_long_user_id_more_than_20_characters",
-			user:      &UserInfor{TapooID: "a6a1-b43d84afa437-d3140030-4a5c-4352-9a8a-8fe4d988502-9a8a-8fe4d9", Level: 3},
+			user:      &UserInfo{TapooID: "a6a1-b43d84afa437-d3140030-4a5c-4352-9a8a-8fe4d988502-9a8a-8fe4d9", Level: 3},
 			errSubStr: "invalid Tapoo ID found : 'a6a1-b43d8... (Too long)'",
-			result:    nil,
 		},
 		{
 			testName: "create_and_fetch_newly_created_data",
-			user:     &UserInfor{TapooID: "mcruft9", Level: 2},
-			result: &LevelScoreResponse{
-				TapooID:     "mcruft9",
-				Email:       "people@niahub.com",
-				Level:       999,
+			user:     &UserInfo{TapooID: "mcruft9", Level: 2},
+			result: LevelScoreResponse{
+				User: UserInfo{
+					TapooID: "mcruft9",
+					Email:   "people@niahub.com",
+					Level:   999,
+				},
 				LevelScores: 78557,
 			},
 		},
 		{
 			testName: "fetch_correctly_data_that_already_exists",
-			user:     &UserInfor{TapooID: "mmaxwell0", Level: 2},
-			result: &LevelScoreResponse{
-				TapooID:     "mmaxwell0",
-				Email:       "asainsberry4@amazon.com",
-				Level:       2,
+			user:     &UserInfo{TapooID: "mmaxwell0", Level: 2},
+			result: LevelScoreResponse{
+				User: UserInfo{
+					TapooID: "mmaxwell0",
+					Email:   "asainsberry4@amazon.com",
+					Level:   2,
+				},
 				LevelScores: 785578,
 			},
 		},
@@ -222,29 +255,29 @@ func TestGetOrCreateLevelScore(t *testing.T) {
 				t.Fatalf("expected error to contain (%v) but found (%v)", d.errSubStr, err)
 			}
 
-			if (data == nil) && (d.result != nil) {
-				t.Fatal("expected a none nil result to be returned but its wasn't")
-			}
-
-			if (data != nil) && (d.result == nil) {
-				t.Fatal("expected a nil data result to be returned but it wasn't")
-			}
-
-			if (data != nil) && (d.result != nil) {
-				if data.TapooID != d.result.TapooID {
-					t.Fatalf("expected user_id %s but found %s", d.result.TapooID, data.TapooID)
+			if data != nil {
+				if data.User.TapooID != d.result.User.TapooID {
+					t.Fatalf("expected user_id %s but found %s", d.result.User.TapooID, data.User.TapooID)
 				}
 
-				if data.Email != d.result.Email {
-					t.Fatalf("expected email %s but found %s", d.result.Email, data.Email)
+				if data.User.Email != d.result.User.Email {
+					t.Fatalf("expected email %s but found %s", d.result.User.Email, data.User.Email)
 				}
 
-				if data.Level != d.result.Level {
-					t.Fatalf("expected game level %s but found %s", d.result.Level, data.Level)
+				if data.User.Level != d.result.User.Level {
+					t.Fatalf("expected game level %d but found %d", d.result.User.Level, data.User.Level)
 				}
 
 				if data.LevelScores != d.result.LevelScores {
-					t.Fatalf("expected user_id %s but found %s", d.result.LevelScores, data.LevelScores)
+					t.Fatalf("expected user_id %d but found %d", d.result.LevelScores, data.LevelScores)
+				}
+
+				var timeNow = time.Now()
+				if timeNow.After(data.CreatedAt) {
+					t.Fatalf("expected the user to have been created before %v but was created on %v", timeNow, data.CreatedAt)
+				}
+				if timeNow.After(data.UpdateAt) {
+					t.Fatalf("expected the user to have been updated before %v but was updated on %v", timeNow, data.UpdateAt)
 				}
 			}
 		})
@@ -259,7 +292,7 @@ func TestGetTopTenScores(t *testing.T) {
 	expectedScores := []uint32{586611, 480669, 120159}
 
 	t.Run("top_ten_resultset_on_level_9", func(t *testing.T) {
-		user := &UserInfor{Level: 9}
+		user := &UserInfo{Level: 9}
 		data, err := user.GetTopTenLevelScores()
 
 		if err != nil {
@@ -272,8 +305,8 @@ func TestGetTopTenScores(t *testing.T) {
 
 		for _, v := range data {
 			foundOrderedScores = append(foundOrderedScores, v.LevelScores)
-			foundUserIDs = append(foundUserIDs, v.TapooID)
-			foundEmails = append(foundEmails, v.Email)
+			foundUserIDs = append(foundUserIDs, v.User.TapooID)
+			foundEmails = append(foundEmails, v.User.Email)
 		}
 
 		if !reflect.DeepEqual(foundUserIDs, expectedUserIDs) {
@@ -295,7 +328,7 @@ func TestUpdateLevelScores(t *testing.T) {
 	type testData struct {
 		testName  string
 		newScore  uint32
-		user      *UserInfor
+		user      *UserInfo
 		errSubStr string
 	}
 
@@ -303,19 +336,25 @@ func TestUpdateLevelScores(t *testing.T) {
 		{
 			testName:  "empty_user_id",
 			newScore:  326,
-			user:      &UserInfor{TapooID: "", Level: 23},
+			user:      &UserInfo{TapooID: "", Level: 23},
 			errSubStr: "invalid Tapoo ID found : '(empty)'",
 		},
 		{
 			testName:  "too_long_user_ID",
 			newScore:  326,
-			user:      &UserInfor{TapooID: "a6a1-b43d84afa437-d3140030-4a5c-4352-9a8a-8fe4d988502-9a8a-8fe4d9", Level: 23},
+			user:      &UserInfo{TapooID: "a6a1-b43d84afa437-d3140030-4a5c-4352-9a8a-8fe4d988502-9a8a-8fe4d9", Level: 23},
 			errSubStr: "invalid Tapoo ID found : 'a6a1-b43d8... (Too long)'",
+		},
+		{
+			testName:  "update_zero_level_score",
+			newScore:  0,
+			user:      &UserInfo{TapooID: "dmigwi", Level: 12},
+			errSubStr: "cannot update a zero level score",
 		},
 		{
 			testName: "correct_values_are_provided",
 			newScore: 1000,
-			user:     &UserInfor{TapooID: "dmigwi", Level: 1},
+			user:     &UserInfo{TapooID: "dmigwi", Level: 1},
 		},
 	}
 

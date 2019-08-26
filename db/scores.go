@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -87,6 +88,10 @@ func (u *UserInfo) GetTopTenLevelScores() ([]*LevelScoreResponse, error) {
 // If a level is not completed successfully no scores update made and thus the
 // users status quo for the specific level remains.
 func (u *UserInfo) UpdateLevelScore(levelScores uint32) error {
+	if levelScores == 0 {
+		return fmt.Errorf(invalidData, "level score", "zero (0)")
+	}
+
 	if err := u.validateUserID(); err != nil {
 		return err
 	}

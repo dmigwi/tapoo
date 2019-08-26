@@ -8,16 +8,42 @@ import (
 	"testing"
 )
 
+func TestCreateDbConnection(t *testing.T) {
+	t.Run("fetch_db_connection_with_envVars_present", func(t *testing.T) {
+		var newConfig = new(DbConfig)
+		err := newConfig.createDbConnection()
+		if err == nil {
+			t.Fatal("expected an error but found none")
+		} else if err.Error() != "db connection config missing" {
+			t.Fatalf("expected to find error (db connection config missing) but found %v", err)
+		}
+	})
+
+	t.Run("fetch_db_connection_with_envVars_present", func(t *testing.T) {
+		var newConfig = new(DbConfig)
+
+		err := newConfig.getEnvVars()
+		if err != nil {
+			t.Fatalf("expected no error but found %v", err)
+		}
+
+		err = newConfig.createDbConnection()
+		if err != nil {
+			t.Fatalf("expected no error but found %v", err)
+		}
+	})
+}
+
 func TestCheckTablesExit(t *testing.T) {
 	// drop the users and the scores tables if they exist
-	t.Run("Drop_all_tables", func(t *testing.T) {
+	t.Run("drop_all_tables", func(t *testing.T) {
 		_, err := config.DbConn.Query("DROP TABLE IF EXISTS scores, users;")
 		if err != nil {
 			t.Fatalf("expected no error but found %v", err)
 		}
 	})
 
-	t.Run("Create_the_tables", func(t *testing.T) {
+	t.Run("create_the_tables", func(t *testing.T) {
 		err := config.CheckTablesExit()
 		if err != nil {
 			t.Fatalf("expected no error but found %v", err)
