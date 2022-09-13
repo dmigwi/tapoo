@@ -10,7 +10,7 @@ import (
 
 const (
 	intro            = "   You are playing the Maze runner, hide and seek game (Tapoo).      "
-	website          = " Visit https://www.tapoo.naihub.com/54ec478gA for more information.  "
+	website          = " Visit https://www.linkedin.com/in/migwi-ndungu/ to contact the developer.  "
 	playerNavigation = "      Use the Arrow Keys to navigate the player (in green)           "
 	statusMsg        = "         Press Space to Pause.         Scores: %d            "
 
