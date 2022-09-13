@@ -70,10 +70,10 @@ func TestCreatePath(t *testing.T) {
 		// testData defines the cell number mapped to
 		// the coordinates of the common wall.
 		testData = map[int][]int{
-			10: []int{4, 5},
-			16: []int{5, 4},
-			18: []int{5, 6},
-			24: []int{6, 5},
+			10: {4, 5},
+			16: {5, 4},
+			18: {5, 6},
+			24: {6, 5},
 		}
 	)
 
@@ -106,10 +106,10 @@ func TestGetPresentNeighbors(t *testing.T) {
 
 		// testData defines the cell number mapped to its unvisited neighbors.
 		testData = map[int][]int{
-			17: []int{10, 16, 18, 24},
-			35: []int{28, 34},
-			4:  []int{3, 11, 5},
-			7:  []int{6, 14},
+			17: {10, 16, 18, 24},
+			35: {28, 34},
+			4:  {3, 11, 5},
+			7:  {6, 14},
 		}
 	)
 

@@ -152,9 +152,9 @@ func getCeiledDivisor(num, dinom int) int {
 // If invalid intensity is used an error is thrown.
 func getWallCharacters(intensity int) ([]string, error) {
 	chars, ok := map[int][]string{
-		1: []string{"|", "---", "-"},
-		2: []string{"╏", "╍╍╍", "╍"},
-		3: []string{"║", "===", "="},
+		1: {"|", "---", "-"},
+		2: {"╏", "╍╍╍", "╍"},
+		3: {"║", "===", "="},
 	}[intensity]
 
 	if ok {

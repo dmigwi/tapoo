@@ -9,13 +9,13 @@ import (
 // TestPlayerMovement tests the functionality of playerMovement
 func TestPlayerMovement(t *testing.T) {
 	data := [][]string{
-		[]string{"|", "---", "|", "---", "|", "---", "|"},
-		[]string{"|", " A ", " ", "   ", "|", "   ", "|"},
-		[]string{"|", "   ", "|", "   ", "|", "---", "|"},
-		[]string{"|", "   ", " ", " B ", " ", "   ", "|"},
-		[]string{"|", "---", "|", "   ", "|", "---", "|"},
-		[]string{"|", "   ", "|", "   ", "|", "   ", "|"},
-		[]string{"|", "---", "|", "---", "|", "---", "|"},
+		{"|", "---", "|", "---", "|", "---", "|"},
+		{"|", " A ", " ", "   ", "|", "   ", "|"},
+		{"|", "   ", "|", "   ", "|", "---", "|"},
+		{"|", "   ", " ", " B ", " ", "   ", "|"},
+		{"|", "---", "|", "   ", "|", "---", "|"},
+		{"|", "   ", "|", "   ", "|", "   ", "|"},
+		{"|", "---", "|", "---", "|", "---", "|"},
 	}
 
 	Convey("TestPlayerMovement: Given the grid view and the current player position", t, func() {
@@ -24,8 +24,8 @@ func TestPlayerMovement(t *testing.T) {
 		Convey("is at the middle the player should be able to move to all directions"+
 			"position exists for the direction provided", func() {
 			for direction, output := range map[string][]int{
-				"LEFT": []int{3, 1}, "RIGHT": []int{3, 5},
-				"DOWN": []int{5, 3}, "UP": []int{1, 3}} {
+				"LEFT": {3, 1}, "RIGHT": {3, 5},
+				"DOWN": {5, 3}, "UP": {1, 3}} {
 
 				d.StartPosition = []int{3, 3}
 
@@ -37,8 +37,8 @@ func TestPlayerMovement(t *testing.T) {
 
 			Convey("is at a corner, the player should only be able to move to directions with spaces", func() {
 				for direction, output := range map[string][]int{
-					"LEFT": []int{1, 1}, "RIGHT": []int{1, 3},
-					"DOWN": []int{3, 1}, "UP": []int{1, 1}} {
+					"LEFT": {1, 1}, "RIGHT": {1, 3},
+					"DOWN": {3, 1}, "UP": {1, 1}} {
 
 					d.StartPosition = []int{1, 1}
 

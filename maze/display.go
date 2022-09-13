@@ -10,8 +10,8 @@ import (
 
 const (
 	intro            = "   You are playing the Maze runner, hide and seek game (Tapoo).      "
-	website          = " Visit https://www.tapoo.naihub.com/54ec478gA for more information.  "
-	playerNavigation = "      Use the Arrow Keys to navigate the player (in green)           "
+	website          = " Visit https://www.linkedin.com/in/migwi-ndungu/ to contact the developer.  "
+	playerNavigation = "      Use the Arrow Keys to navigate the player (in Blue)           "
 	statusMsg        = "         Press Space to Pause.         Scores: %d            "
 
 	space              = "                                                                         "
@@ -51,7 +51,7 @@ func refreshUI(config *Dimensions, count int, data [][]string) {
 	startPos := config.StartPosition
 
 	termbox.SetCell((targetPos[1]*2)+3, targetPos[0]+7, '#', termbox.ColorRed, termbox.ColorRed)
-	termbox.SetCell((startPos[1]*2)+3, startPos[0]+7, '@', termbox.ColorGreen, termbox.ColorGreen)
+	termbox.SetCell((startPos[1]*2)+3, startPos[0]+7, '@', termbox.ColorCyan, termbox.ColorCyan)
 
 	fill(len(data[1])/3, len(data)+8, fmt.Sprintf(statusMsg, count), coldef)
 
