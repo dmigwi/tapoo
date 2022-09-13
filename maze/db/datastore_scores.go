@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/satori/go.uuid"
+	uuid "github.com/google/uuid"
 )
 
 // UserInfor defines the default data that should identify every user
@@ -72,7 +72,7 @@ func (u *UserInfor) GetOrCreateLevelScore() (*LevelScoreResponse, error) {
 		return nil, fmt.Errorf(invalidData, "Tapoo ID", u.TapooID[:10]+"... (Too long)")
 	}
 
-	u2, err := uuid.NewV4()
+	u2, err := uuid.NewUUID()
 	if err != nil {
 		return nil, errGenUUID
 	}

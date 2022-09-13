@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/satori/go.uuid"
+	uuid "github.com/google/uuid"
 )
 
 const (
@@ -69,7 +69,7 @@ func (u *UserInfor) GetOrCreateUser() (*UserInfoResponse, error) {
 		return nil, fmt.Errorf(invalidData, "Email", u.Email[:10]+"... (Too long)")
 	}
 
-	u4, err := uuid.NewV4()
+	u4, err := uuid.NewUUID()
 	if err != nil {
 		return nil, errGenUUID
 	}
