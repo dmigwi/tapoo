@@ -152,7 +152,7 @@ mainloop:
 
 			switch {
 			case returnedStatus == succeeded:
-				interruptUI(gameOverSucceed, val, data, termbox.ColorGreen)
+				interruptUI(gameOverSucceed, val, data, termbox.ColorCyan)
 				paused = true
 
 			case returnedStatus == failed:
@@ -167,7 +167,7 @@ mainloop:
 
 			case returnedStatus == pause:
 				paused = true
-				interruptUI(pauseMsg, val, data, termbox.ColorBlue)
+				interruptUI(pauseMsg, val, data, termbox.ColorYellow)
 			}
 		}
 	}
