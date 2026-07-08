@@ -93,6 +93,110 @@ func TestRefreshUI(t *testing.T) {
 	})
 }
 
+func TestDrawMaze(t *testing.T) {
+	t.Parallel()
+
+	t.Run("renders supported wall weights with expected spacing and organization", func(t *testing.T) {
+		t.Parallel()
+
+		config := &maze.Dimensions{Length: 4, Width: 3}
+		expectedMazeRows := map[maze.WallWeight][]string{
+			maze.WallWeightRegular: {
+				"   |---|---|---|---|\n",
+				"   |   |   |   |   |\n",
+				"   |---|---|---|---|\n",
+				"   |   |   |   |   |\n",
+				"   |---|---|---|---|\n",
+				"   |   |   |   |   |\n",
+				"   |---|---|---|---|\n",
+			},
+			maze.WallWeightMedium: {
+				"   ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏\n",
+				"   ╏   ╏   ╏   ╏   ╏\n",
+				"   ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏\n",
+				"   ╏   ╏   ╏   ╏   ╏\n",
+				"   ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏\n",
+				"   ╏   ╏   ╏   ╏   ╏\n",
+				"   ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏\n",
+			},
+			maze.WallWeightBold: {
+				"   ║===║===║===║===║\n",
+				"   ║   ║   ║   ║   ║\n",
+				"   ║===║===║===║===║\n",
+				"   ║   ║   ║   ║   ║\n",
+				"   ║===║===║===║===║\n",
+				"   ║   ║   ║   ║   ║\n",
+				"   ║===║===║===║===║\n",
+			},
+		}
+
+		for _, weight := range []maze.WallWeight{
+			maze.WallWeightRegular,
+			maze.WallWeightMedium,
+			maze.WallWeightBold,
+		} {
+			t.Run(weight.String(), func(t *testing.T) {
+				t.Parallel()
+
+				ui := newFakeUI(40, 80)
+				data, errField := config.CreatePlayingField(weight)
+				if errField != nil {
+					t.Fatalf("create playing field returned error: %v", errField)
+				}
+
+				if err := maze.DrawMaze(ui, data); err != nil {
+					t.Fatalf("draw maze returned error: %v", err)
+				}
+
+				if ui.flushCalls != 0 {
+					t.Fatalf("expected draw maze not to flush directly, got %d flush calls", ui.flushCalls)
+				}
+
+				if !ui.containsText("Maze runner") {
+					t.Fatal("expected draw maze to render the intro text")
+				}
+
+				if !ui.containsText("linkedin.com/in/migwi-ndungu") {
+					t.Fatal("expected draw maze to render the developer contact text")
+				}
+
+				if !ui.containsText("Arrow Keys") {
+					t.Fatal("expected draw maze to render the controls hint")
+				}
+
+				for rowIndex, want := range expectedMazeRows[weight] {
+					got := ui.rowText(7+rowIndex, 0, len([]rune(want))-1)
+					if got != want {
+						t.Fatalf(
+							"unexpected rendered maze row %d for %s: got %q want %q",
+							rowIndex,
+							weight,
+							got,
+							want,
+						)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("returns clear errors", func(t *testing.T) {
+		t.Parallel()
+
+		ui := newFakeUI(40, 80)
+		ui.clearErr = errors.New("clear failed")
+
+		err := maze.DrawMaze(ui, sampleMazeGrid())
+		if err == nil {
+			t.Fatal("expected draw maze to return a clear error")
+		}
+
+		if !strings.Contains(err.Error(), "clear failed") {
+			t.Fatalf("expected clear error to be preserved, got %v", err)
+		}
+	})
+}
+
 func TestInterruptUI(t *testing.T) {
 	t.Parallel()
 

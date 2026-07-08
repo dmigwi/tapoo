@@ -16,28 +16,28 @@ func TestGenerateMaze(t *testing.T) {
 		Width:  10,
 	}
 
-	data, err := config.GenerateMaze(-1)
+	data, err := config.GenerateMaze(maze.WallWeight(-1))
 	if err == nil {
 		t.Fatal("GenerateMaze(-1) expected an error but got nil")
 	}
 
 	if len(data) != 0 {
-		t.Fatalf("expected invalid intensity to return an empty maze, got %v", data)
+		t.Fatalf("expected invalid wall weight to return an empty maze, got %v", data)
 	}
 
 	if len(config.StartPosition) != 0 || len(config.FinalPosition) != 0 {
 		t.Fatalf(
-			"expected invalid intensity to leave positions unset, got start=%v final=%v",
+			"expected invalid wall weight to leave positions unset, got start=%v final=%v",
 			config.StartPosition,
 			config.FinalPosition,
 		)
 	}
 
-	if !strings.Contains(err.Error(), "invalid value of intensity found:") {
+	if !strings.Contains(err.Error(), "invalid wall weight:") {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 
-	data, err = config.GenerateMaze(1)
+	data, err = config.GenerateMaze(maze.WallWeightRegular)
 	if err != nil {
 		t.Fatalf("GenerateMaze(1) returned error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestGenerateMazeRepeatable(t *testing.T) {
 		t.Run(fmt.Sprintf("%dx%d", config.Length, config.Width), func(t *testing.T) {
 			t.Parallel()
 
-			data, err := config.GenerateMaze(1)
+			data, err := config.GenerateMaze(maze.WallWeightRegular)
 			if err != nil {
 				t.Fatalf("GenerateMaze returned error: %v", err)
 			}

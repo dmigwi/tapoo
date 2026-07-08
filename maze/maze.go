@@ -13,17 +13,16 @@ type Dimensions struct {
 // GenerateMaze converts the created grid view playing field into a series on paths and walls.
 // The Maze is created such that only a single path can exists between the starting point and
 // and the goal.
-func (config *Dimensions) GenerateMaze(intensity int) ([][]string, error) {
+func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
 	totalCells := config.Length * config.Width
 	// The visited set is scoped to a single generation so repeated runs do not leak traversal state.
 	visitedCells := make(map[int]CellAddress, totalCells)
-
 	startPos := config.getStartPosition(visitedCells)
 
 	// finalPos stores [pathLength, cellNumber] so the farthest discovered cell can become the goal.
 	finalPos, cellsPath, currentPos := []int{1, startPos}, []int{startPos}, startPos
 
-	maze, err := config.CreatePlayingField(intensity)
+	maze, err := config.CreatePlayingField(weight)
 	if err != nil {
 		return [][]string{}, err
 	}
@@ -68,14 +67,14 @@ func (config *Dimensions) GenerateMaze(intensity int) ([][]string, error) {
 	finalAddr := config.GetCellAddress(finalPos[1])
 	config.FinalPosition = []int{finalAddr.MiddleCenter[0], finalAddr.MiddleCenter[1]}
 
-	config.optimizeMaze(intensity, maze)
+	config.optimizeMaze(weight, maze)
 
 	return maze, nil
 }
 
 // createPath creates a path on the common wall between the current and the new cell.
 // A path is created by replacing the wall characters with the respective number of blank spaces.
-// Wall characters are defined by the intensity value used while creating the grid view.
+// Wall characters are defined by the wall weight used while creating the grid view.
 func (config *Dimensions) createPath(maze [][]string, currentCellNo, newCellNo int) {
 	addr := config.GetCellAddress(currentCellNo)
 	neighbors := config.GetCellNeighbors(currentCellNo)
@@ -130,8 +129,8 @@ func (config *Dimensions) getStartPosition(visitedCells map[int]CellAddress) int
 
 // optimizeMaze replaces some wall characters so as the maze can
 // be more clear and sharp when printed on the terminal.
-func (config *Dimensions) optimizeMaze(intensity int, maze [][]string) {
-	chars, err := getWallCharacters(intensity)
+func (config *Dimensions) optimizeMaze(weight WallWeight, maze [][]string) {
+	chars, err := getWallCharacters(weight)
 	if err != nil {
 		panic(err)
 	}

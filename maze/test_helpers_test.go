@@ -184,6 +184,28 @@ func (ui *fakeUI) containsText(want string) bool {
 	return false
 }
 
+func (ui *fakeUI) rowText(y, startX, endX int) string {
+	ui.mu.Lock()
+	defer ui.mu.Unlock()
+
+	if endX < startX {
+		return ""
+	}
+
+	line := make([]rune, endX-startX+1)
+	for index := range line {
+		line[index] = ' '
+	}
+
+	for xPos := startX; xPos <= endX; xPos++ {
+		if cell, ok := ui.cells[[2]int{xPos, y}]; ok {
+			line[xPos-startX] = cell.char
+		}
+	}
+
+	return string(line)
+}
+
 func sampleMazeGrid() [][]string {
 	return [][]string{
 		{"|", "---", "|", "---", "|", "---", "|"},

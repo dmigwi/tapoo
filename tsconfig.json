@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "none",
+    "lib": ["DOM", "ES2022"],
+    "strict": false,
+    "skipLibCheck": true,
+    "rootDir": "./frontend",
+    "outFile": "./public/js/tapoo.js",
+    "removeComments": false,
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["frontend/tapoo.ts"]
+}

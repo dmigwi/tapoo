@@ -214,7 +214,7 @@ func setupGame(ui UI) (*Dimensions, [][]string, error) {
 		return nil, nil, fmt.Errorf("get maze dimensions: %w", err)
 	}
 
-	data, err := val.GenerateMaze(1)
+	data, err := val.GenerateMaze(WallWeightRegular)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate maze: %w", err)
 	}

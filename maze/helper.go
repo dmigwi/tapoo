@@ -38,18 +38,13 @@ type (
 )
 
 // CreatePlayingField creates the initial version of the maze which is a grid of cells.
-// The cells are created with characters that are printable on the terminal.
-// CreatePlayingField accept a paramenter with intensity of how thick the
-// maze walls should be.
-func (config *Dimensions) CreatePlayingField(intensity int) ([][]string, error) {
-	var (
-		chars []string
-		err   error
+// The cells are created with terminal-printable characters, and wall weight controls
+// which glyph set is used for the border and passage outlines.
+func (config *Dimensions) CreatePlayingField(weight WallWeight) ([][]string, error) {
+	var data [][]string
 
-		data = [][]string{}
-	)
-
-	if chars, err = getWallCharacters(intensity); err != nil {
+	chars, err := getWallCharacters(weight)
+	if err != nil {
 		return data, err
 	}
 
@@ -158,22 +153,22 @@ func getCeiledDivisor(num, dinom int) int {
 	return int(math.Ceil(float64(num) / float64(dinom)))
 }
 
-// getWallCharacters returns the maze wall characters associated with the provided intensity.
-// If invalid intensity is used an error is thrown.
-func getWallCharacters(intensity int) ([]string, error) {
-	chars, ok := map[int][]string{
-		1: {"|", "---", "-"},
-		2: {"╏", "╍╍╍", "╍"},
-		3: {"║", "===", "="},
-	}[intensity]
-
-	// Wall styles are grouped by intensity so generation and optimization can share the same lookup.
-	if ok {
-		return chars, nil
+// getWallCharacters returns the maze wall characters associated with the provided wall weight.
+func getWallCharacters(weight WallWeight) ([3]string, error) {
+	switch weight {
+	case WallWeightRegular:
+		return [3]string{"|", "---", "-"}, nil
+	case WallWeightMedium:
+		return [3]string{"╏", "╍╍╍", "╍"}, nil
+	case WallWeightBold:
+		return [3]string{"║", "===", "="}, nil
+	default:
+		err := fmt.Errorf(
+			"invalid wall weight: %s. allowed values are %s, %s, and %s",
+			weight, WallWeightRegular, WallWeightMedium, WallWeightBold,
+		)
+		return [3]string{}, err
 	}
-
-	return chars, fmt.Errorf(
-		"invalid value of intensity found: %d. allowed 1, 2 and 3", intensity)
 }
 
 // isSpaceFound checks for the space character in a given string
@@ -181,3 +176,59 @@ func getWallCharacters(intensity int) ([]string, error) {
 func isSpaceFound(item string) bool {
 	return strings.Contains(item, " ")
 }
+
+// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
+// ╏   ╏ # ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
+// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
+// ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
+// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
+// ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
+// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
+// ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
+// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
+// ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
+// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
+// ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
+// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
+// ╏   ╏   ╏   ╏   ╏   ╏   ╏ @ ╏   ╏   ╏   ╏
+// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
+
+// ║===║===║===║===║===║===║===║===║===║===║
+// ║   ║ # ║   ║   ║   ║   ║   ║   ║   ║   ║
+// ║===║===║===║===║===║===║===║===║===║===║
+// ║   ║   ║   ║   ║   ║   ║   ║   ║   ║   ║
+// ║===║===║===║===║===║===║===║===║===║===║
+// ║   ║   ║   ║   ║   ║   ║   ║   ║   ║   ║
+// ║===║===║===║===║===║===║===║===║===║===║
+// ║   ║   ║   ║   ║   ║   ║   ║   ║   ║   ║
+// ║===║===║===║===║===║===║===║===║===║===║
+// ║   ║   ║   ║   ║   ║   ║   ║   ║   ║   ║
+// ║===║===║===║===║===║===║===║===║===║===║
+// ║   ║   ║   ║   ║   ║   ║   ║   ║   ║   ║
+// ║===║===║===║===║===║===║===║===║===║===║
+// ║   ║   ║   ║   ║   ║   ║ @ ║   ║   ║   ║
+// ║===║===║===║===║===║===║===║===║===║===║
+
+// |---|---|---|---|---|---|---|---|---|---|
+// |   | # |   |   |   |   |   |   |   |   |
+// |---|---|---|---|---|---|---|---|---|---|
+// |   |   |   |   |   |   |   |   |   |   |
+// |---|---|---|---|---|---|---|---|---|---|
+// |   |   |   |   |   |   |   |   |   |   |
+// |---|---|---|---|---|---|---|---|---|---|
+// |   |   |   |   |   |   |   |   |   |   |
+// |---|---|---|---|---|---|---|---|---|---|
+// |   |   |   |   |   |   |   |   |   |   |
+// |---|---|---|---|---|---|---|---|---|---|
+// |   |   |   |   |   |   |   |   |   |   |
+// |---|---|---|---|---|---|---|---|---|---|
+// |   |   |   |   |   |   |   |   |   |   |
+// |---|---|---|---|---|---|---|---|---|---|
+// |   |   |   |   |   |   |   |   |   |   |
+// |---|---|---|---|---|---|---|---|---|---|
+// |   |   |   |   |   |   |   |   |   |   |
+// |---|---|---|---|---|---|---|---|---|---|
+// |   |   |   |   |   |   |   |   |   |   |
+// |---|---|---|---|---|---|---|---|---|---|
+// |   |   |   |   |   | @ |   |   |   |   |
+// |---|---|---|---|---|---|---|---|---|---|

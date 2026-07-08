@@ -53,11 +53,29 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Enable corepack
+        run: corepack enable
+
       - name: Download dependencies
         run: go mod download
 
       - name: Verify module dependencies
         run: go mod verify
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check frontend
+        run: pnpm run typecheck:frontend
+
+      - name: Build frontend
+        run: pnpm run build:frontend
 
       - name: Run tests with coverage
         run: go test -race -covermode=atomic -coverprofile=coverage.out -v ./...

@@ -9,13 +9,13 @@ import (
 
 // fill prints a string to the termbox view box on the given coordinates.
 func fill(ui UI, x, y int, val string, foreground termbox.Attribute) {
-	for index, char := range val {
+	for index, char := range []rune(val) {
 		ui.SetCell(x+index, y, char, foreground, coldef)
 	}
 }
 
-// drawMaze draws the maze on the termbox view.
-func drawMaze(ui UI, data [][]string) error {
+// DrawMaze draws the maze on the termbox view.
+func DrawMaze(ui UI, data [][]string) error {
 	if err := ui.Clear(coldef, coldef); err != nil {
 		return err
 	}
@@ -42,7 +42,7 @@ func drawMaze(ui UI, data [][]string) error {
 
 // RefreshUI redraws the maze, player, goal, and score banner and reports whether the goal was reached.
 func RefreshUI(ui UI, config *Dimensions, count int, data [][]string) (bool, error) {
-	if err := drawMaze(ui, data); err != nil {
+	if err := DrawMaze(ui, data); err != nil {
 		return false, err
 	}
 
@@ -80,7 +80,7 @@ func RefreshUI(ui UI, config *Dimensions, count int, data [][]string) (bool, err
 func InterruptUI(
 	ui UI, msg string, data [][]string, color termbox.Attribute, showHighScore bool, score int,
 ) error {
-	if err := drawMaze(ui, data); err != nil {
+	if err := DrawMaze(ui, data); err != nil {
 		return err
 	}
 

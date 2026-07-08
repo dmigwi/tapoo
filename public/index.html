@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Tapoo Terminal</title>
+    <meta
+      name="description"
+      content="Tapoo maze runner rendered as a browser-based terminal application."
+    />
+    <link rel="stylesheet" href="./css/tapoo.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="top-bar" aria-label="Application controls">
+        <div class="top-bar__brand">
+          <strong class="top-bar__title">Tapoo</strong>
+          <span class="top-bar__subtitle">terminal maze runner</span>
+        </div>
+        <div class="top-bar__actions">
+          <button class="top-bar__button" type="button" data-action="restart">Restart</button>
+          <button class="top-bar__button top-bar__button--icon" type="button" aria-label="Future tools">
+            +
+          </button>
+        </div>
+      </header>
+
+      <section id="terminal-app" class="terminal-app" tabindex="0" aria-label="Tapoo browser terminal">
+        <div class="terminal-frame">
+          <div id="terminal-body" class="terminal-body">
+            <pre id="terminal-screen" aria-live="polite"></pre>
+            <span id="terminal-measure" class="terminal-measure">MMMMMMMMMM</span>
+          </div>
+
+          <section class="terminal-meta" aria-label="Game status">
+            <div class="terminal-meta__stats">
+              <span class="meta-item">
+                <span class="meta-label">State</span>
+                <strong id="terminal-status" class="meta-value">Initializing...</strong>
+              </span>
+              <span class="meta-item">
+                <span class="meta-label">Round</span>
+                <strong id="hud-level" class="meta-value">-</strong>
+              </span>
+              <span class="meta-item">
+                <span class="meta-label">Score</span>
+                <strong id="hud-score" class="meta-value">-</strong>
+              </span>
+              <span class="meta-item">
+                <span class="meta-label">High</span>
+                <strong id="hud-high-score" class="meta-value">-</strong>
+              </span>
+              <span class="meta-item">
+                <span class="meta-label">Action</span>
+                <strong id="hud-mode" class="meta-value">Arrow keys move</strong>
+              </span>
+            </div>
+            <p class="terminal-hint">
+              Arrow keys move. Space pauses. Ctrl+P proceeds. Esc quits. Developer:
+              <a
+                class="terminal-link"
+                href="https://www.linkedin.com/in/migwi-ndungu/"
+                target="_blank"
+                rel="noreferrer"
+                >Migwi Ndungu</a
+              >.
+            </p>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="./js/tapoo.min.js"></script>
+  </body>
+</html>

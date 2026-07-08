@@ -1,6 +1,7 @@
 package maze
 
 import (
+	"fmt"
 	"time"
 
 	termbox "github.com/nsf/termbox-go"
@@ -102,3 +103,27 @@ const (
 	// StatusQuit is updated after the player exits after pausing, winning, or failing a level.
 	StatusQuit
 )
+
+// WallWeight defines the visual weight of maze wall glyphs.
+// The zero value selects the default regular wall set.
+type WallWeight int
+
+const (
+	WallWeightRegular WallWeight = iota
+	WallWeightMedium
+	WallWeightBold
+)
+
+// String returns the stable name used for the wall weight value.
+func (weight WallWeight) String() string {
+	switch weight {
+	case WallWeightRegular:
+		return "Regular wall weight"
+	case WallWeightMedium:
+		return "Medium wall weight"
+	case WallWeightBold:
+		return "Bold wall weight"
+	default:
+		return fmt.Sprintf("WallWeight(%d)", weight)
+	}
+}
