@@ -1,8 +1,20 @@
 package main
 
-import "github.com/dmigwi/tapoo/maze"
+import (
+	"fmt"
+	"os"
 
-// Main defines where the program executions starts
+	"github.com/dmigwi/tapoo/maze"
+)
+
+// main defines where the program executions start.
 func main() {
-	maze.Start()
+	if err := maze.Start(); err != nil {
+		// Write the startup/runtime error once and exit with a failing status for the shell.
+		if _, writeErr := fmt.Fprintln(os.Stderr, err); writeErr != nil {
+			os.Exit(1)
+		}
+
+		os.Exit(1)
+	}
 }

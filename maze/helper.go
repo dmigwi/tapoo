@@ -1,34 +1,35 @@
 package maze
 
 import (
+	"crypto/rand"
 	"fmt"
 	"math"
+	"math/big"
 	"strings"
-	"time"
 )
 
 type (
-	// cellAddress defines the nine points/coordinates that make up an individual cell.
+	// CellAddress defines the nine points/coordinates that make up an individual cell.
 	// Each of the points define the location of a character that is meant to be a
 	// wall or a path of the maze. MiddleCenter represents a part of the path of the maze,
 	// while BottomCenter, BottomLeft, BottomRight, MiddleLeft, MiddleRight, TopCenter,
 	// TopLeft and TopRight can either be a part of the path or a part the wall of the maze.
-	cellAddress struct {
-		BottomCenter []int
-		BottomLeft   []int
-		BottomRight  []int
-		MiddleCenter []int
-		MiddleLeft   []int
-		MiddleRight  []int
-		TopCenter    []int
-		TopLeft      []int
-		TopRight     []int
+	CellAddress struct {
+		BottomCenter [2]int
+		BottomLeft   [2]int
+		BottomRight  [2]int
+		MiddleCenter [2]int
+		MiddleLeft   [2]int
+		MiddleRight  [2]int
+		TopCenter    [2]int
+		TopLeft      [2]int
+		TopRight     [2]int
 	}
 
-	// cellNeighbors defines the four nieghbors that may surround a given cell.
+	// CellNeighbors defines the four nieghbors that may surround a given cell.
 	// Cells along the maze edges have two to three nieghbors but cells at the center
 	// of the maze have four neighbors.
-	cellNeighbors struct {
+	CellNeighbors struct {
 		Bottom int
 		Left   int
 		Right  int
@@ -36,11 +37,11 @@ type (
 	}
 )
 
-// createPlayingField creates the initial version of the maze which is a grid of cells.
+// CreatePlayingField creates the initial version of the maze which is a grid of cells.
 // The cells are created with characters that are printable on the terminal.
-// createPlayingField accept a paramenter with intensity of how thick the
+// CreatePlayingField accept a paramenter with intensity of how thick the
 // maze walls should be.
-func (config *Dimensions) createPlayingField(intensity int) ([][]string, error) {
+func (config *Dimensions) CreatePlayingField(intensity int) ([][]string, error) {
 	var (
 		chars []string
 		err   error
@@ -52,17 +53,17 @@ func (config *Dimensions) createPlayingField(intensity int) ([][]string, error) 
 		return data, err
 	}
 
-	for i := 0; i < (2*config.Width)+1; i++ {
+	for i := range (cellSpan * config.Width) + 1 {
 		var val []string
 
-		for k := 0; k < config.Length+1; k++ {
+		for k := range config.Length + 1 {
 			val = append(val, chars[0])
 
 			switch {
 			case k != config.Length && i%2 == 0:
 				val = append(val, chars[1])
 			case k != config.Length && i%2 != 0:
-				val = append(val, "   ")
+				val = append(val, strings.Repeat(" ", cellPathWidth))
 			default:
 				val = append(val, "\n")
 			}
@@ -73,48 +74,49 @@ func (config *Dimensions) createPlayingField(intensity int) ([][]string, error) 
 	return data, nil
 }
 
-// getCellAddress creates and returns the cell address of the provided cell.
+// GetCellAddress creates and returns the cell address of the provided cell.
 // A cell address is defined by the nine coordinates, where each of them represents the
 // actual position of a terminal printable character that becomes a part of the maze.
-func (config *Dimensions) getCellAddress(cellNo int) cellAddress {
-	var len int
-
-	if cellNo > (config.Length * config.Width) {
-		return cellAddress{}
+func (config *Dimensions) GetCellAddress(cellNo int) CellAddress {
+	if cellNo <= 0 || cellNo > (config.Length*config.Width) {
+		return CellAddress{}
 	}
 
-	if len = cellNo % config.Length; len == 0 {
-		len = config.Length
+	// Cells are numbered row by row, so the column is the remainder and the row is the ceiled quotient.
+	column := cellNo % config.Length
+	if column == 0 {
+		column = config.Length
 	}
 
-	var wid = getCeiledDivisor(cellNo, config.Length) * 2
-	len = len * 2
+	row := getCeiledDivisor(cellNo, config.Length) * cellSpan
+	column *= cellSpan
 
-	return cellAddress{
-		BottomCenter: []int{wid, len - 1},
-		BottomLeft:   []int{wid, len - 2},
-		BottomRight:  []int{wid, len},
-		MiddleCenter: []int{wid - 1, len - 1},
-		MiddleLeft:   []int{wid - 1, len - 2},
-		MiddleRight:  []int{wid - 1, len},
-		TopCenter:    []int{wid - 2, len - 1},
-		TopLeft:      []int{wid - 2, len - 2},
-		TopRight:     []int{wid - 2, len},
+	return CellAddress{
+		BottomCenter: [2]int{row, column - 1},
+		BottomLeft:   [2]int{row, column - cellSpan},
+		BottomRight:  [2]int{row, column},
+		MiddleCenter: [2]int{row - 1, column - 1},
+		MiddleLeft:   [2]int{row - 1, column - cellSpan},
+		MiddleRight:  [2]int{row - 1, column},
+		TopCenter:    [2]int{row - cellSpan, column - 1},
+		TopLeft:      [2]int{row - cellSpan, column - cellSpan},
+		TopRight:     [2]int{row - cellSpan, column},
 	}
 }
 
-// getCellNeighbors fetches all the possible neighbors of the provided cell.
-func (config *Dimensions) getCellNeighbors(cellNo int) cellNeighbors {
-	if cellNo > (config.Length * config.Width) {
-		return cellNeighbors{}
+// GetCellNeighbors fetches all the possible neighbors of the provided cell.
+func (config *Dimensions) GetCellNeighbors(cellNo int) CellNeighbors {
+	if cellNo <= 0 || cellNo > (config.Length*config.Width) {
+		return CellNeighbors{}
 	}
 
+	// Neighbor numbering follows the same row-major layout as the generated maze cells.
 	var (
 		right     = cellNo + 1
 		left      = cellNo - 1
 		top       = cellNo - config.Length
 		bottom    = cellNo + config.Length
-		neighbors = cellNeighbors{}
+		neighbors = CellNeighbors{}
 	)
 
 	if getCeiledDivisor(right, config.Length) == getCeiledDivisor(cellNo, config.Length) {
@@ -136,11 +138,19 @@ func (config *Dimensions) getCellNeighbors(cellNo int) cellNeighbors {
 	return neighbors
 }
 
-// getRandomNo returns a random number generated from
-// the current timestamp and should be less the max value
-// provided and greater than or equal to zero. (0 <= X < max)
-func getRandomNo(max int) int {
-	return int(time.Now().UnixNano() % int64(max))
+// getRandomNo returns a pseudo-random number in the range [0, limit).
+func getRandomNo(limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+
+	// Random cell selection does not need determinism, but it should not depend on shared mutable state.
+	value, err := rand.Int(rand.Reader, big.NewInt(int64(limit)))
+	if err != nil {
+		panic(err)
+	}
+
+	return int(value.Int64())
 }
 
 // getCeiledDivisor calculates the ceiled divisor of the two values passed.
@@ -157,16 +167,17 @@ func getWallCharacters(intensity int) ([]string, error) {
 		3: {"║", "===", "="},
 	}[intensity]
 
+	// Wall styles are grouped by intensity so generation and optimization can share the same lookup.
 	if ok {
 		return chars, nil
 	}
 
 	return chars, fmt.Errorf(
-		"Invalid value of intensity found: %d. Allowed 1, 2 and 3", intensity)
+		"invalid value of intensity found: %d. allowed 1, 2 and 3", intensity)
 }
 
 // isSpaceFound checks for the space character in a given string
-// Boolean true is returned if space is found
+// Boolean true is returned if space is found.
 func isSpaceFound(item string) bool {
 	return strings.Contains(item, " ")
 }

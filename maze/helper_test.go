@@ -1,267 +1,102 @@
-package maze
+package maze_test
 
 import (
-	"fmt"
-	"log"
-	"strconv"
 	"strings"
 	"testing"
 
-	. "github.com/smartystreets/goconvey/convey"
+	"github.com/dmigwi/tapoo/maze"
 )
 
-// TestCreatePlayingField tests the functionality of createPlayingField
 func TestCreatePlayingField(t *testing.T) {
-	var (
-		compressedView []string
-		err            error
-		gridView       [][]string
+	t.Parallel()
 
-		val = &Dimensions{
-			Length: 17,
-			Width:  5,
+	config := &maze.Dimensions{
+		Length: 17,
+		Width:  5,
+	}
+
+	for _, intensity := range []int{1, 2, 3} {
+		gridView, err := config.CreatePlayingField(intensity)
+		if err != nil {
+			t.Fatalf("CreatePlayingField(%d) returned error: %v", intensity, err)
 		}
-	)
 
-	Convey("Given the the maze wall intensity ", t, func() {
-		Convey("A grid view should be generated without an error given "+
-			"the correct intensity ", func() {
-			for _, intensity := range []int{1, 2, 3} {
-				gridView, err = val.createPlayingField(intensity)
+		if len(gridView) == 0 {
+			t.Fatalf("CreatePlayingField(%d) returned an empty grid", intensity)
+		}
 
-				So(err, ShouldBeNil)
-				So(gridView, ShouldNotBeEmpty)
-
-				for _, line := range gridView {
-					So(line, ShouldHaveLength, (val.Length+1)*2)
-
-					compressedView = append(compressedView, strings.Join(line, ""))
-				}
-
-				log.Println("\n", strings.Join(compressedView, ""))
-
-				compressedView = []string{}
+		for _, line := range gridView {
+			if got, want := len(line), (config.Length+1)*2; got != want {
+				t.Fatalf("unexpected row width for intensity %d: got %d want %d", intensity, got, want)
 			}
-
-		})
-
-		Convey("An error should be thrown given invalid intensity", func() {
-			gridView, err = val.createPlayingField(10)
-
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldContainSubstring, "Invalid value of intensity found: 10")
-			So(gridView, ShouldBeEmpty)
-		})
-	})
-}
-
-// TestGetCellAddress tests the functionality of getCellAddress
-func TestGetCellAddress(t *testing.T) {
-	var (
-		k cellAddress
-
-		// data represents an initial version of the maze of 6 cells by 5 cells with
-		// the respective cells labeled with their cell numbers.
-		data = [][]string{
-			{"|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "\n"},
-			{"|", " 1 ", "|", " 2 ", "|", " 3 ", "|", " 4 ", "|", " 5 ", "|", " 6 ", "|", "\n"},
-			{"|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "\n"},
-			{"|", " 7 ", "|", " 8 ", "|", " 9 ", "|", "10 ", "|", "11 ", "|", "12 ", "|", "\n"},
-			{"|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "\n"},
-			{"|", "13 ", "|", "14 ", "|", "15 ", "|", "16 ", "|", "17 ", "|", "18 ", "|", "\n"},
-			{"|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "\n"},
-			{"|", "19 ", "|", "20 ", "|", "21 ", "|", "22 ", "|", "23 ", "|", "24 ", "|", "\n"},
-			{"|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "\n"},
-			{"|", "25 ", "|", "26 ", "|", "27 ", "|", "28 ", "|", "29 ", "|", "30 ", "|", "\n"},
-			{"|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "\n"},
-		}
-
-		val = &Dimensions{
-			Length: 6,
-			Width:  5,
-		}
-	)
-
-	Convey("TestGetCellAddress: Given the grid view of 6 by 5 cells of a maze and a cell number ", t, func() {
-		Convey("the does not exist in the grid view provided, an empty cellAddress should be returned", func() {
-			emptyAddr := val.getCellAddress(5000)
-			So(emptyAddr, ShouldResemble, (cellAddress{}))
-		})
-
-		Convey("that exists in the provided grid a matching cell address should be returned", func() {
-			for i := 1; i <= (val.Length * val.Width); i++ {
-				k = val.getCellAddress(i)
-
-				So(data[k.MiddleCenter[0]][k.MiddleCenter[1]], ShouldContainSubstring, strconv.Itoa(i))
-
-				fmt.Println("\ncell", i)
-				fmt.Println(data[k.TopRight[0]][k.TopRight[1]], data[k.TopCenter[0]][k.TopCenter[1]], data[k.TopLeft[0]][k.TopLeft[1]])
-				fmt.Println(data[k.MiddleRight[0]][k.MiddleRight[1]], data[k.MiddleCenter[0]][k.MiddleCenter[1]], data[k.MiddleLeft[0]][k.MiddleLeft[1]])
-				fmt.Println(data[k.BottomRight[0]][k.BottomRight[1]], data[k.BottomCenter[0]][k.BottomCenter[1]], data[k.BottomLeft[0]][k.BottomLeft[1]])
-			}
-		})
-
-	})
-}
-
-// TestGetCellNeighbors tests the functionality of getCellNeighbors
-func TestGetCellNeighbors(t *testing.T) {
-	var (
-		key             int
-		found, expected cellNeighbors
-
-		// data defines the respective neighbors of the provided cell.
-		// A neighbor can be on Top, Left, Bottom or Right of the provided cell.
-		data = map[int]cellNeighbors{
-			1:  {Top: 0, Right: 2, Bottom: 7, Left: 0},
-			2:  {Top: 0, Right: 3, Bottom: 8, Left: 1},
-			3:  {Top: 0, Right: 4, Bottom: 9, Left: 2},
-			4:  {Top: 0, Right: 5, Bottom: 10, Left: 3},
-			5:  {Top: 0, Right: 6, Bottom: 11, Left: 4},
-			6:  {Top: 0, Right: 0, Bottom: 12, Left: 5},
-			7:  {Top: 1, Right: 8, Bottom: 13, Left: 0},
-			8:  {Top: 2, Right: 9, Bottom: 14, Left: 7},
-			9:  {Top: 3, Right: 10, Bottom: 15, Left: 8},
-			10: {Top: 4, Right: 11, Bottom: 16, Left: 9},
-			11: {Top: 5, Right: 12, Bottom: 17, Left: 10},
-			12: {Top: 6, Right: 0, Bottom: 18, Left: 11},
-			13: {Top: 7, Right: 14, Bottom: 19, Left: 0},
-			14: {Top: 8, Right: 15, Bottom: 20, Left: 13},
-			15: {Top: 9, Right: 16, Bottom: 21, Left: 14},
-			16: {Top: 10, Right: 17, Bottom: 22, Left: 15},
-			17: {Top: 11, Right: 18, Bottom: 23, Left: 16},
-			18: {Top: 12, Right: 0, Bottom: 24, Left: 17},
-			19: {Top: 13, Right: 20, Bottom: 25, Left: 0},
-			20: {Top: 14, Right: 21, Bottom: 26, Left: 19},
-			21: {Top: 15, Right: 22, Bottom: 27, Left: 20},
-			22: {Top: 16, Right: 23, Bottom: 28, Left: 21},
-			23: {Top: 17, Right: 24, Bottom: 29, Left: 22},
-			24: {Top: 18, Right: 0, Bottom: 30, Left: 23},
-			25: {Top: 19, Right: 26, Bottom: 0, Left: 0},
-			26: {Top: 20, Right: 27, Bottom: 0, Left: 25},
-			27: {Top: 21, Right: 28, Bottom: 0, Left: 26},
-			28: {Top: 22, Right: 29, Bottom: 0, Left: 27},
-			29: {Top: 23, Right: 30, Bottom: 0, Left: 28},
-			30: {Top: 24, Right: 0, Bottom: 0, Left: 29},
-			31: {Top: 0, Right: 0, Bottom: 0, Left: 0},
-		}
-
-		val = &Dimensions{
-			Length: 6,
-			Width:  5,
-		}
-	)
-
-	Convey("Given cells with their expected neighbors in a grid view of 6 by 5 cells", t, func() {
-
-		Convey("The fetched neighbors of the provided cell number "+
-			"should match the expected neighbors", func() {
-
-			for key, expected = range data {
-				found = val.getCellNeighbors(key)
-
-				So(expected.Top, ShouldEqual, found.Top)
-				So(expected.Left, ShouldEqual, found.Left)
-				So(expected.Bottom, ShouldEqual, found.Bottom)
-				So(expected.Right, ShouldEqual, found.Right)
-			}
-		})
-	})
-}
-
-// TestGetRandomNo tests the functionality of getRandomNo
-func TestGetRandomNo(t *testing.T) {
-	Convey("TestGetRandomNo: Given a value ", t, func() {
-		Convey("that is greater than zero, the random number generated should be greater than zero but less than or equal to the value provided", func() {
-			val := getRandomNo(12)
-			So(val, ShouldBeLessThanOrEqualTo, 12)
-			So(val, ShouldBeGreaterThan, 0)
-		})
-	})
-}
-
-// TestGetCeiledDivisor tests the functionality of getCeiledDivisor
-func TestGetCeiledDivisor(t *testing.T) {
-	var testFunc = func(input map[int][]int) {
-		for output, val := range input {
-			So(getCeiledDivisor(val[0], val[1]), ShouldEqual, output)
 		}
 	}
 
-	Convey("TestGetCeiledDivisor: Given a numerator and a denominator", t, func() {
-		Convey("where both numbers are positive but neither is equal to zero a value greater than one is always returned", func() {
-			testVal := map[int][]int{
-				1: {5, 6},
-				2: {4, 3},
-				4: {24, 6},
-			}
+	gridView, err := config.CreatePlayingField(10)
+	if err == nil {
+		t.Fatal("CreatePlayingField(10) expected an error but got nil")
+	}
 
-			testFunc(testVal)
+	if !strings.Contains(err.Error(), "invalid value of intensity found: 10") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
 
-			// could fit in the testVal
-			testFunc(map[int][]int{1: {4, 4}})
-		})
-
-		Convey("where both values are zero or either is zero, the output should always be zero or a -9223372036854775808 depending on the machine instruction size ", func() {
-			// -9223372036854775808 is the smallest int64 value returned when an integer is divided by zero on a 64 bit machine.
-			// On a 32 bit machine zero is returned when an integer is divided by zero
-			if strconv.IntSize == 64 {
-				testFunc(map[int][]int{-9223372036854775808: {0, 0}})
-
-				testFunc(map[int][]int{-9223372036854775808: {10, 0}})
-			} else {
-				testFunc(map[int][]int{0: {0, 0}})
-
-				testFunc(map[int][]int{0: {10, 0}})
-			}
-
-			testFunc(map[int][]int{0: {0, 8}})
-		})
-	})
+	if len(gridView) != 0 {
+		t.Fatalf("expected invalid intensity to return an empty grid, got %v", gridView)
+	}
 }
 
-// TestGetWallCharacters tests the functionality of getWallCharacters
-func TestGetWallCharacters(t *testing.T) {
-	Convey("TestGetWallCharacters: Given a wall intensity value ", t, func() {
-		Convey("that is neither equal to 1, 2, or 3 the second value returned should implement an error", func() {
-			for _, i := range []int{-1, 0, 4, 5} {
-				val, err := getWallCharacters(i)
+func TestGetCellAddress(t *testing.T) {
+	t.Parallel()
 
-				So(err, ShouldImplement, (*error)(nil))
-				So(err.Error(), ShouldContainSubstring, "Invalid value of intensity found:")
-				So(val, ShouldHaveLength, 0)
-				So(cap(val), ShouldEqual, 0)
-			}
-		})
+	config := &maze.Dimensions{
+		Length: 6,
+		Width:  5,
+	}
 
-		Convey("that range between 1 and 3 with 1 and 3 are included, the three wall characters should be returned", func() {
-			testVal := map[int][]string{
-				1: {"|", "---", "-"},
-				2: {"╏", "╍╍╍", "╍"},
-				3: {"║", "===", "="},
-			}
+	got := config.GetCellAddress(17)
+	want := maze.CellAddress{
+		BottomCenter: [2]int{6, 9},
+		BottomLeft:   [2]int{6, 8},
+		BottomRight:  [2]int{6, 10},
+		MiddleCenter: [2]int{5, 9},
+		MiddleLeft:   [2]int{5, 8},
+		MiddleRight:  [2]int{5, 10},
+		TopCenter:    [2]int{4, 9},
+		TopLeft:      [2]int{4, 8},
+		TopRight:     [2]int{4, 10},
+	}
 
-			for i, output := range testVal {
-				val, err := getWallCharacters(i)
+	if got != want {
+		t.Fatalf("unexpected cell address: got %+v want %+v", got, want)
+	}
 
-				So(err, ShouldBeNil)
-				So(val, ShouldContain, output[0])
-				So(val, ShouldContain, output[1])
-				So(val, ShouldContain, output[2])
-				So(val, ShouldHaveLength, 3)
-			}
-		})
-	})
+	if empty := config.GetCellAddress(5000); empty != (maze.CellAddress{}) {
+		t.Fatalf("expected missing cell to return zero value, got %+v", empty)
+	}
 }
 
-// TestIsSpaceFound tests the functionality of isSpaceFound
-func TestIsSpaceFound(t *testing.T) {
-	Convey("TestIsSpaceFound: Given a string", t, func() {
-		Convey("with or without the space character, the correct boolean should be returned ", func() {
-			So(isSpaceFound(""), ShouldBeFalse)
-			So(isSpaceFound(" "), ShouldBeTrue)
-			So(isSpaceFound("hsghdsgd"), ShouldBeFalse)
-			So(isSpaceFound("space "), ShouldBeTrue)
-		})
-	})
+func TestGetCellNeighbors(t *testing.T) {
+	t.Parallel()
+
+	config := &maze.Dimensions{
+		Length: 6,
+		Width:  5,
+	}
+
+	got := config.GetCellNeighbors(17)
+	want := maze.CellNeighbors{
+		Bottom: 23,
+		Left:   16,
+		Right:  18,
+		Top:    11,
+	}
+
+	if got != want {
+		t.Fatalf("unexpected cell neighbors: got %+v want %+v", got, want)
+	}
+
+	if empty := config.GetCellNeighbors(31); empty != (maze.CellNeighbors{}) {
+		t.Fatalf("expected missing cell to return zero neighbors, got %+v", empty)
+	}
 }

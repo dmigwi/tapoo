@@ -1,0 +1,24 @@
+#!/bin/sh
+# Pre-commit hook that runs golangci-lint
+# This ensures all commits pass linting checks before being committed
+
+echo "Running golangci-lint..."
+
+# Run golangci-lint
+golangci-lint run
+
+# Capture the exit code
+LINT_EXIT_CODE=$?
+
+# If linting failed, prevent the commit
+if [ $LINT_EXIT_CODE -ne 0 ]; then
+    echo ""
+    echo "❌ Commit rejected: golangci-lint found issues."
+    echo "Please fix the linting errors above before committing."
+    echo "Tip: You can run 'golangci-lint run --fix' to auto-fix some issues."
+    echo ""
+    exit 1
+fi
+
+echo "✅ golangci-lint passed - proceeding with commit"
+exit 0

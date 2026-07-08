@@ -2,90 +2,126 @@ package maze
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 
 	termbox "github.com/nsf/termbox-go"
 )
 
-const (
-	intro            = "   You are playing the Maze runner, hide and seek game (Tapoo).      "
-	website          = " Visit https://www.linkedin.com/in/migwi-ndungu/ to contact the developer.  "
-	playerNavigation = "      Use the Arrow Keys to navigate the player (in Blue)           "
-	statusMsg        = "         Press Space to Pause.         Scores: %d            "
-
-	space              = "                                                                         "
-	pauseMsg           = "                              Game Paused !!!                            "
-	gameOverSucceed    = "    Game Over! : Congratulations, Won by Locating the target on time.    "
-	gameOverFailed     = "      Game Over! : Ooops!!!, Failed to locate the target on time.        "
-	gameOverNavigation = "        Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed         "
-	highScores         = "                   High Scores: %d                             "
-)
-
 // fill prints a string to the termbox view box on the given coordinates.
-func fill(x, y int, val string, foreground termbox.Attribute) {
+func fill(ui UI, x, y int, val string, foreground termbox.Attribute) {
 	for index, char := range val {
-		termbox.SetCell(x+index, y, char, foreground, coldef)
+		ui.SetCell(x+index, y, char, foreground, coldef)
 	}
 }
 
 // drawMaze draws the maze on the termbox view.
-func drawMaze(config *Dimensions, data [][]string) {
-	if err := termbox.Clear(coldef, coldef); err != nil {
-		panic(err)
+func drawMaze(ui UI, data [][]string) error {
+	if err := ui.Clear(coldef, coldef); err != nil {
+		return err
 	}
 
-	for loc, msg := range map[int]string{1: intro, 3: website, 5: playerNavigation} {
-		fill(len(data[1])/3, loc, msg, coldef)
+	// The header is centered relative to the rendered maze width so it scales with level size.
+	titleColumn := len(data[1]) / screenTitleDivisor
+	for _, message := range []struct {
+		row int
+		msg string
+	}{
+		{row: messageRowIntro, msg: intro},
+		{row: messageRowWebsite, msg: website},
+		{row: messageRowControls, msg: playerNavigation},
+	} {
+		fill(ui, titleColumn, message.row, message.msg, coldef)
 	}
 
 	for k, d := range data {
-		fill(3, 7+k, strings.Join(d, ""), coldef)
+		fill(ui, mazeLeftPadding, mazeTopPadding+k, strings.Join(d, ""), coldef)
 	}
+
+	return nil
 }
 
-// refreshUI refreshes the scores value and update the player positions.
-func refreshUI(config *Dimensions, count int, data [][]string) {
-	drawMaze(config, data)
+// RefreshUI redraws the maze, player, goal, and score banner and reports whether the goal was reached.
+func RefreshUI(ui UI, config *Dimensions, count int, data [][]string) (bool, error) {
+	if err := drawMaze(ui, data); err != nil {
+		return false, err
+	}
+
 	targetPos := config.FinalPosition
 	startPos := config.StartPosition
 
-	termbox.SetCell((targetPos[1]*2)+3, targetPos[0]+7, '#', termbox.ColorRed, termbox.ColorRed)
-	termbox.SetCell((startPos[1]*2)+3, startPos[0]+7, '@', termbox.ColorCyan, termbox.ColorCyan)
+	// StartPosition and FinalPosition store maze-grid coordinates, so they are remapped into
+	// termbox coordinates here using the same doubled-grid math used during generation.
+	ui.SetCell(
+		(targetPos[1]*cellSpan)+playerMarkerOffset,
+		targetPos[0]+mazeTopPadding,
+		'#',
+		termbox.ColorRed,
+		termbox.ColorRed,
+	)
+	ui.SetCell(
+		(startPos[1]*cellSpan)+playerMarkerOffset,
+		startPos[0]+mazeTopPadding,
+		'@',
+		termbox.ColorCyan,
+		termbox.ColorCyan,
+	)
 
-	fill(len(data[1])/3, len(data)+8, fmt.Sprintf(statusMsg, count), coldef)
+	fill(ui, len(data[1])/screenTitleDivisor, len(data)+statusRowOffset, fmt.Sprintf(statusMsg, count), coldef)
 
-	// check if target has been located
-	go func() {
-		if reflect.DeepEqual(startPos, targetPos) {
-			status <- succeeded
-		}
-	}()
-
-	termbox.Flush()
-}
-
-// interruptUI displays some text indicating  if the game is paused or
-// after the player won or lost a given tapoo game level.
-func interruptUI(msg string, config *Dimensions, data [][]string, color termbox.Attribute) {
-	drawMaze(config, data)
-
-	xAxis := len(data[1]) / 4
-
-	for _, loc := range []int{3, 5, 7, 9} {
-		fill(xAxis, len(data)/2+loc, space, coldef)
+	if err := ui.Flush(); err != nil {
+		return false, err
 	}
 
-	for loc, msg := range map[int]string{4: msg, 8: gameOverNavigation} {
-		fill(xAxis, len(data)/2+loc, msg, coldef)
+	// The caller decides how to react; RefreshUI only reports whether the player reached the goal.
+	return positionsEqual(startPos, targetPos), nil
+}
+
+// InterruptUI overlays a pause or game-over message on top of the current maze render.
+func InterruptUI(
+	ui UI, msg string, data [][]string, color termbox.Attribute, showHighScore bool, score int,
+) error {
+	if err := drawMaze(ui, data); err != nil {
+		return err
+	}
+
+	// The overlay clears a small box in the middle of the maze before drawing pause or game-over text.
+	xAxis := len(data[1]) / overlayLeftDivisor
+
+	for _, loc := range []int{overlayClearRowOne, overlayClearRowTwo, overlayClearRowTree, overlayClearRowFour} {
+		fill(ui, xAxis, len(data)/2+loc, space, coldef)
+	}
+
+	for _, message := range []struct {
+		row int
+		msg string
+	}{
+		{row: overlayRowMessage, msg: msg},
+		{row: overlayRowNavigate, msg: gameOverNavigation},
+	} {
+		fill(ui, xAxis, len(data)/2+message.row, message.msg, coldef)
 	}
 
 	scoresMsg := space
-	if !paused {
-		scoresMsg = fmt.Sprintf(highScores, scores)
+	if showHighScore {
+		scoresMsg = fmt.Sprintf(highScores, score)
 	}
 
-	fill(xAxis, len(data)/2+6, scoresMsg, color)
+	fill(ui, xAxis, len(data)/2+scoreRowOffset, scoresMsg, color)
 
-	termbox.Flush()
+	return ui.Flush()
+}
+
+func positionsEqual(left, right []int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+
+	// Slices are used throughout the package for positions, so equality is kept explicit and allocation free.
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+
+	return true
 }
