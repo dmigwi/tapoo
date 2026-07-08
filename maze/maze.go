@@ -1,5 +1,7 @@
 package maze
 
+import "fmt"
+
 // Dimensions defines the actual number of cells that make up the maze along the vertical and
 // the horizontal edges. Length represents the number of the cells along the horizontal
 // edge while Width represents the number of the cells along the vertical edge.
@@ -21,6 +23,13 @@ func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
 
 	// finalPos stores [pathLength, cellNumber] so the farthest discovered cell can become the goal.
 	finalPos, cellsPath, currentPos := []int{1, startPos}, []int{startPos}, startPos
+
+	if !weight.IsValid() {
+		return [][]string{}, fmt.Errorf(
+			"invalid wall weight: %s. allowed values are %s, %s, and %s",
+			weight, WallWeightRegular, WallWeightMedium, WallWeightBold,
+		)
+	}
 
 	maze, err := config.CreatePlayingField(weight)
 	if err != nil {

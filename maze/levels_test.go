@@ -12,7 +12,7 @@ func TestGenerateMazeArea(t *testing.T) {
 	tests := []struct {
 		name  string
 		level int
-		want  float64
+		want  int
 	}{
 		{name: "seed level", level: 0, want: 100},
 		{name: "normal level", level: 23, want: 330},
@@ -90,6 +90,18 @@ func TestGetMazeDimensionsFits(t *testing.T) {
 			level: 0,
 			size:  maze.Dimensions{Length: 5, Width: 20},
 			want:  maze.Dimensions{Length: 5, Width: 20},
+		},
+		{
+			name:  "prefers closest aspect match when multiple fits exist",
+			level: 2,
+			size:  maze.Dimensions{Length: 16, Width: 10},
+			want:  maze.Dimensions{Length: 15, Width: 8},
+		},
+		{
+			name:  "prefers balanced fit when aspect score ties",
+			level: 2,
+			size:  maze.Dimensions{Length: 15, Width: 10},
+			want:  maze.Dimensions{Length: 12, Width: 10},
 		},
 	}
 

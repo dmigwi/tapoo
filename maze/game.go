@@ -2,6 +2,7 @@ package maze
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	termbox "github.com/nsf/termbox-go"
@@ -21,6 +22,38 @@ type gameState struct {
 	paused     bool
 	canResume  bool
 	totalCells int
+	level      int
+	nextLevel  int
+	weight     WallWeight
+	overlay    *UIOverlay
+	store      *Store
+}
+
+// runtimeMaze keeps the active maze data synchronized between the event loop and the keyboard goroutine.
+type runtimeMaze struct {
+	mu   sync.RWMutex
+	data [][]string
+}
+
+// newRuntimeMaze stores the initial maze data that player movement checks against.
+func newRuntimeMaze(data [][]string) *runtimeMaze {
+	return &runtimeMaze{data: data}
+}
+
+// Data returns the current maze snapshot used for traversability checks.
+func (mazeData *runtimeMaze) Data() [][]string {
+	mazeData.mu.RLock()
+	defer mazeData.mu.RUnlock()
+
+	return mazeData.data
+}
+
+// SetData swaps in a new maze snapshot after level reloads or wall-weight changes.
+func (mazeData *runtimeMaze) SetData(data [][]string) {
+	mazeData.mu.Lock()
+	defer mazeData.mu.Unlock()
+
+	mazeData.data = data
 }
 
 // NewGameClock creates a new per-level clock using the provided duration budget.
@@ -95,6 +128,12 @@ func (config *Dimensions) HandlePlayerMovement(event termbox.Key, data [][]strin
 		return StatusPause, true
 	}
 
+	// Ctrl+B does not move the player; it asks the game loop to cycle the current wall style.
+	if event == termbox.KeyCtrlB {
+		return StatusCycleWallWeight, true
+	}
+
+	// Arrow keys mutate the stored player position immediately when the destination cell is traversable.
 	if event == termbox.KeyArrowLeft {
 		config.PlayerMovement(data, "LEFT")
 		return 0, false
@@ -115,16 +154,17 @@ func (config *Dimensions) HandlePlayerMovement(event termbox.Key, data [][]strin
 		return 0, false
 	}
 
+	// Unhandled keys are ignored so they do not interrupt gameplay or trigger redraw side effects.
 	return 0, false
 }
 
 // handleKeyboardMapping handles all the keyboard input as captured by termbox.
-func (config *Dimensions) handleKeyboardMapping(ui UI, data [][]string, statusCh chan<- int) error {
+func (config *Dimensions) handleKeyboardMapping(ui UI, mazeData *runtimeMaze, statusCh chan<- int) error {
 	for {
 		ev := ui.PollEvent()
 		if ev.Type == termbox.EventKey {
 			// Arrow keys mutate player state directly; control keys are converted into higher-level statuses.
-			if gameStatus, ok := config.HandlePlayerMovement(ev.Key, data); ok {
+			if gameStatus, ok := config.HandlePlayerMovement(ev.Key, mazeData.Data()); ok {
 				statusCh <- gameStatus
 			}
 			continue
@@ -150,23 +190,58 @@ func StartWithUI(ui UI) error {
 	defer ui.Close()
 	ui.SetInputMode(termbox.InputEsc)
 
-	val, data, errGame := setupGame(ui)
-	if errGame != nil {
-		return errGame
-	}
-
-	return PlayWithUI(ui, val, data)
+	return PlayWithUI(ui)
 }
 
-// PlayWithUI runs the maze event loop using a prepared maze and the provided UI.
-func PlayWithUI(ui UI, val *Dimensions, data [][]string) error {
+// PlayWithUI loads the first level and runs the maze event loop using the provided UI.
+func PlayWithUI(ui UI) error {
+	gameLevel, currentWallWeight := 1, WallWeightRegular
+	gameStore, errStore := NewStore()
+	if errStore == nil {
+		if persistedState, errLoad := gameStore.Load(); errLoad == nil {
+			gameLevel = persistedState.Level
+			currentWallWeight = persistedState.WallWeight
+		}
+	}
+
+	val, data, errGame := loadLevel(ui, gameLevel, currentWallWeight)
+	if errGame != nil {
+		gameLevel = 1
+		currentWallWeight = WallWeightRegular
+
+		val, data, errGame = loadLevel(ui, gameLevel, currentWallWeight)
+		if errGame != nil {
+			return errGame
+		}
+	}
+
+	return playPreparedGameWithStore(ui, val, data, currentWallWeight, gameStore)
+}
+
+// PlayPreparedGameWithUI runs the maze event loop using a caller-provided maze state.
+// This keeps the runtime black-box testable without forcing tests through the level loader.
+func PlayPreparedGameWithUI(ui UI, val *Dimensions, data [][]string, currentWallWeight WallWeight) error {
+	return playPreparedGameWithStore(ui, val, data, currentWallWeight, nil)
+}
+
+// playPreparedGameWithStore runs the prepared game loop and optionally persists runtime progress.
+func playPreparedGameWithStore(
+	ui UI, val *Dimensions, data [][]string, currentWallWeight WallWeight, gameStore *Store,
+) error {
+	mazeData := newRuntimeMaze(data)
 	statusCh := make(chan int)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- val.handleKeyboardMapping(ui, data, statusCh)
+		errCh <- val.handleKeyboardMapping(ui, mazeData, statusCh)
 	}()
 
-	state := gameState{totalCells: val.Length * val.Width}
+	state := gameState{
+		totalCells: val.Length * val.Width,
+		scores:     val.Length * val.Width * scoreMultiplier,
+		level:      detectGameLevel(val),
+		weight:     currentWallWeight,
+		store:      gameStore,
+	}
 	clock := NewGameClock(time.Duration(state.totalCells) * time.Second)
 	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
@@ -186,10 +261,13 @@ func PlayWithUI(ui UI, val *Dimensions, data [][]string) error {
 				return err
 			}
 		case returnedStatus := <-statusCh:
-			exitGame, err := state.handleStatus(ui, returnedStatus, data, timeout, &clock)
+			exitGame, updatedData, err := state.handleStatus(ui, returnedStatus, val, data, timeout, &clock)
 			if err != nil {
 				return err
 			}
+
+			data = updatedData
+			mazeData.SetData(data)
 
 			if exitGame {
 				return nil
@@ -207,21 +285,6 @@ func CalculateScore(totalCells int, elapsed time.Duration) int {
 	return (totalCells - int(elapsed.Seconds())) * scoreMultiplier
 }
 
-// setupGame keeps terminal bootstrap separate from the main event loop so Start reads top-down.
-func setupGame(ui UI) (*Dimensions, [][]string, error) {
-	val, err := GetMazeDimensions(1, GetTerminalSize(ui.Size()))
-	if err != nil {
-		return nil, nil, fmt.Errorf("get maze dimensions: %w", err)
-	}
-
-	data, err := val.GenerateMaze(WallWeightRegular)
-	if err != nil {
-		return nil, nil, fmt.Errorf("generate maze: %w", err)
-	}
-
-	return val, data, nil
-}
-
 func (state *gameState) handleTick(
 	ui UI, timeVal time.Time, clock *GameClock, val *Dimensions, data [][]string, timeout *time.Timer,
 ) error {
@@ -231,7 +294,7 @@ func (state *gameState) handleTick(
 
 	// Scores decay by elapsed whole seconds, matching the timeout duration used for the level.
 	state.scores = CalculateScore(state.totalCells, timeVal.Sub(clock.startedAt)-clock.pausedDuration)
-	targetReached, errUI := RefreshUI(ui, val, state.scores, data)
+	targetReached, errUI := RenderMazeUI(ui, val, state.level, state.scores, data, nil)
 	if errUI != nil {
 		return fmt.Errorf("refresh ui: %w", errUI)
 	}
@@ -241,62 +304,208 @@ func (state *gameState) handleTick(
 	}
 
 	stopTimer(timeout)
-	if err := InterruptUI(ui, gameOverSucceed, data, termbox.ColorCyan, true, state.scores); err != nil {
+	state.overlay = &UIOverlay{
+		Message:       gameOverSucceed,
+		Color:         termbox.ColorCyan,
+		ShowHighScore: true,
+	}
+	state.nextLevel = state.level + 1
+
+	if _, err := RenderMazeUI(ui, nil, 0, state.scores, data, state.overlay); err != nil {
 		return fmt.Errorf("show success screen: %w", err)
 	}
 
 	state.paused = true
-	state.canResume = false
+	state.canResume = true
 
 	return nil
 }
 
 func (state *gameState) handleTimeout(ui UI, data [][]string) error {
-	if err := InterruptUI(ui, gameOverFailed, data, termbox.ColorRed, true, state.scores); err != nil {
+	state.overlay = &UIOverlay{
+		Message:       gameOverFailed,
+		Color:         termbox.ColorRed,
+		ShowHighScore: true,
+	}
+	state.nextLevel = state.level
+
+	if _, err := RenderMazeUI(ui, nil, 0, state.scores, data, state.overlay); err != nil {
 		return fmt.Errorf("show failure screen: %w", err)
 	}
 
 	state.paused = true
-	state.canResume = false
+	state.canResume = true
 
 	return nil
 }
 
+// handleStatus processes non-movement game actions such as quit, pause, wall-style changes,
+// and proceed requests after a pause or completed run. It returns whether the game loop should
+// exit, plus the maze data that should remain active after the action.
 func (state *gameState) handleStatus(
-	ui UI, returnedStatus int, data [][]string, timeout *time.Timer, clock *GameClock,
-) (bool, error) {
-	// Proceed is only meaningful after a manual pause; win/lose screens intentionally cannot resume.
+	ui UI, returnedStatus int, val *Dimensions, data [][]string, timeout *time.Timer, clock *GameClock,
+) (bool, [][]string, error) {
+	// Quit always wins regardless of whether the user is pausing, replaying, or advancing levels.
 	if returnedStatus == StatusQuit {
-		return true, nil
+		return true, data, nil
 	}
 
-	if returnedStatus == StatusProceed {
-		if !state.paused || !state.canResume {
-			return false, nil
+	// Ctrl+B only changes the wall glyph set; it leaves level progress, timers, and player state intact.
+	if returnedStatus == StatusCycleWallWeight {
+		updatedData, err := state.handleWallWeightCycle(data)
+		if err != nil {
+			return false, data, err
 		}
 
+		return false, updatedData, nil
+	}
+
+	// Ctrl+P serves two different flows:
+	// 1. Resume a manually paused game when no overlay transition is pending.
+	// 2. Load the next or current level after a win or fail overlay.
+	if returnedStatus == StatusProceed {
+		// Ignore proceed unless the game is currently in a resumable or reloadable paused state.
+		if !state.paused || !state.canResume {
+			return false, data, nil
+		}
+
+		// A non-nil overlay means the user is on a win/fail/pause screen rather than the live board.
+		// Win and fail screens set nextLevel, so reloadLevel can decide whether to advance or retry.
+		if state.overlay != nil {
+			reloadedData, err := state.reloadLevel(ui, val, timeout, clock)
+			if err != nil {
+				return false, data, err
+			}
+
+			return false, reloadedData, nil
+		}
+
+		// Without an overlay, proceed simply resumes the current timed run from a manual pause.
 		state.paused = false
 		state.canResume = false
+		state.overlay = nil
 		clock.Resume()
 		timeout.Reset(clock.Remaining())
 
-		return false, nil
+		return false, data, nil
 	}
 
+	// Ignore duplicate pause requests and any unknown status values.
 	if returnedStatus != StatusPause || state.paused {
-		return false, nil
+		return false, data, nil
 	}
 
+	// A fresh pause freezes the timer, clears any pending level transition, and shows the pause overlay.
 	state.paused = true
 	state.canResume = true
+	state.nextLevel = 0
+	state.overlay = &UIOverlay{
+		Message:       pauseMsg,
+		Color:         termbox.ColorYellow,
+		ShowHighScore: false,
+	}
 	clock.Pause()
 	stopTimer(timeout)
 
-	if err := InterruptUI(ui, pauseMsg, data, termbox.ColorYellow, false, quitNavigationStatus); err != nil {
-		return false, fmt.Errorf("show pause screen: %w", err)
+	if _, err := RenderMazeUI(ui, nil, 0, quitNavigationStatus, data, state.overlay); err != nil {
+		return false, data, fmt.Errorf("show pause screen: %w", err)
 	}
 
-	return false, nil
+	return false, data, nil
+}
+
+// reloadLevel rebuilds the current or next level after a game-over proceed request.
+func (state *gameState) reloadLevel(
+	ui UI, val *Dimensions, timeout *time.Timer, clock *GameClock,
+) ([][]string, error) {
+	level := state.nextLevel
+	nextConfig, nextData, errLevel := loadLevel(ui, level, state.weight)
+	if errLevel != nil {
+		return nil, fmt.Errorf("reload level %d: %w", level, errLevel)
+	}
+
+	*val = *nextConfig
+	state.level = level
+	state.nextLevel = 0
+	state.paused = false
+	state.canResume = false
+	state.overlay = nil
+	state.totalCells = val.Length * val.Width
+	state.scores = state.totalCells * scoreMultiplier
+	*clock = NewGameClock(time.Duration(state.totalCells) * time.Second)
+	stopTimer(timeout)
+	timeout.Reset(clock.levelDuration)
+
+	if _, err := RenderMazeUI(ui, val, state.level, state.scores, nextData, nil); err != nil {
+		return nil, fmt.Errorf("render reloaded level: %w", err)
+	}
+
+	state.persistProgress()
+
+	return nextData, nil
+}
+
+// loadLevel creates a fresh maze for the requested level using the current wall-weight setting.
+func loadLevel(ui UI, level int, weight WallWeight) (*Dimensions, [][]string, error) {
+	val, err := GetMazeDimensions(level, GetTerminalSize(ui.Size()))
+	if err != nil {
+		return nil, nil, fmt.Errorf("get maze dimensions: %w", err)
+	}
+
+	data, err := val.GenerateMaze(weight)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate maze: %w", err)
+	}
+
+	return val, data, nil
+}
+
+// detectGameLevel infers the active level from the maze area when tests provide a prepared maze.
+// Non-standard dimensions fall back to level one so the runtime can still initialize safely.
+func detectGameLevel(config *Dimensions) int {
+	area := config.Length * config.Width
+	if area < seed {
+		return 1
+	}
+
+	delta := area - seed
+	if delta%diff != 0 {
+		return 1
+	}
+
+	level := delta / diff
+	if level < 1 {
+		return 1
+	}
+
+	if level > maxLevel {
+		return maxLevel
+	}
+
+	return level
+}
+
+// handleWallWeightCycle advances to the next wall weight and updates the maze data in place.
+// The next scheduled refresh is responsible for rendering the updated wall glyphs.
+func (state *gameState) handleWallWeightCycle(data [][]string) ([][]string, error) {
+	updatedData, err := reweightMaze(data, state.weight)
+	if err != nil {
+		return data, fmt.Errorf("update wall weight: %w", err)
+	}
+
+	state.weight = state.weight.Next()
+	state.persistProgress()
+
+	return updatedData, nil
+}
+
+// persistProgress stores the current level and wall weight on a best-effort basis.
+func (state *gameState) persistProgress() {
+	if state.store == nil {
+		return
+	}
+
+	_ = state.store.Save(state.level, state.weight)
 }
 
 func stopTimer(timer *time.Timer) {

@@ -133,6 +133,7 @@ func TestHandlePlayerMovement(t *testing.T) {
 			{name: "quit", key: termbox.KeyEsc, want: maze.StatusQuit},
 			{name: "proceed", key: termbox.KeyCtrlP, want: maze.StatusProceed},
 			{name: "pause", key: termbox.KeySpace, want: maze.StatusPause},
+			{name: "cycle wall weight", key: termbox.KeyCtrlB, want: maze.StatusCycleWallWeight},
 		}
 
 		for _, testCase := range tests {
@@ -288,7 +289,8 @@ func TestPlayWithUI(t *testing.T) {
 
 		ui.enqueueEvents(termbox.Event{Type: termbox.EventError, Err: errors.New("keyboard failed")})
 
-		err := maze.PlayWithUI(ui, &maze.Dimensions{Length: 3, Width: 3}, sampleMazeGrid())
+		err := maze.PlayPreparedGameWithUI(ui, &maze.Dimensions{Length: 3, Width: 3},
+			sampleMazeGrid(), maze.WallWeightRegular)
 		if err == nil {
 			t.Fatal("expected play with ui to return a keyboard error")
 		}
@@ -310,12 +312,12 @@ func TestPlayWithUI(t *testing.T) {
 			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc},
 		)
 
-		err := maze.PlayWithUI(ui, &maze.Dimensions{
+		err := maze.PlayPreparedGameWithUI(ui, &maze.Dimensions{
 			Length:        3,
 			Width:         3,
 			StartPosition: []int{1, 1},
 			FinalPosition: []int{3, 3},
-		}, sampleMazeGrid())
+		}, sampleMazeGrid(), maze.WallWeightRegular)
 		if err != nil {
 			t.Fatalf("play with ui returned error: %v", err)
 		}
@@ -324,8 +326,70 @@ func TestPlayWithUI(t *testing.T) {
 			t.Fatal("expected play with ui to render at least one overlay during pause handling")
 		}
 
-		if !ui.containsText("Game Paused") {
-			t.Fatal("expected pause handling to render the pause overlay")
+		if !ui.containsText("Scores:") {
+			t.Fatal("expected Ctrl+P after pause to return to the live game view")
+		}
+	})
+
+	t.Run("cycles wall weight and renders the updated maze on the next refresh tick", func(t *testing.T) {
+		t.Parallel()
+
+		ui := newFakeUI(40, 80)
+		t.Cleanup(ui.Close)
+
+		ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlB})
+		go func() {
+			time.Sleep(120 * time.Millisecond)
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+		}()
+
+		err := maze.PlayPreparedGameWithUI(ui, &maze.Dimensions{
+			Length:        3,
+			Width:         3,
+			StartPosition: []int{1, 1},
+			FinalPosition: []int{3, 3},
+		}, sampleMazeGrid(), maze.WallWeightRegular)
+		if err != nil {
+			t.Fatalf("play with ui returned error: %v", err)
+		}
+
+		want := "   ╏╍╍╍╏╍╍╍╏╍╍╍╏"
+		got := ui.rowText(7, 0, len([]rune(want))-1)
+		if got != want {
+			t.Fatalf("expected Ctrl+B to update the maze on the next refresh tick: got %q want %q", got, want)
+		}
+	})
+
+	t.Run("wraps wall weight back to the initial weight after the last supported style", func(t *testing.T) {
+		t.Parallel()
+
+		ui := newFakeUI(40, 80)
+		t.Cleanup(ui.Close)
+
+		ui.enqueueEvents(
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlB},
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlB},
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlB},
+		)
+		go func() {
+			time.Sleep(120 * time.Millisecond)
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+		}()
+
+		err := maze.PlayPreparedGameWithUI(ui, &maze.Dimensions{
+			Length:        3,
+			Width:         3,
+			StartPosition: []int{1, 1},
+			FinalPosition: []int{3, 3},
+		}, sampleMazeGrid(), maze.WallWeightRegular)
+		if err != nil {
+			t.Fatalf("play with ui returned error: %v", err)
+		}
+
+		want := "   |---|---|---|"
+		got := ui.rowText(7, 0, len([]rune(want))-1)
+		if got != want {
+			t.Fatalf("expected Ctrl+B wraparound to restore the initial wall weight: got %q want %q", got, want)
 		}
 	})
 
@@ -340,13 +404,36 @@ func TestPlayWithUI(t *testing.T) {
 			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
 		}()
 
-		err := maze.PlayWithUI(ui, &maze.Dimensions{}, sampleMazeGrid())
+		err := maze.PlayPreparedGameWithUI(ui, &maze.Dimensions{}, sampleMazeGrid(), maze.WallWeightRegular)
 		if err != nil {
 			t.Fatalf("play with ui returned error: %v", err)
 		}
 
 		if !ui.containsText("Failed to locate the target on time") {
 			t.Fatal("expected timeout handling to render the failure overlay")
+		}
+	})
+
+	t.Run("proceeds to the same level after a failed run", func(t *testing.T) {
+		t.Parallel()
+
+		ui := newFakeUI(40, 80)
+		t.Cleanup(ui.Close)
+
+		go func() {
+			time.Sleep(40 * time.Millisecond)
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlP})
+			time.Sleep(40 * time.Millisecond)
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+		}()
+
+		err := maze.PlayPreparedGameWithUI(ui, &maze.Dimensions{}, sampleMazeGrid(), maze.WallWeightRegular)
+		if err != nil {
+			t.Fatalf("play with ui returned error: %v", err)
+		}
+
+		if !ui.containsText("Scores: 11000") {
+			t.Fatal("expected Ctrl+P after failure to reload level 1 with its initial score")
 		}
 	})
 
@@ -361,18 +448,46 @@ func TestPlayWithUI(t *testing.T) {
 			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
 		}()
 
-		err := maze.PlayWithUI(ui, &maze.Dimensions{
+		err := maze.PlayPreparedGameWithUI(ui, &maze.Dimensions{
 			Length:        1,
 			Width:         1,
 			StartPosition: []int{1, 1},
 			FinalPosition: []int{1, 1},
-		}, sampleMazeGrid())
+		}, sampleMazeGrid(), maze.WallWeightRegular)
 		if err != nil {
 			t.Fatalf("play with ui returned error: %v", err)
 		}
 
 		if !ui.containsText("Congratulations") {
 			t.Fatal("expected the winning tick to render the success overlay")
+		}
+	})
+
+	t.Run("proceeds to the next level after a win", func(t *testing.T) {
+		t.Parallel()
+
+		ui := newFakeUI(40, 80)
+		t.Cleanup(ui.Close)
+
+		go func() {
+			time.Sleep(80 * time.Millisecond)
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlP})
+			time.Sleep(40 * time.Millisecond)
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+		}()
+
+		err := maze.PlayPreparedGameWithUI(ui, &maze.Dimensions{
+			Length:        1,
+			Width:         1,
+			StartPosition: []int{1, 1},
+			FinalPosition: []int{1, 1},
+		}, sampleMazeGrid(), maze.WallWeightRegular)
+		if err != nil {
+			t.Fatalf("play with ui returned error: %v", err)
+		}
+
+		if !ui.containsText("Scores: 12000") {
+			t.Fatal("expected Ctrl+P after a win to load level 2 with its initial score")
 		}
 	})
 }

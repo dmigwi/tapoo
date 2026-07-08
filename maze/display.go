@@ -1,11 +1,24 @@
 package maze
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	termbox "github.com/nsf/termbox-go"
 )
+
+// UIOverlay defines the interrupt content rendered above the base maze view.
+type UIOverlay struct {
+	// Message is the primary pause or game-over text shown in the center overlay.
+	Message string
+
+	// Color controls the overlay score color when ShowHighScore is enabled.
+	Color termbox.Attribute
+
+	// ShowHighScore controls whether the overlay renders the high score banner.
+	ShowHighScore bool
+}
 
 // fill prints a string to the termbox view box on the given coordinates.
 func fill(ui UI, x, y int, val string, foreground termbox.Attribute) {
@@ -40,12 +53,41 @@ func DrawMaze(ui UI, data [][]string) error {
 	return nil
 }
 
-// RefreshUI redraws the maze, player, goal, and score banner and reports whether the goal was reached.
-func RefreshUI(ui UI, config *Dimensions, count int, data [][]string) (bool, error) {
+// RenderMazeUI redraws the maze either as the live game view or as an interrupt overlay.
+// When overlay is nil, the current player, target, and score banner are rendered and the
+// returned bool reports whether the player is already on the goal. When overlay is provided,
+// the centered pause or game-over panel is rendered instead.
+func RenderMazeUI(ui UI, config *Dimensions, level, score int, data [][]string, overlay *UIOverlay) (bool, error) {
 	if err := DrawMaze(ui, data); err != nil {
 		return false, err
 	}
 
+	if overlay == nil {
+		if config == nil {
+			return false, errors.New("render live maze ui: missing dimensions")
+		}
+
+		if len(config.StartPosition) != cellSpan || len(config.FinalPosition) != cellSpan {
+			return false, errors.New("render live maze ui: missing start or goal positions")
+		}
+
+		targetReached := renderLiveScene(ui, config, level, score, data)
+		if err := ui.Flush(); err != nil {
+			return false, err
+		}
+		return targetReached, nil
+	}
+
+	renderOverlayScene(ui, score, data, overlay)
+	if err := ui.Flush(); err != nil {
+		return false, err
+	}
+
+	return false, nil
+}
+
+// renderLiveScene adds the player marker, goal marker, and status banner to the base maze view.
+func renderLiveScene(ui UI, config *Dimensions, level, score int, data [][]string) bool {
 	targetPos := config.FinalPosition
 	startPos := config.StartPosition
 
@@ -66,24 +108,20 @@ func RefreshUI(ui UI, config *Dimensions, count int, data [][]string) (bool, err
 		termbox.ColorCyan,
 	)
 
-	fill(ui, len(data[1])/screenTitleDivisor, len(data)+statusRowOffset, fmt.Sprintf(statusMsg, count), coldef)
+	fill(
+		ui,
+		len(data[1])/screenTitleDivisor,
+		len(data)+statusRowOffset,
+		fmt.Sprintf(statusMsg, level, score),
+		coldef,
+	)
 
-	if err := ui.Flush(); err != nil {
-		return false, err
-	}
-
-	// The caller decides how to react; RefreshUI only reports whether the player reached the goal.
-	return positionsEqual(startPos, targetPos), nil
+	// The caller decides how to react; the live renderer only reports whether the player reached the goal.
+	return positionsEqual(startPos, targetPos)
 }
 
-// InterruptUI overlays a pause or game-over message on top of the current maze render.
-func InterruptUI(
-	ui UI, msg string, data [][]string, color termbox.Attribute, showHighScore bool, score int,
-) error {
-	if err := DrawMaze(ui, data); err != nil {
-		return err
-	}
-
+// renderOverlayScene clears the center panel area and draws the pause or game-over content.
+func renderOverlayScene(ui UI, score int, data [][]string, overlay *UIOverlay) {
 	// The overlay clears a small box in the middle of the maze before drawing pause or game-over text.
 	xAxis := len(data[1]) / overlayLeftDivisor
 
@@ -95,20 +133,18 @@ func InterruptUI(
 		row int
 		msg string
 	}{
-		{row: overlayRowMessage, msg: msg},
+		{row: overlayRowMessage, msg: overlay.Message},
 		{row: overlayRowNavigate, msg: gameOverNavigation},
 	} {
 		fill(ui, xAxis, len(data)/2+message.row, message.msg, coldef)
 	}
 
 	scoresMsg := space
-	if showHighScore {
+	if overlay.ShowHighScore {
 		scoresMsg = fmt.Sprintf(highScores, score)
 	}
 
-	fill(ui, xAxis, len(data)/2+scoreRowOffset, scoresMsg, color)
-
-	return ui.Flush()
+	fill(ui, xAxis, len(data)/2+scoreRowOffset, scoresMsg, overlay.Color)
 }
 
 func positionsEqual(left, right []int) bool {

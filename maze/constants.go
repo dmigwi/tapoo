@@ -54,8 +54,8 @@ const (
 	// UI strings are centralized so the display code can focus on placement rather than content.
 	intro            = "   You are playing the Maze runner, hide and seek game (Tapoo).      "
 	website          = " Visit https://www.linkedin.com/in/migwi-ndungu/ to contact the developer.  "
-	playerNavigation = "      Use the Arrow Keys to navigate the player (in Blue)           "
-	statusMsg        = "         Press Space to Pause.         Scores: %d            "
+	playerNavigation = " Use the Arrow Keys to navigate the player (in Blue). Press Ctrl+B to change walls thickness. "
+	statusMsg        = "   Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: %d   Scores: %d   "
 
 	space              = "                                                                         "
 	pauseMsg           = "                              Game Paused !!!                            "
@@ -64,6 +64,9 @@ const (
 	gameOverNavigation = "        Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed         "
 	highScores         = "                   High Scores: %d                             "
 )
+
+// storeFileName is the local runtime state file written beside the launched binary or command.
+const storeFileName = ".tapoo.store"
 
 // seed defines the size of the maze to be used in the training level (level 0).
 // It can also be referred to as the size of the training field.
@@ -100,6 +103,9 @@ const (
 	// StatusPause is updated after the player voluntarily stops the game.
 	StatusPause
 
+	// StatusCycleWallWeight is updated after the player requests a heavier wall style.
+	StatusCycleWallWeight
+
 	// StatusQuit is updated after the player exits after pausing, winning, or failing a level.
 	StatusQuit
 )
@@ -113,6 +119,25 @@ const (
 	WallWeightMedium
 	WallWeightBold
 )
+
+// IsValid reports whether the wall weight is one of the supported render styles.
+func (weight WallWeight) IsValid() bool {
+	switch weight {
+	case WallWeightRegular, WallWeightMedium, WallWeightBold:
+		return true
+	default:
+		return false
+	}
+}
+
+// Next returns the next supported wall weight value and wraps back to regular after bold.
+func (weight WallWeight) Next() WallWeight {
+	temp := weight + 1
+	if temp.IsValid() {
+		return temp
+	}
+	return WallWeightRegular
+}
 
 // String returns the stable name used for the wall weight value.
 func (weight WallWeight) String() string {

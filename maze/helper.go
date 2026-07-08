@@ -171,64 +171,41 @@ func getWallCharacters(weight WallWeight) ([3]string, error) {
 	}
 }
 
+// reweightMaze returns a copy of the maze data with every wall glyph translated from one
+// supported wall weight to the next while preserving the carved passage layout.
+func reweightMaze(data [][]string, currentWeight WallWeight) ([][]string, error) {
+	fromChars, err := getWallCharacters(currentWeight)
+	if err != nil {
+		return nil, err
+	}
+
+	toChars, err := getWallCharacters(currentWeight.Next())
+	if err != nil {
+		return nil, err
+	}
+
+	translated := make([][]string, len(data))
+	replacements := map[string]string{
+		fromChars[0]: toChars[0],
+		fromChars[1]: toChars[1],
+		fromChars[2]: toChars[2],
+	}
+
+	for rowIndex, row := range data {
+		translated[rowIndex] = append([]string(nil), row...)
+
+		for colIndex, cell := range row {
+			if replacement, ok := replacements[cell]; ok {
+				translated[rowIndex][colIndex] = replacement
+			}
+		}
+	}
+
+	return translated, nil
+}
+
 // isSpaceFound checks for the space character in a given string
 // Boolean true is returned if space is found.
 func isSpaceFound(item string) bool {
 	return strings.Contains(item, " ")
 }
-
-// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
-// ╏   ╏ # ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
-// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
-// ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
-// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
-// ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
-// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
-// ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
-// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
-// ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
-// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
-// ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏   ╏
-// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
-// ╏   ╏   ╏   ╏   ╏   ╏   ╏ @ ╏   ╏   ╏   ╏
-// ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏
-
-// ║===║===║===║===║===║===║===║===║===║===║
-// ║   ║ # ║   ║   ║   ║   ║   ║   ║   ║   ║
-// ║===║===║===║===║===║===║===║===║===║===║
-// ║   ║   ║   ║   ║   ║   ║   ║   ║   ║   ║
-// ║===║===║===║===║===║===║===║===║===║===║
-// ║   ║   ║   ║   ║   ║   ║   ║   ║   ║   ║
-// ║===║===║===║===║===║===║===║===║===║===║
-// ║   ║   ║   ║   ║   ║   ║   ║   ║   ║   ║
-// ║===║===║===║===║===║===║===║===║===║===║
-// ║   ║   ║   ║   ║   ║   ║   ║   ║   ║   ║
-// ║===║===║===║===║===║===║===║===║===║===║
-// ║   ║   ║   ║   ║   ║   ║   ║   ║   ║   ║
-// ║===║===║===║===║===║===║===║===║===║===║
-// ║   ║   ║   ║   ║   ║   ║ @ ║   ║   ║   ║
-// ║===║===║===║===║===║===║===║===║===║===║
-
-// |---|---|---|---|---|---|---|---|---|---|
-// |   | # |   |   |   |   |   |   |   |   |
-// |---|---|---|---|---|---|---|---|---|---|
-// |   |   |   |   |   |   |   |   |   |   |
-// |---|---|---|---|---|---|---|---|---|---|
-// |   |   |   |   |   |   |   |   |   |   |
-// |---|---|---|---|---|---|---|---|---|---|
-// |   |   |   |   |   |   |   |   |   |   |
-// |---|---|---|---|---|---|---|---|---|---|
-// |   |   |   |   |   |   |   |   |   |   |
-// |---|---|---|---|---|---|---|---|---|---|
-// |   |   |   |   |   |   |   |   |   |   |
-// |---|---|---|---|---|---|---|---|---|---|
-// |   |   |   |   |   |   |   |   |   |   |
-// |---|---|---|---|---|---|---|---|---|---|
-// |   |   |   |   |   |   |   |   |   |   |
-// |---|---|---|---|---|---|---|---|---|---|
-// |   |   |   |   |   |   |   |   |   |   |
-// |---|---|---|---|---|---|---|---|---|---|
-// |   |   |   |   |   |   |   |   |   |   |
-// |---|---|---|---|---|---|---|---|---|---|
-// |   |   |   |   |   | @ |   |   |   |   |
-// |---|---|---|---|---|---|---|---|---|---|
