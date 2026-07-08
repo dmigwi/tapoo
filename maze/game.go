@@ -159,19 +159,38 @@ func (config *Dimensions) HandlePlayerMovement(event termbox.Key, data [][]strin
 }
 
 // handleKeyboardMapping handles all the keyboard input as captured by termbox.
-func (config *Dimensions) handleKeyboardMapping(ui UI, mazeData *runtimeMaze, statusCh chan<- int) error {
+func (config *Dimensions) handleKeyboardMapping(ui UI, mazeData *runtimeMaze,
+	statusCh chan<- int, done <-chan struct{}) error {
 	for {
 		ev := ui.PollEvent()
 		if ev.Type == termbox.EventKey {
 			// Arrow keys mutate player state directly; control keys are converted into higher-level statuses.
 			if gameStatus, ok := config.HandlePlayerMovement(ev.Key, mazeData.Data()); ok {
-				statusCh <- gameStatus
+				select {
+				case statusCh <- gameStatus:
+				case <-done:
+					return nil
+				}
 			}
 			continue
 		}
 
+		if ev.Type == termbox.EventInterrupt {
+			select {
+			case <-done:
+				return nil
+			default:
+				continue
+			}
+		}
+
 		if ev.Type == termbox.EventError {
-			return ev.Err
+			select {
+			case <-done:
+				return nil
+			default:
+				return ev.Err
+			}
 		}
 	}
 }
@@ -231,8 +250,17 @@ func playPreparedGameWithStore(
 	mazeData := newRuntimeMaze(data)
 	statusCh := make(chan int)
 	errCh := make(chan error, 1)
+	done := make(chan struct{})
+	inputStopped := make(chan struct{})
+	defer func() {
+		close(done)
+		ui.Interrupt()
+		<-inputStopped
+	}()
+
 	go func() {
-		errCh <- val.handleKeyboardMapping(ui, mazeData, statusCh)
+		defer close(inputStopped)
+		errCh <- val.handleKeyboardMapping(ui, mazeData, statusCh, done)
 	}()
 
 	state := gameState{

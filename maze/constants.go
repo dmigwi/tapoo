@@ -62,7 +62,7 @@ const (
 	gameOverSucceed    = "    Game Over! : Congratulations, Won by Locating the target on time.    "
 	gameOverFailed     = "      Game Over! : Ooops!!!, Failed to locate the target on time.        "
 	gameOverNavigation = "        Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed         "
-	highScores         = "                   High Scores: %d                             "
+	highScores         = "                   Final Game Level Scores: %d                           "
 )
 
 // storeFileName is the local runtime state file written beside the launched binary or command.

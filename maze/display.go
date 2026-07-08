@@ -3,7 +3,7 @@ package maze
 import (
 	"errors"
 	"fmt"
-	"strings"
+	"unicode/utf8"
 
 	termbox "github.com/nsf/termbox-go"
 )
@@ -21,10 +21,14 @@ type UIOverlay struct {
 }
 
 // fill prints a string to the termbox view box on the given coordinates.
-func fill(ui UI, x, y int, val string, foreground termbox.Attribute) {
-	for index, char := range []rune(val) {
-		ui.SetCell(x+index, y, char, foreground, coldef)
+func fill(ui UI, x, y int, val string, foreground termbox.Attribute) int {
+	width := 0
+	for _, char := range val {
+		ui.SetCell(x+width, y, char, foreground, coldef)
+		width++
 	}
+
+	return width
 }
 
 // DrawMaze draws the maze on the termbox view.
@@ -34,7 +38,7 @@ func DrawMaze(ui UI, data [][]string) error {
 	}
 
 	// The header is centered relative to the rendered maze width so it scales with level size.
-	titleColumn := len(data[1]) / screenTitleDivisor
+	titleColumn := mazeWidth(data) / screenTitleDivisor
 	for _, message := range []struct {
 		row int
 		msg string
@@ -46,8 +50,11 @@ func DrawMaze(ui UI, data [][]string) error {
 		fill(ui, titleColumn, message.row, message.msg, coldef)
 	}
 
-	for k, d := range data {
-		fill(ui, mazeLeftPadding, mazeTopPadding+k, strings.Join(d, ""), coldef)
+	for rowIndex, row := range data {
+		column := mazeLeftPadding
+		for _, segment := range row {
+			column += fill(ui, column, mazeTopPadding+rowIndex, segment, coldef)
+		}
 	}
 
 	return nil
@@ -110,7 +117,7 @@ func renderLiveScene(ui UI, config *Dimensions, level, score int, data [][]strin
 
 	fill(
 		ui,
-		len(data[1])/screenTitleDivisor,
+		mazeWidth(data)/screenTitleDivisor,
 		len(data)+statusRowOffset,
 		fmt.Sprintf(statusMsg, level, score),
 		coldef,
@@ -123,7 +130,7 @@ func renderLiveScene(ui UI, config *Dimensions, level, score int, data [][]strin
 // renderOverlayScene clears the center panel area and draws the pause or game-over content.
 func renderOverlayScene(ui UI, score int, data [][]string, overlay *UIOverlay) {
 	// The overlay clears a small box in the middle of the maze before drawing pause or game-over text.
-	xAxis := len(data[1]) / overlayLeftDivisor
+	xAxis := mazeWidth(data) / overlayLeftDivisor
 
 	for _, loc := range []int{overlayClearRowOne, overlayClearRowTwo, overlayClearRowTree, overlayClearRowFour} {
 		fill(ui, xAxis, len(data)/2+loc, space, coldef)
@@ -145,6 +152,19 @@ func renderOverlayScene(ui UI, score int, data [][]string, overlay *UIOverlay) {
 	}
 
 	fill(ui, xAxis, len(data)/2+scoreRowOffset, scoresMsg, overlay.Color)
+}
+
+func mazeWidth(data [][]string) int {
+	if len(data) == 0 {
+		return 0
+	}
+
+	width := 0
+	for _, segment := range data[0] {
+		width += utf8.RuneCountInString(segment)
+	}
+
+	return width
 }
 
 func positionsEqual(left, right []int) bool {

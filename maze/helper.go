@@ -3,7 +3,6 @@ package maze
 import (
 	"crypto/rand"
 	"fmt"
-	"math"
 	"math/big"
 	"strings"
 )
@@ -41,31 +40,34 @@ type (
 // The cells are created with terminal-printable characters, and wall weight controls
 // which glyph set is used for the border and passage outlines.
 func (config *Dimensions) CreatePlayingField(weight WallWeight) ([][]string, error) {
-	var data [][]string
-
 	chars, err := getWallCharacters(weight)
 	if err != nil {
-		return data, err
+		return nil, err
 	}
 
-	for i := range (cellSpan * config.Width) + 1 {
-		var val []string
+	rows := (cellSpan * config.Width) + 1
+	data := make([][]string, 0, rows)
+	passage := strings.Repeat(" ", cellPathWidth)
+	rowCapacity := ((config.Length + 1) * cellSpan)
 
-		for k := range config.Length + 1 {
-			val = append(val, chars[0])
+	for rowIndex := range rows {
+		row := make([]string, 0, rowCapacity)
 
+		for columnIndex := 0; columnIndex <= config.Length; columnIndex++ {
+			row = append(row, chars[0])
 			switch {
-			case k != config.Length && i%2 == 0:
-				val = append(val, chars[1])
-			case k != config.Length && i%2 != 0:
-				val = append(val, strings.Repeat(" ", cellPathWidth))
+			case columnIndex != config.Length && rowIndex%2 == 0:
+				row = append(row, chars[1])
+			case columnIndex != config.Length && rowIndex%2 != 0:
+				row = append(row, passage)
 			default:
-				val = append(val, "\n")
+				row = append(row, "\n")
 			}
 		}
 
-		data = append(data, val)
+		data = append(data, row)
 	}
+
 	return data, nil
 }
 
@@ -77,14 +79,9 @@ func (config *Dimensions) GetCellAddress(cellNo int) CellAddress {
 		return CellAddress{}
 	}
 
-	// Cells are numbered row by row, so the column is the remainder and the row is the ceiled quotient.
-	column := cellNo % config.Length
-	if column == 0 {
-		column = config.Length
-	}
-
-	row := getCeiledDivisor(cellNo, config.Length) * cellSpan
-	column *= cellSpan
+	// Cells are numbered row by row, so zero-based integer division and remainder identify the cell slot.
+	row := (((cellNo - 1) / config.Length) + 1) * cellSpan
+	column := (((cellNo - 1) % config.Length) + 1) * cellSpan
 
 	return CellAddress{
 		BottomCenter: [2]int{row, column - 1},
@@ -106,6 +103,7 @@ func (config *Dimensions) GetCellNeighbors(cellNo int) CellNeighbors {
 	}
 
 	// Neighbor numbering follows the same row-major layout as the generated maze cells.
+	column := (cellNo - 1) % config.Length
 	var (
 		right     = cellNo + 1
 		left      = cellNo - 1
@@ -114,11 +112,11 @@ func (config *Dimensions) GetCellNeighbors(cellNo int) CellNeighbors {
 		neighbors = CellNeighbors{}
 	)
 
-	if getCeiledDivisor(right, config.Length) == getCeiledDivisor(cellNo, config.Length) {
+	if column < config.Length-1 {
 		neighbors.Right = right
 	}
 
-	if getCeiledDivisor(left, config.Length) == getCeiledDivisor(cellNo, config.Length) {
+	if column > 0 {
 		neighbors.Left = left
 	}
 
@@ -146,11 +144,6 @@ func getRandomNo(limit int) int {
 	}
 
 	return int(value.Int64())
-}
-
-// getCeiledDivisor calculates the ceiled divisor of the two values passed.
-func getCeiledDivisor(num, dinom int) int {
-	return int(math.Ceil(float64(num) / float64(dinom)))
 }
 
 // getWallCharacters returns the maze wall characters associated with the provided wall weight.

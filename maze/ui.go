@@ -7,6 +7,7 @@ import termbox "github.com/nsf/termbox-go"
 type UI interface {
 	Init() error
 	Close()
+	Interrupt()
 	SetInputMode(mode termbox.InputMode)
 	PollEvent() termbox.Event
 	Size() (int, int)
@@ -26,6 +27,11 @@ func (TermboxUI) Init() error {
 // Close releases the termbox screen resources.
 func (TermboxUI) Close() {
 	termbox.Close()
+}
+
+// Interrupt wakes a blocked PollEvent call so the runtime can shut down cleanly.
+func (TermboxUI) Interrupt() {
+	termbox.Interrupt()
 }
 
 // SetInputMode configures how termbox should interpret keyboard input.

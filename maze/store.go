@@ -1,15 +1,9 @@
 package maze
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 )
@@ -71,73 +65,28 @@ func (stateStore *Store) Save(level int, weight WallWeight) error {
 	return os.WriteFile(stateStore.path, encodedState, 0o600)
 }
 
-// encodePersistedGameState serializes the state and wraps it in authenticated encryption.
-// Bcrypt is intentionally not used here because it is one-way and cannot support decoding.
+// encodePersistedGameState serializes the state into a compact, human-safe local store payload.
 func encodePersistedGameState(state StoredGameState) ([]byte, error) {
-	plainText, errJSON := json.Marshal(state)
-	if errJSON != nil {
-		return nil, errJSON
-	}
-
-	block, errBlock := aes.NewCipher(storeCipherKey())
-	if errBlock != nil {
-		return nil, errBlock
-	}
-
-	gcm, errCypher := cipher.NewGCM(block)
-	if errCypher != nil {
-		return nil, errCypher
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+	plainText, err := json.Marshal(state)
+	if err != nil {
 		return nil, err
 	}
 
-	cipherText := gcm.Seal(nonce, nonce, plainText, nil)
-	encoded := base64.StdEncoding.EncodeToString(cipherText)
-
+	encoded := base64.StdEncoding.EncodeToString(plainText)
 	return []byte(encoded), nil
 }
 
 // decodePersistedGameState reverses the local store encoding and returns the recovered state.
 func decodePersistedGameState(encodedState []byte) (StoredGameState, error) {
-	cipherText, errDecode := base64.StdEncoding.DecodeString(string(encodedState))
-	if errDecode != nil {
-		return StoredGameState{}, errDecode
-	}
-
-	block, errBlock := aes.NewCipher(storeCipherKey())
-	if errBlock != nil {
-		return StoredGameState{}, errBlock
-	}
-
-	gcm, errCypher := cipher.NewGCM(block)
-	if errCypher != nil {
-		return StoredGameState{}, errCypher
-	}
-
-	nonceSize := gcm.NonceSize()
-	if len(cipherText) < nonceSize {
-		return StoredGameState{}, errors.New("stored data is too short")
-	}
-
-	nonce, encryptedPayload := cipherText[:nonceSize], cipherText[nonceSize:]
-	plainText, errOpen := gcm.Open(nil, nonce, encryptedPayload, nil)
-	if errOpen != nil {
-		return StoredGameState{}, errOpen
-	}
-
-	var state StoredGameState
-	if err := json.Unmarshal(plainText, &state); err != nil {
+	plainText, err := base64.StdEncoding.DecodeString(string(encodedState))
+	if err != nil {
 		return StoredGameState{}, err
 	}
 
-	return state, nil
-}
+	var state StoredGameState
+	if unmarshalErr := json.Unmarshal(plainText, &state); unmarshalErr != nil {
+		return StoredGameState{}, unmarshalErr
+	}
 
-// storeCipherKey derives a stable symmetric key from static application constants.
-func storeCipherKey() []byte {
-	sum := sha256.Sum256(fmt.Appendf(nil, "tapoo|%s|%s|%d|%d|%d", intro, website, seed, diff, maxLevel))
-	return sum[:]
+	return state, nil
 }

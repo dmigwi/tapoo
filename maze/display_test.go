@@ -100,7 +100,7 @@ func TestRenderMazeUI(t *testing.T) {
 			t.Fatal("expected render maze ui to render the overlay message")
 		}
 
-		if !ui.containsText("High Scores: 400") {
+		if !ui.containsText("Final Game Level Scores: 400") {
 			t.Fatal("expected render maze ui to render the high score text")
 		}
 	})

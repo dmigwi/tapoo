@@ -26,17 +26,19 @@ type fakeUI struct {
 	flushCalls int
 	cells      map[[2]int]renderedCell
 	events     chan termbox.Event
+	interrupts chan struct{}
 	closed     chan struct{}
 	closeOnce  sync.Once
 }
 
 func newFakeUI(height, width int) *fakeUI {
 	return &fakeUI{
-		height: height,
-		width:  width,
-		cells:  make(map[[2]int]renderedCell),
-		events: make(chan termbox.Event, 32),
-		closed: make(chan struct{}),
+		height:     height,
+		width:      width,
+		cells:      make(map[[2]int]renderedCell),
+		events:     make(chan termbox.Event, 32),
+		interrupts: make(chan struct{}, 1),
+		closed:     make(chan struct{}),
 	}
 }
 
@@ -66,10 +68,19 @@ func (ui *fakeUI) SetInputMode(mode termbox.InputMode) {
 	ui.inputMode = mode
 }
 
+func (ui *fakeUI) Interrupt() {
+	select {
+	case ui.interrupts <- struct{}{}:
+	default:
+	}
+}
+
 func (ui *fakeUI) PollEvent() termbox.Event {
 	select {
 	case ev := <-ui.events:
 		return ev
+	case <-ui.interrupts:
+		return termbox.Event{Type: termbox.EventInterrupt}
 	case <-ui.closed:
 		return termbox.Event{Type: termbox.EventError}
 	}
