@@ -3,6 +3,7 @@ package maze
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"unicode/utf8"
 
 	termbox "github.com/nsf/termbox-go"
@@ -37,8 +38,6 @@ func DrawMaze(ui UI, data [][]string) error {
 		return err
 	}
 
-	// The header is centered relative to the rendered maze width so it scales with level size.
-	titleColumn := mazeWidth(data) / screenTitleDivisor
 	for _, message := range []struct {
 		row int
 		msg string
@@ -47,7 +46,7 @@ func DrawMaze(ui UI, data [][]string) error {
 		{row: messageRowWebsite, msg: website},
 		{row: messageRowControls, msg: playerNavigation},
 	} {
-		fill(ui, titleColumn, message.row, message.msg, coldef)
+		fill(ui, mazeLeftPadding, message.row, message.msg, coldef)
 	}
 
 	for rowIndex, row := range data {
@@ -56,7 +55,6 @@ func DrawMaze(ui UI, data [][]string) error {
 			column += fill(ui, column, mazeTopPadding+rowIndex, segment, coldef)
 		}
 	}
-
 	return nil
 }
 
@@ -72,10 +70,6 @@ func RenderMazeUI(ui UI, config *Dimensions, level, score int, data [][]string, 
 	if overlay == nil {
 		if config == nil {
 			return false, errors.New("render live maze ui: missing dimensions")
-		}
-
-		if len(config.StartPosition) != cellSpan || len(config.FinalPosition) != cellSpan {
-			return false, errors.New("render live maze ui: missing start or goal positions")
 		}
 
 		targetReached := renderLiveScene(ui, config, level, score, data)
@@ -101,30 +95,25 @@ func renderLiveScene(ui UI, config *Dimensions, level, score int, data [][]strin
 	// StartPosition and FinalPosition store maze-grid coordinates, so they are remapped into
 	// termbox coordinates here using the same doubled-grid math used during generation.
 	ui.SetCell(
-		(targetPos[1]*cellSpan)+playerMarkerOffset,
+		(targetPos[1]*cellSpan)+mazeLeftPadding,
 		targetPos[0]+mazeTopPadding,
-		'#',
+		goalMarker,
 		termbox.ColorRed,
 		termbox.ColorRed,
 	)
 	ui.SetCell(
-		(startPos[1]*cellSpan)+playerMarkerOffset,
+		(startPos[1]*cellSpan)+mazeLeftPadding,
 		startPos[0]+mazeTopPadding,
-		'@',
+		playerMarker,
 		termbox.ColorCyan,
 		termbox.ColorCyan,
 	)
 
-	fill(
-		ui,
-		mazeWidth(data)/screenTitleDivisor,
-		len(data)+statusRowOffset,
-		fmt.Sprintf(statusMsg, level, score),
-		coldef,
-	)
+	msg := fmt.Sprintf(statusMsg, level, score)
+	fill(ui, mazeLeftPadding, len(data)+statusRowOffset, msg, coldef)
 
 	// The caller decides how to react; the live renderer only reports whether the player reached the goal.
-	return positionsEqual(startPos, targetPos)
+	return slices.Equal(startPos[:], targetPos[:])
 }
 
 // renderOverlayScene clears the center panel area and draws the pause or game-over content.
@@ -163,21 +152,5 @@ func mazeWidth(data [][]string) int {
 	for _, segment := range data[0] {
 		width += utf8.RuneCountInString(segment)
 	}
-
 	return width
-}
-
-func positionsEqual(left, right []int) bool {
-	if len(left) != len(right) {
-		return false
-	}
-
-	// Slices are used throughout the package for positions, so equality is kept explicit and allocation free.
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-
-	return true
 }

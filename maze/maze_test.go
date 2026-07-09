@@ -26,7 +26,7 @@ func TestGenerateMaze(t *testing.T) {
 		t.Fatalf("expected invalid wall weight to return an empty maze, got %v", data)
 	}
 
-	if len(config.StartPosition) != 0 || len(config.FinalPosition) != 0 {
+	if config.StartPosition != [2]int{} || config.FinalPosition != [2]int{} {
 		t.Fatalf(
 			"expected invalid wall weight to leave positions unset, got start=%v final=%v",
 			config.StartPosition,
@@ -38,6 +38,27 @@ func TestGenerateMaze(t *testing.T) {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 
+	singleCellConfig := &maze.Dimensions{Length: 1, Width: 1}
+	data, err = singleCellConfig.GenerateMaze(maze.WallWeightRegular)
+	if err == nil {
+		t.Fatal("GenerateMaze() expected an error when no distinct endpoints can be generated")
+	}
+
+	if len(data) != 0 {
+		t.Fatalf("expected a single-cell maze generation failure to return an empty maze, got %v", data)
+	}
+
+	if singleCellConfig.StartPosition != [2]int{} || singleCellConfig.FinalPosition != [2]int{} {
+		t.Fatalf(
+			"expected failed endpoint validation to clear positions, got start=%v final=%v",
+			singleCellConfig.StartPosition, singleCellConfig.FinalPosition,
+		)
+	}
+
+	if !strings.Contains(err.Error(), "start and final positions must differ") {
+		t.Fatalf("unexpected single-cell generation error: %v", err)
+	}
+
 	data, err = config.GenerateMaze(maze.WallWeightRegular)
 	if err != nil {
 		t.Fatalf("GenerateMaze() returned error for regular wall weight: %v", err)
@@ -47,15 +68,14 @@ func TestGenerateMaze(t *testing.T) {
 		t.Fatal("GenerateMaze() returned an empty maze")
 	}
 
-	if len(config.StartPosition) == 0 || len(config.FinalPosition) == 0 {
+	if config.StartPosition == [2]int{} || config.FinalPosition == [2]int{} {
 		t.Fatalf(
 			"expected maze generation to populate start and final positions, got start=%v final=%v",
-			config.StartPosition,
-			config.FinalPosition,
+			config.StartPosition, config.FinalPosition,
 		)
 	}
 
-	if equalPosition(config.StartPosition, config.FinalPosition) {
+	if slices.Equal(config.StartPosition[:], config.FinalPosition[:]) {
 		t.Fatalf("expected distinct start and final positions, got %v", config.StartPosition)
 	}
 
@@ -99,7 +119,7 @@ func TestGenerateMazeRepeatable(t *testing.T) {
 				t.Fatal("expected repeated maze generation to keep carving passages")
 			}
 
-			if equalPosition(config.StartPosition, config.FinalPosition) {
+			if slices.Equal(config.StartPosition[:], config.FinalPosition[:]) {
 				t.Fatalf("expected repeated maze generation to keep distinct endpoints, got %v", config.StartPosition)
 			}
 
@@ -125,20 +145,6 @@ func countPassages(data [][]string) int {
 	}
 
 	return count
-}
-
-func equalPosition(left, right []int) bool {
-	if len(left) != len(right) {
-		return false
-	}
-
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-
-	return true
 }
 
 func mazeContainsWallWeight(data [][]string, weight maze.WallWeight) bool {

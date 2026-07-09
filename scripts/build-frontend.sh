@@ -2,19 +2,15 @@
 
 set -eu
 
-if [ ! -f "./node_modules/typescript/bin/tsc" ]; then
-  echo "TypeScript compiler not found. Install it with: npm install -D typescript" >&2
+if [ ! -x "./node_modules/.bin/esbuild" ]; then
+  echo "esbuild not found. Install it with: pnpm add -D esbuild" >&2
   exit 1
 fi
 
-if [ ! -f "./node_modules/terser/bin/terser" ]; then
-  echo "Terser not found. Install it with: pnpm add -D terser" >&2
-  exit 1
-fi
-
-node ./node_modules/typescript/bin/tsc --project tsconfig.json
-node ./node_modules/terser/bin/terser \
-  ./public/js/tapoo.js \
-  --compress \
-  --mangle \
-  --output ./public/js/tapoo.min.js
+./node_modules/.bin/esbuild \
+  ./frontend/tapoo.ts \
+  --bundle \
+  --minify \
+  --platform=browser \
+  --target=es2022 \
+  --outfile=./public/js/tapoo.min.js

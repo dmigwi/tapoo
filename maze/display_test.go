@@ -20,8 +20,8 @@ func TestRenderMazeUI(t *testing.T) {
 		config := &maze.Dimensions{
 			Length:        3,
 			Width:         3,
-			StartPosition: []int{1, 1},
-			FinalPosition: []int{3, 3},
+			StartPosition: [2]int{1, 1},
+			FinalPosition: [2]int{3, 3},
 		}
 
 		reachedTarget, err := maze.RenderMazeUI(ui, config, 1, 900, sampleMazeGrid(), nil)
@@ -61,8 +61,8 @@ func TestRenderMazeUI(t *testing.T) {
 		config := &maze.Dimensions{
 			Length:        3,
 			Width:         3,
-			StartPosition: []int{3, 3},
-			FinalPosition: []int{3, 3},
+			StartPosition: [2]int{3, 3},
+			FinalPosition: [2]int{3, 3},
 		}
 
 		reachedTarget, err := maze.RenderMazeUI(ui, config, 2, 300, sampleMazeGrid(), nil)
@@ -114,8 +114,8 @@ func TestRenderMazeUI(t *testing.T) {
 		_, err := maze.RenderMazeUI(ui, &maze.Dimensions{
 			Length:        3,
 			Width:         3,
-			StartPosition: []int{1, 1},
-			FinalPosition: []int{3, 3},
+			StartPosition: [2]int{1, 1},
+			FinalPosition: [2]int{3, 3},
 		}, 1, 100, sampleMazeGrid(), nil)
 		if err == nil {
 			t.Fatal("expected render maze ui to return a flush error")
@@ -126,17 +126,17 @@ func TestRenderMazeUI(t *testing.T) {
 		}
 	})
 
-	t.Run("returns an error when live rendering has no positions", func(t *testing.T) {
+	t.Run("returns an error when live rendering has no dimensions", func(t *testing.T) {
 		t.Parallel()
 
 		ui := newFakeUI(40, 80)
 
-		_, err := maze.RenderMazeUI(ui, &maze.Dimensions{Length: 3, Width: 3}, 1, 100, sampleMazeGrid(), nil)
+		_, err := maze.RenderMazeUI(ui, nil, 1, 100, sampleMazeGrid(), nil)
 		if err == nil {
-			t.Fatal("expected render maze ui to reject live rendering without positions")
+			t.Fatal("expected render maze ui to reject live rendering without dimensions")
 		}
 
-		if !strings.Contains(err.Error(), "missing start or goal positions") {
+		if !strings.Contains(err.Error(), "missing dimensions") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})

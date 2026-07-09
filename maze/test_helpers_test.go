@@ -1,8 +1,12 @@
 package maze_test
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	termbox "github.com/nsf/termbox-go"
 )
@@ -17,6 +21,7 @@ type fakeUI struct {
 	mu         sync.Mutex
 	height     int
 	width      int
+	storePath  string
 	initErr    error
 	clearErr   error
 	flushErr   error
@@ -35,11 +40,20 @@ func newFakeUI(height, width int) *fakeUI {
 	return &fakeUI{
 		height:     height,
 		width:      width,
+		storePath:  filepath.Join(os.TempDir(), fmt.Sprintf("tapoo-maze-store-%d", time.Now().UnixNano())),
 		cells:      make(map[[2]int]renderedCell),
 		events:     make(chan termbox.Event, 32),
 		interrupts: make(chan struct{}, 1),
 		closed:     make(chan struct{}),
 	}
+}
+
+func (ui *fakeUI) StorePath() string {
+	return ui.storePath
+}
+
+func (ui *fakeUI) setStorePath(path string) {
+	ui.storePath = path
 }
 
 func (ui *fakeUI) Init() error {

@@ -1,6 +1,9 @@
 package maze
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // Dimensions defines the actual number of cells that make up the maze along the vertical and
 // the horizontal edges. Length represents the number of the cells along the horizontal
@@ -8,8 +11,8 @@ import "fmt"
 type Dimensions struct {
 	Length        int
 	Width         int
-	StartPosition []int
-	FinalPosition []int
+	StartPosition [2]int
+	FinalPosition [2]int
 }
 
 // GenerateMaze converts the created grid view playing field into a series on paths and walls.
@@ -17,9 +20,20 @@ type Dimensions struct {
 // and the goal.
 func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
 	if !weight.IsValid() {
+		config.resetPositions()
+
 		return [][]string{}, fmt.Errorf(
 			"invalid wall weight: %s. allowed values are %s, %s, and %s",
 			weight, WallWeightRegular, WallWeightMedium, WallWeightBold,
+		)
+	}
+
+	if config.Length <= 0 || config.Width <= 0 {
+		config.resetPositions()
+
+		return [][]string{}, fmt.Errorf(
+			"invalid maze dimensions: length=%d width=%d. both values must be greater than zero",
+			config.Length, config.Width,
 		)
 	}
 
@@ -37,7 +51,7 @@ func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
 	}
 
 	startAddr := config.GetCellAddress(startPos)
-	config.StartPosition = []int{startAddr.MiddleCenter[0], startAddr.MiddleCenter[1]}
+	config.StartPosition = [2]int{startAddr.MiddleCenter[0], startAddr.MiddleCenter[1]}
 
 	visitedCells[currentPos] = true
 
@@ -76,11 +90,34 @@ func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
 	}
 
 	finalAddr := config.GetCellAddress(finalCell)
-	config.FinalPosition = []int{finalAddr.MiddleCenter[0], finalAddr.MiddleCenter[1]}
+	config.FinalPosition = [2]int{finalAddr.MiddleCenter[0], finalAddr.MiddleCenter[1]}
+
+	if errValidate := config.validateGeneratedPositions(); errValidate != nil {
+		config.resetPositions()
+
+		return [][]string{}, errValidate
+	}
 
 	config.optimizeMaze(weight, maze)
 
 	return maze, nil
+}
+
+// resetPositions clears the generated maze endpoints before returning a generation error.
+func (config *Dimensions) resetPositions() {
+	config.StartPosition = [2]int{}
+	config.FinalPosition = [2]int{}
+}
+
+// validateGeneratedPositions ensures a generated maze exposes two distinct endpoints for gameplay.
+func (config *Dimensions) validateGeneratedPositions() error {
+	if slices.Equal(config.StartPosition[:], config.FinalPosition[:]) {
+		return fmt.Errorf(
+			"generate maze: start and final positions must differ (length=%d width=%d)",
+			config.Length, config.Width,
+		)
+	}
+	return nil
 }
 
 // createPath creates a path on the common wall between the current and the new cell.

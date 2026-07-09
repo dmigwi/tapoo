@@ -4,10 +4,10 @@
   "packageManager": "pnpm@11.7.0",
   "scripts": {
     "build:frontend": "./scripts/build-frontend.sh",
-    "typecheck:frontend": "node ./node_modules/typescript/bin/tsc --project tsconfig.json --noEmit"
+    "typecheck:frontend": "tsc --project tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "terser": "^5.48.0",
+    "esbuild": "^0.25.9",
     "typescript": "^6.0.3"
   }
 }

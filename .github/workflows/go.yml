@@ -36,6 +36,9 @@ jobs:
         with:
           version: v2.12.2
 
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...
+
   test:
     name: Test
     runs-on: ubuntu-latest

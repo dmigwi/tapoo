@@ -9,19 +9,25 @@ import (
 	"github.com/dmigwi/tapoo/maze"
 )
 
-//nolint:paralleltest // These black-box tests use t.Chdir to exercise the store in the active working directory.
 func TestStore(t *testing.T) {
-	//nolint:paralleltest // This subtest mutates the process working directory via t.Chdir.
-	t.Run("saves and loads persisted game state from the working directory", func(t *testing.T) {
-		tempDir := t.TempDir()
-		restoreWorkingDir(t, tempDir)
+	t.Parallel()
 
-		gameStore, errStore := maze.NewStore()
+	t.Run("saves and loads persisted game state from the configured store directory", func(t *testing.T) {
+		t.Parallel()
+
+		tempDir := t.TempDir()
+		storePath := filepath.Join(tempDir, ".tapoo.store")
+
+		gameStore, errStore := maze.NewStore(storePath)
 		if errStore != nil {
 			t.Fatalf("new store returned error: %v", errStore)
 		}
 
-		if err := gameStore.Save(7, maze.WallWeightBold); err != nil {
+		if err := gameStore.Save(maze.StoredGameState{
+			Level:      7,
+			WallWeight: maze.WallWeightBold,
+			State:      maze.GameProgressWon,
+		}); err != nil {
 			t.Fatalf("save returned error: %v", err)
 		}
 
@@ -38,18 +44,22 @@ func TestStore(t *testing.T) {
 			t.Fatalf("unexpected stored wall weight: got %s want %s", state.WallWeight, maze.WallWeightBold)
 		}
 
-		storeFile := filepath.Join(tempDir, ".tapoo.store")
-		if _, err := os.Stat(storeFile); err != nil {
-			t.Fatalf("expected store file to exist at %s: %v", storeFile, err)
+		if state.State != maze.GameProgressWon {
+			t.Fatalf("unexpected stored progress state: got %s want %s", state.State, maze.GameProgressWon)
+		}
+
+		if _, err := os.Stat(storePath); err != nil {
+			t.Fatalf("expected store file to exist at %s: %v", storePath, err)
 		}
 	})
 
-	//nolint:paralleltest // This subtest mutates the process working directory via t.Chdir.
 	t.Run("returns an error when the store file does not exist", func(t *testing.T) {
-		tempDir := t.TempDir()
-		restoreWorkingDir(t, tempDir)
+		t.Parallel()
 
-		gameStore, err := maze.NewStore()
+		tempDir := t.TempDir()
+		storePath := filepath.Join(tempDir, ".tapoo.store")
+
+		gameStore, err := maze.NewStore(storePath)
 		if err != nil {
 			t.Fatalf("new store returned error: %v", err)
 		}
@@ -64,17 +74,16 @@ func TestStore(t *testing.T) {
 		}
 	})
 
-	//nolint:paralleltest // This subtest mutates the process working directory via t.Chdir.
 	t.Run("returns an error when stored data is invalid", func(t *testing.T) {
-		tempDir := t.TempDir()
-		restoreWorkingDir(t, tempDir)
+		t.Parallel()
 
-		storeFile := filepath.Join(tempDir, ".tapoo.store")
-		if err := os.WriteFile(storeFile, []byte("not-valid-store-data"), 0o600); err != nil {
+		tempDir := t.TempDir()
+		storePath := filepath.Join(tempDir, ".tapoo.store")
+		if err := os.WriteFile(storePath, []byte("not-valid-store-data"), 0o600); err != nil {
 			t.Fatalf("write invalid store file: %v", err)
 		}
 
-		gameStore, err := maze.NewStore()
+		gameStore, err := maze.NewStore(storePath)
 		if err != nil {
 			t.Fatalf("new store returned error: %v", err)
 		}
@@ -85,17 +94,22 @@ func TestStore(t *testing.T) {
 		}
 	})
 
-	//nolint:paralleltest // This subtest mutates the process working directory via t.Chdir.
 	t.Run("returns an error when stored values fail validation", func(t *testing.T) {
-		tempDir := t.TempDir()
-		restoreWorkingDir(t, tempDir)
+		t.Parallel()
 
-		gameStore, errStore := maze.NewStore()
+		tempDir := t.TempDir()
+		storePath := filepath.Join(tempDir, ".tapoo.store")
+
+		gameStore, errStore := maze.NewStore(storePath)
 		if errStore != nil {
 			t.Fatalf("new store returned error: %v", errStore)
 		}
 
-		if err := gameStore.Save(0, maze.WallWeight(99)); err != nil {
+		if err := gameStore.Save(maze.StoredGameState{
+			Level:      0,
+			WallWeight: maze.WallWeight(99),
+			State:      maze.GameProgress(99),
+		}); err != nil {
 			t.Fatalf("save returned error: %v", err)
 		}
 
@@ -108,16 +122,4 @@ func TestStore(t *testing.T) {
 			t.Fatalf("unexpected validation error: %v", err)
 		}
 	})
-}
-
-func restoreWorkingDir(t *testing.T, dir string) {
-	t.Helper()
-
-	workingDir, errDir := os.Getwd()
-	if errDir != nil {
-		t.Fatalf("get working directory: %v", errDir)
-	}
-
-	t.Chdir(dir)
-	t.Cleanup(func() { t.Chdir(workingDir) })
 }

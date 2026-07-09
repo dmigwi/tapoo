@@ -36,7 +36,6 @@ const (
 	screenTitleDivisor  = 3
 	overlayLeftDivisor  = 4
 	scoreRowOffset      = 6
-	playerMarkerOffset  = 3
 	statusRowOffset     = 8
 	overlayClearRowOne  = 3
 	overlayClearRowTwo  = 5
@@ -63,9 +62,15 @@ const (
 	gameOverFailed     = "      Game Over! : Ooops!!!, Failed to locate the target on time.        "
 	gameOverNavigation = "        Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed         "
 	highScores         = "                   Final Game Level Scores: %d                           "
+
+	// playerMarker is the glyph used to show the current player position inside the maze.
+	playerMarker = '@'
+
+	// goalMarker is the glyph used to mark the target cell the player is trying to reach.
+	goalMarker = '#'
 )
 
-// storeFileName is the local runtime state file written beside the launched binary or command.
+// storeFileName is the production runtime state file written beside the launched command.
 const storeFileName = ".tapoo.store"
 
 // seed defines the size of the maze to be used in the training level (level 0).
