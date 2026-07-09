@@ -431,7 +431,7 @@ func TestPlayWithUI(t *testing.T) {
 			t.Fatalf("play with ui returned error: %v", err)
 		}
 
-		if !ui.containsText("Failed to locate the target on time") {
+		if !ui.containsText("You failed to locate the target on time") {
 			t.Fatal("expected timeout handling to render the failure overlay")
 		}
 	})

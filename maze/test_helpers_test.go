@@ -147,12 +147,12 @@ func (ui *fakeUI) enqueueEvents(events ...termbox.Event) {
 	}
 }
 
-func (ui *fakeUI) hasRune(want rune) bool {
+func (ui *fakeUI) hasForegroundColor(want termbox.Attribute) bool {
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
 
 	for _, cell := range ui.cells {
-		if cell.char == want {
+		if cell.foreground == want {
 			return true
 		}
 	}

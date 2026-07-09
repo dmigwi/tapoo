@@ -6,11 +6,6 @@ type Position = [number, number];
 
 type WallWeight = 1 | 2 | 3;
 
-type TerminalMeasurement = {
-  rows: number;
-  cols: number;
-};
-
 type BaseDimensions = {
   length: number;
   width: number;
@@ -71,8 +66,6 @@ type State = {
   canResume: boolean;
   wallWeight: WallWeight;
   clock: GameClock | null;
-  charWidth: number;
-  charHeight: number;
 };
 
 type AppConfig = {
@@ -92,16 +85,18 @@ type AppConfig = {
   terminalWidthScale: number;
   intro: string;
   website: string;
+  websiteURL: string;
   navigation: string;
   pauseMessage: string;
   successMessage: string;
   failedMessage: string;
   quitMessage: string;
   proceedMessage: string;
-  resumeHint: string;
   tooSmallMessage: string;
   statusTemplate: string;
   highScoreTemplate: string;
+  playerMarker: string;
+  destinationMarker: string;
   walls: Record<WallWeight, [string, string, string]>;
 };
 
@@ -122,23 +117,32 @@ const CONFIG: AppConfig = {
   terminalWidthScale: 2,
   intro: "You are playing the Maze runner, hide and seek game (Tapoo).",
   website: "Visit https://www.linkedin.com/in/migwi-ndungu/ to contact the developer.",
-  navigation:
-    "Use the Arrow Keys to navigate the player (in Blue). Press Ctrl+B to change walls thickness.",
-  pauseMessage: "Game Paused !!!",
-  successMessage: "Game Over! : Congratulations, Won by Locating the target on time.",
-  failedMessage: "Game Over! : Ooops!!!, Failed to locate the target on time.",
+  websiteURL: "https://www.linkedin.com/in/migwi-ndungu/",
+  navigation: "Use the Arrow Keys to navigate the player (in Blue). Press Ctrl+B to change walls thickness.",
+  pauseMessage: "Game paused !!!",
+  successMessage: "Game over! Congratulations, You won by locating the target on time.",
+  failedMessage: "Game over! Ooops!!!, You failed to locate the target on time.",
   quitMessage: "Terminal session closed. Press Restart or Enter to play again.",
-  proceedMessage: "Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed",
-  resumeHint: "Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed",
+  proceedMessage: "Press ESC or Ctrl+C to quit.  Press Ctrl+P to Proceed",
   tooSmallMessage: "The viewport is too small for Tapoo. Expand the terminal to continue.",
   statusTemplate: "Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
   highScoreTemplate: "Final Game Level Scores: {score}",
+  playerMarker: "▓",
+  destinationMarker: "█",
   walls: {
     1: ["|", "---", "-"],
     2: ["╏", "╍╍╍", "╍"],
     3: ["║", "===", "="],
   },
 };
+
+const WALL_WEIGHTS = Object.keys(CONFIG.walls)
+  .map((weight) => Number(weight))
+  .sort((left, right) => left - right) as WallWeight[];
+
+const TERMINAL_SAMPLE_WIDTH = 10;
+const MIN_TERMINAL_ROWS = 20;
+const MIN_TERMINAL_COLUMNS = 48;
 
 class GameClock {
   levelDurationMs: number;
@@ -204,10 +208,8 @@ const state: State = {
   score: 0,
   lastRoundScore: 0,
   canResume: false,
-  wallWeight: 1,
+  wallWeight: WALL_WEIGHTS[0],
   clock: null,
-  charWidth: 9,
-  charHeight: 20,
 };
 
 function escapeHtml(value: string): string {
@@ -217,15 +219,18 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
-function measureTerminal(): TerminalMeasurement {
+function getTerminalSize(): BaseDimensions {
   const rect = elements.body.getBoundingClientRect();
   const sampleRect = elements.measure.getBoundingClientRect();
-  state.charWidth = sampleRect.width / 10 || 9;
-  state.charHeight = sampleRect.height || 20;
+  const charWidth = sampleRect.width / TERMINAL_SAMPLE_WIDTH || 9;
+  const charHeight = sampleRect.height || 20;
+  const terminalColumns = Math.max(MIN_TERMINAL_COLUMNS, Math.floor(rect.width / charWidth));
+  const terminalRows = Math.max(MIN_TERMINAL_ROWS, Math.floor(rect.height / charHeight));
 
+  // Like the Go renderer, the browser terminal reserves part of the viewport for headers and margins.
   return {
-    rows: Math.max(20, Math.floor(rect.height / state.charHeight)),
-    cols: Math.max(48, Math.floor(rect.width / state.charWidth)),
+    length: Math.floor((terminalColumns - CONFIG.terminalHeightInset) / CONFIG.terminalHeightScale),
+    width: Math.floor((terminalRows - CONFIG.terminalWidthInset) / CONFIG.terminalWidthScale),
   };
 }
 
@@ -242,31 +247,31 @@ function getWallCharacters(weight: WallWeight): [string, string, string] {
 }
 
 function nextWallWeight(weight: WallWeight): WallWeight {
-  if (weight === 3) {
-    return 1;
+  const index = WALL_WEIGHTS.indexOf(weight);
+  if (index === -1) {
+    return WALL_WEIGHTS[0];
   }
-
-  return (weight + 1) as WallWeight;
+  return WALL_WEIGHTS[(index + 1) % WALL_WEIGHTS.length];
 }
 
 function isSpaceFound(item: string): boolean {
   return item.includes(" ");
 }
 
-function getTerminalSize(width: number, height: number): BaseDimensions {
-  return {
-    length: Math.floor((width - CONFIG.terminalHeightInset) / CONFIG.terminalHeightScale),
-    width: Math.floor((height - CONFIG.terminalWidthInset) / CONFIG.terminalWidthScale),
-  };
-}
-
 function generateMazeArea(level: number): number {
-  const boundedLevel = Math.min(level, CONFIG.maxLevel);
-  return boundedLevel * CONFIG.diff + CONFIG.seed;
+  if (level >= CONFIG.maxLevel) {
+    level = CONFIG.maxLevel;
+  }
+
+  return level * CONFIG.diff + CONFIG.seed;
 }
 
 function absInt(value: number): number {
   return value < 0 ? -value : value;
+}
+
+function minInt(left: number, right: number): number {
+  return left < right ? left : right;
 }
 
 function appendFittingDimensions(
@@ -325,8 +330,8 @@ function isPreferredMazeDimensions(
     return candidateSkew < bestSkew;
   }
 
-  const candidateMinEdge = Math.min(candidate.length, candidate.width);
-  const bestMinEdge = Math.min(currentBest.length, currentBest.width);
+  const candidateMinEdge = minInt(candidate.length, candidate.width);
+  const bestMinEdge = minInt(currentBest.length, currentBest.width);
   if (candidateMinEdge !== bestMinEdge) {
     return candidateMinEdge > bestMinEdge;
   }
@@ -660,8 +665,7 @@ function positionsEqual(left: Position, right: Position): boolean {
 }
 
 function startRound(level: number): void {
-  const viewport = measureTerminal();
-  const terminalSize = getTerminalSize(viewport.cols, viewport.rows);
+  const terminalSize = getTerminalSize();
   const dimensions = getMazeDimensions(level, terminalSize);
 
   if (!dimensions) {
@@ -886,7 +890,7 @@ function buildMazeLines(): string[] {
     lines[state.finalPosition[0]] = replaceAt(
       lines[state.finalPosition[0]],
       state.finalPosition[1] * CONFIG.cellSpan,
-      "#",
+      CONFIG.destinationMarker,
     );
   }
 
@@ -894,7 +898,7 @@ function buildMazeLines(): string[] {
     lines[state.playerPosition[0]] = replaceAt(
       lines[state.playerPosition[0]],
       state.playerPosition[1] * CONFIG.cellSpan,
-      "@",
+      CONFIG.playerMarker,
     );
   }
 
@@ -907,9 +911,9 @@ function renderMarkedLine(rawLine: string): string {
   for (const char of rawLine) {
     const value = char === " " ? "&nbsp;" : escapeHtml(char);
 
-    if (char === "@") {
+    if (char === CONFIG.playerMarker) {
       html += `<span class="maze-cell player">${value}</span>`;
-    } else if (char === "#") {
+    } else if (char === CONFIG.destinationMarker) {
       html += `<span class="maze-cell target">${value}</span>`;
     } else {
       html += `<span class="maze-cell copy">${value}</span>`;
@@ -920,7 +924,21 @@ function renderMarkedLine(rawLine: string): string {
 }
 
 function renderTextLine(value: string, className = "copy"): string {
-  const html = escapeHtml(value).replaceAll(" ", "&nbsp;");
+  if (value.includes(CONFIG.websiteURL)) {
+    const [prefix, suffix] = value.split(CONFIG.websiteURL);
+    const prefixHTML = escapeHtml(prefix).replaceAll(" ", "&nbsp;");
+    const suffixHTML = escapeHtml(suffix ?? "").replaceAll(" ", "&nbsp;");
+
+    return [
+      `<span class="${className}">`,
+      prefixHTML,
+      `<a class="website-link" href="${CONFIG.websiteURL}" target="_blank" rel="noreferrer noopener">${escapeHtml(CONFIG.websiteURL)}</a>`,
+      suffixHTML,
+      "</span>",
+    ].join("");
+  }
+
+  const html = value === "" ? "&nbsp;" : escapeHtml(value).replaceAll(" ", "&nbsp;");
   return `<span class="${className}">${html}</span>`;
 }
 
@@ -928,39 +946,36 @@ function headerWidth(mazeWidth: number): number {
   return Math.max(mazeWidth, CONFIG.navigation.length + 4, CONFIG.website.length + 4, CONFIG.intro.length + 4);
 }
 
-function overlayRows(mazeWidth: number): ScreenLine[] {
+function overlayRows(): ScreenLine[] {
   const lines: ScreenLine[] = [];
 
   if (state.status === "paused") {
-    lines.push({ kind: "text", text: centerText(mazeWidth, CONFIG.pauseMessage), className: "copy" });
-    lines.push({ kind: "text", text: " ".repeat(mazeWidth), className: "copy" });
-    lines.push({ kind: "text", text: centerText(mazeWidth, CONFIG.resumeHint), className: "copy" });
+    lines.push({ kind: "text", text: CONFIG.pauseMessage, className: "status centered" });
+    lines.push({ kind: "text", text: CONFIG.proceedMessage, className: "copy centered" });
     return lines;
   }
 
-  if (state.status === "won" || state.status === "lost") {
-    const message = state.status === "won" ? CONFIG.successMessage : CONFIG.failedMessage;
-    lines.push({
-      kind: "text",
-      text: centerText(mazeWidth, message),
-      className: state.status === "won" ? "copy" : "warning",
-    });
-    lines.push({
-      kind: "text",
-      text: centerText(mazeWidth, CONFIG.highScoreTemplate.replace("{score}", String(state.lastRoundScore))),
-      className: "accent",
-    });
-    lines.push({ kind: "text", text: centerText(mazeWidth, CONFIG.proceedMessage), className: "copy" });
+  if (state.status === "won") {
+    lines.push({ kind: "text", text: CONFIG.successMessage, className: "status centered" });
+    const scoresMsg = CONFIG.highScoreTemplate.replace("{score}", String(state.lastRoundScore))
+    lines.push({ kind: "text", text: scoresMsg, className: "accent centered" });
+    lines.push({ kind: "text", text: CONFIG.proceedMessage, className: "copy centered" });
+    return lines;
+  }
+    
+  if (state.status === "lost") {
+    lines.push({ kind: "text", text: CONFIG.failedMessage, className: "status centered" });
+    lines.push({ kind: "text", text: CONFIG.proceedMessage, className: "copy centered" });
     return lines;
   }
 
   if (state.status === "quit") {
-    lines.push({ kind: "text", text: centerText(mazeWidth, CONFIG.quitMessage), className: "warning" });
+    lines.push({ kind: "text", text: CONFIG.quitMessage, className: "status centered" });
     return lines;
   }
 
   if (state.status === "too-small") {
-    lines.push({ kind: "text", text: centerText(mazeWidth, CONFIG.tooSmallMessage), className: "warning" });
+    lines.push({ kind: "text", text: CONFIG.tooSmallMessage, className: "status centered" });
     return lines;
   }
 
@@ -969,37 +984,30 @@ function overlayRows(mazeWidth: number): ScreenLine[] {
 
 function applyOverlayToMaze(mazeLines: string[], mazeWidth: number): ScreenLine[] {
   const screenMaze: ScreenLine[] = mazeLines.map((line) => ({
-    kind: "maze",
-    text: padLine(line, mazeWidth),
-    className: "copy",
+    kind: "maze", text: padLine(line, mazeWidth), className: "copy",
   }));
 
-  const overlay = overlayRows(mazeWidth);
+  const overlay = overlayRows();
   if (overlay.length === 0) {
     return screenMaze;
   }
 
-  const startRow = Math.max(0, Math.floor(screenMaze.length / 2) - 2);
-  const clearCount = Math.max(overlay.length + 2, 4);
+  const overlayStartRow = Math.floor(mazeLines.length / 2);
+  const overlayRowStride = overlay.length > 1 ? 2 : 1;
+  const overlayEndRow = overlayStartRow + (overlay.length - 1) * overlayRowStride;
+  const clearStartRow = Math.max(0, overlayStartRow - 1);
+  const clearEndRow = overlayEndRow + 1;
 
-  for (let index = 0; index < clearCount; index += 1) {
-    const rowIndex = startRow + index;
-    if (rowIndex >= screenMaze.length) {
-      break;
-    }
+  while (screenMaze.length <= clearEndRow) {
+    screenMaze.push({ kind: "text", text: "", className: "copy" });
+  }
 
-    screenMaze[rowIndex] = {
-      kind: "text",
-      text: " ".repeat(mazeWidth),
-      className: "copy",
-    };
+  for (let rowIndex = clearStartRow; rowIndex <= clearEndRow; rowIndex += 1) {
+    screenMaze[rowIndex] = { kind: "text", text: "", className: "copy"};
   }
 
   overlay.forEach((line, index) => {
-    const rowIndex = startRow + index;
-    if (rowIndex < screenMaze.length) {
-      screenMaze[rowIndex] = line;
-    }
+    screenMaze[overlayStartRow + index * overlayRowStride] = line;
   });
 
   return screenMaze;
@@ -1008,18 +1016,17 @@ function applyOverlayToMaze(mazeLines: string[], mazeWidth: number): ScreenLine[
 function buildScreenLines(): ScreenLine[] {
   const mazeLines = buildMazeLines();
   const mazeWidth = mazeLines.reduce((width, line) => Math.max(width, line.length), 0);
-  const contentWidth = headerWidth(mazeWidth);
   const lines: ScreenLine[] = [
-    { kind: "text", text: centerText(contentWidth, CONFIG.intro), className: "copy" },
+    { kind: "text", text: CONFIG.intro, className: "copy centered" },
     { kind: "text", text: "", className: "copy" },
-    { kind: "text", text: centerText(contentWidth, CONFIG.website), className: "copy" },
+    { kind: "text", text: CONFIG.website, className: "copy centered" },
     { kind: "text", text: "", className: "copy" },
-    { kind: "text", text: centerText(contentWidth, CONFIG.navigation), className: "copy" },
+    { kind: "text", text: CONFIG.navigation, className: "copy centered" },
     { kind: "text", text: "", className: "copy" },
   ];
 
   if (mazeLines.length === 0) {
-    overlayRows(contentWidth).forEach((line) => {
+    overlayRows().forEach((line) => {
       lines.push({ kind: "text", text: "", className: "copy" });
       lines.push(line);
     });
@@ -1027,16 +1034,12 @@ function buildScreenLines(): ScreenLine[] {
     return lines;
   }
 
-  const mazeSection = applyOverlayToMaze(mazeLines, Math.max(mazeWidth, contentWidth));
+  const mazeSection = applyOverlayToMaze(mazeLines, mazeWidth);
   lines.push(...mazeSection);
 
   if (state.status === "running") {
     lines.push({ kind: "text", text: "", className: "copy" });
-    lines.push({
-      kind: "text",
-      text: centerText(Math.max(mazeWidth, contentWidth), statusText()),
-      className: "copy",
-    });
+    lines.push({  kind: "text",  text: statusText(), className: "copy centered" });
   }
 
   return lines;
@@ -1048,7 +1051,7 @@ function render(): void {
     .map((line) => {
       const content =
         line.kind === "maze" ? renderMarkedLine(line.text) : renderTextLine(line.text, line.className);
-      return `<span class="line">${content}</span>`;
+      return `<span class="line line--${line.kind}">${content}</span>`;
     })
     .join("");
 }
@@ -1128,8 +1131,7 @@ function handleResize(): void {
   render();
 
   if (state.status === "too-small") {
-    const viewport = measureTerminal();
-    const terminalSize = getTerminalSize(viewport.cols, viewport.rows);
+    const terminalSize = getTerminalSize();
     if (getMazeDimensions(state.level, terminalSize)) {
       restartGame();
     }

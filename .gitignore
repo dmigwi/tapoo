@@ -30,3 +30,4 @@ package-lock.json
 public/js/tapoo.min.js
 _DS*
 .DS_Store
+.vscode

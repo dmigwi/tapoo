@@ -58,16 +58,16 @@ const (
 
 	space              = "                                                                         "
 	pauseMsg           = "                              Game Paused !!!                            "
-	gameOverSucceed    = "    Game Over! : Congratulations, Won by Locating the target on time.    "
-	gameOverFailed     = "      Game Over! : Ooops!!!, Failed to locate the target on time.        "
+	gameOverSucceed    = "    Game Over! Congratulations, You won by locating the target on time.  "
+	gameOverFailed     = "      Game Over! Ooops!!!, You failed to locate the target on time.      "
 	gameOverNavigation = "        Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed         "
 	highScores         = "                   Final Game Level Scores: %d                           "
 
 	// playerMarker is the glyph used to show the current player position inside the maze.
-	playerMarker = '@'
+	playerMarker = '▓'
 
 	// goalMarker is the glyph used to mark the target cell the player is trying to reach.
-	goalMarker = '#'
+	goalMarker = '█'
 )
 
 // storeFileName is the production runtime state file written beside the launched command.

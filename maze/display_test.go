@@ -37,12 +37,12 @@ func TestRenderMazeUI(t *testing.T) {
 			t.Fatalf("expected a single flush call, got %d", ui.flushCalls)
 		}
 
-		if !ui.hasRune('@') {
-			t.Fatal("expected render maze ui to render the player marker")
+		if !ui.hasForegroundColor(termbox.ColorCyan) {
+			t.Fatal("expected render maze ui to render the player marker color")
 		}
 
-		if !ui.hasRune('#') {
-			t.Fatal("expected render maze ui to render the target marker")
+		if !ui.hasForegroundColor(termbox.ColorRed) {
+			t.Fatal("expected render maze ui to render the target marker color")
 		}
 
 		if !ui.containsText("Scores: 900") {

@@ -8,8 +8,19 @@
   --player: #58a6ff;
   --target: #ff6b5f;
   --accent: #9ea6d7;
-  --warning: #f1d065;
+  --status: #f1d065;
   --glow: rgba(72, 198, 62, 0.2);
+}
+
+@font-face {
+  font-family: "Tapoo PT Mono";
+  src:
+    local("PT Mono"),
+    local("PTMono"),
+    url("../fonts/PTMono.ttc");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
 }
 
 * {
@@ -26,7 +37,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: Helvetica, Arial, sans-serif;
+  font-family: "Tapoo PT Mono", "PT Mono", Consolas, Menlo, Monaco, monospace;
 }
 
 .app-shell {
@@ -118,14 +129,14 @@ body {
 
 #terminal-screen {
   display: block;
-  width: max-content;
+  width: fit-content;
   max-width: 100%;
   height: 100%;
   margin: 0;
   color: var(--text);
-  font-family: Helvetica, Arial, sans-serif;
+  font-family: inherit;
   font-size: 1rem;
-  line-height: 1.4;
+  line-height: 1.45;
   text-shadow: 0 0 8px var(--glow);
   text-align: left;
   white-space: pre;
@@ -135,22 +146,31 @@ body {
 
 .line {
   display: block;
+  min-height: 1em;
+  line-height: inherit;
+}
+
+.line--text {
+  width: 100%;
+}
+
+.line--maze {
+  line-height: 1;
 }
 
 .maze-row {
   display: block;
   white-space: nowrap;
-  line-height: 0.86;
+  line-height: 1;
 }
 
 .maze-cell {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0.56ch;
-  height: 0.82em;
-  overflow: hidden;
+  display: inline-block;
+  width: 1ch;
+  min-width: 1ch;
+  line-height: 1;
   vertical-align: top;
+  text-align: left;
 }
 
 .copy {
@@ -175,8 +195,24 @@ body {
   color: var(--accent);
 }
 
-.warning {
-  color: var(--warning);
+.status {
+  color: var(--status);
+}
+
+.centered {
+  display: block;
+  width: 100%;
+  text-align: center;
+}
+
+.website-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.website-link:visited {
+  color: inherit;
 }
 
 .terminal-measure {
@@ -185,9 +221,9 @@ body {
   pointer-events: none;
   white-space: pre;
   font: inherit;
-  font-family: Helvetica, Arial, sans-serif;
+  font-family: inherit;
   font-size: 1rem;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 @media (max-width: 720px) {
