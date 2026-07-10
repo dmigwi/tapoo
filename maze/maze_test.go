@@ -41,7 +41,7 @@ func TestGenerateMaze(t *testing.T) {
 	singleCellConfig := &maze.Dimensions{Length: 1, Width: 1}
 	data, err = singleCellConfig.GenerateMaze(maze.WallWeightRegular)
 	if err == nil {
-		t.Fatal("GenerateMaze() expected an error when no distinct endpoints can be generated")
+		t.Fatal("GenerateMaze() expected an error when the maze has fewer than two cells")
 	}
 
 	if len(data) != 0 {
@@ -55,8 +55,36 @@ func TestGenerateMaze(t *testing.T) {
 		)
 	}
 
-	if !strings.Contains(err.Error(), "start and final positions must differ") {
+	if !strings.Contains(err.Error(), "at least two cells are required") {
 		t.Fatalf("unexpected single-cell generation error: %v", err)
+	}
+
+	for _, invalidConfig := range []*maze.Dimensions{
+		{Length: 0, Width: 10},
+		{Length: 10, Width: 0},
+		{Length: -1, Width: 10},
+		{Length: 10, Width: -1},
+	} {
+		data, err = invalidConfig.GenerateMaze(maze.WallWeightRegular)
+		if err == nil {
+			t.Fatalf("GenerateMaze(%+v) expected an error for invalid dimensions", *invalidConfig)
+		}
+
+		if len(data) != 0 {
+			t.Fatalf("expected invalid dimensions to return an empty maze, got %v", data)
+		}
+
+		if invalidConfig.StartPosition != [2]int{} || invalidConfig.FinalPosition != [2]int{} {
+			t.Fatalf(
+				"expected invalid dimensions to clear positions, got start=%v final=%v",
+				invalidConfig.StartPosition,
+				invalidConfig.FinalPosition,
+			)
+		}
+
+		if !strings.Contains(err.Error(), "both values must be greater than zero") {
+			t.Fatalf("unexpected invalid dimensions error: %v", err)
+		}
 	}
 
 	data, err = config.GenerateMaze(maze.WallWeightRegular)
@@ -82,6 +110,8 @@ func TestGenerateMaze(t *testing.T) {
 	if countPassages(data) == 0 {
 		t.Fatal("expected generated maze to contain carved passages")
 	}
+
+	assertPlayableMaze(t, *config, data)
 
 	for _, weight := range []maze.WallWeight{maze.WallWeightMedium, maze.WallWeightBold} {
 		newData, errData := config.GenerateMaze(weight)
@@ -126,7 +156,29 @@ func TestGenerateMazeRepeatable(t *testing.T) {
 			if !mazeContainsWallWeight(data, testCase.weight) {
 				t.Fatalf("expected generated maze to use %s walls", testCase.weight)
 			}
+
+			assertPlayableMaze(t, config, data)
 		})
+	}
+}
+
+func assertPlayableMaze(t *testing.T, config maze.Dimensions, data [][]string) {
+	t.Helper()
+
+	if !isBoundaryPosition(config, config.StartPosition) {
+		t.Fatalf("expected start position to be on the maze boundary, got %v", config.StartPosition)
+	}
+
+	if !isTraversableCell(data, config.StartPosition) {
+		t.Fatalf("expected start position to be on a traversable cell, got %v", config.StartPosition)
+	}
+
+	if !isTraversableCell(data, config.FinalPosition) {
+		t.Fatalf("expected final position to be on a traversable cell, got %v", config.FinalPosition)
+	}
+
+	if !hasMazeRoute(data, config.StartPosition, config.FinalPosition) {
+		t.Fatalf("expected a traversable path between %v and %v", config.StartPosition, config.FinalPosition)
 	}
 }
 
@@ -157,6 +209,72 @@ func mazeContainsWallWeight(data [][]string, weight maze.WallWeight) bool {
 	for _, row := range data {
 		if slices.Contains(row, wallSegments[weight]) {
 			return true
+		}
+	}
+
+	return false
+}
+
+func isBoundaryPosition(config maze.Dimensions, position [2]int) bool {
+	maxRow := (config.Width * 2) - 1
+	maxColumn := (config.Length * 2) - 1
+
+	return position[0] == 1 || position[0] == maxRow || position[1] == 1 || position[1] == maxColumn
+}
+
+func isTraversableCell(data [][]string, position [2]int) bool {
+	row, column := position[0], position[1]
+	if row < 0 || row >= len(data) {
+		return false
+	}
+
+	if column < 0 || column >= len(data[row]) {
+		return false
+	}
+
+	return strings.HasPrefix(data[row][column], " ")
+}
+
+func hasMazeRoute(data [][]string, start, target [2]int) bool {
+	if start == target {
+		return true
+	}
+
+	type queueEntry struct {
+		row    int
+		column int
+	}
+
+	queue := []queueEntry{{row: start[0], column: start[1]}}
+	visited := map[[2]int]bool{start: true}
+	deltas := [][2]int{
+		{0, -2},
+		{0, 2},
+		{-2, 0},
+		{2, 0},
+	}
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		for _, delta := range deltas {
+			next := [2]int{current.row + delta[0], current.column + delta[1]}
+			if visited[next] {
+				continue
+			}
+
+			midpoint := [2]int{current.row + (delta[0] / 2), current.column + (delta[1] / 2)}
+			if !isTraversableCell(data, midpoint) || !isTraversableCell(data, next) {
+				continue
+			}
+
+			if next == target {
+				return true
+			}
+
+			visited[next] = true
+			queue = append(queue, queueEntry{row: next[0], column: next[1]})
 		}
 	}
 

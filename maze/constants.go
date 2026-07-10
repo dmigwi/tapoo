@@ -22,7 +22,9 @@ const (
 	// These values drive movement timing, score decay, and edge detection in the runtime loop.
 
 	moveStep              = 2
+	minPlayableMazeCells  = 2
 	scoreMultiplier       = 100
+	percentScale          = 100
 	refreshInterval       = 50 * time.Millisecond
 	quitNavigationStatus  = 0
 	mazeEdgeNeighborCount = 4
@@ -93,7 +95,7 @@ const (
 // maxLevel defines the maximum level that can be played in this game.
 // Due to the large size of the maze at the final level, it might never be reached especially
 // for users with smaller screen sizes.
-const maxLevel = 290
+const maxLevel = 300
 
 const (
 	// StatusProceed should be updated if the player wants to continue playing the game after:
@@ -156,4 +158,71 @@ func (weight WallWeight) String() string {
 	default:
 		return fmt.Sprintf("WallWeight(%d)", weight)
 	}
+}
+
+// direction identifies the cell-to-cell travel direction used while tracking
+// straight corridor runs and turn decisions during maze generation.
+type direction int
+
+const (
+	// directionNone records the absence of a prior move, which only happens at the starting cell.
+	directionNone direction = iota
+
+	// directionUp records a move into the cell directly above the current one.
+	directionUp
+
+	// directionDown records a move into the cell directly below the current one.
+	directionDown
+
+	// directionLeft records a move into the cell directly to the left.
+	directionLeft
+
+	// directionRight records a move into the cell directly to the right.
+	directionRight
+)
+
+// NavigationProfile tunes how maze generation manages corridor length as the maze grows.
+// Smaller mazes can tolerate more frequent turns, while larger mazes need slightly longer
+// straight runs so navigation stays challenging without becoming exhausting.
+type NavigationProfile struct {
+	// SoftCorridorLimit is the straight-run length after which turns should become preferred.
+	SoftCorridorLimit int
+
+	// HardCorridorLimit is the straight-run length that should rarely be exceeded when a turn exists.
+	HardCorridorLimit int
+
+	// PreferTurnPercent controls how often a turn should win over continuing straight when both are valid.
+	PreferTurnPercent int
+}
+
+// GetNavigationProfile returns the corridor-management profile derived from the
+// provided maze dimensions. It shapes how quickly the generator should break up
+// long straight passages without changing the separate maze-area progression rules.
+func GetNavigationProfile(config Dimensions) NavigationProfile {
+	type navigationProfileBand struct {
+		maxArea int
+		profile NavigationProfile
+	}
+
+	//nolint:mnd // Tuned corridor-length bands used to keep maze generation readable and challenging.
+	bands := [...]navigationProfileBand{
+		{maxArea: 180, profile: NavigationProfile{SoftCorridorLimit: 2, HardCorridorLimit: 3, PreferTurnPercent: 80}},
+		{maxArea: 300, profile: NavigationProfile{SoftCorridorLimit: 3, HardCorridorLimit: 4, PreferTurnPercent: 70}},
+		{maxArea: 450, profile: NavigationProfile{SoftCorridorLimit: 4, HardCorridorLimit: 5, PreferTurnPercent: 60}},
+		{maxArea: 600, profile: NavigationProfile{SoftCorridorLimit: 5, HardCorridorLimit: 6, PreferTurnPercent: 50}},
+		{maxArea: 1000, profile: NavigationProfile{SoftCorridorLimit: 5, HardCorridorLimit: 7, PreferTurnPercent: 45}},
+		{maxArea: 1600, profile: NavigationProfile{SoftCorridorLimit: 6, HardCorridorLimit: 7, PreferTurnPercent: 40}},
+		{
+			maxArea: (maxLevel * diff) + seed,
+			profile: NavigationProfile{SoftCorridorLimit: 6, HardCorridorLimit: 8, PreferTurnPercent: 35},
+		},
+	}
+
+	area := config.Length * config.Width
+	for _, band := range bands {
+		if area <= band.maxArea {
+			return band.profile
+		}
+	}
+	return bands[len(bands)-1].profile
 }

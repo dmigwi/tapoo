@@ -1,7 +1,7 @@
 package maze
 
 import (
-	"crypto/rand"
+	cryptorand "crypto/rand"
 	"fmt"
 	"math/big"
 	"strings"
@@ -35,6 +35,21 @@ type (
 		Top    int
 	}
 )
+
+// secureRandomIndex returns a cryptographically random index in the range [0, limit).
+// Maze generation only uses this for start-cell selection, where preserving unpredictability matters.
+func secureRandomIndex(limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+
+	value, err := cryptorand.Int(cryptorand.Reader, big.NewInt(int64(limit)))
+	if err != nil {
+		return 0, err
+	}
+
+	return int(value.Int64()), nil
+}
 
 // CreatePlayingField creates the initial version of the maze which is a grid of cells.
 // The cells are created with terminal-printable characters, and wall weight controls
@@ -131,21 +146,6 @@ func (config *Dimensions) GetCellNeighbors(cellNo int) CellNeighbors {
 	return neighbors
 }
 
-// getRandomNo returns a pseudo-random number in the range [0, limit).
-func getRandomNo(limit int) int {
-	if limit <= 0 {
-		return 0
-	}
-
-	// Random cell selection does not need determinism, but it should not depend on shared mutable state.
-	value, err := rand.Int(rand.Reader, big.NewInt(int64(limit)))
-	if err != nil {
-		panic(err)
-	}
-
-	return int(value.Int64())
-}
-
 // getWallCharacters returns the maze wall characters associated with the provided wall weight.
 func getWallCharacters(weight WallWeight) ([3]string, error) {
 	switch weight {
@@ -197,8 +197,8 @@ func reweightMaze(data [][]string, currentWeight WallWeight) ([][]string, error)
 	return translated, nil
 }
 
-// isSpaceFound checks for the space character in a given string
-// Boolean true is returned if space is found.
+// isSpaceFound reports whether the segment is a traversable passage.
+// All open path segments in the maze begin with a leading space, so a single-byte check is enough.
 func isSpaceFound(item string) bool {
-	return strings.Contains(item, " ")
+	return len(item) > 0 && item[0] == ' '
 }

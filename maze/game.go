@@ -74,7 +74,6 @@ func (clock *GameClock) Remaining() time.Duration {
 	if remaining < 0 {
 		return 0
 	}
-
 	return remaining
 }
 
@@ -94,22 +93,31 @@ func (clock *GameClock) Resume() {
 	clock.pausedAt = time.Time{}
 }
 
-// PlayerMovement calculates the actual player position
-// depending on the navigation keys pressed.
-func (config *Dimensions) PlayerMovement(data [][]string, direction string) {
+// PlayerMovement updates the player coordinates using the supplied row and column deltas.
+// The move only succeeds when the intermediate passage slot between maze cells is traversable.
+func (config *Dimensions) PlayerMovement(data [][]string, rowDelta, columnDelta int) (int, bool) {
 	startPos := config.StartPosition
-	xVal, zVal := startPos[1], startPos[0]
+	currentColumn, currentRow := startPos[1], startPos[0]
+	nextRow := currentRow + rowDelta*moveStep
+	nextColumn := currentColumn + columnDelta*moveStep
+	probeRow := currentRow + rowDelta
+	probeColumn := currentColumn + columnDelta
 
-	switch {
-	case direction == "LEFT" && (xVal-moveStep) > 0 && isSpaceFound(data[zVal][xVal-1]):
-		config.StartPosition[1] = xVal - moveStep
-	case direction == "RIGHT" && (xVal+moveStep) <= config.Length*cellSpan && isSpaceFound(data[zVal][xVal+1]):
-		config.StartPosition[1] = xVal + moveStep
-	case direction == "UP" && (zVal-moveStep) > 0 && isSpaceFound(data[zVal-1][xVal]):
-		config.StartPosition[0] = zVal - moveStep
-	case direction == "DOWN" && (zVal+moveStep) <= config.Width*cellSpan && isSpaceFound(data[zVal+1][xVal]):
-		config.StartPosition[0] = zVal + moveStep
+	if nextRow <= 0 || nextRow > config.Width*cellSpan {
+		return 0, false
 	}
+
+	if nextColumn <= 0 || nextColumn > config.Length*cellSpan {
+		return 0, false
+	}
+
+	if !isSpaceFound(data[probeRow][probeColumn]) {
+		return 0, false
+	}
+
+	config.StartPosition[0] = nextRow
+	config.StartPosition[1] = nextColumn
+	return 0, false
 }
 
 // HandlePlayerMovement interprets keyboard input and updates the player position or returns a game status.
@@ -132,28 +140,27 @@ func (config *Dimensions) HandlePlayerMovement(event termbox.Key, data [][]strin
 		return StatusCycleWallWeight, true
 	}
 
-	// Arrow keys mutate the stored player position immediately when the destination cell is traversable.
+	// Negative column delta moves the player one maze cell to the left.
 	if event == termbox.KeyArrowLeft {
-		config.PlayerMovement(data, "LEFT")
-		return 0, false
+		return config.PlayerMovement(data, 0, -1)
 	}
 
+	// Positive column delta moves the player one maze cell to the right.
 	if event == termbox.KeyArrowRight {
-		config.PlayerMovement(data, "RIGHT")
-		return 0, false
+		return config.PlayerMovement(data, 0, 1)
 	}
 
+	// Negative row delta moves the player one maze cell upward.
 	if event == termbox.KeyArrowUp {
-		config.PlayerMovement(data, "UP")
-		return 0, false
+		return config.PlayerMovement(data, -1, 0)
 	}
 
+	// Positive row delta moves the player one maze cell downward.
 	if event == termbox.KeyArrowDown {
-		config.PlayerMovement(data, "DOWN")
-		return 0, false
+		return config.PlayerMovement(data, 1, 0)
 	}
 
-	// Unhandled keys are ignored so they do not interrupt gameplay or trigger redraw side effects.
+	// All other keys are ignored so they do not interrupt gameplay or trigger redraw side effects.
 	return 0, false
 }
 
@@ -491,7 +498,6 @@ func loadLevel(ui UI, level int, weight WallWeight) (*Dimensions, [][]string, er
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate maze: %w", err)
 	}
-
 	return val, data, nil
 }
 

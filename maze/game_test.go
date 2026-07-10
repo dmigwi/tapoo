@@ -27,19 +27,20 @@ func TestPlayerMovement(t *testing.T) {
 	}
 
 	tests := []struct {
-		name      string
-		startPos  [2]int
-		direction string
-		wantPos   [2]int
+		name     string
+		startPos [2]int
+		rowDelta int
+		colDelta int
+		wantPos  [2]int
 	}{
-		{name: "move left", startPos: [2]int{3, 3}, direction: "LEFT", wantPos: [2]int{3, 1}},
-		{name: "move right", startPos: [2]int{3, 3}, direction: "RIGHT", wantPos: [2]int{3, 5}},
-		{name: "move up", startPos: [2]int{3, 3}, direction: "UP", wantPos: [2]int{1, 3}},
-		{name: "move down", startPos: [2]int{3, 3}, direction: "DOWN", wantPos: [2]int{5, 3}},
-		{name: "blocked left at edge", startPos: [2]int{1, 1}, direction: "LEFT", wantPos: [2]int{1, 1}},
-		{name: "allowed right at edge", startPos: [2]int{1, 1}, direction: "RIGHT", wantPos: [2]int{1, 3}},
-		{name: "allowed down at edge", startPos: [2]int{1, 1}, direction: "DOWN", wantPos: [2]int{3, 1}},
-		{name: "blocked up at edge", startPos: [2]int{1, 1}, direction: "UP", wantPos: [2]int{1, 1}},
+		{name: "move left", startPos: [2]int{3, 3}, rowDelta: 0, colDelta: -1, wantPos: [2]int{3, 1}},
+		{name: "move right", startPos: [2]int{3, 3}, rowDelta: 0, colDelta: 1, wantPos: [2]int{3, 5}},
+		{name: "move up", startPos: [2]int{3, 3}, rowDelta: -1, colDelta: 0, wantPos: [2]int{1, 3}},
+		{name: "move down", startPos: [2]int{3, 3}, rowDelta: 1, colDelta: 0, wantPos: [2]int{5, 3}},
+		{name: "blocked left at edge", startPos: [2]int{1, 1}, rowDelta: 0, colDelta: -1, wantPos: [2]int{1, 1}},
+		{name: "allowed right at edge", startPos: [2]int{1, 1}, rowDelta: 0, colDelta: 1, wantPos: [2]int{1, 3}},
+		{name: "allowed down at edge", startPos: [2]int{1, 1}, rowDelta: 1, colDelta: 0, wantPos: [2]int{3, 1}},
+		{name: "blocked up at edge", startPos: [2]int{1, 1}, rowDelta: -1, colDelta: 0, wantPos: [2]int{1, 1}},
 	}
 
 	for _, testCase := range tests {
@@ -52,11 +53,12 @@ func TestPlayerMovement(t *testing.T) {
 				StartPosition: testCase.startPos,
 			}
 
-			dimensions.PlayerMovement(data, testCase.direction)
+			dimensions.PlayerMovement(data, testCase.rowDelta, testCase.colDelta)
 			if !slices.Equal(dimensions.StartPosition[:], testCase.wantPos[:]) {
 				t.Fatalf(
-					"unexpected position after %s: got %v want %v",
-					testCase.direction,
+					"unexpected position after delta (%d,%d): got %v want %v",
+					testCase.rowDelta,
+					testCase.colDelta,
 					dimensions.StartPosition,
 					testCase.wantPos,
 				)

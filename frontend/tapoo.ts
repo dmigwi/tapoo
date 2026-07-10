@@ -1,7 +1,5 @@
 type GameStatus = "boot" | "running" | "paused" | "won" | "lost" | "quit" | "too-small";
 
-type Direction = "LEFT" | "RIGHT" | "UP" | "DOWN";
-
 type Position = [number, number];
 
 type WallWeight = 1 | 2 | 3;
@@ -32,6 +30,20 @@ type CellNeighbors = {
   left: number;
   right: number;
   top: number;
+};
+
+type Direction = "none" | "up" | "down" | "left" | "right";
+
+type NavigationProfile = {
+  softCorridorLimit: number;
+  hardCorridorLimit: number;
+  preferTurnPercent: number;
+};
+
+type PathStep = {
+  cellNo: number;
+  moveDirection: Direction;
+  corridorLength: number;
 };
 
 type RoundState = {
@@ -73,6 +85,7 @@ type AppConfig = {
   cellPathWidth: number;
   moveStep: number;
   scoreMultiplier: number;
+  percentScale: number;
   refreshInterval: number;
   mazeLeftPadding: number;
   seed: number;
@@ -105,11 +118,12 @@ const CONFIG: AppConfig = {
   cellPathWidth: 3,
   moveStep: 2,
   scoreMultiplier: 100,
+  percentScale: 100,
   refreshInterval: 50,
   mazeLeftPadding: 3,
   seed: 100,
   diff: 10,
-  maxLevel: 290,
+  maxLevel: 300,
   minMazeDimension: 5,
   terminalHeightInset: 5,
   terminalHeightScale: 4,
@@ -222,12 +236,15 @@ function escapeHtml(value: string): string {
 function getTerminalSize(): BaseDimensions {
   const rect = elements.body.getBoundingClientRect();
   const sampleRect = elements.measure.getBoundingClientRect();
+  const screenStyle = window.getComputedStyle(elements.screen);
   const charWidth = sampleRect.width / TERMINAL_SAMPLE_WIDTH || 9;
-  const charHeight = sampleRect.height || 20;
+  const mazeRowHeight = Number.parseFloat(screenStyle.fontSize) || sampleRect.height || 16;
   const terminalColumns = Math.max(MIN_TERMINAL_COLUMNS, Math.floor(rect.width / charWidth));
-  const terminalRows = Math.max(MIN_TERMINAL_ROWS, Math.floor(rect.height / charHeight));
+  const terminalRows = Math.max(MIN_TERMINAL_ROWS, Math.floor(rect.height / mazeRowHeight));
 
   // Like the Go renderer, the browser terminal reserves part of the viewport for headers and margins.
+  // Rows are measured from the compact maze line height instead of the looser text line height so
+  // browser mazes do not underestimate vertical space and collapse into overly wide layouts.
   return {
     length: Math.floor((terminalColumns - CONFIG.terminalHeightInset) / CONFIG.terminalHeightScale),
     width: Math.floor((terminalRows - CONFIG.terminalWidthInset) / CONFIG.terminalWidthScale),
@@ -255,7 +272,7 @@ function nextWallWeight(weight: WallWeight): WallWeight {
 }
 
 function isSpaceFound(item: string): boolean {
-  return item.includes(" ");
+  return item.length > 0 && item.charCodeAt(0) === 32;
 }
 
 function generateMazeArea(level: number): number {
@@ -496,6 +513,116 @@ function getPresentNeighbors(dimensions: BaseDimensions, cellNo: number, visited
   return present;
 }
 
+// getNavigationProfile returns the corridor-management profile for the current maze size.
+// The profile is used during maze generation to break up long straight runs without
+// making larger mazes overwhelmingly twisty.
+function getNavigationProfile(dimensions: BaseDimensions): NavigationProfile {
+  const bands: Array<{ maxArea: number; profile: NavigationProfile }> = [
+    { maxArea: 180, profile: { softCorridorLimit: 2, hardCorridorLimit: 3, preferTurnPercent: 80 } },
+    { maxArea: 300, profile: { softCorridorLimit: 3, hardCorridorLimit: 4, preferTurnPercent: 70 } },
+    { maxArea: 450, profile: { softCorridorLimit: 4, hardCorridorLimit: 5, preferTurnPercent: 60 } },
+    { maxArea: 600, profile: { softCorridorLimit: 5, hardCorridorLimit: 6, preferTurnPercent: 50 } },
+    { maxArea: 1000, profile: { softCorridorLimit: 5, hardCorridorLimit: 7, preferTurnPercent: 45 } },
+    { maxArea: 1600, profile: { softCorridorLimit: 6, hardCorridorLimit: 7, preferTurnPercent: 40 } },
+    {
+      maxArea: generateMazeArea(CONFIG.maxLevel),
+      profile: { softCorridorLimit: 6, hardCorridorLimit: 8, preferTurnPercent: 35 },
+    },
+  ];
+
+  const area = dimensions.length * dimensions.width;
+  return bands.find((band) => area <= band.maxArea)?.profile ?? bands[bands.length - 1].profile;
+}
+
+function directionBetween(dimensions: BaseDimensions, currentCell: number, nextCell: number): Direction {
+  const neighbors = getCellNeighbors(dimensions, currentCell);
+
+  if (nextCell === neighbors.top) {
+    return "up";
+  }
+
+  if (nextCell === neighbors.bottom) {
+    return "down";
+  }
+
+  if (nextCell === neighbors.left) {
+    return "left";
+  }
+
+  if (nextCell === neighbors.right) {
+    return "right";
+  }
+
+  return "none";
+}
+
+function backtrackToBranch(
+  dimensions: BaseDimensions,
+  path: PathStep[],
+  visited: boolean[],
+): { path: PathStep[]; currentCell: number; neighbors: number[] } {
+  while (path.length > 0) {
+    const currentCell = path[path.length - 1].cellNo;
+    const neighbors = getPresentNeighbors(dimensions, currentCell, visited);
+
+    if (neighbors.length > 0) {
+      return { path, currentCell, neighbors };
+    }
+
+    path.pop();
+  }
+
+  throw new Error("failed to backtrack to a maze branch");
+}
+
+function chooseNextCell(
+  dimensions: BaseDimensions, neighbors: number[], currentState: PathStep, profile: NavigationProfile,
+): PathStep {
+  const allChoices: PathStep[] = [];
+  const turnChoices: PathStep[] = [];
+  const withinHardLimit: PathStep[] = [];
+
+  for (const neighbor of neighbors) {
+    const nextDirection = directionBetween(dimensions, currentState.cellNo, neighbor);
+    const straightLength = nextDirection === currentState.moveDirection
+      ? currentState.corridorLength + 1
+      : 1;
+
+    const choice: PathStep = {
+      cellNo: neighbor,
+      moveDirection: nextDirection,
+      corridorLength: straightLength,
+    };
+
+    allChoices.push(choice);
+
+    if (nextDirection !== currentState.moveDirection) {
+      turnChoices.push(choice);
+    }
+
+    if (straightLength <= profile.hardCorridorLimit) {
+      withinHardLimit.push(choice);
+    }
+  }
+
+  let choices = withinHardLimit.length > 0 ? withinHardLimit : allChoices;
+
+  if (currentState.moveDirection !== "none" && turnChoices.length > 0) {
+    const turnPreferenceRoll = getRandomNo(CONFIG.percentScale);
+
+    if (currentState.corridorLength >= profile.hardCorridorLimit) {
+      choices = turnChoices;
+    } else if (
+      currentState.corridorLength >= profile.softCorridorLimit &&
+      turnPreferenceRoll < profile.preferTurnPercent
+    ) {
+      choices = turnChoices;
+    }
+  }
+
+  return choices[getRandomNo(choices.length)];
+}
+
 function getStartPosition(dimensions: BaseDimensions): number {
   const totalCells = dimensions.length * dimensions.width;
 
@@ -580,10 +707,11 @@ function optimizeMaze(dimensions: BaseDimensions, weight: WallWeight, maze: stri
 
 function generateMaze(dimensions: BaseDimensions, weight: WallWeight): RoundState {
   const totalCells = dimensions.length * dimensions.width;
+  const navigationProfile = getNavigationProfile(dimensions);
   const visited = new Array<boolean>(totalCells + 1).fill(false);
   const maze = createPlayingField(dimensions, weight);
   const startCell = getStartPosition(dimensions);
-  const path = [startCell];
+  let path: PathStep[] = [{ cellNo: startCell, moveDirection: "none", corridorLength: 0 }];
   let currentCell = startCell;
   let visitedCount = 1;
   let longestPathLength = 1;
@@ -598,32 +726,23 @@ function generateMaze(dimensions: BaseDimensions, weight: WallWeight): RoundStat
 
   while (visitedCount < totalCells) {
     let neighbors: number[] = [];
+    ({ path, currentCell, neighbors } = backtrackToBranch(dimensions, path, visited));
 
-    while (neighbors.length === 0) {
-      neighbors = getPresentNeighbors(dimensions, currentCell, visited);
+    const nextChoice = chooseNextCell(dimensions, neighbors, path[path.length - 1], navigationProfile);
 
-      if (neighbors.length === 0) {
-        path.pop();
-        currentCell = path[path.length - 1];
-      }
-    }
-
-    const nextCell = neighbors[getRandomNo(neighbors.length)];
-    if (visited[nextCell]) {
+    if (visited[nextChoice.cellNo]) {
       continue;
     }
 
-    visited[nextCell] = true;
+    visited[nextChoice.cellNo] = true;
     visitedCount += 1;
-    createPath(dimensions, maze, currentCell, nextCell);
-    path.push(nextCell);
+    createPath(dimensions, maze, currentCell, nextChoice.cellNo);
+    path.push(nextChoice);
 
     if (path.length > longestPathLength) {
       longestPathLength = path.length;
-      finalCell = nextCell;
+      finalCell = nextChoice.cellNo;
     }
-
-    currentCell = nextCell;
   }
 
   const finalAddress = getCellAddress(dimensions, finalCell);
@@ -763,35 +882,32 @@ function cycleWallWeight(): void {
   render();
 }
 
-function movePlayer(direction: Direction): void {
+function movePlayer(rowDelta: number, columnDelta: number): void {
   if (state.status !== "running" || !state.maze || !state.dims || !state.playerPosition) {
     return;
   }
 
   const row = state.playerPosition[0];
   const column = state.playerPosition[1];
+  const nextRow = row + rowDelta * CONFIG.moveStep;
+  const nextColumn = column + columnDelta * CONFIG.moveStep;
+  const probeRow = row + rowDelta;
+  const probeColumn = column + columnDelta;
 
-  if (direction === "LEFT" && column - CONFIG.moveStep > 0 && isSpaceFound(state.maze[row][column - 1])) {
-    state.playerPosition[1] = column - CONFIG.moveStep;
-  } else if (
-    direction === "RIGHT" &&
-    column + CONFIG.moveStep <= state.dims.length * CONFIG.cellSpan &&
-    isSpaceFound(state.maze[row][column + 1])
-  ) {
-    state.playerPosition[1] = column + CONFIG.moveStep;
-  } else if (
-    direction === "UP" &&
-    row - CONFIG.moveStep > 0 &&
-    isSpaceFound(state.maze[row - 1][column])
-  ) {
-    state.playerPosition[0] = row - CONFIG.moveStep;
-  } else if (
-    direction === "DOWN" &&
-    row + CONFIG.moveStep <= state.dims.width * CONFIG.cellSpan &&
-    isSpaceFound(state.maze[row + 1][column])
-  ) {
-    state.playerPosition[0] = row + CONFIG.moveStep;
+  if (nextRow <= 0 || nextRow > state.dims.width * CONFIG.cellSpan) {
+    return;
   }
+
+  if (nextColumn <= 0 || nextColumn > state.dims.length * CONFIG.cellSpan) {
+    return;
+  }
+
+  if (!isSpaceFound(state.maze[probeRow][probeColumn])) {
+    return;
+  }
+
+  state.playerPosition[0] = nextRow;
+  state.playerPosition[1] = nextColumn;
 
   handleWinCheck();
   render();
@@ -1109,13 +1225,13 @@ function handleKeydown(event: KeyboardEvent): void {
   }
 
   if (key === "ArrowLeft") {
-    movePlayer("LEFT");
+    movePlayer(0, -1);
   } else if (key === "ArrowRight") {
-    movePlayer("RIGHT");
+    movePlayer(0, 1);
   } else if (key === "ArrowUp") {
-    movePlayer("UP");
+    movePlayer(-1, 0);
   } else if (key === "ArrowDown") {
-    movePlayer("DOWN");
+    movePlayer(1, 0);
   }
 }
 
