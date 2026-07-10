@@ -174,9 +174,17 @@ export function loadPersistedSnapshot(
   };
 }
 
-export function savePersistedSnapshot(state: State): void {
+export function savePersistedPreferences(state: Pick<State, "level" | "wallWeight">): void {
   savePreferences({ level: state.level, wallWeight: state.wallWeight });
+}
+
+export function savePersistedRoundState(state: State): void {
   saveRound(buildRoundSnapshot(state));
+}
+
+export function savePersistedSnapshot(state: State): void {
+  savePersistedPreferences(state);
+  savePersistedRoundState(state);
 }
 
 export function clearPersistedRound(): void {

@@ -6,7 +6,7 @@ export const CONFIG: AppConfig = {
   moveStep: 2,
   scoreMultiplier: 100,
   percentScale: 100,
-  refreshInterval: 50,
+  refreshInterval: 250,
   mazeLeftPadding: 3,
   seed: 100,
   diff: 10,

@@ -2,18 +2,11 @@ import { GameClock } from "./clock";
 import { CONFIG, ROUND_STORAGE_VERSION, WALL_WEIGHTS } from "./config";
 import { applyInputMode, detectInputMode, elements, getTerminalSize } from "./dom";
 import {
-  generateMaze,
-  getMazeDimensions,
-  isSpaceFound,
-  isWallWeight,
-  nextWallWeight,
-  reweightMaze,
+  generateMaze, getMazeDimensions, isSpaceFound, isWallWeight, nextWallWeight, reweightMaze, 
 } from "./maze";
 import { render } from "./render";
 import {
-  clearPersistedRound,
-  loadPersistedSnapshot,
-  savePersistedSnapshot,
+  clearPersistedRound, loadPersistedSnapshot, savePersistedPreferences, savePersistedRoundState,
 } from "./storage";
 import type { PersistedRound, Position, State } from "./types";
 
@@ -31,6 +24,8 @@ const state: State = {
   clock: null,
   inputMode: "keyboard",
 };
+
+let scheduledRoundPersist: number | null = null;
 
 function calculateScore(totalCells: number, elapsedMs: number): number {
   return Math.max(0, totalCells - Math.floor(elapsedMs / 1000)) * CONFIG.scoreMultiplier;
@@ -129,8 +124,35 @@ function syncInputMode(): boolean {
   return changed;
 }
 
-function persistState(): void {
-  savePersistedSnapshot(state);
+function cancelScheduledRoundPersist(): void {
+  if (scheduledRoundPersist === null) {
+    return;
+  }
+
+  window.clearTimeout(scheduledRoundPersist);
+  scheduledRoundPersist = null;
+}
+
+function persistPreferences(): void {
+  savePersistedPreferences(state);
+}
+
+function persistRoundNow(): void {
+  cancelScheduledRoundPersist();
+  savePersistedRoundState(state);
+}
+
+function persistStateNow(): void {
+  persistPreferences();
+  persistRoundNow();
+}
+
+function scheduleRoundPersistence(): void {
+  cancelScheduledRoundPersist();
+  scheduledRoundPersist = window.setTimeout(() => {
+    scheduledRoundPersist = null;
+    savePersistedRoundState(state);
+  }, CONFIG.refreshInterval);
 }
 
 function restorePersistedRound(snapshot: PersistedRound | null): boolean {
@@ -146,7 +168,7 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   if (!persistedRoundFitsViewport(snapshot)) {
     applyTooSmallState(snapshot.level);
     state.wallWeight = snapshot.wallWeight;
-    persistState();
+    persistStateNow();
     render(elements, state);
     return true;
   }
@@ -183,7 +205,7 @@ function startRound(level: number): void {
 
   if (!dimensions) {
     applyTooSmallState(level);
-    persistState();
+    persistStateNow();
     render(elements, state);
     return;
   }
@@ -202,7 +224,7 @@ function startRound(level: number): void {
   const totalCells = dimensions.length * dimensions.width;
   state.clock = new GameClock(totalCells * 1000);
   state.score = calculateScore(totalCells, 0);
-  persistState();
+  persistStateNow();
   render(elements, state);
 }
 
@@ -217,6 +239,7 @@ function resumeOrProceed(): void {
     state.clock.resume();
     state.status = "running";
     state.canResume = false;
+    persistRoundNow();
     render(elements, state);
     return;
   }
@@ -244,7 +267,7 @@ function pauseGame(): void {
   state.clock.pause();
   state.status = "paused";
   state.canResume = true;
-  persistState();
+  persistStateNow();
   render(elements, state);
 }
 
@@ -260,7 +283,7 @@ function quitGame(): void {
   state.status = "quit";
   state.canResume = false;
   clearPersistedRound();
-  persistState();
+  persistStateNow();
   render(elements, state);
 }
 
@@ -272,23 +295,24 @@ function cycleWallWeight(): void {
   }
 
   state.wallWeight = nextWeight;
-  persistState();
+  persistStateNow();
   render(elements, state);
 }
 
-function handleWinCheck(): void {
+function handleWinCheck(): boolean {
   if (state.clock && state.dims) {
     const totalCells = state.dims.length * state.dims.width;
     state.score = calculateScore(totalCells, state.clock.elapsed());
   }
 
   if (!state.playerPosition || !state.finalPosition || !positionsEqual(state.playerPosition, state.finalPosition)) {
-    return;
+    return false;
   }
 
   state.status = "won";
   state.canResume = false;
   state.lastRoundScore = state.score;
+  return true;
 }
 
 function movePlayer(rowDelta: number, columnDelta: number): void {
@@ -318,8 +342,11 @@ function movePlayer(rowDelta: number, columnDelta: number): void {
   state.playerPosition[0] = nextRow;
   state.playerPosition[1] = nextColumn;
 
-  handleWinCheck();
-  persistState();
+  if (handleWinCheck()) {
+    persistStateNow();
+  } else {
+    scheduleRoundPersistence();
+  }
   render(elements, state);
 }
 
@@ -336,7 +363,7 @@ function handleLoss(): void {
   state.status = "lost";
   state.canResume = false;
   state.lastRoundScore = state.score;
-  persistState();
+  persistStateNow();
   render(elements, state);
 }
 
@@ -346,14 +373,19 @@ function tick(): void {
   }
 
   const totalCells = state.dims.length * state.dims.width;
-  state.score = calculateScore(totalCells, state.clock.elapsed());
+  const nextScore = calculateScore(totalCells, state.clock.elapsed());
+  const remainingMs = state.clock.remaining();
+  const scoreChanged = nextScore !== state.score;
+  state.score = nextScore;
 
-  if (state.clock.remaining() <= 0) {
+  if (remainingMs <= 0) {
     handleLoss();
     return;
   }
 
-  render(elements, state);
+  if (scoreChanged) {
+    render(elements, state);
+  }
 }
 
 function handleKeydown(event: KeyboardEvent): void {
@@ -469,16 +501,12 @@ function handleAction(action: string): void {
 }
 
 function handleResize(): void {
-  const inputModeChanged = syncInputMode();
+  syncInputMode();
 
   if (state.status !== "too-small" && !currentRoundFitsViewport()) {
     applyTooSmallState(state.level);
-    persistState();
-    render(elements, state);
-    return;
+    persistStateNow();
   }
-
-  render(elements, state);
 
   if (state.status === "too-small") {
     if (restorePersistedRound(loadPersistedSnapshot(1, WALL_WEIGHTS[0], isWallWeight).round)) {
@@ -488,12 +516,11 @@ function handleResize(): void {
     const terminalSize = getTerminalSize();
     if (getMazeDimensions(state.level, terminalSize)) {
       restartGame();
+      return;
     }
   }
 
-  if (inputModeChanged) {
-    render(elements, state);
-  }
+  render(elements, state);
 }
 
 export function bootstrapGame(): void {
@@ -520,7 +547,7 @@ export function bootstrapGame(): void {
   window.addEventListener("keydown", handleKeydown, { passive: false });
   window.addEventListener("resize", handleResize);
   window.addEventListener("pagehide", () => {
-    persistState();
+    persistStateNow();
   });
   window.setInterval(tick, CONFIG.refreshInterval);
 

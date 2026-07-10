@@ -14,8 +14,8 @@
   --button-min-height: 32px;
   --button-padding-x: 11px;
   --touch-button-radius: 8px;
-  --touch-button-min-height: 40px;
-  --touch-button-padding-x: 10px;
+  --touch-button-min-height: 32px;
+  --touch-button-padding-x: 11px;
 }
 
 @font-face {
@@ -293,7 +293,7 @@ body {
   transform: translateY(-20%);
   background-color: #f7f7f7;
   background-image:
-    url("../icons/under-construction.svg"),
+    url("../images/unavailable-page.svg"),
     repeating-conic-gradient(
       from 0deg,
       #ececec 0 10%,
@@ -491,8 +491,8 @@ body {
 
 .touch-controls__button--walls {
   grid-area: walls;
-  min-height: 32px;
-  padding: 0 9px;
+  min-height: var(--touch-button-min-height);
+  padding: 0 var(--touch-button-padding-x);
   font-size: 0.88rem;
 }
 
@@ -590,13 +590,13 @@ body {
   }
 
   .touch-controls__button {
-    min-height: 38px;
-    padding: 0 8px;
+    min-height: var(--touch-button-min-height);
+    padding: 0 var(--touch-button-padding-x);
   }
 
   .touch-controls__button--walls {
-    min-height: 30px;
-    padding: 0 7px;
+    min-height: var(--touch-button-min-height);
+    padding: 0 var(--touch-button-padding-x);
     font-size: 0.88rem;
   }
 }

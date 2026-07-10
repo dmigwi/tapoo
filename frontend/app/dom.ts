@@ -44,9 +44,12 @@ export function getTerminalSize(): BaseDimensions {
   const sampleRect = elements.measure.getBoundingClientRect();
   const screenStyle = window.getComputedStyle(elements.screen);
   const charWidth = sampleRect.width / TERMINAL_SAMPLE_WIDTH || 9;
-  const mazeRowHeight = Number.parseFloat(screenStyle.fontSize) || sampleRect.height || 16;
+  const measuredRowHeight = sampleRect.height;
+  const computedLineHeight = Number.parseFloat(screenStyle.lineHeight);
+  const computedFontSize = Number.parseFloat(screenStyle.fontSize);
+  const terminalRowHeight = measuredRowHeight || computedLineHeight || computedFontSize || 16;
   const terminalColumns = Math.max(MIN_TERMINAL_COLUMNS, Math.floor(rect.width / charWidth));
-  const terminalRows = Math.max(MIN_TERMINAL_ROWS, Math.floor(rect.height / mazeRowHeight));
+  const terminalRows = Math.max(MIN_TERMINAL_ROWS, Math.floor(rect.height / terminalRowHeight));
 
   return {
     length: Math.floor((terminalColumns - CONFIG.terminalHeightInset) / CONFIG.terminalHeightScale),
