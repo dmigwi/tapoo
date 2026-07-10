@@ -1,3 +1,3 @@
-import { bootstrapGame } from "./app/game";
+import { bootstrapGame } from "./app/game"
 
-bootstrapGame();
+bootstrapGame()

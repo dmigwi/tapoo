@@ -11,6 +11,7 @@ concurrency:
 
 permissions:
   contents: read
+  code-quality: write
 
 env:
   GOFLAGS: -mod=readonly
@@ -49,6 +50,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -77,14 +80,28 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare coverage directories
+        run: mkdir -p .tmp/frontend-coverage
+
       - name: Type-check frontend
         run: pnpm run typecheck:frontend
+
+      - name: Run frontend tests with coverage
+        env:
+          VITEST_COVERAGE_DIR: .tmp/frontend-coverage
+        run: pnpm run coverage:frontend
 
       - name: Build frontend
         run: pnpm run build:frontend
 
       - name: Run tests with coverage
-        run: go test -race -covermode=atomic -coverprofile=coverage.out -v ./...
+        run: go test -race -covermode=atomic -coverprofile=.tmp/go-coverage.out -v ./...
+
+      - name: Install gocover-cobertura
+        run: go install github.com/t-yuki/gocover-cobertura@aaee18c8195c3f2d90e5ef80ca918d265463842a
+
+      - name: Convert Go coverage to Cobertura XML
+        run: $(go env GOPATH)/bin/gocover-cobertura < .tmp/go-coverage.out > .tmp/go-coverage.xml
 
       - name: Generate coverage summary
         run: |
@@ -92,14 +109,22 @@ jobs:
             echo '## Test Coverage'
             echo
             echo '```text'
-            go tool cover -func=coverage.out
+            go tool cover -func=.tmp/go-coverage.out
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload coverage profile
-        uses: actions/upload-artifact@v4
+      - name: Upload Go coverage report to GitHub
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/upload-code-coverage@v1
         with:
-          name: go-coverage
-          path: coverage.out
-          if-no-files-found: error
-          retention-days: 14
+          file: .tmp/go-coverage.xml
+          language: Go
+          label: code-coverage/go
+
+      - name: Upload frontend coverage report to GitHub
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: .tmp/frontend-coverage/cobertura-coverage.xml
+          language: JavaScript
+          label: code-coverage/frontend

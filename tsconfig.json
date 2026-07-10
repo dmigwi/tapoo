@@ -9,5 +9,5 @@
     "removeComments": false,
     "ignoreDeprecations": "6.0"
   },
-  "include": ["frontend/tapoo.ts"]
+  "include": ["frontend/**/*.ts"]
 }

@@ -5,69 +5,78 @@ import {
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
   WALL_WEIGHT_STORAGE_KEY,
-} from "./config";
-import type { PersistedPreferences, PersistedRound, PersistedSnapshot, State, WallWeight } from "./types";
+} from "./config"
+import type {
+  PersistedPreferences,
+  PersistedRound,
+  PersistedSnapshot,
+  State,
+  WallWeight,
+} from "./types"
 
 function toBase64(payloadBytes: Uint8Array): string {
-  let binaryPayload = "";
+  let binaryPayload = ""
 
   for (const payloadByte of payloadBytes) {
-    binaryPayload += String.fromCharCode(payloadByte);
+    binaryPayload += String.fromCharCode(payloadByte)
   }
 
-  return window.btoa(binaryPayload);
+  return window.btoa(binaryPayload)
 }
 
 function fromBase64(encodedPayload: string): Uint8Array | null {
   try {
-    const binaryPayload = window.atob(encodedPayload);
-    return Uint8Array.from(binaryPayload, (character) => character.charCodeAt(0));
+    const binaryPayload = window.atob(encodedPayload)
+    return Uint8Array.from(binaryPayload, (character) =>
+      character.charCodeAt(0),
+    )
   } catch {
-    return null;
+    return null
   }
 }
 
 function xorStoredPayload(payloadBytes: Uint8Array): Uint8Array {
-  const passphraseBytes = new TextEncoder().encode(STORE_BLEND_KEY);
-  const encodedBytes = new Uint8Array(payloadBytes.length);
+  const passphraseBytes = new TextEncoder().encode(STORE_BLEND_KEY)
+  const encodedBytes = new Uint8Array(payloadBytes.length)
 
   for (let index = 0; index < payloadBytes.length; index += 1) {
-    encodedBytes[index] = payloadBytes[index] ^ passphraseBytes[index % passphraseBytes.length];
+    encodedBytes[index] =
+      payloadBytes[index] ^ passphraseBytes[index % passphraseBytes.length]
   }
 
-  return encodedBytes;
+  return encodedBytes
 }
 
 function encodeStoredPayload(value: unknown): string {
-  const jsonPayload = JSON.stringify(value);
-  const payloadBytes = new TextEncoder().encode(jsonPayload);
-  return `${STORE_ENCODING_PREFIX}${toBase64(xorStoredPayload(payloadBytes))}`;
+  const jsonPayload = JSON.stringify(value)
+  const payloadBytes = new TextEncoder().encode(jsonPayload)
+  return `${STORE_ENCODING_PREFIX}${toBase64(xorStoredPayload(payloadBytes))}`
 }
 
 function decodeStoredPayload<T>(encodedPayload: string): T | null {
-  let payloadBytes: Uint8Array | null = null;
+  const payloadBytes = encodedPayload.startsWith(STORE_ENCODING_PREFIX)
+    ? (() => {
+        const encodedCipherText = encodedPayload.slice(
+          STORE_ENCODING_PREFIX.length,
+        )
+        const cipherText = fromBase64(encodedCipherText)
+        if (!cipherText) {
+          return null
+        }
 
-  if (encodedPayload.startsWith(STORE_ENCODING_PREFIX)) {
-    const encodedCipherText = encodedPayload.slice(STORE_ENCODING_PREFIX.length);
-    const cipherText = fromBase64(encodedCipherText);
-    if (!cipherText) {
-      return null;
-    }
-
-    payloadBytes = xorStoredPayload(cipherText);
-  } else {
-    payloadBytes = fromBase64(encodedPayload);
-  }
+        return xorStoredPayload(cipherText)
+      })()
+    : fromBase64(encodedPayload)
 
   if (!payloadBytes) {
-    return null;
+    return null
   }
 
   try {
-    const jsonPayload = new TextDecoder().decode(payloadBytes);
-    return JSON.parse(jsonPayload) as T;
+    const jsonPayload = new TextDecoder().decode(payloadBytes)
+    return JSON.parse(jsonPayload) as T
   } catch {
-    return null;
+    return null
   }
 }
 
@@ -77,13 +86,16 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     !state.maze ||
     !state.playerPosition ||
     !state.finalPosition ||
-    (state.status !== "running" && state.status !== "paused" && state.status !== "won" && state.status !== "lost")
+    (state.status !== "running" &&
+      state.status !== "paused" &&
+      state.status !== "won" &&
+      state.status !== "lost")
   ) {
-    return null;
+    return null
   }
 
-  const totalCells = state.dims.length * state.dims.width;
-  const remainingMs = state.clock ? state.clock.remaining() : totalCells * 1000;
+  const totalCells = state.dims.length * state.dims.width
+  const remainingMs = state.clock ? state.clock.remaining() : totalCells * 1000
 
   return {
     version: ROUND_STORAGE_VERSION,
@@ -97,13 +109,19 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     score: state.score,
     lastRoundScore: state.lastRoundScore,
     remainingMs,
-  };
+  }
 }
 
 function savePreferences(preferences: PersistedPreferences): void {
   try {
-    window.localStorage.setItem(WALL_WEIGHT_STORAGE_KEY, encodeStoredPayload(preferences.wallWeight));
-    window.localStorage.setItem(LEVEL_STORAGE_KEY, encodeStoredPayload(preferences.level));
+    window.localStorage.setItem(
+      WALL_WEIGHT_STORAGE_KEY,
+      encodeStoredPayload(preferences.wallWeight),
+    )
+    window.localStorage.setItem(
+      LEVEL_STORAGE_KEY,
+      encodeStoredPayload(preferences.level),
+    )
   } catch {
     // Ignore storage failures so durable browser preferences remain best-effort only.
   }
@@ -115,52 +133,57 @@ function loadPreferences(
   isWallWeight: (value: number) => value is WallWeight,
 ): PersistedPreferences {
   try {
-    const storedLevel = window.localStorage.getItem(LEVEL_STORAGE_KEY);
-    const storedWeight = window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY);
-    const parsedLevel = storedLevel === null ? null : decodeStoredPayload<number>(storedLevel);
-    const parsedWeight = storedWeight === null ? null : decodeStoredPayload<number>(storedWeight);
+    const storedLevel = window.localStorage.getItem(LEVEL_STORAGE_KEY)
+    const storedWeight = window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY)
+    const parsedLevel =
+      storedLevel === null ? null : decodeStoredPayload<number>(storedLevel)
+    const parsedWeight =
+      storedWeight === null ? null : decodeStoredPayload<number>(storedWeight)
 
     return {
-      level: Number.isInteger(parsedLevel) && parsedLevel >= 1 ? parsedLevel : defaultLevel,
+      level:
+        Number.isInteger(parsedLevel) && parsedLevel >= 1
+          ? parsedLevel
+          : defaultLevel,
       wallWeight: isWallWeight(parsedWeight) ? parsedWeight : defaultWeight,
-    };
+    }
   } catch {
-    return { level: defaultLevel, wallWeight: defaultWeight };
+    return { level: defaultLevel, wallWeight: defaultWeight }
   }
 }
 
 function saveRound(round: PersistedRound | null): void {
   try {
     if (!round) {
-      window.sessionStorage.removeItem(ROUND_STORAGE_KEY);
-      return;
+      window.sessionStorage.removeItem(ROUND_STORAGE_KEY)
+      return
     }
 
-    window.sessionStorage.setItem(ROUND_STORAGE_KEY, encodeStoredPayload(round));
+    window.sessionStorage.setItem(ROUND_STORAGE_KEY, encodeStoredPayload(round))
   } catch {
     // Ignore storage failures so the active game can continue even without session persistence.
   }
 }
 
 function loadRound(): PersistedRound | null {
-  let rawSnapshot: string | null;
+  let rawSnapshot: string | null
 
   try {
-    rawSnapshot = window.sessionStorage.getItem(ROUND_STORAGE_KEY);
+    rawSnapshot = window.sessionStorage.getItem(ROUND_STORAGE_KEY)
   } catch {
-    return null;
+    return null
   }
 
   if (!rawSnapshot) {
-    return null;
+    return null
   }
 
-  const snapshot = decodeStoredPayload<PersistedRound>(rawSnapshot);
+  const snapshot = decodeStoredPayload<PersistedRound>(rawSnapshot)
   if (!snapshot) {
-    clearPersistedRound();
+    clearPersistedRound()
   }
 
-  return snapshot;
+  return snapshot
 }
 
 export function loadPersistedSnapshot(
@@ -171,22 +194,19 @@ export function loadPersistedSnapshot(
   return {
     preferences: loadPreferences(defaultLevel, defaultWeight, isWallWeight),
     round: loadRound(),
-  };
+  }
 }
 
-export function savePersistedPreferences(state: Pick<State, "level" | "wallWeight">): void {
-  savePreferences({ level: state.level, wallWeight: state.wallWeight });
+export function savePersistedPreferences(
+  state: Pick<State, "level" | "wallWeight">,
+): void {
+  savePreferences({ level: state.level, wallWeight: state.wallWeight })
 }
 
 export function savePersistedRoundState(state: State): void {
-  saveRound(buildRoundSnapshot(state));
-}
-
-export function savePersistedSnapshot(state: State): void {
-  savePersistedPreferences(state);
-  savePersistedRoundState(state);
+  saveRound(buildRoundSnapshot(state))
 }
 
 export function clearPersistedRound(): void {
-  saveRound(null);
+  saveRound(null)
 }
