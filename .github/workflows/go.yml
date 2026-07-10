@@ -120,6 +120,7 @@ jobs:
           file: .tmp/go-coverage.xml
           language: Go
           label: code-coverage/go
+          fail-on-error: false
 
       - name: Upload frontend coverage report to GitHub
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -128,3 +129,4 @@ jobs:
           file: .tmp/frontend-coverage/cobertura-coverage.xml
           language: JavaScript
           label: code-coverage/frontend
+          fail-on-error: false
