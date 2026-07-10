@@ -45,7 +45,7 @@ frontend-typecheck:
 frontend-build:
 	./scripts/build-frontend.sh
 
-test: deps ci frontend-deps frontend-typecheck frontend-build
+test: deps frontend-deps frontend-typecheck frontend-build
 	go test -race -covermode=atomic -coverprofile=$(COVERAGE_FILE) ./...
 
 coverage:

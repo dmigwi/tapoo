@@ -1,6 +1,6 @@
 import { GameClock } from "./clock";
 import { CONFIG, ROUND_STORAGE_VERSION, WALL_WEIGHTS } from "./config";
-import { elements, getTerminalSize } from "./dom";
+import { applyInputMode, detectInputMode, elements, getTerminalSize } from "./dom";
 import {
   generateMaze,
   getMazeDimensions,
@@ -29,6 +29,7 @@ const state: State = {
   canResume: false,
   wallWeight: WALL_WEIGHTS[0],
   clock: null,
+  inputMode: "keyboard",
 };
 
 function calculateScore(totalCells: number, elapsedMs: number): number {
@@ -108,6 +109,24 @@ function isValidPersistedRound(snapshot: PersistedRound): boolean {
 function persistedRoundFitsViewport(snapshot: PersistedRound): boolean {
   const terminalSize = getTerminalSize();
   return snapshot.dims.length <= terminalSize.length && snapshot.dims.width <= terminalSize.width;
+}
+
+function currentRoundFitsViewport(): boolean {
+  if (!state.dims) {
+    return true;
+  }
+
+  const terminalSize = getTerminalSize();
+  return state.dims.length <= terminalSize.length && state.dims.width <= terminalSize.width;
+}
+
+function syncInputMode(): boolean {
+  const nextMode = detectInputMode();
+  const changed = state.inputMode !== nextMode;
+
+  state.inputMode = nextMode;
+  applyInputMode(nextMode);
+  return changed;
 }
 
 function persistState(): void {
@@ -400,15 +419,65 @@ function handleKeydown(event: KeyboardEvent): void {
   }
 }
 
+function handleMove(direction: string): void {
+  if (direction === "left") {
+    movePlayer(0, -1);
+    return;
+  }
+
+  if (direction === "right") {
+    movePlayer(0, 1);
+    return;
+  }
+
+  if (direction === "up") {
+    movePlayer(-1, 0);
+    return;
+  }
+
+  if (direction === "down") {
+    movePlayer(1, 0);
+  }
+}
+
 function handleAction(action: string): void {
   elements.app.focus();
 
   if (action === "restart") {
     restartGame();
+    return;
+  }
+
+  if (action === "pause") {
+    pauseGame();
+    return;
+  }
+
+  if (action === "walls") {
+    cycleWallWeight();
+    return;
+  }
+
+  if (action === "proceed") {
+    resumeOrProceed();
+    return;
+  }
+
+  if (action === "quit") {
+    quitGame();
   }
 }
 
 function handleResize(): void {
+  const inputModeChanged = syncInputMode();
+
+  if (state.status !== "too-small" && !currentRoundFitsViewport()) {
+    applyTooSmallState(state.level);
+    persistState();
+    render(elements, state);
+    return;
+  }
+
   render(elements, state);
 
   if (state.status === "too-small") {
@@ -421,11 +490,29 @@ function handleResize(): void {
       restartGame();
     }
   }
+
+  if (inputModeChanged) {
+    render(elements, state);
+  }
 }
 
 export function bootstrapGame(): void {
+  syncInputMode();
+
   elements.controls.forEach((button) => {
     button.addEventListener("click", () => {
+      handleAction(button.dataset.action || "");
+    });
+  });
+
+  elements.touchButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const move = button.dataset.move;
+      if (move) {
+        handleMove(move);
+        return;
+      }
+
       handleAction(button.dataset.action || "");
     });
   });

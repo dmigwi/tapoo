@@ -36,6 +36,8 @@ export type CellNeighbors = {
 
 export type Direction = "none" | "up" | "down" | "left" | "right";
 
+export type InputMode = "keyboard" | "touch";
+
 export type NavigationProfile = {
   softCorridorLimit: number;
   hardCorridorLimit: number;
@@ -92,6 +94,8 @@ export type Elements = {
   screen: HTMLElement;
   measure: HTMLElement;
   controls: HTMLButtonElement[];
+  touchControls: HTMLElement;
+  touchButtons: HTMLButtonElement[];
 };
 
 export type State = {
@@ -106,6 +110,7 @@ export type State = {
   canResume: boolean;
   wallWeight: WallWeight;
   clock: GameClock | null;
+  inputMode: InputMode;
 };
 
 export type AppConfig = {
@@ -124,17 +129,21 @@ export type AppConfig = {
   terminalHeightScale: number;
   terminalWidthInset: number;
   terminalWidthScale: number;
-  intro: string;
-  website: string;
-  websiteURL: string;
   navigation: string;
+  touchNavigation: string;
   pauseMessage: string;
   successMessage: string;
+  successCompactMessage: string;
   failedMessage: string;
+  failedCompactMessage: string;
   quitMessage: string;
+  touchQuitMessage: string;
   proceedMessage: string;
+  touchProceedMessage: string;
   tooSmallMessage: string;
+  tooSmallCompactMessage: string;
   statusTemplate: string;
+  touchStatusTemplate: string;
   highScoreTemplate: string;
   playerMarker: string;
   destinationMarker: string;

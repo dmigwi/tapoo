@@ -20,8 +20,24 @@ export const elements: Elements = {
   body: mustElement<HTMLElement>("terminal-body"),
   screen: mustElement<HTMLElement>("terminal-screen"),
   measure: mustElement<HTMLElement>("terminal-measure"),
-  controls: Array.from(document.querySelectorAll<HTMLButtonElement>("[data-action]")),
+  controls: Array.from(document.querySelectorAll<HTMLButtonElement>("[data-action]:not([data-touch-control])")),
+  touchControls: mustElement<HTMLElement>("touch-controls"),
+  touchButtons: Array.from(document.querySelectorAll<HTMLButtonElement>("[data-touch-control]")),
 };
+
+export function detectInputMode(): "keyboard" | "touch" {
+  const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+  const noHover = window.matchMedia("(hover: none)").matches;
+  const touchPoints = navigator.maxTouchPoints > 0;
+
+  return coarsePointer || noHover || touchPoints ? "touch" : "keyboard";
+}
+
+export function applyInputMode(inputMode: "keyboard" | "touch"): void {
+  const isTouch = inputMode === "touch";
+  elements.app.classList.toggle("terminal-app--touch", isTouch);
+  elements.touchControls.hidden = !isTouch;
+}
 
 export function getTerminalSize(): BaseDimensions {
   const rect = elements.body.getBoundingClientRect();
