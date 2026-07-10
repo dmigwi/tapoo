@@ -48,3 +48,9 @@ export const ROUND_STORAGE_VERSION = 1;
 export const TERMINAL_SAMPLE_WIDTH = 10;
 export const MIN_TERMINAL_ROWS = 20;
 export const MIN_TERMINAL_COLUMNS = 48;
+export const STORE_ENCODING_PREFIX = "tapoo:v2:";
+export const STORE_BLEND_KEY = [
+  "tapoo:web/vault",
+  "key|spa.persist",
+].join(`  
+  `);

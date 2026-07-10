@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // GameProgress describes the last persisted gameplay outcome for the stored level.
@@ -121,13 +122,15 @@ func encodePersistedGameState(state StoredGameState) ([]byte, error) {
 		return nil, err
 	}
 
-	encoded := base64.StdEncoding.EncodeToString(plainText)
+	encoded := storeEncodingPrefix + encodeStorePayload(plainText)
 	return []byte(encoded), nil
 }
 
 // decodePersistedGameState reverses the local store encoding and returns the recovered state.
 func decodePersistedGameState(encodedState []byte) (StoredGameState, error) {
-	plainText, err := base64.StdEncoding.DecodeString(string(encodedState))
+	encodedPayload := string(encodedState)
+
+	plainText, err := decodeStorePayload(encodedPayload)
 	if err != nil {
 		return StoredGameState{}, err
 	}
@@ -138,4 +141,36 @@ func decodePersistedGameState(encodedState []byte) (StoredGameState, error) {
 	}
 
 	return state, nil
+}
+
+// encodeStorePayload obscures the persisted JSON with the shared password before base64 encoding it.
+func encodeStorePayload(plainText []byte) string {
+	return base64.StdEncoding.EncodeToString(xorStorePayload(plainText))
+}
+
+// decodeStorePayload supports both the current password-based format and the legacy base64 payload.
+func decodeStorePayload(encodedPayload string) ([]byte, error) {
+	if after, ok := strings.CutPrefix(encodedPayload, storeEncodingPrefix); ok {
+		encodedPayload = after
+		cipherText, err := base64.StdEncoding.DecodeString(encodedPayload)
+		if err != nil {
+			return nil, err
+		}
+
+		return xorStorePayload(cipherText), nil
+	}
+
+	return base64.StdEncoding.DecodeString(encodedPayload)
+}
+
+// xorStorePayload applies the shared passKey across the payload bytes to keep saved state less casual to edit.
+func xorStorePayload(payload []byte) []byte {
+	passKey := []byte(storeBlendKey)
+	encoded := make([]byte, len(payload))
+
+	for index, value := range payload {
+		encoded[index] = value ^ passKey[index%len(passKey)]
+	}
+
+	return encoded
 }

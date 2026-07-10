@@ -11,14 +11,9 @@ import {
 } from "./maze";
 import { render } from "./render";
 import {
-  buildRoundSnapshot,
-  clearRoundSnapshot,
-  loadLevelPreference,
-  loadRoundSnapshot,
-  loadWallWeightPreference,
-  saveLevelPreference,
-  saveRoundSnapshot,
-  saveWallWeightPreference,
+  clearPersistedRound,
+  loadPersistedSnapshot,
+  savePersistedSnapshot,
 } from "./storage";
 import type { PersistedRound, Position, State } from "./types";
 
@@ -76,7 +71,6 @@ function applyTooSmallState(level: number): void {
   state.lastRoundScore = 0;
   state.canResume = false;
   state.clock = null;
-  saveLevelPreference(level);
 }
 
 function isValidPersistedRound(snapshot: PersistedRound): boolean {
@@ -117,30 +111,28 @@ function persistedRoundFitsViewport(snapshot: PersistedRound): boolean {
 }
 
 function persistState(): void {
-  saveRoundSnapshot(buildRoundSnapshot(state));
+  savePersistedSnapshot(state);
 }
 
-function restorePersistedRound(): boolean {
-  const snapshot = loadRoundSnapshot();
+function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   if (!snapshot) {
     return false;
   }
 
   if (!isValidPersistedRound(snapshot)) {
-    clearRoundSnapshot();
+    clearPersistedRound();
     return false;
   }
 
-  state.wallWeight = snapshot.wallWeight;
-  saveWallWeightPreference(state.wallWeight);
-  saveLevelPreference(snapshot.level);
-
   if (!persistedRoundFitsViewport(snapshot)) {
     applyTooSmallState(snapshot.level);
+    state.wallWeight = snapshot.wallWeight;
+    persistState();
     render(elements, state);
     return true;
   }
 
+  state.wallWeight = snapshot.wallWeight;
   state.level = snapshot.level;
   state.dims = { length: snapshot.dims.length, width: snapshot.dims.width };
   state.maze = snapshot.maze.map((row) => [...row]);
@@ -172,6 +164,7 @@ function startRound(level: number): void {
 
   if (!dimensions) {
     applyTooSmallState(level);
+    persistState();
     render(elements, state);
     return;
   }
@@ -179,7 +172,6 @@ function startRound(level: number): void {
   const round = generateMaze(dimensions, state.wallWeight);
 
   state.level = dimensions.level;
-  saveLevelPreference(state.level);
   state.dims = { length: dimensions.length, width: dimensions.width };
   state.maze = round.maze;
   state.playerPosition = [round.startPosition[0], round.startPosition[1]];
@@ -191,13 +183,14 @@ function startRound(level: number): void {
   const totalCells = dimensions.length * dimensions.width;
   state.clock = new GameClock(totalCells * 1000);
   state.score = calculateScore(totalCells, 0);
-  saveWallWeightPreference(state.wallWeight);
   persistState();
   render(elements, state);
 }
 
 function restartGame(): void {
-  startRound(loadLevelPreference(1));
+  const snapshot = loadPersistedSnapshot(1, WALL_WEIGHTS[0], isWallWeight);
+  state.wallWeight = snapshot.preferences.wallWeight;
+  startRound(snapshot.preferences.level);
 }
 
 function resumeOrProceed(): void {
@@ -247,7 +240,8 @@ function quitGame(): void {
 
   state.status = "quit";
   state.canResume = false;
-  clearRoundSnapshot();
+  clearPersistedRound();
+  persistState();
   render(elements, state);
 }
 
@@ -259,7 +253,6 @@ function cycleWallWeight(): void {
   }
 
   state.wallWeight = nextWeight;
-  saveWallWeightPreference(state.wallWeight);
   persistState();
   render(elements, state);
 }
@@ -419,7 +412,7 @@ function handleResize(): void {
   render(elements, state);
 
   if (state.status === "too-small") {
-    if (restorePersistedRound()) {
+    if (restorePersistedRound(loadPersistedSnapshot(1, WALL_WEIGHTS[0], isWallWeight).round)) {
       return;
     }
 
@@ -440,7 +433,6 @@ export function bootstrapGame(): void {
   window.addEventListener("keydown", handleKeydown, { passive: false });
   window.addEventListener("resize", handleResize);
   window.addEventListener("pagehide", () => {
-    saveWallWeightPreference(state.wallWeight);
     persistState();
   });
   window.setInterval(tick, CONFIG.refreshInterval);
@@ -449,10 +441,11 @@ export function bootstrapGame(): void {
     elements.app.focus();
   });
 
-  state.wallWeight = loadWallWeightPreference(WALL_WEIGHTS[0], isWallWeight);
-  state.level = loadLevelPreference(1);
+  const persistedSnapshot = loadPersistedSnapshot(1, WALL_WEIGHTS[0], isWallWeight);
+  state.wallWeight = persistedSnapshot.preferences.wallWeight;
+  state.level = persistedSnapshot.preferences.level;
 
-  if (!restorePersistedRound()) {
+  if (!restorePersistedRound(persistedSnapshot.round)) {
     startRound(state.level);
   }
 

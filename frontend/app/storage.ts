@@ -1,66 +1,77 @@
-import { LEVEL_STORAGE_KEY, ROUND_STORAGE_KEY, ROUND_STORAGE_VERSION, WALL_WEIGHT_STORAGE_KEY } from "./config";
-import type { PersistedRound, State, WallWeight } from "./types";
+import {
+  LEVEL_STORAGE_KEY,
+  ROUND_STORAGE_KEY,
+  ROUND_STORAGE_VERSION,
+  STORE_BLEND_KEY,
+  STORE_ENCODING_PREFIX,
+  WALL_WEIGHT_STORAGE_KEY,
+} from "./config";
+import type { PersistedPreferences, PersistedRound, PersistedSnapshot, State, WallWeight } from "./types";
 
-export function clearRoundSnapshot(): void {
+function toBase64(payloadBytes: Uint8Array): string {
+  let binaryPayload = "";
+
+  for (const payloadByte of payloadBytes) {
+    binaryPayload += String.fromCharCode(payloadByte);
+  }
+
+  return window.btoa(binaryPayload);
+}
+
+function fromBase64(encodedPayload: string): Uint8Array | null {
   try {
-    window.sessionStorage.removeItem(ROUND_STORAGE_KEY);
+    const binaryPayload = window.atob(encodedPayload);
+    return Uint8Array.from(binaryPayload, (character) => character.charCodeAt(0));
   } catch {
-    // Ignore storage failures so the SPA can keep running without persistence.
+    return null;
   }
 }
 
-export function saveWallWeightPreference(weight: WallWeight): void {
-  try {
-    window.localStorage.setItem(WALL_WEIGHT_STORAGE_KEY, String(weight));
-  } catch {
-    // Ignore storage failures so preference persistence stays best-effort only.
+function xorStoredPayload(payloadBytes: Uint8Array): Uint8Array {
+  const passphraseBytes = new TextEncoder().encode(STORE_BLEND_KEY);
+  const encodedBytes = new Uint8Array(payloadBytes.length);
+
+  for (let index = 0; index < payloadBytes.length; index += 1) {
+    encodedBytes[index] = payloadBytes[index] ^ passphraseBytes[index % passphraseBytes.length];
   }
+
+  return encodedBytes;
 }
 
-export function saveLevelPreference(level: number): void {
-  try {
-    window.localStorage.setItem(LEVEL_STORAGE_KEY, String(level));
-  } catch {
-    // Ignore storage failures so the SPA can still run without durable level persistence.
-  }
+function encodeStoredPayload(value: unknown): string {
+  const jsonPayload = JSON.stringify(value);
+  const payloadBytes = new TextEncoder().encode(jsonPayload);
+  return `${STORE_ENCODING_PREFIX}${toBase64(xorStoredPayload(payloadBytes))}`;
 }
 
-export function loadWallWeightPreference(
-  defaultWeight: WallWeight,
-  isWallWeight: (value: number) => value is WallWeight,
-): WallWeight {
-  try {
-    const storedValue = window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY);
-    if (storedValue === null) {
-      return defaultWeight;
+function decodeStoredPayload<T>(encodedPayload: string): T | null {
+  let payloadBytes: Uint8Array | null = null;
+
+  if (encodedPayload.startsWith(STORE_ENCODING_PREFIX)) {
+    const encodedCipherText = encodedPayload.slice(STORE_ENCODING_PREFIX.length);
+    const cipherText = fromBase64(encodedCipherText);
+    if (!cipherText) {
+      return null;
     }
 
-    const parsedValue = Number(storedValue);
-    return isWallWeight(parsedValue) ? parsedValue : defaultWeight;
-  } catch {
-    return defaultWeight;
+    payloadBytes = xorStoredPayload(cipherText);
+  } else {
+    payloadBytes = fromBase64(encodedPayload);
   }
-}
 
-export function loadLevelPreference(defaultLevel: number): number {
+  if (!payloadBytes) {
+    return null;
+  }
+
   try {
-    const storedValue = window.localStorage.getItem(LEVEL_STORAGE_KEY);
-    if (storedValue === null) {
-      return defaultLevel;
-    }
-
-    const parsedValue = Number(storedValue);
-    if (!Number.isInteger(parsedValue) || parsedValue < 1) {
-      return defaultLevel;
-    }
-
-    return parsedValue;
+    const jsonPayload = new TextDecoder().decode(payloadBytes);
+    return JSON.parse(jsonPayload) as T;
   } catch {
-    return defaultLevel;
+    return null;
   }
 }
 
-export function buildRoundSnapshot(state: State): PersistedRound | null {
+function buildRoundSnapshot(state: State): PersistedRound | null {
   if (
     !state.dims ||
     !state.maze ||
@@ -89,19 +100,49 @@ export function buildRoundSnapshot(state: State): PersistedRound | null {
   };
 }
 
-export function saveRoundSnapshot(snapshot: PersistedRound | null): void {
-  if (!snapshot) {
-    return;
-  }
-
+function savePreferences(preferences: PersistedPreferences): void {
   try {
-    window.sessionStorage.setItem(ROUND_STORAGE_KEY, JSON.stringify(snapshot));
+    window.localStorage.setItem(WALL_WEIGHT_STORAGE_KEY, encodeStoredPayload(preferences.wallWeight));
+    window.localStorage.setItem(LEVEL_STORAGE_KEY, encodeStoredPayload(preferences.level));
+  } catch {
+    // Ignore storage failures so durable browser preferences remain best-effort only.
+  }
+}
+
+function loadPreferences(
+  defaultLevel: number,
+  defaultWeight: WallWeight,
+  isWallWeight: (value: number) => value is WallWeight,
+): PersistedPreferences {
+  try {
+    const storedLevel = window.localStorage.getItem(LEVEL_STORAGE_KEY);
+    const storedWeight = window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY);
+    const parsedLevel = storedLevel === null ? null : decodeStoredPayload<number>(storedLevel);
+    const parsedWeight = storedWeight === null ? null : decodeStoredPayload<number>(storedWeight);
+
+    return {
+      level: Number.isInteger(parsedLevel) && parsedLevel >= 1 ? parsedLevel : defaultLevel,
+      wallWeight: isWallWeight(parsedWeight) ? parsedWeight : defaultWeight,
+    };
+  } catch {
+    return { level: defaultLevel, wallWeight: defaultWeight };
+  }
+}
+
+function saveRound(round: PersistedRound | null): void {
+  try {
+    if (!round) {
+      window.sessionStorage.removeItem(ROUND_STORAGE_KEY);
+      return;
+    }
+
+    window.sessionStorage.setItem(ROUND_STORAGE_KEY, encodeStoredPayload(round));
   } catch {
     // Ignore storage failures so the active game can continue even without session persistence.
   }
 }
 
-export function loadRoundSnapshot(): PersistedRound | null {
+function loadRound(): PersistedRound | null {
   let rawSnapshot: string | null;
 
   try {
@@ -114,10 +155,30 @@ export function loadRoundSnapshot(): PersistedRound | null {
     return null;
   }
 
-  try {
-    return JSON.parse(rawSnapshot) as PersistedRound;
-  } catch {
-    clearRoundSnapshot();
-    return null;
+  const snapshot = decodeStoredPayload<PersistedRound>(rawSnapshot);
+  if (!snapshot) {
+    clearPersistedRound();
   }
+
+  return snapshot;
+}
+
+export function loadPersistedSnapshot(
+  defaultLevel: number,
+  defaultWeight: WallWeight,
+  isWallWeight: (value: number) => value is WallWeight,
+): PersistedSnapshot {
+  return {
+    preferences: loadPreferences(defaultLevel, defaultWeight, isWallWeight),
+    round: loadRound(),
+  };
+}
+
+export function savePersistedSnapshot(state: State): void {
+  savePreferences({ level: state.level, wallWeight: state.wallWeight });
+  saveRound(buildRoundSnapshot(state));
+}
+
+export function clearPersistedRound(): void {
+  saveRound(null);
 }

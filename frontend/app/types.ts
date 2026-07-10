@@ -64,6 +64,16 @@ export type PersistedRound = {
   remainingMs: number;
 };
 
+export type PersistedPreferences = {
+  level: number;
+  wallWeight: WallWeight;
+};
+
+export type PersistedSnapshot = {
+  preferences: PersistedPreferences;
+  round: PersistedRound | null;
+};
+
 export type RoundState = {
   maze: string[][];
   startPosition: Position;
