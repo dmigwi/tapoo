@@ -1,81 +1,233 @@
 package maze
 
+import (
+	"errors"
+	"fmt"
+	"slices"
+)
+
 // Dimensions defines the actual number of cells that make up the maze along the vertical and
 // the horizontal edges. Length represents the number of the cells along the horizontal
 // edge while Width represents the number of the cells along the vertical edge.
 type Dimensions struct {
 	Length        int
 	Width         int
-	StartPosition []int
-	FinalPosition []int
+	StartPosition [2]int
+	FinalPosition [2]int
+}
+
+// pathStep stores the DFS stack entry for the current maze path.
+// moveDirection is the direction used to enter this cell.
+// corridorLength is the number of consecutive moves taken in that same direction.
+type pathStep struct {
+	cellNo         int
+	moveDirection  direction
+	corridorLength int
 }
 
 // GenerateMaze converts the created grid view playing field into a series on paths and walls.
 // The Maze is created such that only a single path can exists between the starting point and
 // and the goal.
-func (config *Dimensions) GenerateMaze(intensity int) ([][]string, error) {
-	totalCells := config.Length * config.Width
+func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
+	totalCells, errValidate := config.validateMazeGenerationInputs(weight)
+	if errValidate != nil {
+		config.resetPositions()
+		return nil, errValidate
+	}
+
+	// Maze size controls how strongly generation should resist long straight corridors.
+	navigationProfile := GetNavigationProfile(*config)
+
 	// The visited set is scoped to a single generation so repeated runs do not leak traversal state.
-	visitedCells := make(map[int]CellAddress, totalCells)
+	visitedCells := make([]bool, totalCells+1)
+	startPos, errStart := config.getStartPosition()
+	if errStart != nil {
+		config.resetPositions()
+		return nil, fmt.Errorf("select maze start position: %w", errStart)
+	}
 
-	startPos := config.getStartPosition(visitedCells)
+	// DFS starts from a random edge cell and grows a spanning tree from there.
+	longestPathLength, finalCell := 1, startPos
+	cellsPath := []pathStep{{cellNo: startPos}}
+	currentPos, visitedCount := startPos, 1
 
-	// finalPos stores [pathLength, cellNumber] so the farthest discovered cell can become the goal.
-	finalPos, cellsPath, currentPos := []int{1, startPos}, []int{startPos}, startPos
-
-	maze, err := config.CreatePlayingField(intensity)
+	maze, err := config.CreatePlayingField(weight)
 	if err != nil {
-		return [][]string{}, err
+		return nil, err
 	}
 
 	startAddr := config.GetCellAddress(startPos)
-	config.StartPosition = []int{startAddr.MiddleCenter[0], startAddr.MiddleCenter[1]}
+	config.StartPosition = [2]int{startAddr.MiddleCenter[0], startAddr.MiddleCenter[1]}
 
-	visitedCells[currentPos] = config.GetCellAddress(currentPos)
+	visitedCells[currentPos] = true
 
-	for len(visitedCells) < totalCells {
+	for visitedCount < totalCells {
 		var neighbors []int
 
-		for {
-			neighbors = config.getPresentNeighbors(currentPos, visitedCells)
-
-			if len(neighbors) > 0 {
-				break
-			}
-
-			// Dead ends trigger backtracking through the current DFS path until a branch point is found.
-			cellsPath = cellsPath[:len(cellsPath)-1]
-			currentPos = cellsPath[len(cellsPath)-1]
+		// Walk backward until we find the next branch that still has an unvisited exit.
+		cellsPath, currentPos, neighbors, err = config.backtrackToBranch(cellsPath, visitedCells)
+		if err != nil {
+			config.resetPositions()
+			return nil, err
 		}
 
-		startPos = neighbors[getRandomNo(len(neighbors))]
+		// Corridor shaping happens here; the returned cell still preserves DFS behavior.
+		nextChoice, nextChoiceErr := config.chooseNextCell(neighbors, cellsPath[len(cellsPath)-1], navigationProfile)
+		if nextChoiceErr != nil {
+			config.resetPositions()
+			return nil, fmt.Errorf("select next maze cell: %w", nextChoiceErr)
+		}
 
-		if _, ok := visitedCells[startPos]; !ok {
-			visitedCells[startPos] = config.GetCellAddress(startPos)
+		if visitedCells[nextChoice.cellNo] {
+			continue
+		}
 
-			config.createPath(maze, currentPos, startPos)
-			cellsPath = append(cellsPath, startPos)
+		visitedCells[nextChoice.cellNo] = true
+		visitedCount++
 
-			// The longest discovered path from the start becomes the end goal for the player.
-			if len(cellsPath) > finalPos[0] {
-				finalPos[1], finalPos[0] = startPos, len(cellsPath)
-			}
+		config.createPath(maze, currentPos, nextChoice.cellNo)
+		cellsPath = append(cellsPath, nextChoice)
 
-			currentPos = startPos
+		// The deepest point reached from the chosen start becomes the player's target cell.
+		if len(cellsPath) > longestPathLength {
+			finalCell, longestPathLength = nextChoice.cellNo, len(cellsPath)
 		}
 	}
 
-	finalAddr := config.GetCellAddress(finalPos[1])
-	config.FinalPosition = []int{finalAddr.MiddleCenter[0], finalAddr.MiddleCenter[1]}
+	finalAddr := config.GetCellAddress(finalCell)
+	config.FinalPosition = [2]int{finalAddr.MiddleCenter[0], finalAddr.MiddleCenter[1]}
 
-	config.optimizeMaze(intensity, maze)
+	if positionErr := config.validateGeneratedPositions(); positionErr != nil {
+		config.resetPositions()
+		return nil, positionErr
+	}
 
+	config.optimizeMaze(weight, maze)
 	return maze, nil
+}
+
+// chooseNextCell selects the next unvisited neighbor while applying the configured corridor limits.
+// The returned choice preserves the DFS spanning-tree behavior but can bias turns once a straight
+// run becomes long enough to make navigation feel too corridor-heavy.
+func (config *Dimensions) chooseNextCell(
+	neighbors []int, currentState pathStep, profile NavigationProfile,
+) (pathStep, error) {
+	var (
+		allCount  int
+		turnCount int
+		hardCount int
+
+		// These fixed-size arrays avoid per-step heap growth while we score up to four neighbors.
+		allChoices      [mazeEdgeNeighborCount]pathStep
+		turnChoices     [mazeEdgeNeighborCount]pathStep
+		withinHardLimit [mazeEdgeNeighborCount]pathStep
+	)
+
+	for _, neighbor := range neighbors {
+		straightLength := 1
+		nextDirection := config.directionBetween(currentState.cellNo, neighbor)
+
+		if nextDirection == currentState.moveDirection {
+			straightLength += currentState.corridorLength
+		}
+
+		choice := pathStep{
+			cellNo:         neighbor,
+			moveDirection:  nextDirection,
+			corridorLength: straightLength,
+		}
+		allChoices[allCount] = choice
+		allCount++
+
+		if nextDirection != currentState.moveDirection {
+			turnChoices[turnCount] = choice
+			turnCount++
+		}
+
+		if straightLength <= profile.HardCorridorLimit {
+			withinHardLimit[hardCount] = choice
+			hardCount++
+		}
+	}
+
+	// Start with every valid neighbor, then narrow down only if the profile says this corridor is too long.
+	choices := allChoices[:allCount]
+
+	if hardCount > 0 {
+		choices = withinHardLimit[:hardCount]
+	}
+
+	if currentState.moveDirection != directionNone && turnCount > 0 {
+		// Soft limits bias the choice toward a turn, while hard limits force one when available.
+		turnPreferenceRoll, err := secureRandomIndex(percentScale)
+		if err != nil {
+			return pathStep{}, err
+		}
+
+		if currentState.corridorLength >= profile.HardCorridorLimit {
+			choices = turnChoices[:turnCount]
+		} else if currentState.corridorLength >= profile.SoftCorridorLimit &&
+			turnPreferenceRoll < profile.PreferTurnPercent {
+			choices = turnChoices[:turnCount]
+		}
+	}
+
+	// A final random pick keeps mazes of the same size from following the same local path every run.
+	nextChoiceIndex, err := secureRandomIndex(len(choices))
+	if err != nil {
+		return pathStep{}, err
+	}
+
+	return choices[nextChoiceIndex], nil
+}
+
+// validateMazeGenerationInputs checks the generation inputs before any traversal state is allocated.
+func (config *Dimensions) validateMazeGenerationInputs(weight WallWeight) (int, error) {
+	if !weight.IsValid() {
+		return 0, fmt.Errorf(
+			"invalid wall weight: %s. allowed values are %s, %s, and %s",
+			weight, WallWeightRegular, WallWeightMedium, WallWeightBold,
+		)
+	}
+
+	if config.Length <= 0 || config.Width <= 0 {
+		return 0, fmt.Errorf(
+			"invalid maze dimensions: length=%d width=%d. both values must be greater than zero",
+			config.Length, config.Width,
+		)
+	}
+
+	totalCells := config.Length * config.Width
+	if totalCells < minPlayableMazeCells {
+		return 0, fmt.Errorf(
+			"invalid maze dimensions: length=%d width=%d. at least two cells are required to create distinct endpoints",
+			config.Length, config.Width,
+		)
+	}
+
+	return totalCells, nil
+}
+
+// resetPositions clears the generated maze endpoints before returning a generation error.
+func (config *Dimensions) resetPositions() {
+	config.StartPosition = [2]int{}
+	config.FinalPosition = [2]int{}
+}
+
+// validateGeneratedPositions ensures a generated maze exposes two distinct endpoints for gameplay.
+func (config *Dimensions) validateGeneratedPositions() error {
+	if slices.Equal(config.StartPosition[:], config.FinalPosition[:]) {
+		return fmt.Errorf(
+			"generate maze: start and final positions must differ (length=%d width=%d)",
+			config.Length, config.Width,
+		)
+	}
+	return nil
 }
 
 // createPath creates a path on the common wall between the current and the new cell.
 // A path is created by replacing the wall characters with the respective number of blank spaces.
-// Wall characters are defined by the intensity value used while creating the grid view.
+// Wall characters are defined by the wall weight used while creating the grid view.
 func (config *Dimensions) createPath(maze [][]string, currentCellNo, newCellNo int) {
 	addr := config.GetCellAddress(currentCellNo)
 	neighbors := config.GetCellNeighbors(currentCellNo)
@@ -97,41 +249,88 @@ func (config *Dimensions) createPath(maze [][]string, currentCellNo, newCellNo i
 
 // getPresentNeighbors returns a slice of the neigboring cells associated with the cell number provided.
 // Only neighboring cells with no common paths to others cells that are returned. i.e. Non-Visited Cells.
-func (config *Dimensions) getPresentNeighbors(cellNo int, visitedCells map[int]CellAddress) []int {
+func (config *Dimensions) getPresentNeighbors(cellNo int, visitedCells []bool) []int {
 	neighbors := config.GetCellNeighbors(cellNo)
 	presentCells := make([]int, 0, mazeEdgeNeighborCount)
 
 	// Only unvisited neighbors are eligible so the maze remains a spanning tree with one unique route between cells.
-	for _, neighbor := range []int{neighbors.Bottom, neighbors.Left, neighbors.Right, neighbors.Top} {
-		if _, ok := visitedCells[neighbor]; !ok && neighbor != 0 {
-			presentCells = append(presentCells, neighbor)
-		}
+	if neighbors.Bottom != 0 && !visitedCells[neighbors.Bottom] {
+		presentCells = append(presentCells, neighbors.Bottom)
+	}
+
+	if neighbors.Left != 0 && !visitedCells[neighbors.Left] {
+		presentCells = append(presentCells, neighbors.Left)
+	}
+
+	if neighbors.Right != 0 && !visitedCells[neighbors.Right] {
+		presentCells = append(presentCells, neighbors.Right)
+	}
+
+	if neighbors.Top != 0 && !visitedCells[neighbors.Top] {
+		presentCells = append(presentCells, neighbors.Top)
 	}
 
 	return presentCells
 }
 
+// backtrackToBranch rewinds the DFS stack until it finds a cell with at least one unvisited neighbor.
+func (config *Dimensions) backtrackToBranch(cellsPath []pathStep, visitedCells []bool) ([]pathStep, int, []int, error) {
+	for len(cellsPath) > 0 {
+		currentPos := cellsPath[len(cellsPath)-1].cellNo
+		neighbors := config.getPresentNeighbors(currentPos, visitedCells)
+		if len(neighbors) > 0 {
+			return cellsPath, currentPos, neighbors, nil
+		}
+
+		// Dead ends trigger backtracking through the current DFS path until a branch point is found.
+		cellsPath = cellsPath[:len(cellsPath)-1]
+	}
+
+	return nil, 0, nil, errors.New("generate maze: no unvisited neighbors available during traversal")
+}
+
+// directionBetween identifies how traversal would move from the current cell into the chosen neighbor.
+func (config *Dimensions) directionBetween(currentCell, nextCell int) direction {
+	neighbors := config.GetCellNeighbors(currentCell)
+
+	switch nextCell {
+	case neighbors.Top:
+		return directionUp
+	case neighbors.Bottom:
+		return directionDown
+	case neighbors.Left:
+		return directionLeft
+	case neighbors.Right:
+		return directionRight
+	default:
+		return directionNone
+	}
+}
+
 // getStartPosition returns the cell which becomes the maze traversal starting position.
 // The starting position can only be a cell along the  maze edges i.e. has less than four
 // neighbors. When getStartPosition is called, all cells are have no common paths to other cells.
-func (config *Dimensions) getStartPosition(visitedCells map[int]CellAddress) int {
+func (config *Dimensions) getStartPosition() (int, error) {
 	totalCells := config.Length * config.Width
 	for {
-		randCellNo := getRandomNo(totalCells) + 1
+		randCellNo, err := secureRandomIndex(totalCells)
+		if err != nil {
+			return 0, err
+		}
 
-		neighbors := config.getPresentNeighbors(randCellNo, visitedCells)
+		randCellNo++
 
 		// Edge cells have fewer than four neighbors, which guarantees the player starts on the maze boundary.
-		if len(neighbors) < mazeEdgeNeighborCount {
-			return randCellNo
+		if countNeighbors(config.GetCellNeighbors(randCellNo)) < mazeEdgeNeighborCount {
+			return randCellNo, nil
 		}
 	}
 }
 
 // optimizeMaze replaces some wall characters so as the maze can
 // be more clear and sharp when printed on the terminal.
-func (config *Dimensions) optimizeMaze(intensity int, maze [][]string) {
-	chars, err := getWallCharacters(intensity)
+func (config *Dimensions) optimizeMaze(weight WallWeight, maze [][]string) {
+	chars, err := getWallCharacters(weight)
 	if err != nil {
 		panic(err)
 	}
@@ -173,4 +372,26 @@ func (config *Dimensions) replaceChar(point [2]int, replChar string, maze [][]st
 	case lenTop && lenBottom && isSpaceFound(elemBottom) && isSpaceFound(elemTop):
 		maze[x][y] = replChar
 	}
+}
+
+func countNeighbors(neighbors CellNeighbors) int {
+	count := 0
+
+	if neighbors.Bottom != 0 {
+		count++
+	}
+
+	if neighbors.Left != 0 {
+		count++
+	}
+
+	if neighbors.Right != 0 {
+		count++
+	}
+
+	if neighbors.Top != 0 {
+		count++
+	}
+
+	return count
 }

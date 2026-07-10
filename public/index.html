@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Tapoo Terminal</title>
+    <meta
+      name="description"
+      content="Tapoo maze runner rendered as a browser-based terminal application."
+    />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="./css/tapoo.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="top-bar" aria-label="Application controls">
+        <div class="top-bar__brand">
+          <strong class="top-bar__title">Tapoo</strong>
+          <span class="top-bar__subtitle">terminal maze runner</span>
+        </div>
+        <div class="top-bar__actions">
+          <button class="top-bar__button" type="button" data-action="restart">Restart</button>
+          <button class="top-bar__button top-bar__button--icon" type="button" aria-label="Future tools">
+            +
+          </button>
+        </div>
+      </header>
+
+      <section id="terminal-app" class="terminal-app" tabindex="0" aria-label="Tapoo browser terminal">
+        <div class="terminal-frame">
+          <div id="terminal-body" class="terminal-body">
+            <pre id="terminal-screen" aria-live="polite"></pre>
+            <span id="terminal-measure" class="terminal-measure">MMMMMMMMMM</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./js/tapoo.min.js"></script>
+  </body>
+</html>

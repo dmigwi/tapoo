@@ -10,43 +10,47 @@ import (
 	"github.com/dmigwi/tapoo/maze"
 )
 
-func TestRefreshUI(t *testing.T) {
+func TestRenderMazeUI(t *testing.T) {
 	t.Parallel()
 
-	t.Run("renders player goal and score details", func(t *testing.T) {
+	t.Run("renders player goal and score details for the live scene", func(t *testing.T) {
 		t.Parallel()
 
 		ui := newFakeUI(40, 80)
 		config := &maze.Dimensions{
 			Length:        3,
 			Width:         3,
-			StartPosition: []int{1, 1},
-			FinalPosition: []int{3, 3},
+			StartPosition: [2]int{1, 1},
+			FinalPosition: [2]int{3, 3},
 		}
 
-		reachedTarget, err := maze.RefreshUI(ui, config, 900, sampleMazeGrid())
+		reachedTarget, err := maze.RenderMazeUI(ui, config, 1, 900, sampleMazeGrid(), nil)
 		if err != nil {
-			t.Fatalf("refresh ui returned error: %v", err)
+			t.Fatalf("render maze ui returned error: %v", err)
 		}
 
 		if reachedTarget {
-			t.Fatal("expected refresh ui to report that the target was not reached")
+			t.Fatal("expected render maze ui to report that the target was not reached")
 		}
 
 		if ui.flushCalls != 1 {
 			t.Fatalf("expected a single flush call, got %d", ui.flushCalls)
 		}
 
-		if !ui.hasRune('@') {
-			t.Fatal("expected refresh ui to render the player marker")
+		if !ui.hasForegroundColor(termbox.ColorCyan) {
+			t.Fatal("expected render maze ui to render the player marker color")
 		}
 
-		if !ui.hasRune('#') {
-			t.Fatal("expected refresh ui to render the target marker")
+		if !ui.hasForegroundColor(termbox.ColorRed) {
+			t.Fatal("expected render maze ui to render the target marker color")
 		}
 
 		if !ui.containsText("Scores: 900") {
-			t.Fatal("expected refresh ui to render the current score")
+			t.Fatal("expected render maze ui to render the current score")
+		}
+
+		if !ui.containsText("Level: 1") {
+			t.Fatal("expected render maze ui to render the current level")
 		}
 	})
 
@@ -57,17 +61,47 @@ func TestRefreshUI(t *testing.T) {
 		config := &maze.Dimensions{
 			Length:        3,
 			Width:         3,
-			StartPosition: []int{3, 3},
-			FinalPosition: []int{3, 3},
+			StartPosition: [2]int{3, 3},
+			FinalPosition: [2]int{3, 3},
 		}
 
-		reachedTarget, err := maze.RefreshUI(ui, config, 300, sampleMazeGrid())
+		reachedTarget, err := maze.RenderMazeUI(ui, config, 2, 300, sampleMazeGrid(), nil)
 		if err != nil {
-			t.Fatalf("refresh ui returned error: %v", err)
+			t.Fatalf("render maze ui returned error: %v", err)
 		}
 
 		if !reachedTarget {
-			t.Fatal("expected refresh ui to report a reached target")
+			t.Fatal("expected render maze ui to report a reached target")
+		}
+	})
+
+	t.Run("renders the interrupt overlay and high score details", func(t *testing.T) {
+		t.Parallel()
+
+		ui := newFakeUI(40, 80)
+		reachedTarget, err := maze.RenderMazeUI(ui, nil, 0, 400, sampleMazeGrid(), &maze.UIOverlay{
+			Message:       "Paused",
+			Color:         termbox.ColorYellow,
+			ShowHighScore: true,
+		})
+		if err != nil {
+			t.Fatalf("render maze ui returned error: %v", err)
+		}
+
+		if reachedTarget {
+			t.Fatal("expected overlay rendering not to report a reached target")
+		}
+
+		if ui.flushCalls != 1 {
+			t.Fatalf("expected a single flush call, got %d", ui.flushCalls)
+		}
+
+		if !ui.containsText("Paused") {
+			t.Fatal("expected render maze ui to render the overlay message")
+		}
+
+		if !ui.containsText("Final Game Level Scores: 400") {
+			t.Fatal("expected render maze ui to render the high score text")
 		}
 	})
 
@@ -77,41 +111,141 @@ func TestRefreshUI(t *testing.T) {
 		ui := newFakeUI(40, 80)
 		ui.flushErr = errors.New("flush failed")
 
-		_, err := maze.RefreshUI(ui, &maze.Dimensions{
+		_, err := maze.RenderMazeUI(ui, &maze.Dimensions{
 			Length:        3,
 			Width:         3,
-			StartPosition: []int{1, 1},
-			FinalPosition: []int{3, 3},
-		}, 100, sampleMazeGrid())
+			StartPosition: [2]int{1, 1},
+			FinalPosition: [2]int{3, 3},
+		}, 1, 100, sampleMazeGrid(), nil)
 		if err == nil {
-			t.Fatal("expected refresh ui to return a flush error")
+			t.Fatal("expected render maze ui to return a flush error")
 		}
 
 		if !strings.Contains(err.Error(), "flush failed") {
 			t.Fatalf("expected flush error to be preserved, got %v", err)
 		}
 	})
+
+	t.Run("returns an error when live rendering has no dimensions", func(t *testing.T) {
+		t.Parallel()
+
+		ui := newFakeUI(40, 80)
+
+		_, err := maze.RenderMazeUI(ui, nil, 1, 100, sampleMazeGrid(), nil)
+		if err == nil {
+			t.Fatal("expected render maze ui to reject live rendering without dimensions")
+		}
+
+		if !strings.Contains(err.Error(), "missing dimensions") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
-func TestInterruptUI(t *testing.T) {
+func TestDrawMaze(t *testing.T) {
 	t.Parallel()
 
-	ui := newFakeUI(40, 80)
+	t.Run("renders supported wall weights with expected spacing and organization", func(t *testing.T) {
+		t.Parallel()
 
-	err := maze.InterruptUI(ui, "Paused", sampleMazeGrid(), termbox.ColorYellow, true, 400)
-	if err != nil {
-		t.Fatalf("interrupt ui returned error: %v", err)
-	}
+		config := &maze.Dimensions{Length: 4, Width: 3}
+		expectedMazeRows := map[maze.WallWeight][]string{
+			maze.WallWeightRegular: {
+				"   |---|---|---|---|\n",
+				"   |   |   |   |   |\n",
+				"   |---|---|---|---|\n",
+				"   |   |   |   |   |\n",
+				"   |---|---|---|---|\n",
+				"   |   |   |   |   |\n",
+				"   |---|---|---|---|\n",
+			},
+			maze.WallWeightMedium: {
+				"   ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏\n",
+				"   ╏   ╏   ╏   ╏   ╏\n",
+				"   ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏\n",
+				"   ╏   ╏   ╏   ╏   ╏\n",
+				"   ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏\n",
+				"   ╏   ╏   ╏   ╏   ╏\n",
+				"   ╏╍╍╍╏╍╍╍╏╍╍╍╏╍╍╍╏\n",
+			},
+			maze.WallWeightBold: {
+				"   ║===║===║===║===║\n",
+				"   ║   ║   ║   ║   ║\n",
+				"   ║===║===║===║===║\n",
+				"   ║   ║   ║   ║   ║\n",
+				"   ║===║===║===║===║\n",
+				"   ║   ║   ║   ║   ║\n",
+				"   ║===║===║===║===║\n",
+			},
+		}
 
-	if ui.flushCalls != 1 {
-		t.Fatalf("expected a single flush call, got %d", ui.flushCalls)
-	}
+		for _, weight := range []maze.WallWeight{
+			maze.WallWeightRegular,
+			maze.WallWeightMedium,
+			maze.WallWeightBold,
+		} {
+			t.Run(weight.String(), func(t *testing.T) {
+				t.Parallel()
 
-	if !ui.containsText("Paused") {
-		t.Fatal("expected interrupt ui to render the overlay message")
-	}
+				ui := newFakeUI(40, 80)
+				data, errField := config.CreatePlayingField(weight)
+				if errField != nil {
+					t.Fatalf("create playing field returned error: %v", errField)
+				}
 
-	if !ui.containsText("High Scores: 400") {
-		t.Fatal("expected interrupt ui to render the high score text")
-	}
+				if err := maze.DrawMaze(ui, data); err != nil {
+					t.Fatalf("draw maze returned error: %v", err)
+				}
+
+				if ui.flushCalls != 0 {
+					t.Fatalf("expected draw maze not to flush directly, got %d flush calls", ui.flushCalls)
+				}
+
+				if !ui.containsText("Maze runner") {
+					t.Fatal("expected draw maze to render the intro text")
+				}
+
+				if !ui.containsText("linkedin.com/in/migwi-ndungu") {
+					t.Fatal("expected draw maze to render the developer contact text")
+				}
+
+				if !ui.containsText("Arrow Keys") {
+					t.Fatal("expected draw maze to render the controls hint")
+				}
+
+				if !ui.containsText("Ctrl+B") {
+					t.Fatal("expected draw maze to render the wall-weight shortcut help")
+				}
+
+				for rowIndex, want := range expectedMazeRows[weight] {
+					got := ui.rowText(7+rowIndex, 0, len([]rune(want))-1)
+					if got != want {
+						t.Fatalf(
+							"unexpected rendered maze row %d for %s: got %q want %q",
+							rowIndex,
+							weight,
+							got,
+							want,
+						)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("returns clear errors", func(t *testing.T) {
+		t.Parallel()
+
+		ui := newFakeUI(40, 80)
+		ui.clearErr = errors.New("clear failed")
+
+		err := maze.DrawMaze(ui, sampleMazeGrid())
+		if err == nil {
+			t.Fatal("expected draw maze to return a clear error")
+		}
+
+		if !strings.Contains(err.Error(), "clear failed") {
+			t.Fatalf("expected clear error to be preserved, got %v", err)
+		}
+	})
 }

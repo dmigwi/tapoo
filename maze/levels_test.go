@@ -12,11 +12,11 @@ func TestGenerateMazeArea(t *testing.T) {
 	tests := []struct {
 		name  string
 		level int
-		want  float64
+		want  int
 	}{
 		{name: "seed level", level: 0, want: 100},
 		{name: "normal level", level: 23, want: 330},
-		{name: "clamped max level", level: 30000, want: 3000},
+		{name: "clamped max level", level: 30000, want: 3100},
 	}
 
 	for _, testCase := range tests {
@@ -25,6 +25,43 @@ func TestGenerateMazeArea(t *testing.T) {
 
 			if got := maze.GenerateMazeArea(testCase.level); got != testCase.want {
 				t.Fatalf("unexpected maze area: got %v want %v", got, testCase.want)
+			}
+		})
+	}
+}
+
+func TestGetNavigationProfile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		config maze.Dimensions
+		want   maze.NavigationProfile
+	}{
+		{
+			name:   "small area profile",
+			config: maze.Dimensions{Length: 10, Width: 11},
+			want:   maze.NavigationProfile{SoftCorridorLimit: 2, HardCorridorLimit: 3, PreferTurnPercent: 80},
+		},
+		{
+			name:   "mid area profile",
+			config: maze.Dimensions{Length: 20, Width: 20},
+			want:   maze.NavigationProfile{SoftCorridorLimit: 4, HardCorridorLimit: 5, PreferTurnPercent: 60},
+		},
+		{
+			name:   "max area fallback profile",
+			config: maze.Dimensions{Length: 60, Width: 60},
+			want:   maze.NavigationProfile{SoftCorridorLimit: 6, HardCorridorLimit: 8, PreferTurnPercent: 35},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := maze.GetNavigationProfile(testCase.config)
+			if got != testCase.want {
+				t.Fatalf("unexpected navigation profile: got %+v want %+v", got, testCase.want)
 			}
 		})
 	}
@@ -90,6 +127,18 @@ func TestGetMazeDimensionsFits(t *testing.T) {
 			level: 0,
 			size:  maze.Dimensions{Length: 5, Width: 20},
 			want:  maze.Dimensions{Length: 5, Width: 20},
+		},
+		{
+			name:  "prefers closest aspect match when multiple fits exist",
+			level: 2,
+			size:  maze.Dimensions{Length: 16, Width: 10},
+			want:  maze.Dimensions{Length: 15, Width: 8},
+		},
+		{
+			name:  "prefers balanced fit when aspect score ties",
+			level: 2,
+			size:  maze.Dimensions{Length: 15, Width: 10},
+			want:  maze.Dimensions{Length: 12, Width: 10},
 		},
 	}
 

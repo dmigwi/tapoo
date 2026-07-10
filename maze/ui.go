@@ -7,6 +7,8 @@ import termbox "github.com/nsf/termbox-go"
 type UI interface {
 	Init() error
 	Close()
+	Interrupt()
+	StorePath() string
 	SetInputMode(mode termbox.InputMode)
 	PollEvent() termbox.Event
 	Size() (int, int)
@@ -16,7 +18,14 @@ type UI interface {
 }
 
 // TermboxUI adapts the termbox package to the UI interface used by the maze runtime.
-type TermboxUI struct{}
+type TermboxUI struct {
+	storePath string
+}
+
+// NewTermboxUI builds the production UI with the store path that should be used for persistence.
+func NewTermboxUI(path string) UI {
+	return TermboxUI{storePath: path}
+}
 
 // Init prepares the termbox screen for rendering.
 func (TermboxUI) Init() error {
@@ -26,6 +35,16 @@ func (TermboxUI) Init() error {
 // Close releases the termbox screen resources.
 func (TermboxUI) Close() {
 	termbox.Close()
+}
+
+// Interrupt wakes a blocked PollEvent call so the runtime can shut down cleanly.
+func (TermboxUI) Interrupt() {
+	termbox.Interrupt()
+}
+
+// StorePath reports where the runtime store file should be persisted for this UI session.
+func (ui TermboxUI) StorePath() string {
+	return ui.storePath
 }
 
 // SetInputMode configures how termbox should interpret keyboard input.

@@ -1,0 +1,141 @@
+package maze
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+)
+
+// GameProgress describes the last persisted gameplay outcome for the stored level.
+type GameProgress int
+
+const (
+	// GameProgressInProgress means the player was still working through the stored level.
+	GameProgressInProgress GameProgress = iota
+
+	// GameProgressWon means the stored level was completed successfully.
+	GameProgressWon
+
+	// GameProgressFail means the stored level ended in a timeout or other failure state.
+	GameProgressFail
+)
+
+// IsValid reports whether the persisted progress value is one of the supported states.
+func (state GameProgress) IsValid() bool {
+	switch state {
+	case GameProgressInProgress, GameProgressWon, GameProgressFail:
+		return true
+	default:
+		return false
+	}
+}
+
+// String returns the stable label associated with the stored progress state.
+func (state GameProgress) String() string {
+	switch state {
+	case GameProgressInProgress:
+		return "inprogress"
+	case GameProgressWon:
+		return "won"
+	case GameProgressFail:
+		return "fail"
+	default:
+		return fmt.Sprintf("GameProgress(%d)", state)
+	}
+}
+
+// StoredGameState stores the small amount of runtime state we want to restore on restart.
+type StoredGameState struct {
+	Level      int          `json:"level"`
+	WallWeight WallWeight   `json:"wall_weight"`
+	State      GameProgress `json:"state"`
+}
+
+// Store handles best-effort persistence for the current level and wall weight.
+type Store struct {
+	path string
+}
+
+// NewStore resolves the local persistence file path for the current UI session.
+func NewStore(path string) (*Store, error) {
+	if path == "" {
+		return nil, errors.New("store path must not be empty")
+	}
+
+	return &Store{path: path}, nil
+}
+
+// Load returns the persisted game state after decoding and validating it.
+func (stateStore *Store) Load() (*StoredGameState, error) {
+	encodedState, err := os.ReadFile(stateStore.path)
+	if err != nil {
+		return nil, err
+	}
+
+	state, err := decodePersistedGameState(encodedState)
+	if err != nil {
+		return nil, err
+	}
+
+	if state.Level < 1 {
+		return nil, fmt.Errorf("invalid stored level: %d", state.Level)
+	}
+
+	if !state.WallWeight.IsValid() {
+		return nil, fmt.Errorf("invalid stored wall weight: %s", state.WallWeight)
+	}
+
+	if !state.State.IsValid() {
+		return nil, fmt.Errorf("invalid stored game state: %s", state.State)
+	}
+
+	return &state, nil
+}
+
+// ResumeLevel resolves which level should be loaded on the next startup.
+// Won states advance to the following level, while failed and in-progress states retry the same level.
+func (state StoredGameState) ResumeLevel() int {
+	if state.State == GameProgressWon && state.Level < maxLevel {
+		return state.Level + 1
+	}
+
+	return state.Level
+}
+
+// Save encodes and writes the current runtime state to disk.
+func (stateStore *Store) Save(state StoredGameState) error {
+	encodedState, err := encodePersistedGameState(state)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(stateStore.path, encodedState, 0o600)
+}
+
+// encodePersistedGameState serializes the state into a compact, human-safe local store payload.
+func encodePersistedGameState(state StoredGameState) ([]byte, error) {
+	plainText, err := json.Marshal(state)
+	if err != nil {
+		return nil, err
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(plainText)
+	return []byte(encoded), nil
+}
+
+// decodePersistedGameState reverses the local store encoding and returns the recovered state.
+func decodePersistedGameState(encodedState []byte) (StoredGameState, error) {
+	plainText, err := base64.StdEncoding.DecodeString(string(encodedState))
+	if err != nil {
+		return StoredGameState{}, err
+	}
+
+	var state StoredGameState
+	if unmarshalErr := json.Unmarshal(plainText, &state); unmarshalErr != nil {
+		return StoredGameState{}, unmarshalErr
+	}
+
+	return state, nil
+}

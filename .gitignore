@@ -4,12 +4,14 @@
 *.so
 *.dylib
 tapoo
+.tapoo.store
 
 # Test binary, build with `go test -c`
 *.test
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+coverage.out
 
 # Project-local glide cache, RE: https://github.com/Masterminds/glide/issues/736
 .glide/
@@ -20,5 +22,12 @@ tapoo
 vendor/
 *.lock
 *.log
+node_modules/
+.pnpm-store/
+.gocache/
+*.tsbuildinfo
+package-lock.json
+public/js/tapoo.min.js
 _DS*
 .DS_Store
+.vscode

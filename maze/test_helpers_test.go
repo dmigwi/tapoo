@@ -1,8 +1,12 @@
 package maze_test
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	termbox "github.com/nsf/termbox-go"
 )
@@ -17,6 +21,7 @@ type fakeUI struct {
 	mu         sync.Mutex
 	height     int
 	width      int
+	storePath  string
 	initErr    error
 	clearErr   error
 	flushErr   error
@@ -26,18 +31,29 @@ type fakeUI struct {
 	flushCalls int
 	cells      map[[2]int]renderedCell
 	events     chan termbox.Event
+	interrupts chan struct{}
 	closed     chan struct{}
 	closeOnce  sync.Once
 }
 
 func newFakeUI(height, width int) *fakeUI {
 	return &fakeUI{
-		height: height,
-		width:  width,
-		cells:  make(map[[2]int]renderedCell),
-		events: make(chan termbox.Event, 32),
-		closed: make(chan struct{}),
+		height:     height,
+		width:      width,
+		storePath:  filepath.Join(os.TempDir(), fmt.Sprintf("tapoo-maze-store-%d", time.Now().UnixNano())),
+		cells:      make(map[[2]int]renderedCell),
+		events:     make(chan termbox.Event, 32),
+		interrupts: make(chan struct{}, 1),
+		closed:     make(chan struct{}),
 	}
+}
+
+func (ui *fakeUI) StorePath() string {
+	return ui.storePath
+}
+
+func (ui *fakeUI) setStorePath(path string) {
+	ui.storePath = path
 }
 
 func (ui *fakeUI) Init() error {
@@ -66,10 +82,19 @@ func (ui *fakeUI) SetInputMode(mode termbox.InputMode) {
 	ui.inputMode = mode
 }
 
+func (ui *fakeUI) Interrupt() {
+	select {
+	case ui.interrupts <- struct{}{}:
+	default:
+	}
+}
+
 func (ui *fakeUI) PollEvent() termbox.Event {
 	select {
 	case ev := <-ui.events:
 		return ev
+	case <-ui.interrupts:
+		return termbox.Event{Type: termbox.EventInterrupt}
 	case <-ui.closed:
 		return termbox.Event{Type: termbox.EventError}
 	}
@@ -122,12 +147,12 @@ func (ui *fakeUI) enqueueEvents(events ...termbox.Event) {
 	}
 }
 
-func (ui *fakeUI) hasRune(want rune) bool {
+func (ui *fakeUI) hasForegroundColor(want termbox.Attribute) bool {
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
 
 	for _, cell := range ui.cells {
-		if cell.char == want {
+		if cell.foreground == want {
 			return true
 		}
 	}
@@ -182,6 +207,28 @@ func (ui *fakeUI) containsText(want string) bool {
 	}
 
 	return false
+}
+
+func (ui *fakeUI) rowText(y, startX, endX int) string {
+	ui.mu.Lock()
+	defer ui.mu.Unlock()
+
+	if endX < startX {
+		return ""
+	}
+
+	line := make([]rune, endX-startX+1)
+	for index := range line {
+		line[index] = ' '
+	}
+
+	for xPos := startX; xPos <= endX; xPos++ {
+		if cell, ok := ui.cells[[2]int{xPos, y}]; ok {
+			line[xPos-startX] = cell.char
+		}
+	}
+
+	return string(line)
 }
 
 func sampleMazeGrid() [][]string {

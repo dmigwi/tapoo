@@ -2,6 +2,7 @@ package maze_test
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,66 +17,130 @@ func TestGenerateMaze(t *testing.T) {
 		Width:  10,
 	}
 
-	data, err := config.GenerateMaze(-1)
+	data, err := config.GenerateMaze(maze.WallWeight(-1))
 	if err == nil {
-		t.Fatal("GenerateMaze(-1) expected an error but got nil")
+		t.Fatal("GenerateMaze with an invalid wall weight expected an error but got nil")
 	}
 
 	if len(data) != 0 {
-		t.Fatalf("expected invalid intensity to return an empty maze, got %v", data)
+		t.Fatalf("expected invalid wall weight to return an empty maze, got %v", data)
 	}
 
-	if len(config.StartPosition) != 0 || len(config.FinalPosition) != 0 {
+	if config.StartPosition != [2]int{} || config.FinalPosition != [2]int{} {
 		t.Fatalf(
-			"expected invalid intensity to leave positions unset, got start=%v final=%v",
+			"expected invalid wall weight to leave positions unset, got start=%v final=%v",
 			config.StartPosition,
 			config.FinalPosition,
 		)
 	}
 
-	if !strings.Contains(err.Error(), "invalid value of intensity found:") {
+	if !strings.Contains(err.Error(), "invalid wall weight:") {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 
-	data, err = config.GenerateMaze(1)
-	if err != nil {
-		t.Fatalf("GenerateMaze(1) returned error: %v", err)
+	singleCellConfig := &maze.Dimensions{Length: 1, Width: 1}
+	data, err = singleCellConfig.GenerateMaze(maze.WallWeightRegular)
+	if err == nil {
+		t.Fatal("GenerateMaze() expected an error when the maze has fewer than two cells")
 	}
 
-	if len(data) == 0 {
-		t.Fatal("GenerateMaze(1) returned an empty maze")
+	if len(data) != 0 {
+		t.Fatalf("expected a single-cell maze generation failure to return an empty maze, got %v", data)
 	}
 
-	if len(config.StartPosition) == 0 || len(config.FinalPosition) == 0 {
+	if singleCellConfig.StartPosition != [2]int{} || singleCellConfig.FinalPosition != [2]int{} {
 		t.Fatalf(
-			"expected maze generation to populate start and final positions, got start=%v final=%v",
-			config.StartPosition,
-			config.FinalPosition,
+			"expected failed endpoint validation to clear positions, got start=%v final=%v",
+			singleCellConfig.StartPosition, singleCellConfig.FinalPosition,
 		)
 	}
 
-	if equalPosition(config.StartPosition, config.FinalPosition) {
+	if !strings.Contains(err.Error(), "at least two cells are required") {
+		t.Fatalf("unexpected single-cell generation error: %v", err)
+	}
+
+	for _, invalidConfig := range []*maze.Dimensions{
+		{Length: 0, Width: 10},
+		{Length: 10, Width: 0},
+		{Length: -1, Width: 10},
+		{Length: 10, Width: -1},
+	} {
+		data, err = invalidConfig.GenerateMaze(maze.WallWeightRegular)
+		if err == nil {
+			t.Fatalf("GenerateMaze(%+v) expected an error for invalid dimensions", *invalidConfig)
+		}
+
+		if len(data) != 0 {
+			t.Fatalf("expected invalid dimensions to return an empty maze, got %v", data)
+		}
+
+		if invalidConfig.StartPosition != [2]int{} || invalidConfig.FinalPosition != [2]int{} {
+			t.Fatalf(
+				"expected invalid dimensions to clear positions, got start=%v final=%v",
+				invalidConfig.StartPosition,
+				invalidConfig.FinalPosition,
+			)
+		}
+
+		if !strings.Contains(err.Error(), "both values must be greater than zero") {
+			t.Fatalf("unexpected invalid dimensions error: %v", err)
+		}
+	}
+
+	data, err = config.GenerateMaze(maze.WallWeightRegular)
+	if err != nil {
+		t.Fatalf("GenerateMaze() returned error for regular wall weight: %v", err)
+	}
+
+	if len(data) == 0 {
+		t.Fatal("GenerateMaze() returned an empty maze")
+	}
+
+	if config.StartPosition == [2]int{} || config.FinalPosition == [2]int{} {
+		t.Fatalf(
+			"expected maze generation to populate start and final positions, got start=%v final=%v",
+			config.StartPosition, config.FinalPosition,
+		)
+	}
+
+	if slices.Equal(config.StartPosition[:], config.FinalPosition[:]) {
 		t.Fatalf("expected distinct start and final positions, got %v", config.StartPosition)
 	}
 
 	if countPassages(data) == 0 {
 		t.Fatal("expected generated maze to contain carved passages")
 	}
+
+	assertPlayableMaze(t, *config, data)
+
+	for _, weight := range []maze.WallWeight{maze.WallWeightMedium, maze.WallWeightBold} {
+		newData, errData := config.GenerateMaze(weight)
+		if errData != nil {
+			t.Fatalf("GenerateMaze(%s) returned error: %v", weight, errData)
+		}
+
+		if !mazeContainsWallWeight(newData, weight) {
+			t.Fatalf("expected generated maze to contain %s wall characters", weight)
+		}
+	}
 }
 
 func TestGenerateMazeRepeatable(t *testing.T) {
 	t.Parallel()
 
-	tests := []maze.Dimensions{
-		{Length: 5, Width: 5},
-		{Length: 4, Width: 4},
-	}
-
-	for _, config := range tests {
-		t.Run(fmt.Sprintf("%dx%d", config.Length, config.Width), func(t *testing.T) {
+	for _, testCase := range []struct {
+		config maze.Dimensions
+		weight maze.WallWeight
+	}{
+		{config: maze.Dimensions{Length: 5, Width: 5}, weight: maze.WallWeightRegular},
+		{config: maze.Dimensions{Length: 5, Width: 5}, weight: maze.WallWeightMedium},
+		{config: maze.Dimensions{Length: 4, Width: 4}, weight: maze.WallWeightBold},
+	} {
+		config := testCase.config
+		t.Run(fmt.Sprintf("%dx%d-%s", config.Length, config.Width, testCase.weight), func(t *testing.T) {
 			t.Parallel()
 
-			data, err := config.GenerateMaze(1)
+			data, err := config.GenerateMaze(testCase.weight)
 			if err != nil {
 				t.Fatalf("GenerateMaze returned error: %v", err)
 			}
@@ -84,10 +149,36 @@ func TestGenerateMazeRepeatable(t *testing.T) {
 				t.Fatal("expected repeated maze generation to keep carving passages")
 			}
 
-			if equalPosition(config.StartPosition, config.FinalPosition) {
+			if slices.Equal(config.StartPosition[:], config.FinalPosition[:]) {
 				t.Fatalf("expected repeated maze generation to keep distinct endpoints, got %v", config.StartPosition)
 			}
+
+			if !mazeContainsWallWeight(data, testCase.weight) {
+				t.Fatalf("expected generated maze to use %s walls", testCase.weight)
+			}
+
+			assertPlayableMaze(t, config, data)
 		})
+	}
+}
+
+func assertPlayableMaze(t *testing.T, config maze.Dimensions, data [][]string) {
+	t.Helper()
+
+	if !isBoundaryPosition(config, config.StartPosition) {
+		t.Fatalf("expected start position to be on the maze boundary, got %v", config.StartPosition)
+	}
+
+	if !isTraversableCell(data, config.StartPosition) {
+		t.Fatalf("expected start position to be on a traversable cell, got %v", config.StartPosition)
+	}
+
+	if !isTraversableCell(data, config.FinalPosition) {
+		t.Fatalf("expected final position to be on a traversable cell, got %v", config.FinalPosition)
+	}
+
+	if !hasMazeRoute(data, config.StartPosition, config.FinalPosition) {
+		t.Fatalf("expected a traversable path between %v and %v", config.StartPosition, config.FinalPosition)
 	}
 }
 
@@ -108,16 +199,84 @@ func countPassages(data [][]string) int {
 	return count
 }
 
-func equalPosition(left, right []int) bool {
-	if len(left) != len(right) {
-		return false
+func mazeContainsWallWeight(data [][]string, weight maze.WallWeight) bool {
+	wallSegments := map[maze.WallWeight]string{
+		maze.WallWeightRegular: "|",
+		maze.WallWeightMedium:  "╏",
+		maze.WallWeightBold:    "║",
 	}
 
-	for i := range left {
-		if left[i] != right[i] {
-			return false
+	for _, row := range data {
+		if slices.Contains(row, wallSegments[weight]) {
+			return true
 		}
 	}
 
-	return true
+	return false
+}
+
+func isBoundaryPosition(config maze.Dimensions, position [2]int) bool {
+	maxRow := (config.Width * 2) - 1
+	maxColumn := (config.Length * 2) - 1
+
+	return position[0] == 1 || position[0] == maxRow || position[1] == 1 || position[1] == maxColumn
+}
+
+func isTraversableCell(data [][]string, position [2]int) bool {
+	row, column := position[0], position[1]
+	if row < 0 || row >= len(data) {
+		return false
+	}
+
+	if column < 0 || column >= len(data[row]) {
+		return false
+	}
+
+	return strings.HasPrefix(data[row][column], " ")
+}
+
+func hasMazeRoute(data [][]string, start, target [2]int) bool {
+	if start == target {
+		return true
+	}
+
+	type queueEntry struct {
+		row    int
+		column int
+	}
+
+	queue := []queueEntry{{row: start[0], column: start[1]}}
+	visited := map[[2]int]bool{start: true}
+	deltas := [][2]int{
+		{0, -2},
+		{0, 2},
+		{-2, 0},
+		{2, 0},
+	}
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		for _, delta := range deltas {
+			next := [2]int{current.row + delta[0], current.column + delta[1]}
+			if visited[next] {
+				continue
+			}
+
+			midpoint := [2]int{current.row + (delta[0] / 2), current.column + (delta[1] / 2)}
+			if !isTraversableCell(data, midpoint) || !isTraversableCell(data, next) {
+				continue
+			}
+
+			if next == target {
+				return true
+			}
+
+			visited[next] = true
+			queue = append(queue, queueEntry{row: next[0], column: next[1]})
+		}
+	}
+
+	return false
 }

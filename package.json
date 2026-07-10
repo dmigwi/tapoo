@@ -1,0 +1,13 @@
+{
+  "name": "tapoo",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "build:frontend": "./scripts/build-frontend.sh",
+    "typecheck:frontend": "tsc --project tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9",
+    "typescript": "^6.0.3"
+  }
+}

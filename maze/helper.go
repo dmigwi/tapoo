@@ -1,9 +1,8 @@
 package maze
 
 import (
-	"crypto/rand"
+	cryptorand "crypto/rand"
 	"fmt"
-	"math"
 	"math/big"
 	"strings"
 )
@@ -37,40 +36,53 @@ type (
 	}
 )
 
-// CreatePlayingField creates the initial version of the maze which is a grid of cells.
-// The cells are created with characters that are printable on the terminal.
-// CreatePlayingField accept a paramenter with intensity of how thick the
-// maze walls should be.
-func (config *Dimensions) CreatePlayingField(intensity int) ([][]string, error) {
-	var (
-		chars []string
-		err   error
-
-		data = [][]string{}
-	)
-
-	if chars, err = getWallCharacters(intensity); err != nil {
-		return data, err
+// secureRandomIndex returns a cryptographically random index in the range [0, limit).
+// Maze generation only uses this for start-cell selection, where preserving unpredictability matters.
+func secureRandomIndex(limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
 	}
 
-	for i := range (cellSpan * config.Width) + 1 {
-		var val []string
+	value, err := cryptorand.Int(cryptorand.Reader, big.NewInt(int64(limit)))
+	if err != nil {
+		return 0, err
+	}
 
-		for k := range config.Length + 1 {
-			val = append(val, chars[0])
+	return int(value.Int64()), nil
+}
 
+// CreatePlayingField creates the initial version of the maze which is a grid of cells.
+// The cells are created with terminal-printable characters, and wall weight controls
+// which glyph set is used for the border and passage outlines.
+func (config *Dimensions) CreatePlayingField(weight WallWeight) ([][]string, error) {
+	chars, err := getWallCharacters(weight)
+	if err != nil {
+		return nil, err
+	}
+
+	rows := (cellSpan * config.Width) + 1
+	data := make([][]string, 0, rows)
+	passage := strings.Repeat(" ", cellPathWidth)
+	rowCapacity := ((config.Length + 1) * cellSpan)
+
+	for rowIndex := range rows {
+		row := make([]string, 0, rowCapacity)
+
+		for columnIndex := 0; columnIndex <= config.Length; columnIndex++ {
+			row = append(row, chars[0])
 			switch {
-			case k != config.Length && i%2 == 0:
-				val = append(val, chars[1])
-			case k != config.Length && i%2 != 0:
-				val = append(val, strings.Repeat(" ", cellPathWidth))
+			case columnIndex != config.Length && rowIndex%2 == 0:
+				row = append(row, chars[1])
+			case columnIndex != config.Length && rowIndex%2 != 0:
+				row = append(row, passage)
 			default:
-				val = append(val, "\n")
+				row = append(row, "\n")
 			}
 		}
 
-		data = append(data, val)
+		data = append(data, row)
 	}
+
 	return data, nil
 }
 
@@ -82,14 +94,9 @@ func (config *Dimensions) GetCellAddress(cellNo int) CellAddress {
 		return CellAddress{}
 	}
 
-	// Cells are numbered row by row, so the column is the remainder and the row is the ceiled quotient.
-	column := cellNo % config.Length
-	if column == 0 {
-		column = config.Length
-	}
-
-	row := getCeiledDivisor(cellNo, config.Length) * cellSpan
-	column *= cellSpan
+	// Cells are numbered row by row, so zero-based integer division and remainder identify the cell slot.
+	row := (((cellNo - 1) / config.Length) + 1) * cellSpan
+	column := (((cellNo - 1) % config.Length) + 1) * cellSpan
 
 	return CellAddress{
 		BottomCenter: [2]int{row, column - 1},
@@ -111,6 +118,7 @@ func (config *Dimensions) GetCellNeighbors(cellNo int) CellNeighbors {
 	}
 
 	// Neighbor numbering follows the same row-major layout as the generated maze cells.
+	column := (cellNo - 1) % config.Length
 	var (
 		right     = cellNo + 1
 		left      = cellNo - 1
@@ -119,11 +127,11 @@ func (config *Dimensions) GetCellNeighbors(cellNo int) CellNeighbors {
 		neighbors = CellNeighbors{}
 	)
 
-	if getCeiledDivisor(right, config.Length) == getCeiledDivisor(cellNo, config.Length) {
+	if column < config.Length-1 {
 		neighbors.Right = right
 	}
 
-	if getCeiledDivisor(left, config.Length) == getCeiledDivisor(cellNo, config.Length) {
+	if column > 0 {
 		neighbors.Left = left
 	}
 
@@ -138,46 +146,59 @@ func (config *Dimensions) GetCellNeighbors(cellNo int) CellNeighbors {
 	return neighbors
 }
 
-// getRandomNo returns a pseudo-random number in the range [0, limit).
-func getRandomNo(limit int) int {
-	if limit <= 0 {
-		return 0
+// getWallCharacters returns the maze wall characters associated with the provided wall weight.
+func getWallCharacters(weight WallWeight) ([3]string, error) {
+	switch weight {
+	case WallWeightRegular:
+		return [3]string{"|", "---", "-"}, nil
+	case WallWeightMedium:
+		return [3]string{"╏", "╍╍╍", "╍"}, nil
+	case WallWeightBold:
+		return [3]string{"║", "===", "="}, nil
+	default:
+		err := fmt.Errorf(
+			"invalid wall weight: %s. allowed values are %s, %s, and %s",
+			weight, WallWeightRegular, WallWeightMedium, WallWeightBold,
+		)
+		return [3]string{}, err
 	}
+}
 
-	// Random cell selection does not need determinism, but it should not depend on shared mutable state.
-	value, err := rand.Int(rand.Reader, big.NewInt(int64(limit)))
+// reweightMaze returns a copy of the maze data with every wall glyph translated from one
+// supported wall weight to the next while preserving the carved passage layout.
+func reweightMaze(data [][]string, currentWeight WallWeight) ([][]string, error) {
+	fromChars, err := getWallCharacters(currentWeight)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return int(value.Int64())
-}
-
-// getCeiledDivisor calculates the ceiled divisor of the two values passed.
-func getCeiledDivisor(num, dinom int) int {
-	return int(math.Ceil(float64(num) / float64(dinom)))
-}
-
-// getWallCharacters returns the maze wall characters associated with the provided intensity.
-// If invalid intensity is used an error is thrown.
-func getWallCharacters(intensity int) ([]string, error) {
-	chars, ok := map[int][]string{
-		1: {"|", "---", "-"},
-		2: {"╏", "╍╍╍", "╍"},
-		3: {"║", "===", "="},
-	}[intensity]
-
-	// Wall styles are grouped by intensity so generation and optimization can share the same lookup.
-	if ok {
-		return chars, nil
+	toChars, err := getWallCharacters(currentWeight.Next())
+	if err != nil {
+		return nil, err
 	}
 
-	return chars, fmt.Errorf(
-		"invalid value of intensity found: %d. allowed 1, 2 and 3", intensity)
+	translated := make([][]string, len(data))
+	replacements := map[string]string{
+		fromChars[0]: toChars[0],
+		fromChars[1]: toChars[1],
+		fromChars[2]: toChars[2],
+	}
+
+	for rowIndex, row := range data {
+		translated[rowIndex] = append([]string(nil), row...)
+
+		for colIndex, cell := range row {
+			if replacement, ok := replacements[cell]; ok {
+				translated[rowIndex][colIndex] = replacement
+			}
+		}
+	}
+
+	return translated, nil
 }
 
-// isSpaceFound checks for the space character in a given string
-// Boolean true is returned if space is found.
+// isSpaceFound reports whether the segment is a traversable passage.
+// All open path segments in the maze begin with a leading space, so a single-byte check is enough.
 func isSpaceFound(item string) bool {
-	return strings.Contains(item, " ")
+	return len(item) > 0 && item[0] == ' '
 }

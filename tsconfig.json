@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["DOM", "ES2022"],
+    "strict": false,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "removeComments": false,
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["frontend/tapoo.ts"]
+}
