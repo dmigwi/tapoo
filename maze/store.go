@@ -98,7 +98,7 @@ func (stateStore *Store) Load() (*StoredGameState, error) {
 // ResumeLevel resolves which level should be loaded on the next startup.
 // Won states advance to the following level, while failed and in-progress states retry the same level.
 func (state StoredGameState) ResumeLevel() int {
-	if state.State == GameProgressWon && state.Level < maxLevel {
+	if state.State == GameProgressWon {
 		return state.Level + 1
 	}
 

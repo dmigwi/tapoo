@@ -16,7 +16,7 @@ func TestGenerateMazeArea(t *testing.T) {
 	}{
 		{name: "seed level", level: 0, want: 100},
 		{name: "normal level", level: 23, want: 330},
-		{name: "clamped max level", level: 30000, want: 3100},
+		{name: "large level stays uncapped", level: 30000, want: 300100},
 	}
 
 	for _, testCase := range tests {

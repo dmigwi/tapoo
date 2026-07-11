@@ -10,15 +10,14 @@ export const CONFIG: AppConfig = {
   mazeLeftPadding: 3,
   seed: 100,
   diff: 10,
-  maxLevel: 300,
   minMazeDimension: 5,
   terminalHeightInset: 5,
   terminalHeightScale: 4,
   terminalWidthInset: 10,
   terminalWidthScale: 2,
   navigation:
-    "Use the Arrow Keys to navigate the player (in Blue). Press Ctrl+B to change walls thickness.",
-  touchNavigation: "Use touch controls to move the Blue player.",
+    "Use Arrow Keys to guide Blue (Player) to Red. Ctrl+B changes walls.",
+  touchNavigation: "Use touch controls to guide Blue (Player) to Red.",
   pauseMessage: "Game paused !!!",
   successMessage:
     "Game over! Congratulations, You won by locating the target on time.",
@@ -31,8 +30,8 @@ export const CONFIG: AppConfig = {
   proceedMessage: "Press ESC or Ctrl+C to quit.  Press Ctrl+P to Proceed",
   touchProceedMessage: "Use the buttons below.",
   tooSmallMessage:
-    "The viewport is too small for Tapoo. Expand the terminal to continue.",
-  tooSmallCompactMessage: "Screen too small. Expand to continue.",
+    "The next maze needs more screen room. Enlarge the window to keep playing.",
+  tooSmallCompactMessage: "Needs more screen room for the next maze.",
   statusTemplate:
     "Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
   touchStatusTemplate: "Level: {level}   Scores: {score}",

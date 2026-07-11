@@ -124,7 +124,6 @@ export type AppConfig = {
   mazeLeftPadding: number
   seed: number
   diff: number
-  maxLevel: number
   minMazeDimension: number
   terminalHeightInset: number
   terminalHeightScale: number

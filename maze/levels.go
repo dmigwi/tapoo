@@ -7,10 +7,6 @@ import (
 
 // GenerateMazeArea generates the full maze size depending on the provided game level.
 func GenerateMazeArea(level int) int {
-	// Higher levels only increase area; clamping keeps the dimension search bounded.
-	if level >= maxLevel {
-		level = maxLevel
-	}
 	return (level * diff) + seed
 }
 
@@ -100,7 +96,7 @@ func chooseBestMazeDimensions(candidates []Dimensions, terminalSize Dimensions) 
 // current level and terminal size provided.
 func GetMazeDimensions(level int, terminalSize Dimensions) (*Dimensions, error) {
 	area := GenerateMazeArea(level)
-	errMsg := "terminal size is too small for the current level"
+	errMsg := "the next maze needs more screen room; enlarge the window to keep playing"
 
 	// Bail out early when the raw area cannot possibly fit before spending time on factorization.
 	if area > (terminalSize.Width * terminalSize.Length) {

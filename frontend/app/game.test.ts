@@ -273,6 +273,7 @@ describe("bootstrapGame", () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    Reflect.deleteProperty(window, "visualViewport")
   })
 
   it("starts a fresh round from persisted preferences when no round is stored", async () => {
@@ -334,6 +335,60 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("running")
     expect(state.level).toBe(2)
     expect(state.wallWeight).toBe(1)
+  })
+
+  it("subscribes to visual viewport resize events when available", async () => {
+    const elements = createElements()
+    const render = vi.fn<(elements: Elements, state: State) => void>()
+    const addViewportListener = vi.fn()
+
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: {
+        addEventListener: addViewportListener,
+      },
+    })
+
+    vi.doMock("./dom", () => ({
+      elements,
+      detectInputMode: vi.fn(() => "keyboard"),
+      applyInputMode: vi.fn(),
+      getTerminalSize: vi.fn(() => ({ length: 20, width: 20 })),
+    }))
+    vi.doMock("./maze", () => ({
+      generateMaze: vi.fn(() => createRound()),
+      getMazeDimensions: vi.fn(() => ({
+        level: 1,
+        length: 1,
+        width: 1,
+      })),
+      isSpaceFound: vi.fn(() => true),
+      isWallWeight: vi.fn((value: number) => value >= 1 && value <= 3),
+      nextWallWeight: vi.fn((weight: number) =>
+        weight === 3 ? 1 : weight + 1,
+      ),
+      reweightMaze: vi.fn((maze: string[][]) => maze),
+    }))
+    vi.doMock("./render", () => ({ render }))
+    vi.doMock("./storage", () => ({
+      clearPersistedRound: vi.fn(),
+      loadPersistedSnapshot: vi.fn(() => ({
+        preferences: { level: 1, wallWeight: 1 },
+        round: null,
+      })),
+      savePersistedPreferences: vi.fn(),
+      savePersistedRoundState: vi.fn(),
+    }))
+    vi.spyOn(window, "setInterval").mockImplementation(() => 1)
+
+    const { bootstrapGame } = await import("./game")
+
+    bootstrapGame()
+
+    expect(addViewportListener).toHaveBeenCalledWith(
+      "resize",
+      expect.any(Function),
+    )
   })
 
   it("proceeds to the next level after a restored win when Ctrl+P is pressed", async () => {
