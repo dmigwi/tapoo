@@ -72,8 +72,18 @@ const (
 	goalMarker = '█'
 )
 
-// storeFileName is the production runtime state file written beside the launched command.
-const storeFileName = ".tapoo.store"
+const (
+	// storeFileName is the production runtime state file written beside the launched command.
+	storeFileName = ".tapoo.store"
+
+	// storeEncodingPrefix marks payloads that were encoded with the shared password-based store format.
+	storeEncodingPrefix = "tapoo:v2:"
+
+	// storeBlendKey keeps the persisted payload format aligned with the companion runtime
+	// while still depending on the exact multi-line token shape.
+	storeBlendKey = `tapoo:maze/vault
+		key|go.persist`
+)
 
 // seed defines the size of the maze to be used in the training level (level 0).
 // It can also be referred to as the size of the training field.

@@ -25,6 +25,7 @@ vendor/
 node_modules/
 .pnpm-store/
 .gocache/
+.tmp/
 *.tsbuildinfo
 package-lock.json
 public/js/tapoo.min.js
