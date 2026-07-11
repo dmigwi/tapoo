@@ -4,18 +4,63 @@
 [![Pages](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml)
 [![Go Version](https://img.shields.io/badge/go-1.25+-00ADD8.svg)](https://go.dev/)
 
-Tapoo is a maze runner hide-and-seek game with two user experiences built from the same codebase:
+Tapoo is a maze runner hide-and-seek game with two interfaces built from the same codebase: a Go terminal game and a browser SPA with the same terminal-inspired feel.
 
-- A Go terminal game powered by `termbox-go`
-- A browser single-page app that preserves the same terminal-inspired gameplay style
+**Objective:** _Guide the blue player to the red destination before the score drops to zero._
 
-**The goal is simple:** _Guide the blue player to the red destination before the score drops to zero._
+## Quick Start
 
-## Gameplay Preview
+### Terminal
+
+```bash
+go install github.com/dmigwi/tapoo@latest
+tapoo
+```
+
+### Run from source
+
+```bash
+go run .
+```
+
+### Browser
+
+```bash
+make frontend-install
+make frontend-build
+```
+
+Then serve `public/` and open `/index.html`.
+
+<details>
+<summary><strong>Gameplay Preview</strong></summary>
 
 <img src="public/images/tapoo-gameplay.gif" alt="Tapoo gameplay" width="720" style="max-width: 100%; height: auto;" />
 
-## Features
+</details>
+
+<details>
+<summary><strong>Gameplay And Controls</strong></summary>
+
+Tapoo increases maze area as levels rise. Progress continues until the current terminal window or browser viewport can no longer fit the next maze cleanly.
+
+### Terminal controls
+
+- `Arrow keys`: move the player
+- `Ctrl+B`: cycle maze wall weight
+- `Space`: pause the current run
+- `Ctrl+P`: proceed after pause, win, or failure
+- `Esc` or `Ctrl+C`: quit
+
+### Browser controls
+
+- Keyboard controls mirror the terminal controls
+- On touch devices, on-screen controls are shown automatically
+
+</details>
+
+<details>
+<summary><strong>Highlights</strong></summary>
 
 - Terminal-first maze gameplay
 - Browser SPA with the same black-and-green terminal feel
@@ -26,72 +71,24 @@ Tapoo is a maze runner hide-and-seek game with two user experiences built from t
 - Manual GitHub Pages deployment for the web build
 - Go and TypeScript test coverage in CI
 
-## Gameplay
+</details>
 
-Tapoo increases maze area as levels rise. Progress now continues until the current terminal window or browser viewport can no longer fit the next maze cleanly.
-
-### Objective
-
-Move the blue player to the red destination before the score drops to zero.
-
-### Controls
-
-#### Terminal
-
-- `Arrow keys`: move the player
-- `Ctrl+B`: cycle maze wall weight
-- `Space`: pause the current run
-- `Ctrl+P`: proceed after pause, win, or failure
-- `Esc` or `Ctrl+C`: quit
-
-#### Browser
-
-- Keyboard controls mirror the terminal controls
-- On touch devices, on-screen controls are shown automatically
-
-## Install And Play
-
-### Terminal build
-
-Install the CLI:
-
-```bash
-go install github.com/dmigwi/tapoo@latest
-```
-
-Run it:
-
-```bash
-tapoo
-```
-
-### Run from source
-
-```bash
-go run .
-```
-
-## Browser App
+<details>
+<summary><strong>Browser App</strong></summary>
 
 The browser build outputs a bundled file at [public/js/tapoo.min.js](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/public/js/tapoo.min.js) and serves the SPA from [public/index.html](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/public/index.html).
 
-### Build the frontend
-
-```bash
-make frontend-install
-make frontend-build
-```
-
 This compiles [frontend/tapoo.ts](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/frontend/tapoo.ts) with `esbuild` into a minified browser bundle.
 
-### Open the SPA
-
-You can serve the `public/` directory with any static file server, then open:
+Available pages:
 
 - `/index.html` for the game
 - `/agents.html` for the AI Agents placeholder page
 
-## Persistence
+</details>
+
+<details>
+<summary><strong>Persistence</strong></summary>
 
 ### Terminal
 
@@ -114,7 +111,10 @@ The SPA stores gameplay state in browser storage:
 - `localStorage` for durable preferences such as level and wall weight
 - `sessionStorage` for the active round snapshot
 
-## Development
+</details>
+
+<details>
+<summary><strong>Development</strong></summary>
 
 ### Requirements
 
@@ -134,7 +134,10 @@ make test
 make ci
 ```
 
-## Contributing
+</details>
+
+<details>
+<summary><strong>Contributing</strong></summary>
 
 Contributions are welcome, but contributors should install the repository pre-commit hook before creating commits.
 
@@ -188,7 +191,10 @@ At minimum, contributors should make sure:
 - `make test`: run frontend checks plus Go race tests with coverage
 - `make ci`: run the local equivalent of the main CI pipeline
 
-## Testing And Quality
+</details>
+
+<details>
+<summary><strong>Testing And Quality</strong></summary>
 
 ### Go
 
@@ -207,7 +213,10 @@ pnpm run test:frontend
 pnpm run coverage:frontend
 ```
 
-## CI And Deployment
+</details>
+
+<details>
+<summary><strong>CI And Deployment</strong></summary>
 
 ### Continuous Integration
 
@@ -238,6 +247,8 @@ Important:
 - GitHub Pages should be configured to use `GitHub Actions` as the publishing source.
 - Since the workflow is manual, it deploys the branch selected at run time.
 
+</details>
+
 ## Project Layout
 
 ```text
@@ -249,4 +260,5 @@ scripts/       Frontend build and hook helpers
 
 ## License
 
-This project is licensed under the terms in [LICENSE](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/LICENSE).
+This project is licensed under the Apache License 2.0. See [LICENSE](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/LICENSE).
+Tapoo is distributed on an `AS IS` basis, without warranties or guaranteed support.
