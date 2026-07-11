@@ -17,8 +17,8 @@ export const CONFIG: AppConfig = {
   terminalWidthInset: 10,
   terminalWidthScale: 2,
   navigation:
-    "Use the Arrow Keys to navigate the player (in Blue). Press Ctrl+B to change walls thickness.",
-  touchNavigation: "Use touch controls to move the Blue player.",
+    "Use Arrow Keys to guide Blue (Player) to Red. Ctrl+B changes walls.",
+  touchNavigation: "Use touch controls to guide Blue (Player) to Red.",
   pauseMessage: "Game paused !!!",
   successMessage:
     "Game over! Congratulations, You won by locating the target on time.",

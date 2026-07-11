@@ -55,7 +55,7 @@ const (
 	// UI strings are centralized so the display code can focus on placement rather than content.
 	intro            = "   You are playing the Maze runner, hide and seek game (Tapoo).      "
 	website          = " Visit https://www.linkedin.com/in/migwi-ndungu/ to contact the developer.  "
-	playerNavigation = " Use the Arrow Keys to navigate the player (in Blue). Press Ctrl+B to change walls thickness. "
+	playerNavigation = " Use Arrow Keys to guide Blue (Player) to Red. Ctrl+B changes walls. "
 	statusMsg        = "   Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: %d   Scores: %d   "
 
 	space              = "                                                                         "

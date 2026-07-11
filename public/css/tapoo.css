@@ -6,7 +6,7 @@
   --text-dim: rgba(72, 198, 62, 0.72);
   --text-faint: rgba(72, 198, 62, 0.5);
   --player: #58a6ff;
-  --target: #ff6b5f;
+  --target: #ff0000;
   --accent: #9ea6d7;
   --status: #f1d065;
   --glow: rgba(72, 198, 62, 0.2);
@@ -473,7 +473,8 @@ body {
   left: 50%;
   bottom: calc(var(--safe-bottom) + 12px);
   z-index: 3;
-  transform: translateX(-50%);
+  transform: translateX(-50%) scale(1.15);
+  transform-origin: bottom center;
   width: fit-content;
   max-width: calc(100% - var(--safe-left) - var(--safe-right) - 16px);
   display: grid;
@@ -487,7 +488,7 @@ body {
   align-items: center;
   justify-items: center;
   justify-content: center;
-  padding: 8px;
+  padding: 8px 8px 12px;
   border: 1px solid rgba(72, 198, 62, 0.14);
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.34);
@@ -553,13 +554,13 @@ body {
 .touch-controls__button--left {
   grid-area: left;
   min-width: var(--touch-arrow-button-width);
-  margin-right: 14px;
+  margin-right: 20px;
 }
 
 .touch-controls__button--right {
   grid-area: right;
   min-width: var(--touch-arrow-button-width);
-  margin-left: 14px;
+  margin-left: 20px;
 }
 
 .touch-controls__arrow-icon {
@@ -654,7 +655,7 @@ body {
     max-width: calc(100% - var(--safe-left) - var(--safe-right) - 12px);
     column-gap: 10px;
     row-gap: 6px;
-    padding: 7px;
+    padding: 7px 7px 10px;
   }
 
   .touch-controls__button {
