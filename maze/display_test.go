@@ -205,6 +205,10 @@ func TestDrawMaze(t *testing.T) {
 					t.Fatal("expected draw maze to render the intro text")
 				}
 
+				if !ui.containsText("Tapoo v" + fakeUIVersion) {
+					t.Fatal("expected draw maze to render the embedded version in the intro text")
+				}
+
 				if !ui.containsText("linkedin.com/in/migwi-ndungu") {
 					t.Fatal("expected draw maze to render the developer contact text")
 				}

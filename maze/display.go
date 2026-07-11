@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	termbox "github.com/nsf/termbox-go"
@@ -42,7 +43,7 @@ func DrawMaze(ui UI, data [][]string) error {
 		row int
 		msg string
 	}{
-		{row: messageRowIntro, msg: intro},
+		{row: messageRowIntro, msg: introMessage(ui.AppVersion())},
 		{row: messageRowWebsite, msg: website},
 		{row: messageRowControls, msg: playerNavigation},
 	} {
@@ -56,6 +57,16 @@ func DrawMaze(ui UI, data [][]string) error {
 		}
 	}
 	return nil
+}
+
+// introMessage adds the build version to the startup banner when one is available from the UI.
+func introMessage(version string) string {
+	trimmedVersion := strings.TrimSpace(version)
+	if trimmedVersion == "" {
+		return "   You are playing the Maze runner, hide and seek game (Tapoo).      "
+	}
+
+	return fmt.Sprintf(introFormat, trimmedVersion)
 }
 
 // RenderMazeUI redraws the maze either as the live game view or as an interrupt overlay.

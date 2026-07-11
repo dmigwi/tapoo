@@ -4,7 +4,7 @@
   "packageManager": "pnpm@11.7.0",
   "scripts": {
     "build:frontend": "./scripts/build-frontend.sh",
-    "typecheck:frontend": "tsc --project tsconfig.json --noEmit",
+    "typecheck:frontend": "tsc --project tsconfig.json --noEmit && tsc --project tsconfig.node.json --noEmit",
     "lint:frontend": "eslint frontend --max-warnings=0",
     "lint:frontend:fix": "eslint frontend --fix",
     "test:frontend": "vitest run",
@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.1",
     "@vitest/coverage-v8": "^4.1.10",
     "esbuild": "^0.25.9",
     "eslint": "^10.6.0",

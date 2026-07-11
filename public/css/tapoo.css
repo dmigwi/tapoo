@@ -86,6 +86,7 @@ body {
 .page-footer__copy {
   color: var(--text-faint);
   font: inherit;
+  font-family: Consolas, "Tapoo PT Mono", "PT Mono", Menlo, Monaco, monospace;
   font-size: 0.9rem;
   letter-spacing: 0.04em;
   line-height: 1;
@@ -447,7 +448,7 @@ body {
   min-width: 1ch;
   line-height: 1;
   vertical-align: top;
-  text-align: left;
+  text-align: center;
 }
 
 .copy {
