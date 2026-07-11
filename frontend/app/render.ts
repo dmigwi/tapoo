@@ -112,7 +112,7 @@ function renderMarkedLine(rawLine: string): string {
     } else if (char === CONFIG.destinationMarker) {
       html += `<span class="maze-cell target">${value}</span>`
     } else {
-      html += `<span class="maze-cell copy">${value}</span>`
+      html += `<span class="maze-cell walls">${value}</span>`
     }
   }
 

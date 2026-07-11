@@ -29,6 +29,7 @@ node_modules/
 *.tsbuildinfo
 package-lock.json
 public/js/*.min.js
+public/css/*.min.css
 _DS*
 .DS_Store
 .vscode

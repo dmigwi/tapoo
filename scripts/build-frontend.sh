@@ -10,6 +10,11 @@ if [ ! -x "./node_modules/.bin/esbuild" ]; then
 fi
 
 ./node_modules/.bin/esbuild \
+  ./frontend/styles/tapoo.css \
+  --minify \
+  --outfile=./public/css/tapoo.min.css
+
+./node_modules/.bin/esbuild \
   ./frontend/page-meta.ts \
   --bundle \
   --minify \
