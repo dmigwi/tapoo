@@ -164,7 +164,7 @@ func TestGameClock(t *testing.T) {
 	t.Run("tracks elapsed time across pause and resume", func(t *testing.T) {
 		t.Parallel()
 
-		clock := maze.NewGameClock(250 * time.Millisecond)
+		clock := maze.NewGameClock(maze.RefreshInterval)
 
 		time.Sleep(30 * time.Millisecond)
 		clock.Pause()
@@ -351,7 +351,7 @@ func TestPlayWithUI(t *testing.T) {
 
 		ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlB})
 		go func() {
-			time.Sleep(120 * time.Millisecond)
+			time.Sleep(2 * maze.RefreshInterval)
 			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
 		}()
 
@@ -388,7 +388,7 @@ func TestPlayWithUI(t *testing.T) {
 			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlB},
 		)
 		go func() {
-			time.Sleep(120 * time.Millisecond)
+			time.Sleep(2 * maze.RefreshInterval)
 			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
 		}()
 

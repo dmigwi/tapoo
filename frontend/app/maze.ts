@@ -50,10 +50,6 @@ export function isSpaceFound(item: string): boolean {
 }
 
 function generateMazeArea(level: number): number {
-  if (level >= CONFIG.maxLevel) {
-    level = CONFIG.maxLevel
-  }
-
   return level * CONFIG.diff + CONFIG.seed
 }
 
@@ -372,20 +368,16 @@ function getNavigationProfile(dimensions: BaseDimensions): NavigationProfile {
         preferTurnPercent: 40,
       },
     },
-    {
-      maxArea: generateMazeArea(CONFIG.maxLevel),
-      profile: {
-        softCorridorLimit: 6,
-        hardCorridorLimit: 8,
-        preferTurnPercent: 35,
-      },
-    },
   ]
 
   const area = dimensions.length * dimensions.width
   return (
     bands.find((band) => area <= band.maxArea)?.profile ??
-    bands[bands.length - 1].profile
+    {
+      softCorridorLimit: 6,
+      hardCorridorLimit: 8,
+      preferTurnPercent: 35,
+    }
   )
 }
 

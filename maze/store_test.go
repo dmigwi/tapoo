@@ -122,4 +122,18 @@ func TestStore(t *testing.T) {
 			t.Fatalf("unexpected validation error: %v", err)
 		}
 	})
+
+	t.Run("advances won progress to the next level without a hard ceiling", func(t *testing.T) {
+		t.Parallel()
+
+		state := maze.StoredGameState{
+			Level:      30000,
+			WallWeight: maze.WallWeightRegular,
+			State:      maze.GameProgressWon,
+		}
+
+		if got := state.ResumeLevel(); got != 30001 {
+			t.Fatalf("unexpected resumed level: got %d want %d", got, 30001)
+		}
+	})
 }

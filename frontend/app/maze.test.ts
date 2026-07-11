@@ -40,6 +40,14 @@ describe("maze", () => {
     })
   })
 
+  it("keeps growing maze dimensions for large levels when the viewport can fit them", () => {
+    expect(getMazeDimensions(1000, { length: 101, width: 100 })).toEqual({
+      level: 1000,
+      length: 101,
+      width: 100,
+    })
+  })
+
   it("returns no dimensions when the viewport cannot fit the maze area", () => {
     expect(getMazeDimensions(1, { length: 10, width: 10 })).toBeNull()
   })

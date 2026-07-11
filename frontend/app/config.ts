@@ -10,7 +10,6 @@ export const CONFIG: AppConfig = {
   mazeLeftPadding: 3,
   seed: 100,
   diff: 10,
-  maxLevel: 300,
   minMazeDimension: 5,
   terminalHeightInset: 5,
   terminalHeightScale: 4,
@@ -31,8 +30,8 @@ export const CONFIG: AppConfig = {
   proceedMessage: "Press ESC or Ctrl+C to quit.  Press Ctrl+P to Proceed",
   touchProceedMessage: "Use the buttons below.",
   tooSmallMessage:
-    "The viewport is too small for Tapoo. Expand the terminal to continue.",
-  tooSmallCompactMessage: "Screen too small. Expand to continue.",
+    "The next maze needs more screen room. Enlarge the window to keep playing.",
+  tooSmallCompactMessage: "Needs more screen room for the next maze.",
   statusTemplate:
     "Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
   touchStatusTemplate: "Level: {level}   Scores: {score}",

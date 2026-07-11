@@ -34,6 +34,16 @@ type runtimeMaze struct {
 	data [][]string
 }
 
+// keyboardSession keeps the keyboard goroutine wiring together so the main loop
+// can focus on gameplay rather than channel lifecycle management.
+type keyboardSession struct {
+	mazeData     *runtimeMaze
+	statusCh     chan int
+	errCh        chan error
+	done         chan struct{}
+	inputStopped chan struct{}
+}
+
 // newRuntimeMaze stores the initial maze data that player movement checks against.
 func newRuntimeMaze(data [][]string) *runtimeMaze {
 	return &runtimeMaze{data: data}
@@ -53,6 +63,31 @@ func (mazeData *runtimeMaze) SetData(data [][]string) {
 	defer mazeData.mu.Unlock()
 
 	mazeData.data = data
+}
+
+// newKeyboardSession starts the polling goroutine used by the gameplay loop.
+func newKeyboardSession(ui UI, val *Dimensions, data [][]string) *keyboardSession {
+	session := &keyboardSession{
+		mazeData:     newRuntimeMaze(data),
+		statusCh:     make(chan int),
+		errCh:        make(chan error, 1),
+		done:         make(chan struct{}),
+		inputStopped: make(chan struct{}),
+	}
+
+	go func() {
+		defer close(session.inputStopped)
+		session.errCh <- val.handleKeyboardMapping(ui, session.mazeData, session.statusCh, session.done)
+	}()
+
+	return session
+}
+
+// Close stops the keyboard goroutine and waits for it to exit cleanly.
+func (session *keyboardSession) Close(ui UI) {
+	close(session.done)
+	ui.Interrupt()
+	<-session.inputStopped
 }
 
 // NewGameClock creates a new per-level clock using the provided duration budget.
@@ -256,21 +291,8 @@ func PlayWithUI(ui UI) error {
 func PlayPreparedGameWithStore(
 	ui UI, val *Dimensions, data [][]string, persistedState StoredGameState, gameStore *Store,
 ) error {
-	mazeData := newRuntimeMaze(data)
-	statusCh := make(chan int)
-	errCh := make(chan error, 1)
-	done := make(chan struct{})
-	inputStopped := make(chan struct{})
-	defer func() {
-		close(done)
-		ui.Interrupt()
-		<-inputStopped
-	}()
-
-	go func() {
-		defer close(inputStopped)
-		errCh <- val.handleKeyboardMapping(ui, mazeData, statusCh, done)
-	}()
+	keyboard := newKeyboardSession(ui, val, data)
+	defer keyboard.Close(ui)
 
 	state := gameState{
 		totalCells: val.Length * val.Width,
@@ -286,34 +308,74 @@ func PlayPreparedGameWithStore(
 	timeout := time.NewTimer(clock.levelDuration)
 	defer timeout.Stop()
 
+	// Render the current maze state immediately so restored sessions and trivial win states
+	// do not wait for the first refresh tick before becoming visible.
+	if err := renderPreparedGameStart(ui, &state, &clock, val, data, timeout); err != nil {
+		return err
+	}
+
+	return runPreparedGameLoop(ui, &state, &clock, val, data, keyboard, ticker, timeout)
+}
+
+// renderPreparedGameStart draws the first visible frame for playable mazes before the
+// regular refresh ticker begins advancing the level.
+func renderPreparedGameStart(
+	ui UI, state *gameState, clock *GameClock, val *Dimensions, data [][]string, timeout *time.Timer,
+) error {
+	if val.Length <= 0 || val.Width <= 0 {
+		return nil
+	}
+
+	return state.handleTick(ui, time.Now(), clock, val, data, timeout)
+}
+
+// runPreparedGameLoop coordinates timer ticks, status signals, and keyboard errors until the game exits.
+func runPreparedGameLoop(
+	ui UI, state *gameState, clock *GameClock, val *Dimensions, data [][]string, keyboard *keyboardSession,
+	ticker *time.Ticker, timeout *time.Timer,
+) error {
 	for {
-		select {
-		case timeVal := <-ticker.C:
-			// Rendering, score decay, and win detection all advance on the same heartbeat.
-			if err := state.handleTick(ui, timeVal, &clock, val, data, timeout); err != nil {
-				return err
-			}
-		case <-timeout.C:
-			if err := state.handleTimeout(ui, data); err != nil {
-				return err
-			}
-		case returnedStatus := <-statusCh:
-			exitGame, updatedData, err := state.handleStatus(ui, returnedStatus, val, data, timeout, &clock)
-			if err != nil {
-				return err
-			}
-
-			data = updatedData
-			mazeData.SetData(data)
-
-			if exitGame {
-				return nil
-			}
-		case err := <-errCh:
-			if err != nil {
-				return fmt.Errorf("read keyboard input: %w", err)
-			}
+		updatedData, exitGame, err := handlePreparedGameEvent(
+			ui, state, clock, val, data, keyboard, ticker, timeout,
+		)
+		if err != nil {
+			return err
 		}
+
+		data = updatedData
+		keyboard.mazeData.SetData(data)
+
+		if exitGame {
+			return nil
+		}
+	}
+}
+
+// handlePreparedGameEvent processes one signal from the runtime loop and reports the next maze snapshot.
+func handlePreparedGameEvent(
+	ui UI, state *gameState, clock *GameClock, val *Dimensions, data [][]string, keyboard *keyboardSession,
+	ticker *time.Ticker, timeout *time.Timer,
+) ([][]string, bool, error) {
+	select {
+	case timeVal := <-ticker.C:
+		// Rendering, score decay, and win detection all advance on the same heartbeat.
+		err := state.handleTick(ui, timeVal, clock, val, data, timeout)
+		return data, false, err
+	case <-timeout.C:
+		err := state.handleTimeout(ui, data)
+		return data, false, err
+	case returnedStatus := <-keyboard.statusCh:
+		exitGame, updatedData, err := state.handleStatus(ui, returnedStatus, val, data, timeout, clock)
+		if err != nil {
+			return data, false, err
+		}
+
+		return updatedData, exitGame, nil
+	case err := <-keyboard.errCh:
+		if err != nil {
+			return data, false, fmt.Errorf("read keyboard input: %w", err)
+		}
+		return data, false, nil
 	}
 }
 

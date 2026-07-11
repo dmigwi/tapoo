@@ -25,10 +25,13 @@ const (
 	minPlayableMazeCells  = 2
 	scoreMultiplier       = 100
 	percentScale          = 100
-	refreshInterval       = 50 * time.Millisecond
+	refreshInterval       = 250 * time.Millisecond
 	quitNavigationStatus  = 0
 	mazeEdgeNeighborCount = 4
 )
+
+// RefreshInterval is the shared UI redraw cadence used by the runtime loop and timing-sensitive tests.
+const RefreshInterval = refreshInterval
 
 const (
 	// Layout constants keep the termbox overlay aligned with the maze grid.
@@ -101,11 +104,6 @@ const (
 	terminalWidthInset  = 10
 	terminalWidthScale  = 2
 )
-
-// maxLevel defines the maximum level that can be played in this game.
-// Due to the large size of the maze at the final level, it might never be reached especially
-// for users with smaller screen sizes.
-const maxLevel = 300
 
 const (
 	// StatusProceed should be updated if the player wants to continue playing the game after:
@@ -191,6 +189,13 @@ const (
 	directionRight
 )
 
+const (
+	// These fallback values keep very large mazes on the most conservative corridor profile.
+	navigationFallbackSoftCorridorLimit = 6
+	navigationFallbackHardCorridorLimit = 8
+	navigationFallbackPreferTurnPercent = 35
+)
+
 // NavigationProfile tunes how maze generation manages corridor length as the maze grows.
 // Smaller mazes can tolerate more frequent turns, while larger mazes need slightly longer
 // straight runs so navigation stays challenging without becoming exhausting.
@@ -222,10 +227,6 @@ func GetNavigationProfile(config Dimensions) NavigationProfile {
 		{maxArea: 600, profile: NavigationProfile{SoftCorridorLimit: 5, HardCorridorLimit: 6, PreferTurnPercent: 50}},
 		{maxArea: 1000, profile: NavigationProfile{SoftCorridorLimit: 5, HardCorridorLimit: 7, PreferTurnPercent: 45}},
 		{maxArea: 1600, profile: NavigationProfile{SoftCorridorLimit: 6, HardCorridorLimit: 7, PreferTurnPercent: 40}},
-		{
-			maxArea: (maxLevel * diff) + seed,
-			profile: NavigationProfile{SoftCorridorLimit: 6, HardCorridorLimit: 8, PreferTurnPercent: 35},
-		},
 	}
 
 	area := config.Length * config.Width
@@ -234,5 +235,11 @@ func GetNavigationProfile(config Dimensions) NavigationProfile {
 			return band.profile
 		}
 	}
-	return bands[len(bands)-1].profile
+
+	// Larger mazes reuse the most conservative profile once they exceed the tuned bands above.
+	return NavigationProfile{
+		SoftCorridorLimit: navigationFallbackSoftCorridorLimit,
+		HardCorridorLimit: navigationFallbackHardCorridorLimit,
+		PreferTurnPercent: navigationFallbackPreferTurnPercent,
+	}
 }
