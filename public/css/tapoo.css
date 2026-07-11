@@ -11,11 +11,15 @@
   --status: #f1d065;
   --glow: rgba(72, 198, 62, 0.2);
   --button-radius: 8px;
-  --button-min-height: 32px;
-  --button-padding-x: 11px;
-  --touch-button-radius: 8px;
-  --touch-button-min-height: 32px;
-  --touch-button-padding-x: 11px;
+  --button-min-height: 48px;
+  --button-padding-x: 15px;
+  --button-font-size: 1.02rem;
+  --button-icon-width: 48px;
+  --touch-arrow-button-width: 68px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 
 @font-face {
@@ -39,8 +43,17 @@ body {
   overflow: hidden;
 }
 
+html {
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
+  min-height: 100vh;
+  min-height: 100svh;
+  min-height: 100dvh;
   background: var(--bg);
   color: var(--text);
   font-family: "Tapoo PT Mono", "PT Mono", Consolas, Menlo, Monaco, monospace;
@@ -48,18 +61,29 @@ body {
 
 .app-shell {
   height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100svh;
+  min-height: 100dvh;
   display: grid;
   grid-template-rows: auto 1fr;
   overflow: hidden;
 }
 
 .top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 52px;
-  padding: 0 16px;
+  min-height: calc(52px + var(--safe-top));
+  padding:
+    calc(var(--safe-top) + 6px)
+    calc(var(--safe-right) + 16px)
+    6px
+    calc(var(--safe-left) + 16px);
   border-bottom: 1px solid var(--top-bar-edge);
   background: var(--top-bar);
 }
@@ -102,6 +126,7 @@ body {
   top: calc(100% + 8px);
   right: 0;
   min-width: 220px;
+  max-width: min(280px, calc(100vw - var(--safe-left) - var(--safe-right) - 24px));
   padding: 8px;
   border: 1px solid var(--top-bar-edge);
   border-radius: 10px;
@@ -125,6 +150,7 @@ body {
     );
   color: var(--text);
   font: inherit;
+  font-size: var(--button-font-size);
   min-height: var(--button-min-height);
   padding: 0 var(--button-padding-x);
   cursor: pointer;
@@ -190,6 +216,7 @@ body {
     );
   color: var(--text);
   font: inherit;
+  font-size: var(--button-font-size);
   min-height: var(--button-min-height);
   padding: 0 var(--button-padding-x);
   cursor: pointer;
@@ -238,7 +265,7 @@ body {
 }
 
 .top-bar__button--icon {
-  min-width: 42px;
+  min-width: var(--button-icon-width);
   padding: 0;
 }
 
@@ -315,7 +342,12 @@ body {
 
 .terminal-app {
   min-height: 0;
-  padding: 10px 18px 18px;
+  min-width: 0;
+  padding:
+    10px
+    calc(var(--safe-right) + 18px)
+    calc(var(--safe-bottom) + 18px)
+    calc(var(--safe-left) + 18px);
   overflow: hidden;
 }
 
@@ -326,6 +358,8 @@ body {
 .terminal-frame {
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -337,6 +371,8 @@ body {
   position: relative;
   height: 100%;
   width: 100%;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   justify-content: center;
@@ -435,18 +471,19 @@ body {
 .touch-controls {
   position: absolute;
   left: 50%;
-  bottom: 12px;
+  bottom: calc(var(--safe-bottom) + 12px);
   z-index: 3;
   transform: translateX(-50%);
   width: fit-content;
-  max-width: calc(100% - 16px);
+  max-width: calc(100% - var(--safe-left) - var(--safe-right) - 16px);
   display: grid;
   grid-template-columns: repeat(4, max-content);
   grid-template-areas:
     "walls up up proceed"
     ". left right ."
     "quit down down pause";
-  gap: 8px;
+  column-gap: 14px;
+  row-gap: 8px;
   align-items: center;
   justify-items: center;
   justify-content: center;
@@ -470,10 +507,10 @@ body {
 }
 
 .touch-controls__button {
-  min-height: var(--touch-button-min-height);
+  min-height: var(--button-min-height);
   min-width: 0;
   border: 1px solid var(--top-bar-edge);
-  border-radius: var(--touch-button-radius);
+  border-radius: var(--button-radius);
   background:
     linear-gradient(
       180deg,
@@ -483,33 +520,46 @@ body {
     );
   color: var(--text);
   font: inherit;
-  padding: 0 var(--touch-button-padding-x);
-  text-align: center;
+  font-size: var(--button-font-size);
+  padding: 0 var(--button-padding-x);
   cursor: pointer;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.touch-controls__button[hidden] {
+  display: none;
 }
 
 .touch-controls__button--walls {
   grid-area: walls;
-  min-height: var(--touch-button-min-height);
-  padding: 0 var(--touch-button-padding-x);
-  font-size: 0.88rem;
+  min-height: var(--button-min-height);
+  padding: 0 var(--button-padding-x);
 }
 
 .touch-controls__button--up {
   grid-area: up;
+  min-width: var(--touch-arrow-button-width);
 }
 
 .touch-controls__button--down {
   grid-area: down;
+  min-width: var(--touch-arrow-button-width);
 }
 
 .touch-controls__button--left {
   grid-area: left;
+  min-width: var(--touch-arrow-button-width);
+  margin-right: 14px;
 }
 
 .touch-controls__button--right {
   grid-area: right;
+  min-width: var(--touch-arrow-button-width);
+  margin-left: 14px;
 }
 
 .touch-controls__arrow-icon {
@@ -525,10 +575,12 @@ body {
 
 .touch-controls__button--quit {
   grid-area: quit;
+  margin-right: 8px;
 }
 
 .touch-controls__button--proceed {
   grid-area: proceed;
+  margin-left: 8px;
 }
 
 .touch-controls__button:focus-visible,
@@ -546,7 +598,11 @@ body {
 
 @media (max-width: 720px) {
   .top-bar {
-    padding: 0 12px;
+    padding:
+      calc(var(--safe-top) + 6px)
+      calc(var(--safe-right) + 12px)
+      6px
+      calc(var(--safe-left) + 12px);
   }
 
   .top-bar__brand,
@@ -555,11 +611,22 @@ body {
   }
 
   .top-bar__subtitle {
-    display: none;
+    display: inline-block;
+    font-size: 0.84rem;
+    letter-spacing: 0.04em;
+    text-transform: none;
+  }
+
+  .top-bar__page-tag {
+    font-size: 0.9rem;
   }
 
   .terminal-app {
-    padding: 8px 10px 12px;
+    padding:
+      8px
+      calc(var(--safe-right) + 10px)
+      calc(var(--safe-bottom) + 12px)
+      calc(var(--safe-left) + 10px);
   }
 
   .placeholder-page {
@@ -583,21 +650,21 @@ body {
   }
 
   .touch-controls {
-    bottom: 8px;
-    max-width: calc(100% - 12px);
-    gap: 6px;
+    bottom: calc(var(--safe-bottom) + 8px);
+    max-width: calc(100% - var(--safe-left) - var(--safe-right) - 12px);
+    column-gap: 10px;
+    row-gap: 6px;
     padding: 7px;
   }
 
   .touch-controls__button {
-    min-height: var(--touch-button-min-height);
-    padding: 0 var(--touch-button-padding-x);
+    min-height: var(--button-min-height);
+    padding: 0 var(--button-padding-x);
   }
 
   .touch-controls__button--walls {
-    min-height: var(--touch-button-min-height);
-    padding: 0 var(--touch-button-padding-x);
-    font-size: 0.88rem;
+    min-height: var(--button-min-height);
+    padding: 0 var(--button-padding-x);
   }
 }
 

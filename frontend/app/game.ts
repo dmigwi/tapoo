@@ -591,6 +591,7 @@ export function bootstrapGame(): void {
 
   window.addEventListener("keydown", handleKeydown, { passive: false })
   window.addEventListener("resize", handleResize)
+  window.visualViewport?.addEventListener("resize", handleResize)
   window.addEventListener("pagehide", () => {
     persistStateNow()
   })
