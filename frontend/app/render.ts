@@ -51,12 +51,6 @@ function proceedText(state: State): string {
     : CONFIG.proceedMessage
 }
 
-function quitText(state: State): string {
-  return state.inputMode === "touch"
-    ? CONFIG.touchQuitMessage
-    : CONFIG.quitMessage
-}
-
 function tooSmallText(): string {
   return window.matchMedia("(max-width: 720px)").matches
     ? CONFIG.tooSmallCompactMessage
@@ -119,7 +113,7 @@ function renderMarkedLine(rawLine: string): string {
   return `<span class="maze-row">${html}</span>`
 }
 
-function renderTextLine(value: string, className = "copy"): string {
+function renderTextLine(value: string, className = "screen-text"): string {
   const html =
     value === "" ? "&nbsp;" : escapeHtml(value).replaceAll(" ", "&nbsp;")
   return `<span class="${className}">${html}</span>`
@@ -137,7 +131,7 @@ function overlayRows(state: State): ScreenLine[] {
     lines.push({
       kind: "text",
       text: proceedText(state),
-      className: "copy centered",
+      className: "screen-text centered",
     })
     return lines
   }
@@ -156,7 +150,7 @@ function overlayRows(state: State): ScreenLine[] {
     lines.push({
       kind: "text",
       text: proceedText(state),
-      className: "copy centered",
+      className: "screen-text centered",
     })
     return lines
   }
@@ -170,16 +164,7 @@ function overlayRows(state: State): ScreenLine[] {
     lines.push({
       kind: "text",
       text: proceedText(state),
-      className: "copy centered",
-    })
-    return lines
-  }
-
-  if (state.status === "quit") {
-    lines.push({
-      kind: "text",
-      text: quitText(state),
-      className: "status centered",
+      className: "screen-text centered",
     })
     return lines
   }
@@ -204,7 +189,7 @@ function applyOverlayToMaze(
   const screenMaze: ScreenLine[] = mazeLines.map((line) => ({
     kind: "maze",
     text: padLine(line, mazeWidth),
-    className: "copy",
+    className: "screen-text",
   }))
 
   const overlay = overlayRows(state)
@@ -220,11 +205,11 @@ function applyOverlayToMaze(
   const clearEndRow = overlayEndRow + 1
 
   while (screenMaze.length <= clearEndRow) {
-    screenMaze.push({ kind: "text", text: "", className: "copy" })
+    screenMaze.push({ kind: "text", text: "", className: "screen-text" })
   }
 
   for (let rowIndex = clearStartRow; rowIndex <= clearEndRow; rowIndex += 1) {
-    screenMaze[rowIndex] = { kind: "text", text: "", className: "copy" }
+    screenMaze[rowIndex] = { kind: "text", text: "", className: "screen-text" }
   }
 
   overlay.forEach((line, index) => {
@@ -241,13 +226,17 @@ function buildScreenLines(state: State): ScreenLine[] {
     0,
   )
   const lines: ScreenLine[] = [
-    { kind: "text", text: navigationText(state), className: "copy centered" },
-    { kind: "text", text: "", className: "copy" },
+    {
+      kind: "text",
+      text: navigationText(state),
+      className: "screen-text centered",
+    },
+    { kind: "text", text: "", className: "screen-text" },
   ]
 
   if (mazeLines.length === 0) {
     overlayRows(state).forEach((line) => {
-      lines.push({ kind: "text", text: "", className: "copy" })
+      lines.push({ kind: "text", text: "", className: "screen-text" })
       lines.push(line)
     })
 
@@ -257,11 +246,11 @@ function buildScreenLines(state: State): ScreenLine[] {
   lines.push(...applyOverlayToMaze(state, mazeLines, mazeWidth))
 
   if (state.status === "running") {
-    lines.push({ kind: "text", text: "", className: "copy" })
+    lines.push({ kind: "text", text: "", className: "screen-text" })
     lines.push({
       kind: "text",
       text: statusText(state),
-      className: "copy centered",
+      className: "screen-text centered",
     })
   }
 
@@ -273,12 +262,13 @@ function updateTouchControls(elements: Elements, state: State): void {
     (state.status === "paused" && state.canResume) ||
     state.status === "won" ||
     state.status === "lost" ||
-    state.status === "quit" ||
     state.status === "too-small"
   const showMoveControls = state.status === "running"
   const showPause = state.status === "running"
-  const showWalls = state.status === "running"
-  const showQuit = state.status !== "quit"
+  const showWalls =
+    state.status === "paused" ||
+    state.status === "won" ||
+    state.status === "lost"
   let visibleButtons = 0
 
   elements.touchButtons.forEach((button) => {
@@ -292,9 +282,7 @@ function updateTouchControls(elements: Elements, state: State): void {
           ? !showWalls
           : action === "proceed"
             ? !canProceed
-            : action === "quit"
-              ? !showQuit
-              : false
+            : false
 
     button.hidden = hidden
     button.disabled = false
@@ -304,14 +292,14 @@ function updateTouchControls(elements: Elements, state: State): void {
     }
   })
 
-  const actionOnly = !showMoveControls && visibleButtons > 0
+  const actionOnly = !showMoveControls && visibleButtons > 1
   elements.touchControls.classList.toggle(
-    "touch-controls--actions-only",
-    actionOnly && visibleButtons > 1,
+    "touch-controls--action-pair",
+    actionOnly,
   )
   elements.touchControls.classList.toggle(
     "touch-controls--single-action",
-    actionOnly && visibleButtons === 1,
+    !showMoveControls && visibleButtons === 1,
   )
 }
 

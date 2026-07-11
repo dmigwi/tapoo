@@ -283,7 +283,7 @@ function resumeOrProceed(): void {
     return
   }
 
-  if (state.status === "quit" || state.status === "too-small") {
+  if (state.status === "too-small") {
     restartGame()
   }
 }
@@ -296,22 +296,6 @@ function pauseGame(): void {
   state.clock.pause()
   state.status = "paused"
   state.canResume = true
-  persistStateNow()
-  render(elements, state)
-}
-
-function quitGame(): void {
-  if (state.status === "running" || state.status === "paused") {
-    state.lastRoundScore = state.score
-  }
-
-  if (state.clock && state.status === "paused") {
-    state.clock.resume()
-  }
-
-  state.status = "quit"
-  state.canResume = false
-  clearPersistedRound()
   persistStateNow()
   render(elements, state)
 }
@@ -434,10 +418,8 @@ function handleKeydown(event: KeyboardEvent): void {
   if (
     key.startsWith("Arrow") ||
     key === " " ||
-    key === "Escape" ||
     key === "Enter" ||
     (controlCombo && lowerKey === "b") ||
-    (controlCombo && lowerKey === "c") ||
     (controlCombo && lowerKey === "p")
   ) {
     event.preventDefault()
@@ -453,25 +435,13 @@ function handleKeydown(event: KeyboardEvent): void {
     return
   }
 
-  if (controlCombo && lowerKey === "c") {
-    quitGame()
-    return
-  }
-
-  if (key === "Escape") {
-    quitGame()
-    return
-  }
-
   if (
     key === "Enter" &&
-    (state.status === "quit" || state.status === "too-small")
+    (state.status === "paused" ||
+      state.status === "won" ||
+      state.status === "lost" ||
+      state.status === "too-small")
   ) {
-    restartGame()
-    return
-  }
-
-  if (key === "Enter" && (state.status === "won" || state.status === "lost")) {
     resumeOrProceed()
     return
   }
@@ -534,10 +504,6 @@ function handleAction(action: string): void {
   if (action === "proceed") {
     resumeOrProceed()
     return
-  }
-
-  if (action === "quit") {
-    quitGame()
   }
 }
 

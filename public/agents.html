@@ -6,24 +6,25 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <title>Tapoo Maze Runner | AI Agents</title>
+    <title data-config-key="agentsDocumentTitle"></title>
     <meta
       name="description"
-      content="Tapoo maze runner AI agents page temporarily unavailable."
+      data-config-key="agentsDescription"
+      content=""
     />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="stylesheet" href="./css/tapoo.min.css" />
   </head>
   <body>
     <main class="app-shell">
-      <header class="top-bar" aria-label="Application controls">
+      <header class="top-bar" data-config-aria-label data-config-key="appControlsAriaLabel">
         <div class="top-bar__brand">
-          <strong class="top-bar__title">Tapoo</strong>
-          <span class="top-bar__subtitle">maze runner (hide & seek)</span>
-          <span class="top-bar__page-tag" aria-current="page">AI Agents</span>
+          <strong class="top-bar__title" data-config-text data-config-key="appName"></strong>
+          <span class="top-bar__subtitle" data-config-text data-config-key="appSubtitle"></span>
+          <span class="top-bar__page-tag" aria-current="page" data-config-text data-config-key="agentsPageLabel"></span>
         </div>
         <details class="top-menu">
-          <summary class="top-bar__button top-bar__button--icon top-menu__summary" aria-label="More actions">
+          <summary class="top-bar__button top-bar__button--icon top-menu__summary" data-config-aria-label data-config-key="moreActionsAriaLabel">
             <span class="top-menu__icon" aria-hidden="true">
               <svg class="top-menu__icon-svg" viewBox="0 0 24 24" focusable="false">
                 <circle cx="8" cy="8" r="2" fill="currentColor" />
@@ -33,8 +34,8 @@
               </svg>
             </span>
           </summary>
-          <div class="top-menu__panel" role="menu" aria-label="More actions">
-            <a class="top-menu__item" href="./index.html" aria-label="Back to game">
+          <div class="top-menu__panel" role="menu" data-config-aria-label data-config-key="moreActionsAriaLabel">
+            <a class="top-menu__item" href="./index.html" data-config-aria-label data-config-key="backToGameAriaLabel">
               <span class="top-bar__glyph" aria-hidden="true">
                 <svg class="top-bar__glyph-svg" viewBox="0 0 24 24" focusable="false">
                   <path
@@ -46,14 +47,15 @@
                     stroke-width="1.8"
                   />
                 </svg>
-              </span>Back To Game
+              </span><span data-config-text data-config-key="backToGameLabel"></span>
             </a>
             <a
               class="top-menu__item"
               href="https://www.linkedin.com/in/migwi-ndungu/"
               target="_blank"
               rel="noreferrer noopener"
-              aria-label="Contact the author"
+              data-config-aria-label
+              data-config-key="contactAriaLabel"
             >
               <span class="top-bar__glyph" aria-hidden="true">
                 <svg class="top-bar__glyph-svg" viewBox="0 0 24 24" focusable="false">
@@ -67,24 +69,25 @@
                     stroke-width="1.8"
                   />
                 </svg>
-              </span>Contact
+              </span><span data-config-text data-config-key="contactLabel"></span>
             </a>
           </div>
         </details>
       </header>
 
-      <section class="placeholder-page" aria-label="AI Agents page temporarily unavailable">
+      <section class="placeholder-page" data-config-aria-label data-config-key="agentsPageAriaLabel">
         <div class="page-stage page-stage--placeholder">
           <div
             class="placeholder-art"
             role="img"
-            aria-label="Page temporarily unavailable"
+            data-config-aria-label
+            data-config-key="agentsPageAriaLabel"
           ></div>
         </div>
       </section>
 
-      <footer class="page-footer" aria-label="Copyright">
-        <small class="page-footer__copy" data-page-version>2026 Tapoo</small>
+      <footer class="page-footer" data-config-aria-label data-config-key="footerAriaLabel">
+        <small class="page-footer__copy" data-page-version></small>
       </footer>
     </main>
 

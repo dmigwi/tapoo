@@ -36,7 +36,6 @@ function createElements(): Elements {
     createButton({ action: "pause" }),
     createButton({ action: "walls" }),
     createButton({ action: "proceed" }),
-    createButton({ action: "quit" }),
   ]
   const touchButtons = [
     createButton({ action: "walls", touch: true }),
@@ -44,7 +43,6 @@ function createElements(): Elements {
     createButton({ action: "proceed", touch: true }),
     createButton({ move: "left", touch: true }),
     createButton({ move: "right", touch: true }),
-    createButton({ action: "quit", touch: true }),
     createButton({ move: "down", touch: true }),
     createButton({ action: "pause", touch: true }),
   ]
@@ -546,23 +544,6 @@ describe("bootstrapGame", () => {
     expect(harness.savePersistedRoundState).toHaveBeenCalled()
   })
 
-  it("quits the running session and clears the persisted round", async () => {
-    const harness = await bootstrapHarness()
-
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Escape",
-        bubbles: true,
-      }),
-    )
-
-    const state = latestRenderedState(harness.render)
-    expect(state.status).toBe("quit")
-    expect(state.canResume).toBe(false)
-    expect(harness.clearPersistedRound).toHaveBeenCalled()
-    expect(harness.savePersistedPreferences).toHaveBeenCalled()
-    expect(harness.savePersistedRoundState).toHaveBeenCalled()
-  })
 
   it("marks the round as lost when the tick callback reaches zero remaining time", async () => {
     const harness = await bootstrapHarness({

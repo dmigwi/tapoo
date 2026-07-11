@@ -9,7 +9,7 @@ import type { BaseDimensions, Elements } from "./types"
 function mustElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id)
   if (!(element instanceof HTMLElement)) {
-    throw new Error(`missing required element: ${id}`)
+    throw new Error(CONFIG.missingElementErrorTemplate.replace("{id}", id))
   }
 
   return element as T

@@ -38,7 +38,6 @@ function createElements(): Elements {
     createButton({ action: "proceed" }),
     createButton({ move: "left" }),
     createButton({ move: "right" }),
-    createButton({ action: "quit" }),
     createButton({ move: "down" }),
     createButton({ action: "pause" }),
   ]
@@ -112,21 +111,10 @@ describe("render", () => {
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual([
-      "walls",
-      "up",
-      "left",
-      "right",
-      "quit",
-      "down",
-      "pause",
-    ])
-    expect(
-      elements.touchControls.classList.contains("touch-controls--actions-only"),
-    ).toBe(false)
+    expect(visibleLabels).toEqual(["up", "left", "right", "down", "pause"])
   })
 
-  it("shows paused overlay messaging and action-only touch controls", () => {
+  it("shows paused overlay messaging and walls plus proceed touch controls", () => {
     const elements = createElements()
 
     render(
@@ -146,9 +134,9 @@ describe("render", () => {
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual(["proceed", "quit"])
+    expect(visibleLabels).toEqual(["walls", "proceed"])
     expect(
-      elements.touchControls.classList.contains("touch-controls--actions-only"),
+      elements.touchControls.classList.contains("touch-controls--action-pair"),
     ).toBe(true)
     expect(
       elements.touchControls.classList.contains(
@@ -157,29 +145,29 @@ describe("render", () => {
     ).toBe(false)
   })
 
-  it("shows a single proceed action after quitting the session", () => {
+  it("shows walls plus proceed touch controls after a win", () => {
     const elements = createElements()
 
     render(
       elements,
       createState({
-        status: "quit",
+        status: "won",
+        lastRoundScore: 900,
       }),
     )
 
-    expect(normalizeScreenText(elements.screen.textContent)).toContain(
-      CONFIG.quitMessage,
-    )
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.successMessage)
+    expect(text).toContain(CONFIG.proceedMessage)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual(["proceed"])
+    expect(visibleLabels).toEqual(["walls", "proceed"])
     expect(
-      elements.touchControls.classList.contains(
-        "touch-controls--single-action",
-      ),
+      elements.touchControls.classList.contains("touch-controls--action-pair"),
     ).toBe(true)
   })
 })

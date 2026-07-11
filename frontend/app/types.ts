@@ -1,7 +1,7 @@
 import type { GameClock } from "./clock"
 
 type GameStatus =
-  "boot" | "running" | "paused" | "won" | "lost" | "quit" | "too-small"
+  "boot" | "running" | "paused" | "won" | "lost" | "too-small"
 
 export type Position = [number, number]
 
@@ -115,6 +115,66 @@ export type State = {
 }
 
 export type AppConfig = {
+  // Shared page chrome.
+  appName: string
+  appSubtitle: string
+  appControlsAriaLabel: string
+  moreActionsAriaLabel: string
+  footerAriaLabel: string
+  pageVersionTemplate: string
+  contactLabel: string
+  contactAriaLabel: string
+
+  // Game page chrome.
+  gameDocumentTitle: string
+  gameDescription: string
+  gamePageLabel: string
+  aiAgentsLabel: string
+  aiAgentsPageAriaLabel: string
+  resetProgressLabel: string
+  resetProgressAriaLabel: string
+  terminalAriaLabel: string
+  touchControlsAriaLabel: string
+
+  // AI Agents page chrome.
+  agentsDocumentTitle: string
+  agentsDescription: string
+  agentsPageLabel: string
+  agentsPageAriaLabel: string
+  backToGameLabel: string
+  backToGameAriaLabel: string
+
+  // Gameplay text.
+  navigation: string
+  touchNavigation: string
+  pauseMessage: string
+  successMessage: string
+  successCompactMessage: string
+  failedMessage: string
+  failedCompactMessage: string
+  proceedMessage: string
+  touchProceedMessage: string
+  tooSmallMessage: string
+  tooSmallCompactMessage: string
+  statusTemplate: string
+  touchStatusTemplate: string
+  highScoreTemplate: string
+
+  // Touch-control labels.
+  wallsTouchLabel: string
+  pauseTouchLabel: string
+  proceedTouchLabel: string
+  touchMoveUpAriaLabel: string
+  touchMoveLeftAriaLabel: string
+  touchMoveRightAriaLabel: string
+  touchMoveDownAriaLabel: string
+
+  // Maze rendering.
+  playerMarker: string
+  destinationMarker: string
+  walls: Record<WallWeight, [string, string, string]>
+
+  // Runtime and layout settings.
   cellSpan: number
   cellPathWidth: number
   moveStep: number
@@ -125,27 +185,9 @@ export type AppConfig = {
   seed: number
   diff: number
   minMazeDimension: number
+  missingElementErrorTemplate: string
   terminalHeightInset: number
   terminalHeightScale: number
   terminalWidthInset: number
   terminalWidthScale: number
-  navigation: string
-  touchNavigation: string
-  pauseMessage: string
-  successMessage: string
-  successCompactMessage: string
-  failedMessage: string
-  failedCompactMessage: string
-  quitMessage: string
-  touchQuitMessage: string
-  proceedMessage: string
-  touchProceedMessage: string
-  tooSmallMessage: string
-  tooSmallCompactMessage: string
-  statusTemplate: string
-  touchStatusTemplate: string
-  highScoreTemplate: string
-  playerMarker: string
-  destinationMarker: string
-  walls: Record<WallWeight, [string, string, string]>
 }
