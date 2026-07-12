@@ -39,37 +39,62 @@ const RefreshInterval = refreshInterval
 const (
 	// Layout constants keep the termbox overlay aligned with the maze grid.
 
-	mazeLeftPadding     = 3
-	mazeTopPadding      = 7
-	screenTitleDivisor  = 3
-	overlayLeftDivisor  = 4
-	scoreRowOffset      = 6
-	statusRowOffset     = 8
-	overlayClearRowOne  = 3
-	overlayClearRowTwo  = 5
-	overlayClearRowTree = 7
-	overlayClearRowFour = 9
-	messageRowIntro     = 1
-	messageRowWebsite   = 3
-	messageRowControls  = 5
-	overlayRowMessage   = 4
-	overlayRowScore     = 6
-	overlayRowNavigate  = 8
+	mazeLeftPadding    = 3
+	mazeTopPadding     = 7
+	screenTitleDivisor = 3
+	overlayLeftDivisor = 4
+	scoreRowOffset     = 6
+	statusRowOffset    = 8
+	messageRowIntro    = 1
+	messageRowWebsite  = 3
+	messageRowControls = 5
+	overlayRowMessage  = 4
+	overlayRowSpacing  = 2
+)
+
+type winSummaryPreviousComparison int
+
+const (
+	winSummaryPreviousNone winSummaryPreviousComparison = iota
+	winSummaryPreviousFaster
+	winSummaryPreviousSlower
+	winSummaryPreviousMatched
+)
+
+type winSummaryBestComparison int
+
+const (
+	winSummaryBestNewRecord winSummaryBestComparison = iota
+	winSummaryBestMatched
+	winSummaryBestBehind
 )
 
 const (
 	// UI strings are centralized so the display code can focus on placement rather than content.
-	introFormat      = "   You are playing the Maze runner, hide and seek game (Tapoo v%s).      "
+	introFormat      = "   You are playing the Maze runner, hide and seek game (Tapoo %s).      "
 	website          = " Visit https://www.linkedin.com/in/migwi-ndungu/ to contact the developer.  "
 	playerNavigation = " Use Arrow Keys to guide Blue (Player) to Red. Ctrl+B changes walls. "
 	statusMsg        = "   Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: %d   Scores: %d   "
 
 	space              = "                                                                         "
-	pauseMsg           = "                              Game Paused !!!                            "
-	gameOverSucceed    = "    Game Over! Congratulations, You won by locating the target on time.  "
+	pauseMsg           = "                             Game Paused !!!                             "
+	gameOverSucceed    = "   Game Over! Congratulations, You won by locating the target on time.   "
 	gameOverFailed     = "      Game Over! Ooops!!!, You failed to locate the target on time.      "
 	gameOverNavigation = "        Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed         "
-	highScores         = "                Final Level %d Scores:  %d                             "
+
+	highScores               = "               Final Level %d Scores:  %d (%d%% retention)               "
+	winNoPrevNewRecord       = "               New scores retention record                               "
+	winNoPrevMatchedBest     = "               Matched best scores retention                             "
+	winNoPrevBehindBest      = "               %s behind best scores retention                           "
+	winFasterPrevNewRecord   = "               %s faster than previous (new record)                      "
+	winFasterPrevMatchedBest = "               %s faster than previous (matched best)                    "
+	winFasterPrevBehindBest  = "               %s faster than previous (%s behind best)                  "
+	winSlowerPrevNewRecord   = "               %s slower than previous (new record)                      "
+	winSlowerPrevMatchedBest = "               %s slower than previous (matched best)                    "
+	winSlowerPrevBehindBest  = "               %s slower than previous (%s behind best)                  "
+	winMatchedPrevNewRecord  = "               Matched previous (new record)                             "
+	winMatchedPrevBest       = "               Matched previous (matched best)                           "
+	winMatchedPrevBehindBest = "               Matched previous (%s behind best)                         "
 
 	// playerMarker is the glyph used to show the current player position inside the maze.
 	playerMarker = '▓'

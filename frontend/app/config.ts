@@ -63,7 +63,8 @@ export const CONFIG: AppConfig = {
   statusTemplate:
     "Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
   touchStatusTemplate: "Level: {level}   Scores: {score}",
-  highScoreTemplate: "Final Level {level} Scores:  {score}",
+  highScoreTemplate:
+    "Final Level {level} Scores:  {score} ({percent}% retention)",
 
   // Touch-control labels.
   wallsTouchLabel: "Walls",

@@ -24,9 +24,11 @@ func TestStore(t *testing.T) {
 		}
 
 		if err := gameStore.Save(maze.StoredGameState{
-			Level:      7,
-			WallWeight: maze.WallWeightBold,
-			State:      maze.GameProgressWon,
+			Level:         7,
+			WallWeight:    maze.WallWeightBold,
+			State:         maze.GameProgressWon,
+			LastAttemptMs: 1200,
+			BestWinMs:     900,
 		}); err != nil {
 			t.Fatalf("save returned error: %v", err)
 		}
@@ -46,6 +48,14 @@ func TestStore(t *testing.T) {
 
 		if state.State != maze.GameProgressWon {
 			t.Fatalf("unexpected stored progress state: got %s want %s", state.State, maze.GameProgressWon)
+		}
+
+		if state.LastAttemptMs != 1200 {
+			t.Fatalf("unexpected stored last attempt duration: got %d want %d", state.LastAttemptMs, 1200)
+		}
+
+		if state.BestWinMs != 900 {
+			t.Fatalf("unexpected stored best win duration: got %d want %d", state.BestWinMs, 900)
 		}
 
 		if _, err := os.Stat(storePath); err != nil {
@@ -106,9 +116,11 @@ func TestStore(t *testing.T) {
 		}
 
 		if err := gameStore.Save(maze.StoredGameState{
-			Level:      0,
-			WallWeight: maze.WallWeight(99),
-			State:      maze.GameProgress(99),
+			Level:         0,
+			WallWeight:    maze.WallWeight(99),
+			State:         maze.GameProgress(99),
+			LastAttemptMs: 1,
+			BestWinMs:     1,
 		}); err != nil {
 			t.Fatalf("save returned error: %v", err)
 		}

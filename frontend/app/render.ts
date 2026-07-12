@@ -166,6 +166,26 @@ function renderTextLine(value: string, className = "screen-text"): string {
   return `<span class="${className}">${html}</span>`
 }
 
+function scorePercent(state: State): number {
+  if (!state.dims) {
+    return 0
+  }
+
+  const maxScore =
+    state.dims.length * state.dims.width * CONFIG.scoreMultiplier
+  if (maxScore <= 0) {
+    return 0
+  }
+
+  return Math.max(
+    0,
+    Math.min(
+      CONFIG.percentScale,
+      Math.round((state.lastRoundScore * CONFIG.percentScale) / maxScore),
+    ),
+  )
+}
+
 function overlayRows(elements: Elements, state: State): ScreenLine[] {
   if (isPausedStatus(state.status)) {
     return [
@@ -175,9 +195,10 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
   }
 
   if (isWonStatus(state.status)) {
-    const scoresMsg = CONFIG.highScoreTemplate.
-    replace( "{level}", String(state.level)).
-    replace( "{score}",  String(state.lastRoundScore))
+    const scoresMsg = CONFIG.highScoreTemplate
+      .replace("{level}", String(state.level))
+      .replace("{score}", String(state.lastRoundScore))
+      .replace("{percent}", String(scorePercent(state)))
     return [
       centeredTextRow(successText(), "status"),
       centeredTextRow(scoresMsg, "accent"),

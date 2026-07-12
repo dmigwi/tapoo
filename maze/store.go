@@ -49,9 +49,11 @@ func (state GameProgress) String() string {
 
 // StoredGameState stores the small amount of runtime state we want to restore on restart.
 type StoredGameState struct {
-	Level      int          `json:"level"`
-	WallWeight WallWeight   `json:"wall_weight"`
-	State      GameProgress `json:"state"`
+	Level         int          `json:"level"`
+	WallWeight    WallWeight   `json:"wall_weight"`
+	State         GameProgress `json:"state"`
+	LastAttemptMs uint64       `json:"last_attempt_ms,omitempty"`
+	BestWinMs     uint64       `json:"best_win_ms,omitempty"`
 }
 
 // Store handles best-effort persistence for the current level and wall weight.

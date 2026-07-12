@@ -625,6 +625,34 @@ describe("bootstrapGame", () => {
     expect(latestRenderedState(harness.render).status).toBe("running")
   })
 
+  it("updates the running score with sub-second precision on refresh ticks", async () => {
+    const harness = await bootstrapHarness({
+      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      round: createHorizontalRound(),
+    })
+
+    const stateBeforeTick = latestRenderedState(harness.render)
+    if (!stateBeforeTick.clock || !harness.intervalCallback) {
+      throw new Error("expected running round clock and interval callback")
+    }
+
+    const clock = stateBeforeTick.clock as NonNullable<State["clock"]> & {
+      blinkValue: boolean
+      elapsedValue: number
+      remainingValue: number
+    }
+
+    clock.elapsedValue = 250
+    clock.remainingValue = 1_750
+    clock.blinkValue = true
+
+    harness.intervalCallback()
+
+    const state = latestRenderedState(harness.render)
+    expect(state.status).toBe("running")
+    expect(state.score).toBe(175)
+  })
+
   it("restores a persisted round in paused mode once the viewport fits again", async () => {
     const persistedRound: PersistedRound = {
       version: 1,

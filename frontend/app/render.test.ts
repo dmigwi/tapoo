@@ -185,6 +185,7 @@ describe("render", () => {
     render(
       elements,
       createState({
+        dims: { length: 3, width: 3 },
         level: 3,
         status: "won",
         lastRoundScore: 900,
@@ -195,7 +196,7 @@ describe("render", () => {
 
     expect(text).toContain(CONFIG.successMessage)
     expect(text).toContain(CONFIG.proceedMessage)
-    expect(text).toContain("Final Level 3 Scores:  900")
+    expect(text).toContain("Final Level 3 Scores:  900 (100% retention)")
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -205,6 +206,25 @@ describe("render", () => {
     expect(
       elements.touchControls.classList.contains("touch-controls--action-pair"),
     ).toBe(true)
+  })
+
+  it("keeps the loss overlay free of the final score summary", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        level: 3,
+        status: "lost",
+        lastRoundScore: 0,
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.failedMessage)
+    expect(text).toContain(CONFIG.proceedMessage)
+    expect(text).not.toContain("Final Level 3 Scores:")
   })
 
   it("shows the too-small message without proceed touch controls", () => {

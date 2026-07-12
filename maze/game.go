@@ -2,6 +2,7 @@ package maze
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -333,9 +334,171 @@ func handlePreparedGameEvent(
 	}
 }
 
-// CalculateScore converts the remaining whole seconds into the current level score.
+// CalculateScore converts the elapsed level time into a smoothly decaying score.
 func CalculateScore(totalCells int, elapsed time.Duration) int {
-	return (totalCells - int(elapsed.Seconds())) * scoreMultiplier
+	maxScore := totalCells * scoreMultiplier
+	elapsedPenalty := int(elapsed/time.Millisecond) * scoreMultiplier / int(time.Second/time.Millisecond)
+	score := maxScore - elapsedPenalty
+	if score < 0 {
+		return 0
+	}
+
+	return score
+}
+
+// CalculateScorePercent converts the preserved level score into a whole-number percentage.
+func CalculateScorePercent(totalCells, score int) int {
+	maxScore := totalCells * scoreMultiplier
+	if maxScore <= 0 {
+		return 0
+	}
+
+	percent := (score*percentScale + maxScore/2) / maxScore
+	if percent < 0 {
+		return 0
+	}
+
+	if percent > percentScale {
+		return percentScale
+	}
+
+	return percent
+}
+
+// BuildWinSummary formats the win-pace comparison against the stored last attempt and best clear.
+func BuildWinSummary(current, lastAttempt, best time.Duration) string {
+	// Compare the current clear against the previous attempt and the best clear independently,
+	// then let the template selector combine those states into one display string.
+	previousCmp, previousDelta := compareWinSummaryPrevious(current, lastAttempt)
+	bestCmp, bestDelta := compareWinSummaryBest(current, best)
+	template := selectWinSummaryTemplate(previousCmp, bestCmp)
+
+	switch previousCmp {
+	case winSummaryPreviousNone:
+		// First stored wins never mention a previous attempt, so only the best delta can be injected.
+		if bestCmp == winSummaryBestBehind {
+			return fmt.Sprintf(template, bestDelta)
+		}
+		return template
+	case winSummaryPreviousFaster, winSummaryPreviousSlower:
+		// Faster/slower templates always carry the previous-attempt delta and optionally the best delta too.
+		if bestCmp == winSummaryBestBehind {
+			return fmt.Sprintf(template, previousDelta, bestDelta)
+		}
+		return fmt.Sprintf(template, previousDelta)
+	case winSummaryPreviousMatched:
+		// Matched-previous templates do not need a previous delta, only best-clear context when relevant.
+		if bestCmp == winSummaryBestBehind {
+			return fmt.Sprintf(template, bestDelta)
+		}
+		return template
+	}
+
+	return template
+}
+
+func formatWinSummaryDuration(duration time.Duration) string {
+	switch {
+	case duration < time.Minute:
+		return fmt.Sprintf("%.2fs", duration.Seconds())
+	case duration < time.Hour:
+		return fmt.Sprintf("%.2fm", duration.Minutes())
+	default:
+		return fmt.Sprintf("%.2fh", duration.Hours())
+	}
+}
+
+func compareWinSummaryPrevious(current, lastAttempt time.Duration) (winSummaryPreviousComparison, string) {
+	if lastAttempt <= 0 {
+		return winSummaryPreviousNone, ""
+	}
+
+	switch {
+	case current < lastAttempt:
+		return winSummaryPreviousFaster, formatWinSummaryDuration(lastAttempt - current)
+	case current > lastAttempt:
+		return winSummaryPreviousSlower, formatWinSummaryDuration(current - lastAttempt)
+	default:
+		return winSummaryPreviousMatched, ""
+	}
+}
+
+func compareWinSummaryBest(current, best time.Duration) (winSummaryBestComparison, string) {
+	switch {
+	case best <= 0 || current < best:
+		return winSummaryBestNewRecord, ""
+	case current == best:
+		return winSummaryBestMatched, ""
+	default:
+		return winSummaryBestBehind, formatWinSummaryDuration(current - best)
+	}
+}
+
+func selectWinSummaryTemplate(
+	previousCmp winSummaryPreviousComparison, bestCmp winSummaryBestComparison,
+) string {
+	switch previousCmp {
+	case winSummaryPreviousNone:
+		// First stored win: only the relationship to the best clear matters.
+		switch bestCmp {
+		case winSummaryBestNewRecord:
+			return winNoPrevNewRecord
+		case winSummaryBestMatched:
+			return winNoPrevMatchedBest
+		case winSummaryBestBehind:
+			return winNoPrevBehindBest
+		}
+	case winSummaryPreviousFaster:
+		// Faster reruns always include the improvement over the previous attempt.
+		switch bestCmp {
+		case winSummaryBestNewRecord:
+			return winFasterPrevNewRecord
+		case winSummaryBestMatched:
+			return winFasterPrevMatchedBest
+		case winSummaryBestBehind:
+			return winFasterPrevBehindBest
+		}
+	case winSummaryPreviousSlower:
+		// Slower reruns mirror the faster branch but report lost time instead.
+		switch bestCmp {
+		case winSummaryBestNewRecord:
+			return winSlowerPrevNewRecord
+		case winSummaryBestMatched:
+			return winSlowerPrevMatchedBest
+		case winSummaryBestBehind:
+			return winSlowerPrevBehindBest
+		}
+	case winSummaryPreviousMatched:
+		// Matching the previous attempt drops the delta and only reports best-clear context.
+		switch bestCmp {
+		case winSummaryBestNewRecord:
+			return winMatchedPrevNewRecord
+		case winSummaryBestMatched:
+			return winMatchedPrevBest
+		case winSummaryBestBehind:
+			return winMatchedPrevBehindBest
+		}
+	}
+
+	return winMatchedPrevBest
+}
+
+const maxStoredDurationMilliseconds = uint64(math.MaxInt64 / int64(time.Millisecond))
+
+func durationFromMilliseconds(milliseconds uint64) time.Duration {
+	if milliseconds > maxStoredDurationMilliseconds {
+		milliseconds = maxStoredDurationMilliseconds
+	}
+
+	return time.Duration(milliseconds) * time.Millisecond
+}
+
+func durationMilliseconds(duration time.Duration) uint64 {
+	dur := duration.Milliseconds()
+	if dur < 0 {
+		return 0
+	}
+	return uint64(dur)
 }
 
 func (state *gameState) handleTick(
@@ -345,17 +508,11 @@ func (state *gameState) handleTick(
 		return nil
 	}
 
-	// Scores decay by elapsed whole seconds, matching the timeout duration used for the level.
+	// Scores decay smoothly from the level budget so each refresh can show sub-second changes.
 	elapsed := clock.elapsedAt(timeVal)
 	state.scores = CalculateScore(state.totalCells, elapsed)
 	targetReached, errUI := renderMazeUI(
-		ui,
-		val,
-		state.persisted.Level,
-		state.scores,
-		data,
-		nil,
-		clock.blinkOnAt(timeVal),
+		ui, val, state.persisted.Level, state.scores, data, nil, clock.blinkOnAt(timeVal),
 	)
 	if errUI != nil {
 		return fmt.Errorf("refresh ui: %w", errUI)
@@ -366,10 +523,18 @@ func (state *gameState) handleTick(
 	}
 
 	stopTimer(timeout)
+	lastAttempt := durationFromMilliseconds(state.persisted.LastAttemptMs)
+	bestWin := durationFromMilliseconds(state.persisted.BestWinMs)
 	state.overlay = &UIOverlay{
 		Message:       gameOverSucceed,
 		Color:         termbox.ColorCyan,
 		ShowHighScore: true,
+		ScorePercent:  CalculateScorePercent(state.totalCells, state.scores),
+		WinSummary:    BuildWinSummary(elapsed, lastAttempt, bestWin),
+	}
+	state.persisted.LastAttemptMs = durationMilliseconds(elapsed)
+	if state.persisted.BestWinMs == 0 || elapsed < bestWin {
+		state.persisted.BestWinMs = durationMilliseconds(elapsed)
 	}
 	state.nextLevel = state.persisted.Level + 1
 	state.persisted.State = GameProgressWon
@@ -385,10 +550,11 @@ func (state *gameState) handleTick(
 }
 
 func (state *gameState) handleTimeout(ui UI, data [][]string) error {
+	state.persisted.LastAttemptMs = durationMilliseconds(time.Duration(state.totalCells) * time.Second)
 	state.overlay = &UIOverlay{
 		Message:       gameOverFailed,
 		Color:         termbox.ColorRed,
-		ShowHighScore: true,
+		ShowHighScore: false,
 	}
 	state.nextLevel = state.persisted.Level
 	state.persisted.State = GameProgressFail
@@ -429,30 +595,7 @@ func (state *gameState) handleStatus(
 	// 1. Resume a manually paused game when no overlay transition is pending.
 	// 2. Load the next or current level after a win or fail overlay.
 	if returnedStatus == StatusProceed {
-		// Ignore proceed unless the game is currently in a resumable or reloadable paused state.
-		if !state.paused || !state.canResume {
-			return false, data, nil
-		}
-
-		// A non-nil overlay means the user is on a win/fail/pause screen rather than the live board.
-		// Win and fail screens set nextLevel, so reloadLevel can decide whether to advance or retry.
-		if state.overlay != nil {
-			reloadedData, err := state.reloadLevel(ui, val, timeout, clock)
-			if err != nil {
-				return false, data, err
-			}
-
-			return false, reloadedData, nil
-		}
-
-		// Without an overlay, proceed simply resumes the current timed run from a manual pause.
-		state.paused = false
-		state.canResume = false
-		state.overlay = nil
-		clock.Resume()
-		timeout.Reset(clock.Remaining())
-
-		return false, data, nil
+		return state.handleProceed(ui, val, data, timeout, clock)
 	}
 
 	// Ignore duplicate pause requests and any unknown status values.
@@ -478,6 +621,41 @@ func (state *gameState) handleStatus(
 	}
 
 	state.persistProgress()
+	return false, data, nil
+}
+
+func (state *gameState) handleProceed(
+	ui UI, val *Dimensions, data [][]string, timeout *time.Timer, clock *GameClock,
+) (bool, [][]string, error) {
+	// Ignore proceed unless the game is currently in a resumable or reloadable paused state.
+	if !state.paused || !state.canResume {
+		return false, data, nil
+	}
+
+	// Proceed after win/fail reloads a level, while proceed after a manual pause resumes
+	// the active maze. That decision belongs to persisted game progress, not the UI overlay.
+	if state.persisted.State != GameProgressInProgress {
+		reloadedData, err := state.reloadLevel(ui, val, timeout, clock)
+		if err != nil {
+			return false, data, err
+		}
+
+		return false, reloadedData, nil
+	}
+
+	// Without an overlay transition, proceed simply resumes the current timed run from a manual pause.
+	state.paused = false
+	state.canResume = false
+	state.overlay = nil
+	clock.Resume()
+	timeout.Reset(clock.Remaining())
+	state.scores = CalculateScore(state.totalCells, clock.Elapsed())
+	if _, err := renderMazeUI(
+		ui, val, state.persisted.Level, state.scores, data, nil, clock.blinkOnAt(time.Now()),
+	); err != nil {
+		return false, data, fmt.Errorf("resume paused game: %w", err)
+	}
+
 	return false, data, nil
 }
 

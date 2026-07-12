@@ -20,7 +20,7 @@ const (
 
 // appVersion returns the semantic version for the Go terminal runtime.
 func appVersion() string {
-	return fmt.Sprintf("%d.%d.%d", versionMajor, versionMinor, versionPatch) // output vX.X.X
+	return fmt.Sprintf("v%d.%d.%d", versionMajor, versionMinor, versionPatch) // output vX.X.X
 }
 
 // main defines where the program executions start.

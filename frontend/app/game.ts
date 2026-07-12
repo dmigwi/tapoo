@@ -59,10 +59,10 @@ const KEY_TO_MOVE_ACTION: Partial<Record<string, MoveAction>> = {
 }
 
 function calculateScore(totalCells: number, elapsedMs: number): number {
-  return (
-    Math.max(0, totalCells - Math.floor(elapsedMs / 1000)) *
-    CONFIG.scoreMultiplier
-  )
+  const maxScore = totalCells * CONFIG.scoreMultiplier
+  const elapsedPenalty = Math.floor((elapsedMs * CONFIG.scoreMultiplier) / 1000)
+
+  return Math.max(0, maxScore - elapsedPenalty)
 }
 
 function positionsEqual(left: Position, right: Position): boolean {

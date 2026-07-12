@@ -161,9 +161,82 @@ func TestHandlePlayerMovement(t *testing.T) {
 func TestCalculateScore(t *testing.T) {
 	t.Parallel()
 
-	got := maze.CalculateScore(10, 3*time.Second)
-	if got != 700 {
-		t.Fatalf("unexpected score: got %d want %d", got, 700)
+	got := maze.CalculateScore(10, 3*time.Second+250*time.Millisecond)
+	if got != 675 {
+		t.Fatalf("unexpected score: got %d want %d", got, 675)
+	}
+}
+
+func TestBuildWinSummary(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		current     time.Duration
+		lastAttempt time.Duration
+		best        time.Duration
+		want        string
+	}{
+		{
+			name:        "reports a faster run that is still behind the best",
+			current:     1800 * time.Millisecond,
+			lastAttempt: 3 * time.Second,
+			best:        time.Second,
+			want:        "               1.20s faster than previous (0.80s behind best)                  ",
+		},
+		{
+			name:        "reports a faster run that sets a new record",
+			current:     1800 * time.Millisecond,
+			lastAttempt: 3 * time.Second,
+			best:        2 * time.Second,
+			want:        "               1.20s faster than previous (new record)                      ",
+		},
+		{
+			name:        "falls back to the best summary when no last attempt is stored",
+			current:     1800 * time.Millisecond,
+			lastAttempt: 0,
+			best:        0,
+			want:        "               New scores retention record                               ",
+		},
+		{
+			name:        "reports a first stored run that matches the best clear",
+			current:     2 * time.Second,
+			lastAttempt: 0,
+			best:        2 * time.Second,
+			want:        "               Matched best scores retention                             ",
+		},
+		{
+			name:        "reports a matched previous run that is still behind the best",
+			current:     2800 * time.Millisecond,
+			lastAttempt: 2800 * time.Millisecond,
+			best:        2 * time.Second,
+			want:        "               Matched previous (0.80s behind best)                         ",
+		},
+		{
+			name:        "formats longer differences in minutes",
+			current:     3 * time.Minute,
+			lastAttempt: 255 * time.Second,
+			best:        2 * time.Minute,
+			want:        "               1.25m faster than previous (1.00m behind best)                  ",
+		},
+		{
+			name:        "formats very long differences in hours",
+			current:     4 * time.Hour,
+			lastAttempt: 30 * time.Minute,
+			best:        2 * time.Hour,
+			want:        "               3.50h slower than previous (2.00h behind best)                  ",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := maze.BuildWinSummary(testCase.current, testCase.lastAttempt, testCase.best)
+			if got != testCase.want {
+				t.Fatalf("unexpected win summary: got %q want %q", got, testCase.want)
+			}
+		})
 	}
 }
 
@@ -295,6 +368,35 @@ func TestPlayWithUI(t *testing.T) {
 		}
 	})
 
+	t.Run("resumes a paused prepared maze without rebuilding it", func(t *testing.T) {
+		t.Parallel()
+
+		// This viewport is intentionally too small to generate a fresh maze. If proceed ever
+		// calls reloadLevel for a manual pause, the test will fail with a sizing error.
+		ui := newFakeUI(1, 1)
+		t.Cleanup(ui.Close)
+
+		ui.enqueueEvents(
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeySpace},
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlP},
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc},
+		)
+
+		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
+			Length:        3,
+			Width:         3,
+			StartPosition: [2]int{1, 1},
+			FinalPosition: [2]int{3, 3},
+		}, sampleMazeGrid(), maze.StoredGameState{
+			Level:      1,
+			WallWeight: maze.WallWeightRegular,
+			State:      maze.GameProgressInProgress,
+		}, nil)
+		if err != nil {
+			t.Fatalf("pause/resume unexpectedly rebuilt the maze: %v", err)
+		}
+	})
+
 	t.Run("cycles wall weight and renders the updated maze on the next refresh tick", func(t *testing.T) {
 		t.Parallel()
 
@@ -387,6 +489,10 @@ func TestPlayWithUI(t *testing.T) {
 
 		if !ui.containsText("You failed to locate the target on time") {
 			t.Fatal("expected timeout handling to render the failure overlay")
+		}
+
+		if ui.containsText("Final Level 1 Scores:") {
+			t.Fatal("expected timeout handling not to render the final score summary")
 		}
 	})
 
