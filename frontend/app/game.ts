@@ -19,6 +19,7 @@ import {
   isWonStatus,
 } from "./status"
 import {
+  clearPersistedSnapshot,
   clearPersistedRound,
   loadPersistedSnapshot,
   savePersistedPreferences,
@@ -249,13 +250,15 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   return true
 }
 
-function startRound(level: number): void {
+function startRound(level: number, persist = true): void {
   const terminalSize = getTerminalSize()
   const dimensions = getMazeDimensions(level, terminalSize)
 
   if (!dimensions) {
     applyTooSmallState(level)
-    persistStateNow()
+    if (persist) {
+      persistStateNow()
+    }
     renderState()
     return
   }
@@ -274,14 +277,17 @@ function startRound(level: number): void {
   const totalCells = dimensions.length * dimensions.width
   state.clock = new GameClock(totalCells * 1000)
   state.score = calculateScore(totalCells, 0)
-  persistStateNow()
+  if (persist) {
+    persistStateNow()
+  }
   renderState()
 }
 
 function restartGame(): void {
-  const snapshot = loadPersistedSnapshot(1, WALL_WEIGHTS[0], isWallWeight)
-  state.wallWeight = snapshot.preferences.wallWeight
-  startRound(snapshot.preferences.level)
+  cancelScheduledRoundPersist()
+  clearPersistedSnapshot()
+  state.wallWeight = WALL_WEIGHTS[0]
+  startRound(1, false)
 }
 
 function resumeOrProceed(): void {

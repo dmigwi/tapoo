@@ -158,54 +158,6 @@ func TestHandlePlayerMovement(t *testing.T) {
 	})
 }
 
-func TestGameClock(t *testing.T) {
-	t.Parallel()
-
-	t.Run("tracks elapsed time across pause and resume", func(t *testing.T) {
-		t.Parallel()
-
-		clock := maze.NewGameClock(maze.RefreshInterval)
-
-		time.Sleep(30 * time.Millisecond)
-		clock.Pause()
-		time.Sleep(120 * time.Millisecond)
-		clock.Resume()
-
-		remainingAfterResume := clock.Remaining()
-		if remainingAfterResume < 160*time.Millisecond {
-			t.Fatalf("expected paused time to be excluded from remaining duration, got %v", remainingAfterResume)
-		}
-
-		time.Sleep(40 * time.Millisecond)
-
-		elapsed := clock.Elapsed()
-		if elapsed < 50*time.Millisecond || elapsed > 140*time.Millisecond {
-			t.Fatalf("unexpected elapsed duration after pause and resume: %v", elapsed)
-		}
-
-		if got := clock.Remaining(); got >= remainingAfterResume {
-			t.Fatalf(
-				"expected remaining duration to keep decreasing after resume: before=%v after=%v",
-				remainingAfterResume,
-				got,
-			)
-		}
-	})
-
-	t.Run("clamps remaining time at zero after expiration", func(t *testing.T) {
-		t.Parallel()
-
-		clock := maze.NewGameClock(20 * time.Millisecond)
-		clock.Resume()
-
-		time.Sleep(40 * time.Millisecond)
-
-		if got := clock.Remaining(); got != 0 {
-			t.Fatalf("expected remaining duration to clamp at zero, got %v", got)
-		}
-	})
-}
-
 func TestCalculateScore(t *testing.T) {
 	t.Parallel()
 

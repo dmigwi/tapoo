@@ -7,6 +7,7 @@ import {
   WALL_WEIGHT_STORAGE_KEY,
 } from "./config"
 import {
+  clearPersistedSnapshot,
   clearPersistedRound,
   loadPersistedSnapshot,
   savePersistedPreferences,
@@ -164,6 +165,22 @@ describe("storage", () => {
 
     clearPersistedRound()
 
+    expect(window.sessionStorage.getItem(ROUND_STORAGE_KEY)).toBeNull()
+  })
+
+  it("clears persisted preferences and the active round on demand", () => {
+    savePersistedPreferences({ level: 8, wallWeight: 3 })
+    savePersistedRoundState(
+      createState({
+        playerPosition: [1, 1],
+        finalPosition: [1, 1],
+      }),
+    )
+
+    clearPersistedSnapshot()
+
+    expect(window.localStorage.getItem(LEVEL_STORAGE_KEY)).toBeNull()
+    expect(window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY)).toBeNull()
     expect(window.sessionStorage.getItem(ROUND_STORAGE_KEY)).toBeNull()
   })
 })

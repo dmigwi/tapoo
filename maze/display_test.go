@@ -79,7 +79,7 @@ func TestRenderMazeUI(t *testing.T) {
 		t.Parallel()
 
 		ui := newFakeUI(40, 80)
-		reachedTarget, err := maze.RenderMazeUI(ui, nil, 0, 400, sampleMazeGrid(), &maze.UIOverlay{
+		reachedTarget, err := maze.RenderMazeUI(ui, nil, 4, 400, sampleMazeGrid(), &maze.UIOverlay{
 			Message:       "Paused",
 			Color:         termbox.ColorYellow,
 			ShowHighScore: true,
@@ -100,7 +100,7 @@ func TestRenderMazeUI(t *testing.T) {
 			t.Fatal("expected render maze ui to render the overlay message")
 		}
 
-		if !ui.containsText("Final Game Level Scores: 400") {
+		if !ui.containsText("Final Level 4 Scores:  400") {
 			t.Fatal("expected render maze ui to render the high score text")
 		}
 	})

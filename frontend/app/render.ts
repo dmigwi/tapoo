@@ -175,10 +175,9 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
   }
 
   if (isWonStatus(state.status)) {
-    const scoresMsg = CONFIG.highScoreTemplate.replace(
-      "{score}",
-      String(state.lastRoundScore),
-    )
+    const scoresMsg = CONFIG.highScoreTemplate.
+    replace( "{level}", String(state.level)).
+    replace( "{score}",  String(state.lastRoundScore))
     return [
       centeredTextRow(successText(), "status"),
       centeredTextRow(scoresMsg, "accent"),

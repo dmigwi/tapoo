@@ -8,14 +8,6 @@ import (
 	termbox "github.com/nsf/termbox-go"
 )
 
-// GameClock tracks elapsed and remaining time while accounting for pauses.
-type GameClock struct {
-	startedAt      time.Time
-	pausedAt       time.Time
-	pausedDuration time.Duration
-	levelDuration  time.Duration
-}
-
 // gameState tracks the mutable runtime state that used to be kept in package globals.
 type gameState struct {
 	scores     int
@@ -88,44 +80,6 @@ func (session *keyboardSession) Close(ui UI) {
 	close(session.done)
 	ui.Interrupt()
 	<-session.inputStopped
-}
-
-// NewGameClock creates a new per-level clock using the provided duration budget.
-func NewGameClock(levelDuration time.Duration) GameClock {
-	return GameClock{
-		startedAt:     time.Now(),
-		levelDuration: levelDuration,
-	}
-}
-
-// Elapsed subtracts paused time so scoring and timeout logic continue from the same point after resume.
-func (clock *GameClock) Elapsed() time.Duration {
-	return time.Since(clock.startedAt) - clock.pausedDuration
-}
-
-// Remaining clamps at zero because timers should never be reset with a negative duration.
-func (clock *GameClock) Remaining() time.Duration {
-	remaining := clock.levelDuration - clock.Elapsed()
-	if remaining < 0 {
-		return 0
-	}
-	return remaining
-}
-
-// Pause records when the clock stopped advancing.
-func (clock *GameClock) Pause() {
-	clock.pausedAt = time.Now()
-}
-
-// Resume accumulates the paused duration and resumes elapsed-time accounting.
-func (clock *GameClock) Resume() {
-	if clock.pausedAt.IsZero() {
-		return
-	}
-
-	// Resume accumulates the paused span instead of shifting startedAt so elapsed math stays simple.
-	clock.pausedDuration += time.Since(clock.pausedAt)
-	clock.pausedAt = time.Time{}
 }
 
 // PlayerMovement updates the player coordinates using the supplied row and column deltas.
@@ -392,8 +346,17 @@ func (state *gameState) handleTick(
 	}
 
 	// Scores decay by elapsed whole seconds, matching the timeout duration used for the level.
-	state.scores = CalculateScore(state.totalCells, timeVal.Sub(clock.startedAt)-clock.pausedDuration)
-	targetReached, errUI := RenderMazeUI(ui, val, state.persisted.Level, state.scores, data, nil)
+	elapsed := clock.elapsedAt(timeVal)
+	state.scores = CalculateScore(state.totalCells, elapsed)
+	targetReached, errUI := renderMazeUI(
+		ui,
+		val,
+		state.persisted.Level,
+		state.scores,
+		data,
+		nil,
+		clock.blinkOnAt(timeVal),
+	)
 	if errUI != nil {
 		return fmt.Errorf("refresh ui: %w", errUI)
 	}
@@ -411,7 +374,7 @@ func (state *gameState) handleTick(
 	state.nextLevel = state.persisted.Level + 1
 	state.persisted.State = GameProgressWon
 
-	if _, err := RenderMazeUI(ui, nil, 0, state.scores, data, state.overlay); err != nil {
+	if _, err := RenderMazeUI(ui, nil, state.persisted.Level, state.scores, data, state.overlay); err != nil {
 		return fmt.Errorf("show success screen: %w", err)
 	}
 
@@ -430,7 +393,7 @@ func (state *gameState) handleTimeout(ui UI, data [][]string) error {
 	state.nextLevel = state.persisted.Level
 	state.persisted.State = GameProgressFail
 
-	if _, err := RenderMazeUI(ui, nil, 0, state.scores, data, state.overlay); err != nil {
+	if _, err := RenderMazeUI(ui, nil, state.persisted.Level, state.scores, data, state.overlay); err != nil {
 		return fmt.Errorf("show failure screen: %w", err)
 	}
 

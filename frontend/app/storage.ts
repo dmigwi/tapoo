@@ -208,3 +208,14 @@ export function savePersistedRoundState(state: State): void {
 export function clearPersistedRound(): void {
   saveRound(null)
 }
+
+export function clearPersistedSnapshot(): void {
+  try {
+    window.localStorage.removeItem(LEVEL_STORAGE_KEY)
+    window.localStorage.removeItem(WALL_WEIGHT_STORAGE_KEY)
+  } catch {
+    // Ignore storage failures so reset remains best-effort only.
+  }
+
+  clearPersistedRound()
+}

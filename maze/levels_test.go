@@ -39,19 +39,24 @@ func TestGetNavigationProfile(t *testing.T) {
 		want   maze.NavigationProfile
 	}{
 		{
-			name:   "small area profile",
+			name:   "welcoming early profile",
 			config: maze.Dimensions{Length: 10, Width: 11},
-			want:   maze.NavigationProfile{SoftCorridorLimit: 2, HardCorridorLimit: 3, PreferTurnPercent: 80},
+			want:   maze.NavigationProfile{SoftCorridorLimit: 8, HardCorridorLimit: 10, PreferTurnPercent: 90},
 		},
 		{
 			name:   "mid area profile",
 			config: maze.Dimensions{Length: 20, Width: 20},
-			want:   maze.NavigationProfile{SoftCorridorLimit: 4, HardCorridorLimit: 5, PreferTurnPercent: 60},
+			want:   maze.NavigationProfile{SoftCorridorLimit: 5, HardCorridorLimit: 7, PreferTurnPercent: 75},
+		},
+		{
+			name:   "late game profile",
+			config: maze.Dimensions{Length: 30, Width: 30},
+			want:   maze.NavigationProfile{SoftCorridorLimit: 4, HardCorridorLimit: 5, PreferTurnPercent: 65},
 		},
 		{
 			name:   "max area fallback profile",
 			config: maze.Dimensions{Length: 60, Width: 60},
-			want:   maze.NavigationProfile{SoftCorridorLimit: 6, HardCorridorLimit: 8, PreferTurnPercent: 35},
+			want:   maze.NavigationProfile{SoftCorridorLimit: 2, HardCorridorLimit: 3, PreferTurnPercent: 55},
 		},
 	}
 
@@ -64,6 +69,46 @@ func TestGetNavigationProfile(t *testing.T) {
 				t.Fatalf("unexpected navigation profile: got %+v want %+v", got, testCase.want)
 			}
 		})
+	}
+}
+
+func TestGetNavigationProfileTightensAsAreaGrows(t *testing.T) {
+	t.Parallel()
+
+	profiles := []maze.NavigationProfile{
+		maze.GetNavigationProfile(maze.Dimensions{Length: 10, Width: 11}),
+		maze.GetNavigationProfile(maze.Dimensions{Length: 20, Width: 20}),
+		maze.GetNavigationProfile(maze.Dimensions{Length: 30, Width: 30}),
+		maze.GetNavigationProfile(maze.Dimensions{Length: 60, Width: 60}),
+	}
+
+	for index := 1; index < len(profiles); index++ {
+		previous := profiles[index-1]
+		current := profiles[index]
+
+		if current.SoftCorridorLimit > previous.SoftCorridorLimit {
+			t.Fatalf(
+				"expected soft corridor limit to tighten with maze area: previous=%+v current=%+v",
+				previous,
+				current,
+			)
+		}
+
+		if current.HardCorridorLimit > previous.HardCorridorLimit {
+			t.Fatalf(
+				"expected hard corridor limit to tighten with maze area: previous=%+v current=%+v",
+				previous,
+				current,
+			)
+		}
+
+		if current.PreferTurnPercent > previous.PreferTurnPercent {
+			t.Fatalf(
+				"expected turn preference to stay the same or tighten with maze area: previous=%+v current=%+v",
+				previous,
+				current,
+			)
+		}
 	}
 }
 

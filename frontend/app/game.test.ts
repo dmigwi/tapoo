@@ -121,6 +121,7 @@ type DimensionsResult = {
 } | null
 
 type GameHarness = {
+  clearPersistedSnapshot: ReturnType<typeof vi.fn>
   clearPersistedRound: ReturnType<typeof vi.fn>
   elements: Elements
   generateMaze: ReturnType<typeof vi.fn>
@@ -157,6 +158,7 @@ async function bootstrapHarness({
   const render = vi.fn<(elements: Elements, state: State) => void>()
   const savePersistedPreferences = vi.fn()
   const savePersistedRoundState = vi.fn()
+  const clearPersistedSnapshot = vi.fn()
   const clearPersistedRound = vi.fn()
   const generateMaze = vi.fn(() => round)
   const reweightMaze = vi.fn(() => reweightedMaze ?? round.maze)
@@ -227,6 +229,7 @@ async function bootstrapHarness({
   }))
   vi.doMock("./render", () => ({ render }))
   vi.doMock("./storage", () => ({
+    clearPersistedSnapshot,
     clearPersistedRound,
     loadPersistedSnapshot,
     savePersistedPreferences,
@@ -249,6 +252,7 @@ async function bootstrapHarness({
   bootstrapGame()
 
   return {
+    clearPersistedSnapshot,
     clearPersistedRound,
     elements,
     generateMaze,
@@ -304,6 +308,7 @@ describe("bootstrapGame", () => {
     }))
     vi.doMock("./render", () => ({ render }))
     vi.doMock("./storage", () => ({
+      clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       loadPersistedSnapshot,
       savePersistedPreferences: vi.fn(),
@@ -365,6 +370,7 @@ describe("bootstrapGame", () => {
     }))
     vi.doMock("./render", () => ({ render }))
     vi.doMock("./storage", () => ({
+      clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       loadPersistedSnapshot: vi.fn(() => ({
         preferences: { level: 1, wallWeight: 1 },
@@ -413,6 +419,7 @@ describe("bootstrapGame", () => {
     }))
     vi.doMock("./render", () => ({ render }))
     vi.doMock("./storage", () => ({
+      clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       loadPersistedSnapshot,
       savePersistedPreferences: vi.fn(),
@@ -462,6 +469,7 @@ describe("bootstrapGame", () => {
     }))
     vi.doMock("./render", () => ({ render }))
     vi.doMock("./storage", () => ({
+      clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       loadPersistedSnapshot: vi.fn(() => ({
         preferences: { level: 1, wallWeight: 1 },
@@ -488,6 +496,31 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(render)
     expect(state.wallWeight).toBe(2)
     expect(state.maze).toEqual(reweightedMaze)
+  })
+
+  it("clears persisted browser state before restarting from level 1", async () => {
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        {
+          preferences: { level: 7, wallWeight: 3 },
+          round: null,
+        },
+      ],
+    })
+
+    harness.elements.controls[0].click()
+
+    expect(harness.clearPersistedSnapshot).toHaveBeenCalledTimes(1)
+    expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(1)
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(1, {
+      length: 20,
+      width: 20,
+    })
+
+    const state = latestRenderedState(harness.render)
+    expect(state.level).toBe(1)
+    expect(state.wallWeight).toBe(1)
+    expect(state.status).toBe("running")
   })
 
   it("pauses and resumes a running round through keyboard controls", async () => {

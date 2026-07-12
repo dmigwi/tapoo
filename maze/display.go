@@ -74,6 +74,12 @@ func introMessage(version string) string {
 // returned bool reports whether the player is already on the goal. When overlay is provided,
 // the centered pause or game-over panel is rendered instead.
 func RenderMazeUI(ui UI, config *Dimensions, level, score int, data [][]string, overlay *UIOverlay) (bool, error) {
+	return renderMazeUI(ui, config, level, score, data, overlay, true)
+}
+
+func renderMazeUI(
+	ui UI, config *Dimensions, level, score int, data [][]string, overlay *UIOverlay, showGoal bool,
+) (bool, error) {
 	if err := DrawMaze(ui, data); err != nil {
 		return false, err
 	}
@@ -83,14 +89,14 @@ func RenderMazeUI(ui UI, config *Dimensions, level, score int, data [][]string, 
 			return false, errors.New("render live maze ui: missing dimensions")
 		}
 
-		targetReached := renderLiveScene(ui, config, level, score, data)
+		targetReached := renderLiveScene(ui, config, level, score, data, showGoal)
 		if err := ui.Flush(); err != nil {
 			return false, err
 		}
 		return targetReached, nil
 	}
 
-	renderOverlayScene(ui, score, data, overlay)
+	renderOverlayScene(ui, level, score, data, overlay)
 	if err := ui.Flush(); err != nil {
 		return false, err
 	}
@@ -99,19 +105,21 @@ func RenderMazeUI(ui UI, config *Dimensions, level, score int, data [][]string, 
 }
 
 // renderLiveScene adds the player marker, goal marker, and status banner to the base maze view.
-func renderLiveScene(ui UI, config *Dimensions, level, score int, data [][]string) bool {
+func renderLiveScene(ui UI, config *Dimensions, level, score int, data [][]string, showGoal bool) bool {
 	targetPos := config.FinalPosition
 	startPos := config.StartPosition
 
 	// StartPosition and FinalPosition store maze-grid coordinates, so they are remapped into
 	// termbox coordinates here using the same doubled-grid math used during generation.
-	ui.SetCell(
-		(targetPos[1]*cellSpan)+mazeLeftPadding,
-		targetPos[0]+mazeTopPadding,
-		goalMarker,
-		termbox.ColorRed,
-		termbox.ColorRed,
-	)
+	if showGoal {
+		ui.SetCell(
+			(targetPos[1]*cellSpan)+mazeLeftPadding,
+			targetPos[0]+mazeTopPadding,
+			goalMarker,
+			termbox.ColorRed,
+			termbox.ColorRed,
+		)
+	}
 	ui.SetCell(
 		(startPos[1]*cellSpan)+mazeLeftPadding,
 		startPos[0]+mazeTopPadding,
@@ -128,7 +136,7 @@ func renderLiveScene(ui UI, config *Dimensions, level, score int, data [][]strin
 }
 
 // renderOverlayScene clears the center panel area and draws the pause or game-over content.
-func renderOverlayScene(ui UI, score int, data [][]string, overlay *UIOverlay) {
+func renderOverlayScene(ui UI, level, score int, data [][]string, overlay *UIOverlay) {
 	// The overlay clears a small box in the middle of the maze before drawing pause or game-over text.
 	xAxis := mazeWidth(data) / overlayLeftDivisor
 
@@ -148,7 +156,7 @@ func renderOverlayScene(ui UI, score int, data [][]string, overlay *UIOverlay) {
 
 	scoresMsg := space
 	if overlay.ShowHighScore {
-		scoresMsg = fmt.Sprintf(highScores, score)
+		scoresMsg = fmt.Sprintf(highScores, level, score)
 	}
 
 	fill(ui, xAxis, len(data)/2+scoreRowOffset, scoresMsg, overlay.Color)

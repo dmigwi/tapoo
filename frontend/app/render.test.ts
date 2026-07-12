@@ -185,6 +185,7 @@ describe("render", () => {
     render(
       elements,
       createState({
+        level: 3,
         status: "won",
         lastRoundScore: 900,
       }),
@@ -194,6 +195,7 @@ describe("render", () => {
 
     expect(text).toContain(CONFIG.successMessage)
     expect(text).toContain(CONFIG.proceedMessage)
+    expect(text).toContain("Final Level 3 Scores:  900")
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
