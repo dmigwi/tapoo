@@ -518,7 +518,7 @@ func TestPlayWithUI(t *testing.T) {
 			t.Fatalf("play with ui returned error: %v", err)
 		}
 
-		if !ui.containsText("Scores: 11000") {
+		if !ui.containsText("Scores: 7000") {
 			t.Fatal("expected Ctrl+P after failure to reload level 1 with its initial score")
 		}
 	})
@@ -580,7 +580,7 @@ func TestPlayWithUI(t *testing.T) {
 			t.Fatalf("play with ui returned error: %v", err)
 		}
 
-		if !ui.containsText("Scores: 12000") {
+		if !ui.containsText("Scores: 8000") {
 			t.Fatal("expected Ctrl+P after a win to load level 2 with its initial score")
 		}
 	})
@@ -599,19 +599,19 @@ func TestPlayWithUIRestoresPersistedProgressState(t *testing.T) {
 			name:      "loads the next level when the last persisted game was won",
 			progress:  maze.GameProgressWon,
 			wantLevel: "Level: 2",
-			wantScore: "Scores: 12000",
+			wantScore: "Scores: 8000",
 		},
 		{
 			name:      "reloads the current level when the last persisted game failed",
 			progress:  maze.GameProgressFail,
 			wantLevel: "Level: 1",
-			wantScore: "Scores: 11000",
+			wantScore: "Scores: 7000",
 		},
 		{
 			name:      "reloads the current level when the last persisted game was still in progress",
 			progress:  maze.GameProgressInProgress,
 			wantLevel: "Level: 1",
-			wantScore: "Scores: 11000",
+			wantScore: "Scores: 7000",
 		},
 	}
 

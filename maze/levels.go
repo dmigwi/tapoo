@@ -2,6 +2,7 @@ package maze
 
 import (
 	"errors"
+	"fmt"
 	"math"
 )
 
@@ -96,7 +97,7 @@ func chooseBestMazeDimensions(candidates []Dimensions, terminalSize Dimensions) 
 // current level and terminal size provided.
 func GetMazeDimensions(level int, terminalSize Dimensions) (*Dimensions, error) {
 	area := GenerateMazeArea(level)
-	errMsg := "the next maze needs more screen room; enlarge the window to keep playing"
+	errMsg := fmt.Sprintf(tooSmallMazeFormat, level)
 
 	// Bail out early when the raw area cannot possibly fit before spending time on factorization.
 	if area > (terminalSize.Width * terminalSize.Length) {

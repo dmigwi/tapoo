@@ -58,7 +58,7 @@ export const CONFIG: AppConfig = {
   failedCompactMessage: "Game over! You lost.",
   proceedMessage: "Press Enter or Ctrl+P to Proceed",
   touchProceedMessage: "Use the buttons below.",
-  tooSmallMessage: "This maze needs more screen room!",
+  tooSmallMessage: "Level {level} needs more screen room!",
   tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
   statusTemplate:
     "Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
@@ -108,7 +108,7 @@ export const CONFIG: AppConfig = {
   navigationFriendlyProfile: NAVIGATION_FRIENDLY_PROFILE,
   navigationHardestProfile: NAVIGATION_HARDEST_PROFILE,
   mazeLeftPadding: 3,
-  seed: 100,
+  seed: 60,
   diff: 10,
   minMazeDimension: 5,
   missingElementErrorTemplate: "missing required element: {id}",

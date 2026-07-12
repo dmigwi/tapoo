@@ -36,21 +36,21 @@ describe("maze", () => {
   it("returns the preferred maze dimensions for a fitting viewport", () => {
     expect(getMazeDimensions(1, { length: 20, width: 20 })).toEqual({
       level: 1,
-      length: 11,
-      width: 10,
+      length: 10,
+      width: 7,
     })
   })
 
   it("keeps growing maze dimensions for large levels when the viewport can fit them", () => {
-    expect(getMazeDimensions(1000, { length: 101, width: 100 })).toEqual({
-      level: 1000,
-      length: 101,
+    expect(getMazeDimensions(994, { length: 100, width: 100 })).toEqual({
+      level: 994,
       width: 100,
+      length: 100,
     })
   })
 
   it("returns no dimensions when the viewport cannot fit the maze area", () => {
-    expect(getMazeDimensions(1, { length: 10, width: 10 })).toBeNull()
+    expect(getMazeDimensions(1, { length: 6, width: 10 })).toBeNull()
   })
 
   it("tightens the navigation profile as maze area grows", () => {

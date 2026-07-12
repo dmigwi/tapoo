@@ -81,6 +81,7 @@ const (
 	gameOverSucceed    = "   Game Over! Congratulations, You won by locating the target on time.   "
 	gameOverFailed     = "      Game Over! Ooops!!!, You failed to locate the target on time.      "
 	gameOverNavigation = "        Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed         "
+	tooSmallMazeFormat = "   level %d needs more screen room; enlarge the window to keep playing   "
 
 	highScores               = "               Final Level %d Scores:  %d (%d%% retention)               "
 	winNoPrevNewRecord       = "               New scores retention record                               "
@@ -118,7 +119,7 @@ const (
 
 // seed defines the size of the maze to be used in the training level (level 0).
 // It can also be referred to as the size of the training field.
-const seed = 100
+const seed = 60
 
 // diff defines the difference between maze sizes in consecutive game levels.
 const diff = 10

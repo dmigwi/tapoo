@@ -126,9 +126,12 @@ function rowsWithSpacer(...rows: ScreenLine[]): ScreenLine[] {
   return rows.flatMap((row) => [emptyTextRow(), row])
 }
 
-function tooSmallRows(): ScreenLine[] {
+function tooSmallRows(state: State): ScreenLine[] {
   return [
-    centeredTextRow(CONFIG.tooSmallMessage, "status"),
+    centeredTextRow(
+      CONFIG.tooSmallMessage.replace("{level}", String(state.level)),
+      "status",
+    ),
     centeredTextRow(CONFIG.tooSmallActionMessage),
   ]
 }
@@ -257,7 +260,7 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
   }
 
   if (isTooSmallStatus(state.status)) {
-    return tooSmallRows()
+    return tooSmallRows(state)
   }
 
   return []

@@ -167,7 +167,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain(CONFIG.navigationCompact)
-    expect(text).toContain(CONFIG.tooSmallMessage)
+    expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(CONFIG.tooSmallActionMessage)
   })
 
@@ -402,7 +402,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.tooSmallMessage)
+    expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(CONFIG.tooSmallActionMessage)
 
     const visibleLabels = elements.touchButtons
@@ -449,7 +449,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain(CONFIG.navigationCompact)
-    expect(text).toContain(CONFIG.tooSmallMessage)
+    expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(CONFIG.tooSmallActionMessage)
     expect(elements.touchControls.hidden).toBe(true)
   })

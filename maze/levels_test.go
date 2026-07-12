@@ -14,9 +14,9 @@ func TestGenerateMazeArea(t *testing.T) {
 		level int
 		want  int
 	}{
-		{name: "seed level", level: 0, want: 100},
-		{name: "normal level", level: 23, want: 330},
-		{name: "large level stays uncapped", level: 30000, want: 300100},
+		{name: "seed level", level: 0, want: 60},
+		{name: "normal level", level: 23, want: 290},
+		{name: "large level stays uncapped", level: 30000, want: 300060},
 	}
 
 	for _, testCase := range tests {
@@ -116,19 +116,22 @@ func TestGetMazeDimensionsErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		level int
-		size  maze.Dimensions
+		name    string
+		level   int
+		size    maze.Dimensions
+		wantErr string
 	}{
 		{
-			name:  "maze area exceeds terminal area",
-			level: 200,
-			size:  maze.Dimensions{Length: 4, Width: 20},
+			name:    "maze area exceeds terminal area",
+			level:   200,
+			size:    maze.Dimensions{Length: 4, Width: 20},
+			wantErr: "   level 200 needs more screen room; enlarge the window to keep playing   ",
 		},
 		{
-			name:  "area cannot be factorized into supported dimensions",
-			level: 0,
-			size:  maze.Dimensions{Length: 100, Width: 1},
+			name:    "area cannot be factorized into supported dimensions",
+			level:   0,
+			size:    maze.Dimensions{Length: 100, Width: 1},
+			wantErr: "   level 0 needs more screen room; enlarge the window to keep playing   ",
 		},
 	}
 
@@ -139,6 +142,10 @@ func TestGetMazeDimensionsErrors(t *testing.T) {
 			got, err := maze.GetMazeDimensions(testCase.level, testCase.size)
 			if err == nil {
 				t.Fatal("expected an error but got nil")
+			}
+
+			if err.Error() != testCase.wantErr {
+				t.Fatalf("unexpected error: got %q want %q", err.Error(), testCase.wantErr)
 			}
 
 			if got == nil {
@@ -165,25 +172,25 @@ func TestGetMazeDimensionsFits(t *testing.T) {
 			name:  "single landscape fit",
 			level: 0,
 			size:  maze.Dimensions{Length: 20, Width: 5},
-			want:  maze.Dimensions{Length: 20, Width: 5},
+			want:  maze.Dimensions{Length: 12, Width: 5},
 		},
 		{
 			name:  "single portrait fit",
 			level: 0,
 			size:  maze.Dimensions{Length: 5, Width: 20},
-			want:  maze.Dimensions{Length: 5, Width: 20},
+			want:  maze.Dimensions{Length: 5, Width: 12},
 		},
 		{
 			name:  "prefers closest aspect match when multiple fits exist",
 			level: 2,
 			size:  maze.Dimensions{Length: 16, Width: 10},
-			want:  maze.Dimensions{Length: 15, Width: 8},
+			want:  maze.Dimensions{Length: 10, Width: 8},
 		},
 		{
 			name:  "prefers balanced fit when aspect score ties",
 			level: 2,
 			size:  maze.Dimensions{Length: 15, Width: 10},
-			want:  maze.Dimensions{Length: 12, Width: 10},
+			want:  maze.Dimensions{Length: 10, Width: 8},
 		},
 	}
 

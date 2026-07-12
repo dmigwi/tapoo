@@ -735,9 +735,8 @@ describe("bootstrapGame", () => {
 
     const harness = await bootstrapHarness({
       dimensionsResults: [
-        { level: 1, length: 2, width: 1 },
         null,
-        { level: 1, length: 2, width: 1 },
+        null,
       ],
       round: createHorizontalRound(),
       persistedSnapshots: [
@@ -750,7 +749,6 @@ describe("bootstrapGame", () => {
         { length: 20, width: 20 },
         { length: 1, width: 1 },
         { length: 1, width: 1 },
-        { length: 20, width: 20 },
         { length: 20, width: 20 },
       ],
     })
