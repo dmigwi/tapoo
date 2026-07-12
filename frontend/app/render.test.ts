@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { GameClock } from "./clock"
 import { CONFIG } from "./config"
 import { render } from "./render"
 import type { Elements, State } from "./types"
@@ -34,12 +35,11 @@ function createElements(): Elements {
   const touchControls = document.createElement("div")
   const touchButtons = [
     createButton({ action: "walls" }),
-    createButton({ move: "up" }),
+    createButton({ move: "MoveUp" }),
     createButton({ action: "proceed" }),
-    createButton({ move: "left" }),
-    createButton({ move: "right" }),
-    createButton({ action: "quit" }),
-    createButton({ move: "down" }),
+    createButton({ move: "MoveLeft" }),
+    createButton({ move: "MoveRight" }),
+    createButton({ move: "MoveDown" }),
     createButton({ action: "pause" }),
   ]
 
@@ -73,7 +73,6 @@ function createState(overrides: Partial<State> = {}): State {
     canResume: false,
     wallWeight: 1,
     clock: null,
-    inputMode: "keyboard",
     ...overrides,
   }
 }
@@ -113,20 +112,43 @@ describe("render", () => {
       .map((button) => button.dataset.action ?? button.dataset.move)
 
     expect(visibleLabels).toEqual([
-      "walls",
-      "up",
-      "left",
-      "right",
-      "quit",
-      "down",
+      "MoveUp",
+      "MoveLeft",
+      "MoveRight",
+      "MoveDown",
       "pause",
     ])
-    expect(
-      elements.touchControls.classList.contains("touch-controls--actions-only"),
-    ).toBe(false)
   })
 
-  it("shows paused overlay messaging and action-only touch controls", () => {
+  it("skips drawing the destination while a running round blink phase is off", () => {
+    const elements = createElements()
+    const clock = new GameClock(10_000)
+    clock.blink = () => false
+
+    render(
+      elements,
+      createState({
+        clock,
+      }),
+    )
+
+    expect(elements.screen.innerHTML).not.toContain('class="maze-cell target"')
+  })
+
+  it("keeps drawing the destination when no active blink clock is present", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        clock: null,
+      }),
+    )
+
+    expect(elements.screen.innerHTML).toContain('class="maze-cell target"')
+  })
+
+  it("shows paused overlay messaging and walls plus proceed touch controls", () => {
     const elements = createElements()
 
     render(
@@ -146,9 +168,9 @@ describe("render", () => {
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual(["proceed", "quit"])
+    expect(visibleLabels).toEqual(["walls", "proceed"])
     expect(
-      elements.touchControls.classList.contains("touch-controls--actions-only"),
+      elements.touchControls.classList.contains("touch-controls--action-pair"),
     ).toBe(true)
     expect(
       elements.touchControls.classList.contains(
@@ -157,29 +179,141 @@ describe("render", () => {
     ).toBe(false)
   })
 
-  it("shows a single proceed action after quitting the session", () => {
+  it("shows walls plus proceed touch controls after a win", () => {
     const elements = createElements()
 
     render(
       elements,
       createState({
-        status: "quit",
+        status: "won",
+        lastRoundScore: 900,
       }),
     )
 
-    expect(normalizeScreenText(elements.screen.textContent)).toContain(
-      CONFIG.quitMessage,
-    )
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.successMessage)
+    expect(text).toContain(CONFIG.proceedMessage)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual(["proceed"])
+    expect(visibleLabels).toEqual(["walls", "proceed"])
+    expect(
+      elements.touchControls.classList.contains("touch-controls--action-pair"),
+    ).toBe(true)
+  })
+
+  it("shows the too-small message without proceed touch controls", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        dims: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.tooSmallMessage)
+    expect(text).toContain(CONFIG.tooSmallActionMessage)
+
+    const visibleLabels = elements.touchButtons
+      .filter((button) => !button.hidden)
+      .map((button) => button.dataset.action ?? button.dataset.move)
+
+    expect(visibleLabels).toEqual([])
+    expect(
+      elements.touchControls.classList.contains("touch-controls--action-pair"),
+    ).toBe(false)
     expect(
       elements.touchControls.classList.contains(
         "touch-controls--single-action",
       ),
-    ).toBe(true)
+    ).toBe(false)
+    expect(elements.touchControls.hidden).toBe(true)
+  })
+
+  it("shows compact navigation on narrow screens", () => {
+    const elements = createElements()
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 360,
+      height: 420,
+      top: 0,
+      right: 360,
+      bottom: 420,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+
+    render(
+      elements,
+      createState({
+        dims: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.touchNavigationCompact)
+    expect(text).toContain(CONFIG.tooSmallMessage)
+    expect(text).toContain(CONFIG.tooSmallActionMessage)
+    expect(elements.touchControls.hidden).toBe(true)
+  })
+
+  it("shows compact navigation on narrow screens", () => {
+    const elements = createElements()
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 414,
+      height: 896,
+      top: 0,
+      right: 414,
+      bottom: 896,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+
+    render(elements, createState())
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.touchNavigationCompact)
+    expect(text).not.toContain(CONFIG.navigation)
+  })
+
+  it("keeps the full keyboard navigation on medium-width screens", () => {
+    const elements = createElements()
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 600,
+      height: 896,
+      top: 0,
+      right: 600,
+      bottom: 896,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+
+    render(elements, createState())
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.navigation)
+    expect(text).not.toContain(CONFIG.navigationCompact)
   })
 })

@@ -1,4 +1,13 @@
 import { CONFIG } from "./config"
+import {
+  canProceedStatus,
+  canShowWallsStatus,
+  isLostStatus,
+  isPausedStatus,
+  isRunningStatus,
+  isTooSmallStatus,
+  isWonStatus,
+} from "./status"
 import type { Elements, ScreenLine, State } from "./types"
 
 function escapeHtml(value: string): string {
@@ -28,39 +37,63 @@ function replaceAt(line: string, index: number, char: string): string {
   return `${line.slice(0, index)}${char}${line.slice(index + 1)}`
 }
 
-function statusText(state: State): string {
-  const template =
-    state.inputMode === "touch"
-      ? CONFIG.touchStatusTemplate
-      : CONFIG.statusTemplate
+function statusText(elements: Elements, state: State): string {
+  const template = isCompactDisplay(elements)
+    ? CONFIG.touchStatusTemplate
+    : CONFIG.statusTemplate
 
   return template
     .replace("{level}", String(state.level))
     .replace("{score}", String(state.score))
 }
 
-function navigationText(state: State): string {
-  return state.inputMode === "touch"
-    ? CONFIG.touchNavigation
-    : CONFIG.navigation
+function isCompactDisplay(elements: Elements): boolean {
+  const rect = elements.body.getBoundingClientRect()
+  const availableWidth = rect.width || window.innerWidth
+  const availableHeight = rect.height || window.innerHeight
+
+  return (
+    availableWidth <= CONFIG.compactViewportWidth ||
+    availableHeight <= CONFIG.compactViewportHeight
+  )
 }
 
-function proceedText(state: State): string {
-  return state.inputMode === "touch"
+function navigationText(elements: Elements): string {
+  const compact = isCompactDisplay(elements)
+  return compact ? CONFIG.touchNavigationCompact : CONFIG.navigation
+}
+
+function proceedText(elements: Elements): string {
+  return isCompactDisplay(elements)
     ? CONFIG.touchProceedMessage
     : CONFIG.proceedMessage
 }
 
-function quitText(state: State): string {
-  return state.inputMode === "touch"
-    ? CONFIG.touchQuitMessage
-    : CONFIG.quitMessage
+function centeredTextRow(text: string, className = "screen-text"): ScreenLine {
+  return {
+    kind: "text",
+    text,
+    className: `${className} centered`,
+  }
 }
 
-function tooSmallText(): string {
-  return window.matchMedia("(max-width: 720px)").matches
-    ? CONFIG.tooSmallCompactMessage
-    : CONFIG.tooSmallMessage
+function emptyTextRow(): ScreenLine {
+  return {
+    kind: "text",
+    text: "",
+    className: "screen-text",
+  }
+}
+
+function rowsWithSpacer(...rows: ScreenLine[]): ScreenLine[] {
+  return rows.flatMap((row) => [emptyTextRow(), row])
+}
+
+function tooSmallRows(): ScreenLine[] {
+  return [
+    centeredTextRow(CONFIG.tooSmallMessage, "status"),
+    centeredTextRow(CONFIG.tooSmallActionMessage),
+  ]
 }
 
 function successText(): string {
@@ -75,6 +108,14 @@ function failedText(): string {
     : CONFIG.failedMessage
 }
 
+function shouldDrawDestination(state: State): boolean {
+  if (!isRunningStatus(state.status) || !state.clock) {
+    return true
+  }
+
+  return state.clock.blink()
+}
+
 function buildMazeLines(state: State): string[] {
   if (!state.maze) {
     return []
@@ -82,7 +123,7 @@ function buildMazeLines(state: State): string[] {
 
   const lines = state.maze.map((row) => row.join(""))
 
-  if (state.finalPosition) {
+  if (state.finalPosition && shouldDrawDestination(state)) {
     lines[state.finalPosition[0]] = replaceAt(
       lines[state.finalPosition[0]],
       state.finalPosition[1] * CONFIG.cellSpan,
@@ -112,91 +153,55 @@ function renderMarkedLine(rawLine: string): string {
     } else if (char === CONFIG.destinationMarker) {
       html += `<span class="maze-cell target">${value}</span>`
     } else {
-      html += `<span class="maze-cell copy">${value}</span>`
+      html += `<span class="maze-cell walls">${value}</span>`
     }
   }
 
   return `<span class="maze-row">${html}</span>`
 }
 
-function renderTextLine(value: string, className = "copy"): string {
+function renderTextLine(value: string, className = "screen-text"): string {
   const html =
     value === "" ? "&nbsp;" : escapeHtml(value).replaceAll(" ", "&nbsp;")
   return `<span class="${className}">${html}</span>`
 }
 
-function overlayRows(state: State): ScreenLine[] {
-  const lines: ScreenLine[] = []
-
-  if (state.status === "paused") {
-    lines.push({
-      kind: "text",
-      text: CONFIG.pauseMessage,
-      className: "status centered",
-    })
-    lines.push({
-      kind: "text",
-      text: proceedText(state),
-      className: "copy centered",
-    })
-    return lines
+function overlayRows(elements: Elements, state: State): ScreenLine[] {
+  if (isPausedStatus(state.status)) {
+    return [
+      centeredTextRow(CONFIG.pauseMessage, "status"),
+      centeredTextRow(proceedText(elements)),
+    ]
   }
 
-  if (state.status === "won") {
-    lines.push({
-      kind: "text",
-      text: successText(),
-      className: "status centered",
-    })
+  if (isWonStatus(state.status)) {
     const scoresMsg = CONFIG.highScoreTemplate.replace(
       "{score}",
       String(state.lastRoundScore),
     )
-    lines.push({ kind: "text", text: scoresMsg, className: "accent centered" })
-    lines.push({
-      kind: "text",
-      text: proceedText(state),
-      className: "copy centered",
-    })
-    return lines
+    return [
+      centeredTextRow(successText(), "status"),
+      centeredTextRow(scoresMsg, "accent"),
+      centeredTextRow(proceedText(elements)),
+    ]
   }
 
-  if (state.status === "lost") {
-    lines.push({
-      kind: "text",
-      text: failedText(),
-      className: "status centered",
-    })
-    lines.push({
-      kind: "text",
-      text: proceedText(state),
-      className: "copy centered",
-    })
-    return lines
+  if (isLostStatus(state.status)) {
+    return [
+      centeredTextRow(failedText(), "status"),
+      centeredTextRow(proceedText(elements)),
+    ]
   }
 
-  if (state.status === "quit") {
-    lines.push({
-      kind: "text",
-      text: quitText(state),
-      className: "status centered",
-    })
-    return lines
+  if (isTooSmallStatus(state.status)) {
+    return tooSmallRows()
   }
 
-  if (state.status === "too-small") {
-    lines.push({
-      kind: "text",
-      text: tooSmallText(),
-      className: "status centered",
-    })
-    return lines
-  }
-
-  return lines
+  return []
 }
 
 function applyOverlayToMaze(
+  elements: Elements,
   state: State,
   mazeLines: string[],
   mazeWidth: number,
@@ -204,10 +209,10 @@ function applyOverlayToMaze(
   const screenMaze: ScreenLine[] = mazeLines.map((line) => ({
     kind: "maze",
     text: padLine(line, mazeWidth),
-    className: "copy",
+    className: "screen-text",
   }))
 
-  const overlay = overlayRows(state)
+  const overlay = overlayRows(elements, state)
   if (overlay.length === 0) {
     return screenMaze
   }
@@ -220,11 +225,11 @@ function applyOverlayToMaze(
   const clearEndRow = overlayEndRow + 1
 
   while (screenMaze.length <= clearEndRow) {
-    screenMaze.push({ kind: "text", text: "", className: "copy" })
+    screenMaze.push(emptyTextRow())
   }
 
   for (let rowIndex = clearStartRow; rowIndex <= clearEndRow; rowIndex += 1) {
-    screenMaze[rowIndex] = { kind: "text", text: "", className: "copy" }
+    screenMaze[rowIndex] = emptyTextRow()
   }
 
   overlay.forEach((line, index) => {
@@ -234,51 +239,39 @@ function applyOverlayToMaze(
   return screenMaze
 }
 
-function buildScreenLines(state: State): ScreenLine[] {
+function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
   const mazeLines = buildMazeLines(state)
   const mazeWidth = mazeLines.reduce(
     (width, line) => Math.max(width, line.length),
     0,
   )
   const lines: ScreenLine[] = [
-    { kind: "text", text: navigationText(state), className: "copy centered" },
-    { kind: "text", text: "", className: "copy" },
+    centeredTextRow(navigationText(elements)),
+    emptyTextRow(),
   ]
 
   if (mazeLines.length === 0) {
-    overlayRows(state).forEach((line) => {
-      lines.push({ kind: "text", text: "", className: "copy" })
-      lines.push(line)
-    })
+    lines.push(...rowsWithSpacer(...overlayRows(elements, state)))
 
     return lines
   }
 
-  lines.push(...applyOverlayToMaze(state, mazeLines, mazeWidth))
+  lines.push(...applyOverlayToMaze(elements, state, mazeLines, mazeWidth))
 
-  if (state.status === "running") {
-    lines.push({ kind: "text", text: "", className: "copy" })
-    lines.push({
-      kind: "text",
-      text: statusText(state),
-      className: "copy centered",
-    })
+  if (isRunningStatus(state.status)) {
+    lines.push(emptyTextRow(), centeredTextRow(statusText(elements, state)))
   }
 
   return lines
 }
 
 function updateTouchControls(elements: Elements, state: State): void {
-  const canProceed =
-    (state.status === "paused" && state.canResume) ||
-    state.status === "won" ||
-    state.status === "lost" ||
-    state.status === "quit" ||
-    state.status === "too-small"
-  const showMoveControls = state.status === "running"
-  const showPause = state.status === "running"
-  const showWalls = state.status === "running"
-  const showQuit = state.status !== "quit"
+  const canProceed = state.canResume
+    ? canProceedStatus(state.status)
+    : isWonStatus(state.status) || isLostStatus(state.status)
+  const showMoveControls = isRunningStatus(state.status)
+  const showPause = isRunningStatus(state.status)
+  const showWalls = canShowWallsStatus(state.status)
   let visibleButtons = 0
 
   elements.touchButtons.forEach((button) => {
@@ -292,9 +285,7 @@ function updateTouchControls(elements: Elements, state: State): void {
           ? !showWalls
           : action === "proceed"
             ? !canProceed
-            : action === "quit"
-              ? !showQuit
-              : false
+            : false
 
     button.hidden = hidden
     button.disabled = false
@@ -304,19 +295,21 @@ function updateTouchControls(elements: Elements, state: State): void {
     }
   })
 
-  const actionOnly = !showMoveControls && visibleButtons > 0
+  elements.touchControls.hidden = visibleButtons === 0
+
+  const actionOnly = !showMoveControls && visibleButtons > 1
   elements.touchControls.classList.toggle(
-    "touch-controls--actions-only",
-    actionOnly && visibleButtons > 1,
+    "touch-controls--action-pair",
+    actionOnly,
   )
   elements.touchControls.classList.toggle(
     "touch-controls--single-action",
-    actionOnly && visibleButtons === 1,
+    !showMoveControls && visibleButtons === 1,
   )
 }
 
 export function render(elements: Elements, state: State): void {
-  const screenLines = buildScreenLines(state)
+  const screenLines = buildScreenLines(elements, state)
   elements.screen.innerHTML = screenLines
     .map((line) => {
       const content =

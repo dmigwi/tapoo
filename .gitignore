@@ -28,7 +28,8 @@ node_modules/
 .tmp/
 *.tsbuildinfo
 package-lock.json
-public/js/tapoo.min.js
+public/js/*.min.js
+public/css/*.min.css
 _DS*
 .DS_Store
 .vscode

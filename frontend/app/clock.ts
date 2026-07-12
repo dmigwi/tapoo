@@ -1,3 +1,5 @@
+const blinkIntervalMs = 500
+
 export class GameClock {
   levelDurationMs: number
   startedAt: number
@@ -19,6 +21,11 @@ export class GameClock {
 
   remaining(now = performance.now()): number {
     return Math.max(0, this.levelDurationMs - this.elapsed(now))
+  }
+
+  blink(now = performance.now()): boolean {
+    // Alternate the destination visibility in half-second phases while the round is active.
+    return Math.floor(this.elapsed(now) / blinkIntervalMs) % 2 === 0
   }
 
   pause(now = performance.now()): void {

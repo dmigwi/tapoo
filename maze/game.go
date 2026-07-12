@@ -236,9 +236,9 @@ func (config *Dimensions) handleKeyboardMapping(ui UI, mazeData *runtimeMaze,
 	}
 }
 
-// Start defines where the tapoo game starts at.
-func Start() error {
-	return StartWithUI(NewTermboxUI(storeFileName))
+// Start bootstraps the production termbox UI using the provided Go runtime version.
+func Start(version string) error {
+	return StartWithUI(NewTermboxUI(storeFileName, version))
 }
 
 // StartWithUI bootstraps a generated maze level on the provided UI implementation.

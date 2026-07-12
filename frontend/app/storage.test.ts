@@ -60,7 +60,6 @@ function createState(overrides: Partial<State> = {}): State {
     canResume: false,
     wallWeight: 2,
     clock: null,
-    inputMode: "keyboard",
     ...overrides,
   }
 }

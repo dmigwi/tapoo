@@ -3,15 +3,18 @@
   --top-bar: #0d130d;
   --top-bar-edge: rgba(72, 198, 62, 0.18);
   --text: #48c63e;
+  --walls: #2f862d;
   --text-dim: rgba(72, 198, 62, 0.72);
   --text-faint: rgba(72, 198, 62, 0.5);
   --player: #58a6ff;
-  --target: #ff0000;
+  --target: #ff6b5f;
   --accent: #9ea6d7;
   --status: #f1d065;
   --glow: rgba(72, 198, 62, 0.2);
-  --button-radius: 8px;
-  --button-min-height: 48px;
+  --button-radius: 6px;
+  --button-min-height: 30px;
+  --button-min-height-touch: 48px;
+  --button-padding-y: 4px;
   --button-padding-x: 15px;
   --button-font-size: 1.02rem;
   --button-icon-width: 48px;
@@ -86,6 +89,7 @@ body {
 .page-footer__copy {
   color: var(--text-faint);
   font: inherit;
+  font-family: Consolas, "Tapoo PT Mono", "PT Mono", Menlo, Monaco, monospace;
   font-size: 0.9rem;
   letter-spacing: 0.04em;
   line-height: 1;
@@ -158,6 +162,10 @@ body {
   z-index: 10;
 }
 
+.top-menu:not([open]) > .top-menu__panel {
+  display: none;
+}
+
 .top-menu__item,
 .top-bar__button {
   border: 1px solid var(--top-bar-edge);
@@ -173,7 +181,7 @@ body {
   font: inherit;
   font-size: var(--button-font-size);
   min-height: var(--button-min-height);
-  padding: 0 var(--button-padding-x);
+  padding: var(--button-padding-y) var(--button-padding-x);
   cursor: pointer;
   text-decoration: none;
   display: inline-flex;
@@ -262,7 +270,56 @@ body {
 
 .top-bar__button--icon {
   min-width: var(--button-icon-width);
-  padding: 0;
+  padding: var(--button-padding-y);
+}
+
+@media (min-width: 901px) {
+  .top-menu {
+    display: flex;
+    align-items: center;
+  }
+
+  .top-menu__summary {
+    display: none;
+  }
+
+  .top-menu__panel {
+    position: static;
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .top-menu:not([open]) > .top-menu__panel {
+    display: flex;
+  }
+
+  .top-menu__item {
+    width: auto;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 900px) {
+  .top-menu {
+    display: block;
+  }
+
+  .top-menu__summary {
+    display: inline-flex;
+  }
+
+  .top-menu[open] > .top-menu__panel {
+    display: grid;
+  }
 }
 
 .placeholder-page {
@@ -447,11 +504,15 @@ body {
   min-width: 1ch;
   line-height: 1;
   vertical-align: top;
-  text-align: left;
+  text-align: center;
 }
 
-.copy {
+.screen-text {
   color: var(--text);
+}
+
+.walls {
+  color: var(--walls);
 }
 
 .player {
@@ -499,11 +560,11 @@ body {
   width: fit-content;
   max-width: calc(100% - var(--safe-left) - var(--safe-right) - 16px);
   display: grid;
-  grid-template-columns: repeat(4, max-content);
+  grid-template-columns: repeat(3, max-content);
   grid-template-areas:
-    "walls up up proceed"
-    ". left right ."
-    "quit down down pause";
+    ". control-up control-proceed"
+    "control-left control-pause control-right"
+    "control-walls control-down .";
   column-gap: 14px;
   row-gap: 8px;
   align-items: center;
@@ -518,18 +579,22 @@ body {
   pointer-events: auto;
 }
 
-.touch-controls--actions-only {
-  grid-template-columns: repeat(2, max-content);
-  grid-template-areas: "quit proceed";
+.touch-controls[hidden] {
+  display: none;
 }
 
 .touch-controls--single-action {
   grid-template-columns: max-content;
-  grid-template-areas: "proceed";
+  grid-template-areas: "control-proceed";
+}
+
+.touch-controls--action-pair {
+  grid-template-columns: repeat(2, max-content);
+  grid-template-areas: "control-walls control-proceed";
 }
 
 .touch-controls__button {
-  min-height: var(--button-min-height);
+  min-height: var(--button-min-height-touch);
   min-width: 0;
   border: 1px solid var(--top-bar-edge);
   border-radius: var(--button-radius);
@@ -557,29 +622,27 @@ body {
 }
 
 .touch-controls__button--walls {
-  grid-area: walls;
+  grid-area: control-walls;
 }
 
 .touch-controls__button--up {
-  grid-area: up;
+  grid-area: control-up;
   min-width: var(--touch-arrow-button-width);
 }
 
 .touch-controls__button--down {
-  grid-area: down;
+  grid-area: control-down;
   min-width: var(--touch-arrow-button-width);
 }
 
 .touch-controls__button--left {
-  grid-area: left;
+  grid-area: control-left;
   min-width: var(--touch-arrow-button-width);
-  margin-right: 20px;
 }
 
 .touch-controls__button--right {
-  grid-area: right;
+  grid-area: control-right;
   min-width: var(--touch-arrow-button-width);
-  margin-left: 20px;
 }
 
 .touch-controls__arrow-icon {
@@ -590,16 +653,11 @@ body {
 }
 
 .touch-controls__button--pause {
-  grid-area: pause;
-}
-
-.touch-controls__button--quit {
-  grid-area: quit;
-  margin-right: 8px;
+  grid-area: control-pause;
 }
 
 .touch-controls__button--proceed {
-  grid-area: proceed;
+  grid-area: control-proceed;
   margin-left: 8px;
 }
 

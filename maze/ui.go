@@ -8,6 +8,7 @@ type UI interface {
 	Init() error
 	Close()
 	Interrupt()
+	AppVersion() string
 	StorePath() string
 	SetInputMode(mode termbox.InputMode)
 	PollEvent() termbox.Event
@@ -20,11 +21,13 @@ type UI interface {
 // TermboxUI adapts the termbox package to the UI interface used by the maze runtime.
 type TermboxUI struct {
 	storePath string
+	version   string
 }
 
-// NewTermboxUI builds the production UI with the store path that should be used for persistence.
-func NewTermboxUI(path string) UI {
-	return TermboxUI{storePath: path}
+// NewTermboxUI builds the production UI with the store path for persistence and
+// the semantic version that should appear in the terminal intro banner.
+func NewTermboxUI(path, version string) UI {
+	return TermboxUI{storePath: path, version: version}
 }
 
 // Init prepares the termbox screen for rendering.
@@ -40,6 +43,11 @@ func (TermboxUI) Close() {
 // Interrupt wakes a blocked PollEvent call so the runtime can shut down cleanly.
 func (TermboxUI) Interrupt() {
 	termbox.Interrupt()
+}
+
+// AppVersion reports the semantic version that should appear in the terminal intro banner.
+func (ui TermboxUI) AppVersion() string {
+	return ui.version
 }
 
 // StorePath reports where the runtime store file should be persisted for this UI session.

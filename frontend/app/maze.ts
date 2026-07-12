@@ -222,15 +222,15 @@ function getCellAddress(
   const column = (((cellNo - 1) % dimensions.length) + 1) * CONFIG.cellSpan
 
   return {
-    bottomCenter: [row, column - 1],
-    bottomLeft: [row, column - CONFIG.cellSpan],
-    bottomRight: [row, column],
-    middleCenter: [row - 1, column - 1],
-    middleLeft: [row - 1, column - CONFIG.cellSpan],
-    middleRight: [row - 1, column],
-    topCenter: [row - CONFIG.cellSpan, column - 1],
-    topLeft: [row - CONFIG.cellSpan, column - CONFIG.cellSpan],
-    topRight: [row - CONFIG.cellSpan, column],
+    __bottomCenter: [row, column - 1],
+    __bottomLeft: [row, column - CONFIG.cellSpan],
+    __bottomRight: [row, column],
+    __middleCenter: [row - 1, column - 1],
+    __middleLeft: [row - 1, column - CONFIG.cellSpan],
+    __middleRight: [row - 1, column],
+    __topCenter: [row - CONFIG.cellSpan, column - 1],
+    __topLeft: [row - CONFIG.cellSpan, column - CONFIG.cellSpan],
+    __topRight: [row - CONFIG.cellSpan, column],
   }
 }
 
@@ -239,31 +239,31 @@ function getCellNeighbors(
   cellNo: number,
 ): CellNeighbors {
   if (cellNo <= 0 || cellNo > dimensions.length * dimensions.width) {
-    return { bottom: 0, left: 0, right: 0, top: 0 }
+    return { __bottom: 0, __left: 0, __right: 0, __top: 0 }
   }
 
   const column = (cellNo - 1) % dimensions.length
   const neighbors: CellNeighbors = {
-    bottom: 0,
-    left: 0,
-    right: 0,
-    top: 0,
+    __bottom: 0,
+    __left: 0,
+    __right: 0,
+    __top: 0,
   }
 
   if (column < dimensions.length - 1) {
-    neighbors.right = cellNo + 1
+    neighbors.__right = cellNo + 1
   }
 
   if (column > 0) {
-    neighbors.left = cellNo - 1
+    neighbors.__left = cellNo - 1
   }
 
   if (cellNo - dimensions.length > 0) {
-    neighbors.top = cellNo - dimensions.length
+    neighbors.__top = cellNo - dimensions.length
   }
 
   if (cellNo + dimensions.length <= dimensions.length * dimensions.width) {
-    neighbors.bottom = cellNo + dimensions.length
+    neighbors.__bottom = cellNo + dimensions.length
   }
 
   return neighbors
@@ -272,19 +272,19 @@ function getCellNeighbors(
 function countNeighbors(neighbors: CellNeighbors): number {
   let count = 0
 
-  if (neighbors.bottom !== 0) {
+  if (neighbors.__bottom !== 0) {
     count += 1
   }
 
-  if (neighbors.left !== 0) {
+  if (neighbors.__left !== 0) {
     count += 1
   }
 
-  if (neighbors.right !== 0) {
+  if (neighbors.__right !== 0) {
     count += 1
   }
 
-  if (neighbors.top !== 0) {
+  if (neighbors.__top !== 0) {
     count += 1
   }
 
@@ -299,20 +299,20 @@ function getPresentNeighbors(
   const neighbors = getCellNeighbors(dimensions, cellNo)
   const present: number[] = []
 
-  if (neighbors.bottom !== 0 && !visited[neighbors.bottom]) {
-    present.push(neighbors.bottom)
+  if (neighbors.__bottom !== 0 && !visited[neighbors.__bottom]) {
+    present.push(neighbors.__bottom)
   }
 
-  if (neighbors.left !== 0 && !visited[neighbors.left]) {
-    present.push(neighbors.left)
+  if (neighbors.__left !== 0 && !visited[neighbors.__left]) {
+    present.push(neighbors.__left)
   }
 
-  if (neighbors.right !== 0 && !visited[neighbors.right]) {
-    present.push(neighbors.right)
+  if (neighbors.__right !== 0 && !visited[neighbors.__right]) {
+    present.push(neighbors.__right)
   }
 
-  if (neighbors.top !== 0 && !visited[neighbors.top]) {
-    present.push(neighbors.top)
+  if (neighbors.__top !== 0 && !visited[neighbors.__top]) {
+    present.push(neighbors.__top)
   }
 
   return present
@@ -323,49 +323,49 @@ function getNavigationProfile(dimensions: BaseDimensions): NavigationProfile {
     {
       maxArea: 180,
       profile: {
-        softCorridorLimit: 2,
-        hardCorridorLimit: 3,
-        preferTurnPercent: 80,
+        __softCorridorLimit: 2,
+        __hardCorridorLimit: 3,
+        __preferTurnPercent: 80,
       },
     },
     {
       maxArea: 300,
       profile: {
-        softCorridorLimit: 3,
-        hardCorridorLimit: 4,
-        preferTurnPercent: 70,
+        __softCorridorLimit: 3,
+        __hardCorridorLimit: 4,
+        __preferTurnPercent: 70,
       },
     },
     {
       maxArea: 450,
       profile: {
-        softCorridorLimit: 4,
-        hardCorridorLimit: 5,
-        preferTurnPercent: 60,
+        __softCorridorLimit: 4,
+        __hardCorridorLimit: 5,
+        __preferTurnPercent: 60,
       },
     },
     {
       maxArea: 600,
       profile: {
-        softCorridorLimit: 5,
-        hardCorridorLimit: 6,
-        preferTurnPercent: 50,
+        __softCorridorLimit: 5,
+        __hardCorridorLimit: 6,
+        __preferTurnPercent: 50,
       },
     },
     {
       maxArea: 1000,
       profile: {
-        softCorridorLimit: 5,
-        hardCorridorLimit: 7,
-        preferTurnPercent: 45,
+        __softCorridorLimit: 5,
+        __hardCorridorLimit: 7,
+        __preferTurnPercent: 45,
       },
     },
     {
       maxArea: 1600,
       profile: {
-        softCorridorLimit: 6,
-        hardCorridorLimit: 7,
-        preferTurnPercent: 40,
+        __softCorridorLimit: 6,
+        __hardCorridorLimit: 7,
+        __preferTurnPercent: 40,
       },
     },
   ]
@@ -374,9 +374,9 @@ function getNavigationProfile(dimensions: BaseDimensions): NavigationProfile {
   return (
     bands.find((band) => area <= band.maxArea)?.profile ??
     {
-      softCorridorLimit: 6,
-      hardCorridorLimit: 8,
-      preferTurnPercent: 35,
+      __softCorridorLimit: 6,
+      __hardCorridorLimit: 8,
+      __preferTurnPercent: 35,
     }
   )
 }
@@ -388,19 +388,19 @@ function directionBetween(
 ): Direction {
   const neighbors = getCellNeighbors(dimensions, currentCell)
 
-  if (nextCell === neighbors.top) {
+  if (nextCell === neighbors.__top) {
     return "up"
   }
 
-  if (nextCell === neighbors.bottom) {
+  if (nextCell === neighbors.__bottom) {
     return "down"
   }
 
-  if (nextCell === neighbors.left) {
+  if (nextCell === neighbors.__left) {
     return "left"
   }
 
-  if (nextCell === neighbors.right) {
+  if (nextCell === neighbors.__right) {
     return "right"
   }
 
@@ -413,7 +413,7 @@ function backtrackToBranch(
   visited: boolean[],
 ): { path: PathStep[]; currentCell: number; neighbors: number[] } {
   while (path.length > 0) {
-    const currentCell = path[path.length - 1].cellNo
+    const currentCell = path[path.length - 1].__cellNo
     const neighbors = getPresentNeighbors(dimensions, currentCell, visited)
 
     if (neighbors.length > 0) {
@@ -439,41 +439,41 @@ function chooseNextCell(
   for (const neighbor of neighbors) {
     const nextDirection = directionBetween(
       dimensions,
-      currentState.cellNo,
+      currentState.__cellNo,
       neighbor,
     )
     const straightLength =
-      nextDirection === currentState.moveDirection
-        ? currentState.corridorLength + 1
+      nextDirection === currentState.__moveDirection
+        ? currentState.__corridorLength + 1
         : 1
 
     const choice: PathStep = {
-      cellNo: neighbor,
-      moveDirection: nextDirection,
-      corridorLength: straightLength,
+      __cellNo: neighbor,
+      __moveDirection: nextDirection,
+      __corridorLength: straightLength,
     }
 
     allChoices.push(choice)
 
-    if (nextDirection !== currentState.moveDirection) {
+    if (nextDirection !== currentState.__moveDirection) {
       turnChoices.push(choice)
     }
 
-    if (straightLength <= profile.hardCorridorLimit) {
+    if (straightLength <= profile.__hardCorridorLimit) {
       withinHardLimit.push(choice)
     }
   }
 
   let choices = withinHardLimit.length > 0 ? withinHardLimit : allChoices
 
-  if (currentState.moveDirection !== "none" && turnChoices.length > 0) {
+  if (currentState.__moveDirection !== "none" && turnChoices.length > 0) {
     const turnPreferenceRoll = getRandomNo(CONFIG.percentScale)
 
-    if (currentState.corridorLength >= profile.hardCorridorLimit) {
+    if (currentState.__corridorLength >= profile.__hardCorridorLimit) {
       choices = turnChoices
     } else if (
-      currentState.corridorLength >= profile.softCorridorLimit &&
-      turnPreferenceRoll < profile.preferTurnPercent
+      currentState.__corridorLength >= profile.__softCorridorLimit &&
+      turnPreferenceRoll < profile.__preferTurnPercent
     ) {
       choices = turnChoices
     }
@@ -506,14 +506,14 @@ function createPath(
 
   const neighbors = getCellNeighbors(dimensions, currentCellNo)
 
-  if (nextCellNo === neighbors.bottom) {
-    maze[address.bottomCenter[0]][address.bottomCenter[1]] = "   "
-  } else if (nextCellNo === neighbors.left) {
-    maze[address.middleLeft[0]][address.middleLeft[1]] = " "
-  } else if (nextCellNo === neighbors.right) {
-    maze[address.middleRight[0]][address.middleRight[1]] = " "
-  } else if (nextCellNo === neighbors.top) {
-    maze[address.topCenter[0]][address.topCenter[1]] = "   "
+  if (nextCellNo === neighbors.__bottom) {
+    maze[address.__bottomCenter[0]][address.__bottomCenter[1]] = "   "
+  } else if (nextCellNo === neighbors.__left) {
+    maze[address.__middleLeft[0]][address.__middleLeft[1]] = " "
+  } else if (nextCellNo === neighbors.__right) {
+    maze[address.__middleRight[0]][address.__middleRight[1]] = " "
+  } else if (nextCellNo === neighbors.__top) {
+    maze[address.__topCenter[0]][address.__topCenter[1]] = "   "
   }
 }
 
@@ -568,8 +568,8 @@ function optimizeMaze(
       continue
     }
 
-    replaceChar(dimensions, address.bottomRight, chars[2], maze)
-    replaceChar(dimensions, address.topRight, chars[2], maze)
+    replaceChar(dimensions, address.__bottomRight, chars[2], maze)
+    replaceChar(dimensions, address.__topRight, chars[2], maze)
   }
 }
 
@@ -583,7 +583,7 @@ export function generateMaze(
   const maze = createPlayingField(dimensions, weight)
   const startCell = getStartPosition(dimensions)
   let path: PathStep[] = [
-    { cellNo: startCell, moveDirection: "none", corridorLength: 0 },
+    { __cellNo: startCell, __moveDirection: "none", __corridorLength: 0 },
   ]
   let currentCell = startCell
   let visitedCount = 1
@@ -609,18 +609,18 @@ export function generateMaze(
       navigationProfile,
     )
 
-    if (visited[nextChoice.cellNo]) {
+    if (visited[nextChoice.__cellNo]) {
       continue
     }
 
-    visited[nextChoice.cellNo] = true
+    visited[nextChoice.__cellNo] = true
     visitedCount += 1
-    createPath(dimensions, maze, currentCell, nextChoice.cellNo)
+    createPath(dimensions, maze, currentCell, nextChoice.__cellNo)
     path.push(nextChoice)
 
     if (path.length > longestPathLength) {
       longestPathLength = path.length
-      finalCell = nextChoice.cellNo
+      finalCell = nextChoice.__cellNo
     }
   }
 
@@ -633,8 +633,14 @@ export function generateMaze(
 
   return {
     maze,
-    startPosition: [startAddress.middleCenter[0], startAddress.middleCenter[1]],
-    finalPosition: [finalAddress.middleCenter[0], finalAddress.middleCenter[1]],
+    startPosition: [
+      startAddress.__middleCenter[0],
+      startAddress.__middleCenter[1],
+    ],
+    finalPosition: [
+      finalAddress.__middleCenter[0],
+      finalAddress.__middleCenter[1],
+    ],
   }
 }
 
