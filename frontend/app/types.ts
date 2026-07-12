@@ -39,8 +39,6 @@ export type Direction = "none" | "up" | "down" | "left" | "right"
 
 export type MoveAction = "MoveUp" | "MoveDown" | "MoveLeft" | "MoveRight"
 
-type InputMode = "keyboard" | "touch"
-
 export type NavigationProfile = {
   __softCorridorLimit: number
   __hardCorridorLimit: number
@@ -113,7 +111,6 @@ export type State = {
   canResume: boolean
   wallWeight: WallWeight
   clock: GameClock | null
-  inputMode: InputMode
 }
 
 export type AppConfig = {

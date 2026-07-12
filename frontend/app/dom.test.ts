@@ -20,56 +20,6 @@ describe("dom", () => {
     vi.restoreAllMocks()
   })
 
-  it("detects touch mode when touch capabilities are available", async () => {
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockImplementation((query: string) => ({
-        matches: query === "(pointer: coarse)",
-        media: query,
-        onchange: null,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    )
-    Object.defineProperty(navigator, "maxTouchPoints", {
-      configurable: true,
-      value: 1,
-    })
-
-    const { detectInputMode } = await import("./dom")
-
-    expect(detectInputMode()).toBe("touch")
-  })
-
-  it("applies touch mode styling and visibility to the terminal shell", async () => {
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockImplementation(() => ({
-        matches: false,
-        media: "",
-        onchange: null,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    )
-
-    const { applyInputMode, elements } = await import("./dom")
-
-    applyInputMode("touch")
-    expect(elements.app.classList.contains("terminal-app--touch")).toBe(true)
-    expect(elements.touchControls.hidden).toBe(false)
-
-    applyInputMode("keyboard")
-    expect(elements.app.classList.contains("terminal-app--touch")).toBe(false)
-    expect(elements.touchControls.hidden).toBe(true)
-  })
-
   it("computes maze dimensions from the measured terminal size", async () => {
     vi.stubGlobal(
       "matchMedia",

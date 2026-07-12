@@ -37,11 +37,10 @@ function replaceAt(line: string, index: number, char: string): string {
   return `${line.slice(0, index)}${char}${line.slice(index + 1)}`
 }
 
-function statusText(state: State): string {
-  const template =
-    state.inputMode === "touch"
-      ? CONFIG.touchStatusTemplate
-      : CONFIG.statusTemplate
+function statusText(elements: Elements, state: State): string {
+  const template = isCompactDisplay(elements)
+    ? CONFIG.touchStatusTemplate
+    : CONFIG.statusTemplate
 
   return template
     .replace("{level}", String(state.level))
@@ -59,18 +58,13 @@ function isCompactDisplay(elements: Elements): boolean {
   )
 }
 
-function navigationText(elements: Elements, state: State): string {
+function navigationText(elements: Elements): string {
   const compact = isCompactDisplay(elements)
-
-  if (state.inputMode === "touch") {
-    return compact ? CONFIG.touchNavigationCompact : CONFIG.touchNavigation
-  }
-
-  return compact ? CONFIG.navigationCompact : CONFIG.navigation
+  return compact ? CONFIG.touchNavigationCompact : CONFIG.navigation
 }
 
-function proceedText(state: State): string {
-  return state.inputMode === "touch"
+function proceedText(elements: Elements): string {
+  return isCompactDisplay(elements)
     ? CONFIG.touchProceedMessage
     : CONFIG.proceedMessage
 }
@@ -176,7 +170,7 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
   if (isPausedStatus(state.status)) {
     return [
       centeredTextRow(CONFIG.pauseMessage, "status"),
-      centeredTextRow(proceedText(state)),
+      centeredTextRow(proceedText(elements)),
     ]
   }
 
@@ -188,14 +182,14 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
     return [
       centeredTextRow(successText(), "status"),
       centeredTextRow(scoresMsg, "accent"),
-      centeredTextRow(proceedText(state)),
+      centeredTextRow(proceedText(elements)),
     ]
   }
 
   if (isLostStatus(state.status)) {
     return [
       centeredTextRow(failedText(), "status"),
-      centeredTextRow(proceedText(state)),
+      centeredTextRow(proceedText(elements)),
     ]
   }
 
@@ -252,7 +246,7 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
     0,
   )
   const lines: ScreenLine[] = [
-    centeredTextRow(navigationText(elements, state)),
+    centeredTextRow(navigationText(elements)),
     emptyTextRow(),
   ]
 
@@ -265,7 +259,7 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
   lines.push(...applyOverlayToMaze(elements, state, mazeLines, mazeWidth))
 
   if (isRunningStatus(state.status)) {
-    lines.push(emptyTextRow(), centeredTextRow(statusText(state)))
+    lines.push(emptyTextRow(), centeredTextRow(statusText(elements, state)))
   }
 
   return lines
@@ -301,8 +295,7 @@ function updateTouchControls(elements: Elements, state: State): void {
     }
   })
 
-  elements.touchControls.hidden =
-    state.inputMode !== "touch" || visibleButtons === 0
+  elements.touchControls.hidden = visibleButtons === 0
 
   const actionOnly = !showMoveControls && visibleButtons > 1
   elements.touchControls.classList.toggle(

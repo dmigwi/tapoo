@@ -1,11 +1,6 @@
 import { GameClock } from "./clock"
 import { CONFIG, ROUND_STORAGE_VERSION, WALL_WEIGHTS } from "./config"
-import {
-  applyInputMode,
-  detectInputMode,
-  elements,
-  getTerminalSize,
-} from "./dom"
+import { elements, getTerminalSize } from "./dom"
 import {
   generateMaze,
   getMazeDimensions,
@@ -43,7 +38,6 @@ const state: State = {
   canResume: false,
   wallWeight: WALL_WEIGHTS[0],
   clock: null,
-  inputMode: "keyboard",
 }
 
 let scheduledRoundPersist: number | null = null
@@ -162,15 +156,6 @@ function currentRoundFitsViewport(): boolean {
     state.dims.length <= terminalSize.length &&
     state.dims.width <= terminalSize.width
   )
-}
-
-function syncInputMode(): boolean {
-  const nextMode = detectInputMode()
-  const changed = state.inputMode !== nextMode
-
-  state.inputMode = nextMode
-  applyInputMode(nextMode)
-  return changed
 }
 
 function cancelScheduledRoundPersist(): void {
@@ -520,8 +505,6 @@ function handleAction(action: string): void {
 }
 
 function handleResize(): void {
-  syncInputMode()
-
   if (!isTooSmallStatus(state.status) && !currentRoundFitsViewport()) {
     applyTooSmallState(state.level)
     persistStateNow()
@@ -541,8 +524,6 @@ function handleResize(): void {
 }
 
 export function bootstrapGame(): void {
-  syncInputMode()
-
   elements.controls.forEach((button) => {
     button.addEventListener("click", () => {
       handleAction(button.dataset.action || "")

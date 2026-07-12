@@ -73,7 +73,6 @@ function createState(overrides: Partial<State> = {}): State {
     canResume: false,
     wallWeight: 1,
     clock: null,
-    inputMode: "keyboard",
     ...overrides,
   }
 }
@@ -241,7 +240,7 @@ describe("render", () => {
     expect(elements.touchControls.hidden).toBe(true)
   })
 
-  it("shows compact touch navigation on narrow screens", () => {
+  it("shows compact navigation on narrow screens", () => {
     const elements = createElements()
     elements.body.getBoundingClientRect = vi.fn(() => ({
       width: 360,
@@ -258,7 +257,6 @@ describe("render", () => {
     render(
       elements,
       createState({
-        inputMode: "touch",
         dims: null,
         maze: null,
         playerPosition: null,
@@ -275,7 +273,7 @@ describe("render", () => {
     expect(elements.touchControls.hidden).toBe(true)
   })
 
-  it("shows compact keyboard navigation on narrow screens", () => {
+  it("shows compact navigation on narrow screens", () => {
     const elements = createElements()
     elements.body.getBoundingClientRect = vi.fn(() => ({
       width: 414,
@@ -293,7 +291,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.navigationCompact)
+    expect(text).toContain(CONFIG.touchNavigationCompact)
     expect(text).not.toContain(CONFIG.navigation)
   })
 

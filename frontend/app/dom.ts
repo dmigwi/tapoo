@@ -31,20 +31,6 @@ export const elements: Elements = {
   ),
 }
 
-export function detectInputMode(): "keyboard" | "touch" {
-  const coarsePointer = window.matchMedia("(pointer: coarse)").matches
-  const noHover = window.matchMedia("(hover: none)").matches
-  const touchPoints = navigator.maxTouchPoints > 0
-
-  return coarsePointer || noHover || touchPoints ? "touch" : "keyboard"
-}
-
-export function applyInputMode(inputMode: "keyboard" | "touch"): void {
-  const isTouch = inputMode === "touch"
-  elements.app.classList.toggle("terminal-app--touch", isTouch)
-  elements.touchControls.hidden = !isTouch
-}
-
 export function getTerminalSize(): BaseDimensions {
   const rect = elements.body.getBoundingClientRect()
   const sampleRect = elements.measure.getBoundingClientRect()

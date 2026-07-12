@@ -210,8 +210,6 @@ async function bootstrapHarness({
 
   vi.doMock("./dom", () => ({
     elements,
-    detectInputMode: vi.fn(() => "keyboard"),
-    applyInputMode: vi.fn(),
     getTerminalSize: vi.fn(() => {
       const size =
         terminalSizes[Math.min(terminalSizeIndex, terminalSizes.length - 1)]
@@ -292,8 +290,6 @@ describe("bootstrapGame", () => {
 
     vi.doMock("./dom", () => ({
       elements,
-      detectInputMode: vi.fn(() => "keyboard"),
-      applyInputMode: vi.fn(),
       getTerminalSize: vi.fn(() => ({ length: 20, width: 20 })),
     }))
     vi.doMock("./maze", () => ({
@@ -351,8 +347,6 @@ describe("bootstrapGame", () => {
 
     vi.doMock("./dom", () => ({
       elements,
-      detectInputMode: vi.fn(() => "keyboard"),
-      applyInputMode: vi.fn(),
       getTerminalSize: vi.fn(() => ({ length: 20, width: 20 })),
     }))
     vi.doMock("./maze", () => ({
@@ -405,8 +399,6 @@ describe("bootstrapGame", () => {
 
     vi.doMock("./dom", () => ({
       elements,
-      detectInputMode: vi.fn(() => "keyboard"),
-      applyInputMode: vi.fn(),
       getTerminalSize: vi.fn(() => ({ length: 20, width: 20 })),
     }))
     vi.doMock("./maze", () => ({
@@ -458,8 +450,6 @@ describe("bootstrapGame", () => {
 
     vi.doMock("./dom", () => ({
       elements,
-      detectInputMode: vi.fn(() => "keyboard"),
-      applyInputMode: vi.fn(),
       getTerminalSize: vi.fn(() => ({ length: 20, width: 20 })),
     }))
     vi.doMock("./maze", () => ({
