@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { Elements, PersistedRound, RoundState, State } from "./types"
+import type {
+  Elements,
+  PersistedPreferences,
+  PersistedRound,
+  RoundState,
+  State,
+} from "./types"
 
 function createButton({
   action,
@@ -99,6 +105,7 @@ function createPersistedWonRound(): PersistedRound {
     score: 500,
     lastRoundScore: 500,
     remainingMs: 1000,
+    winSummary: "1.20s faster than previous (new record)",
   }
 }
 
@@ -147,7 +154,7 @@ async function bootstrapHarness({
   dimensionsResults?: DimensionsResult[]
   isSpaceFound?: (cell: string) => boolean
   persistedSnapshots?: Array<{
-    preferences: { level: number; wallWeight: 1 | 2 | 3 }
+    preferences: PersistedPreferences
     round: PersistedRound | null
   }>
   reweightedMaze?: string[][]
@@ -502,7 +509,12 @@ describe("bootstrapGame", () => {
     const harness = await bootstrapHarness({
       persistedSnapshots: [
         {
-          preferences: { level: 7, wallWeight: 3 },
+          preferences: {
+            level: 7,
+            wallWeight: 3,
+            lastAttemptMs: 3_000,
+            bestWinMs: 1_200,
+          },
           round: null,
         },
       ],
@@ -521,6 +533,10 @@ describe("bootstrapGame", () => {
     expect(state.level).toBe(1)
     expect(state.wallWeight).toBe(1)
     expect(state.status).toBe("running")
+    expect(state.lastAttemptMs).toBe(0)
+    expect(state.bestWinMs).toBe(0)
+    expect(state.lastRoundScore).toBe(0)
+    expect(state.winSummary).toBe("")
   })
 
   it("pauses and resumes a running round through keyboard controls", async () => {
@@ -566,7 +582,53 @@ describe("bootstrapGame", () => {
     expect(state.playerPosition).toEqual([1, 3])
     expect(state.status).toBe("won")
     expect(state.lastRoundScore).toBe(200)
+    expect(state.lastAttemptMs).toBe(0)
+    expect(state.bestWinMs).toBe(0)
+    expect(state.winSummary).toBe("New scores retention record")
     expect(harness.savePersistedRoundState).toHaveBeenCalled()
+  })
+
+  it("builds a browser win summary from persisted timing history", async () => {
+    const harness = await bootstrapHarness({
+      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      round: createHorizontalRound(),
+      persistedSnapshots: [
+        {
+          preferences: {
+            level: 1,
+            wallWeight: 1,
+            lastAttemptMs: 3000,
+            bestWinMs: 1000,
+          },
+          round: null,
+        },
+      ],
+    })
+
+    const stateBeforeMove = latestRenderedState(harness.render)
+    if (!stateBeforeMove.clock) {
+      throw new Error("expected a running round clock before the winning move")
+    }
+
+    const clock = stateBeforeMove.clock as NonNullable<State["clock"]> & {
+      elapsedValue: number
+    }
+    clock.elapsedValue = 1800
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowRight",
+        bubbles: true,
+      }),
+    )
+
+    const state = latestRenderedState(harness.render)
+    expect(state.status).toBe("won")
+    expect(state.lastAttemptMs).toBe(1800)
+    expect(state.bestWinMs).toBe(1000)
+    expect(state.winSummary).toBe(
+      "1.20s faster than previous (0.80s behind best)",
+    )
   })
 
 
@@ -594,6 +656,8 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.status).toBe("lost")
     expect(state.lastRoundScore).toBe(100)
+    expect(state.lastAttemptMs).toBe(2000)
+    expect(state.winSummary).toBe("")
     expect(harness.savePersistedRoundState).toHaveBeenCalled()
   })
 
@@ -666,6 +730,7 @@ describe("bootstrapGame", () => {
       score: 200,
       lastRoundScore: 0,
       remainingMs: 1500,
+      winSummary: "",
     }
 
     const harness = await bootstrapHarness({

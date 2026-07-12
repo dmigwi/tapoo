@@ -70,6 +70,9 @@ function createState(overrides: Partial<State> = {}): State {
     status: "running",
     score: 900,
     lastRoundScore: 0,
+    lastAttemptMs: 0,
+    bestWinMs: 0,
+    winSummary: "",
     canResume: false,
     wallWeight: 1,
     clock: null,
@@ -189,6 +192,7 @@ describe("render", () => {
         level: 3,
         status: "won",
         lastRoundScore: 900,
+        winSummary: "1.20s faster than previous (new record)",
       }),
     )
 
@@ -197,6 +201,7 @@ describe("render", () => {
     expect(text).toContain(CONFIG.successMessage)
     expect(text).toContain(CONFIG.proceedMessage)
     expect(text).toContain("Final Level 3 Scores:  900 (100% retention)")
+    expect(text).toContain("1.20s faster than previous (new record)")
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -206,6 +211,26 @@ describe("render", () => {
     expect(
       elements.touchControls.classList.contains("touch-controls--action-pair"),
     ).toBe(true)
+  })
+
+  it("shows a Level 1 win summary when prior metrics exist", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        dims: { length: 3, width: 3 },
+        level: 1,
+        status: "won",
+        lastRoundScore: 900,
+        winSummary: "1.20s faster than previous (new record)",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain("Final Level 1 Scores:  900 (100% retention)")
+    expect(text).toContain("1.20s faster than previous (new record)")
   })
 
   it("keeps the loss overlay free of the final score summary", () => {

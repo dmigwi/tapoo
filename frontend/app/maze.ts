@@ -377,23 +377,18 @@ function directionBetween(
 ): Direction {
   const neighbors = getCellNeighbors(dimensions, currentCell)
 
-  if (nextCell === neighbors.__top) {
-    return "MoveUp"
+  switch (nextCell) {
+    case neighbors.__top:
+      return "MoveUp"
+    case neighbors.__bottom:
+      return "MoveDown"
+    case neighbors.__left:
+      return "MoveLeft"
+    case neighbors.__right:
+      return "MoveRight"
+    default:
+      return "none"
   }
-
-  if (nextCell === neighbors.__bottom) {
-    return "MoveDown"
-  }
-
-  if (nextCell === neighbors.__left) {
-    return "MoveLeft"
-  }
-
-  if (nextCell === neighbors.__right) {
-    return "MoveRight"
-  }
-
-  return "none"
 }
 
 function backtrackToBranch(
@@ -426,34 +421,36 @@ function chooseNextCell(
   const withinHardLimit: PathStep[] = []
 
   for (const neighbor of neighbors) {
-    const nextDirection = directionBetween(
-      dimensions,
-      currentState.__cellNo,
-      neighbor,
-    )
-    const straightLength =
-      nextDirection === currentState.__moveDirection
-        ? currentState.__corridorLength + 1
-        : 1
-
     const choice: PathStep = {
       __cellNo: neighbor,
-      __moveDirection: nextDirection,
-      __corridorLength: straightLength,
+      __moveDirection: directionBetween(
+        dimensions,
+        currentState.__cellNo,
+        neighbor,
+      ),
+      __corridorLength: 1,
+    }
+
+    if (choice.__moveDirection === currentState.__moveDirection) {
+      choice.__corridorLength += currentState.__corridorLength
     }
 
     allChoices.push(choice)
 
-    if (nextDirection !== currentState.__moveDirection) {
+    if (choice.__moveDirection !== currentState.__moveDirection) {
       turnChoices.push(choice)
     }
 
-    if (straightLength <= profile.__hardCorridorLimit) {
+    if (choice.__corridorLength <= profile.__hardCorridorLimit) {
       withinHardLimit.push(choice)
     }
   }
 
-  let choices = withinHardLimit.length > 0 ? withinHardLimit : allChoices
+  let choices = allChoices
+
+  if (withinHardLimit.length > 0) {
+    choices = withinHardLimit
+  }
 
   if (currentState.__moveDirection !== "none" && turnChoices.length > 0) {
     const turnPreferenceRoll = getRandomNo(CONFIG.percentScale)
@@ -495,14 +492,19 @@ function createPath(
 
   const neighbors = getCellNeighbors(dimensions, currentCellNo)
 
-  if (nextCellNo === neighbors.__bottom) {
-    maze[address.__bottomCenter[0]][address.__bottomCenter[1]] = "   "
-  } else if (nextCellNo === neighbors.__left) {
-    maze[address.__middleLeft[0]][address.__middleLeft[1]] = " "
-  } else if (nextCellNo === neighbors.__right) {
-    maze[address.__middleRight[0]][address.__middleRight[1]] = " "
-  } else if (nextCellNo === neighbors.__top) {
-    maze[address.__topCenter[0]][address.__topCenter[1]] = "   "
+  switch (nextCellNo) {
+    case neighbors.__bottom:
+      maze[address.__bottomCenter[0]][address.__bottomCenter[1]] = "   "
+      break
+    case neighbors.__left:
+      maze[address.__middleLeft[0]][address.__middleLeft[1]] = " "
+      break
+    case neighbors.__right:
+      maze[address.__middleRight[0]][address.__middleRight[1]] = " "
+      break
+    case neighbors.__top:
+      maze[address.__topCenter[0]][address.__topCenter[1]] = "   "
+      break
   }
 }
 

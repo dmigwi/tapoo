@@ -199,11 +199,17 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
       .replace("{level}", String(state.level))
       .replace("{score}", String(state.lastRoundScore))
       .replace("{percent}", String(scorePercent(state)))
-    return [
+    const rows = [
       centeredTextRow(successText(), "status"),
       centeredTextRow(scoresMsg, "accent"),
-      centeredTextRow(proceedText(elements)),
     ]
+
+    if (state.winSummary) {
+      rows.push(centeredTextRow(state.winSummary, "accent"))
+    }
+
+    rows.push(centeredTextRow(proceedText(elements)))
+    return rows
   }
 
   if (isLostStatus(state.status)) {

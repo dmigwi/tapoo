@@ -65,6 +65,18 @@ export const CONFIG: AppConfig = {
   touchStatusTemplate: "Level: {level}   Scores: {score}",
   highScoreTemplate:
     "Final Level {level} Scores:  {score} ({percent}% retention)",
+  winNoPrevNewRecord: "New scores retention record",
+  winNoPrevMatchedBest: "Matched best scores retention",
+  winNoPrevBehindBest: "{delta} behind best scores retention",
+  winFasterPrevNewRecord: "{delta} faster than previous (new record)",
+  winFasterPrevMatchedBest: "{delta} faster than previous (matched best)",
+  winFasterPrevBehindBest: "{delta} faster than previous ({bestDelta} behind best)",
+  winSlowerPrevNewRecord: "{delta} slower than previous (new record)",
+  winSlowerPrevMatchedBest: "{delta} slower than previous (matched best)",
+  winSlowerPrevBehindBest: "{delta} slower than previous ({bestDelta} behind best)",
+  winMatchedPrevNewRecord: "Matched previous (new record)",
+  winMatchedPrevBest: "Matched previous (matched best)",
+  winMatchedPrevBehindBest: "Matched previous ({bestDelta} behind best)",
 
   // Touch-control labels.
   wallsTouchLabel: "Walls",
@@ -114,6 +126,8 @@ export const WALL_WEIGHTS = Object.keys(CONFIG.walls)
 
 export const WALL_WEIGHT_STORAGE_KEY = "tapoo.wallWeight"
 export const LEVEL_STORAGE_KEY = "tapoo.level"
+export const LAST_ATTEMPT_MS_STORAGE_KEY = "tapoo.lastAttemptMs"
+export const BEST_WIN_MS_STORAGE_KEY = "tapoo.bestWinMs"
 export const ROUND_STORAGE_KEY = "tapoo.round"
 export const ROUND_STORAGE_VERSION = 1
 export const TERMINAL_SAMPLE_WIDTH = 10

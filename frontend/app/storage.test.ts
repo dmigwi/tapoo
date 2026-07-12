@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
 import {
+  BEST_WIN_MS_STORAGE_KEY,
   LEVEL_STORAGE_KEY,
+  LAST_ATTEMPT_MS_STORAGE_KEY,
   ROUND_STORAGE_KEY,
   STORE_ENCODING_PREFIX,
   WALL_WEIGHT_STORAGE_KEY,
@@ -58,6 +60,9 @@ function createState(overrides: Partial<State> = {}): State {
     status: "running",
     score: 1200,
     lastRoundScore: 700,
+    lastAttemptMs: 1400,
+    bestWinMs: 1200,
+    winSummary: "",
     canResume: false,
     wallWeight: 2,
     clock: null,
@@ -81,19 +86,35 @@ describe("storage", () => {
   })
 
   it("saves and reloads obfuscated frontend preferences", () => {
-    savePersistedPreferences({ level: 8, wallWeight: 3 })
+    savePersistedPreferences({
+      level: 8,
+      wallWeight: 3,
+      lastAttemptMs: 2100,
+      bestWinMs: 1800,
+    })
 
     const storedLevel = window.localStorage.getItem(LEVEL_STORAGE_KEY)
     const storedWeight = window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY)
+    const storedLastAttemptMs = window.localStorage.getItem(
+      LAST_ATTEMPT_MS_STORAGE_KEY,
+    )
+    const storedBestWinMs = window.localStorage.getItem(BEST_WIN_MS_STORAGE_KEY)
 
     expect(storedLevel).toContain(STORE_ENCODING_PREFIX)
     expect(storedWeight).toContain(STORE_ENCODING_PREFIX)
+    expect(storedLastAttemptMs).toContain(STORE_ENCODING_PREFIX)
+    expect(storedBestWinMs).toContain(STORE_ENCODING_PREFIX)
     expect(storedLevel).not.toBe("8")
     expect(storedWeight).not.toBe("3")
 
     const snapshot = loadPersistedSnapshot(1, 1, isWallWeight)
 
-    expect(snapshot.preferences).toEqual({ level: 8, wallWeight: 3 })
+    expect(snapshot.preferences).toEqual({
+      level: 8,
+      wallWeight: 3,
+      lastAttemptMs: 2100,
+      bestWinMs: 1800,
+    })
   })
 
   it("saves and reloads the active round state", () => {
@@ -117,6 +138,7 @@ describe("storage", () => {
       status: "running",
       score: 1200,
       lastRoundScore: 700,
+      winSummary: "",
       remainingMs: 25_000,
     })
   })
@@ -128,7 +150,12 @@ describe("storage", () => {
 
     const snapshot = loadPersistedSnapshot(2, 1, isWallWeight)
 
-    expect(snapshot.preferences).toEqual({ level: 2, wallWeight: 1 })
+    expect(snapshot.preferences).toEqual({
+      level: 2,
+      wallWeight: 1,
+      lastAttemptMs: 0,
+      bestWinMs: 0,
+    })
     expect(snapshot.round).toBeNull()
     expect(window.sessionStorage.getItem(ROUND_STORAGE_KEY)).toBeNull()
   })
@@ -169,7 +196,12 @@ describe("storage", () => {
   })
 
   it("clears persisted preferences and the active round on demand", () => {
-    savePersistedPreferences({ level: 8, wallWeight: 3 })
+    savePersistedPreferences({
+      level: 8,
+      wallWeight: 3,
+      lastAttemptMs: 2100,
+      bestWinMs: 1800,
+    })
     savePersistedRoundState(
       createState({
         playerPosition: [1, 1],
@@ -181,6 +213,8 @@ describe("storage", () => {
 
     expect(window.localStorage.getItem(LEVEL_STORAGE_KEY)).toBeNull()
     expect(window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY)).toBeNull()
+    expect(window.localStorage.getItem(LAST_ATTEMPT_MS_STORAGE_KEY)).toBeNull()
+    expect(window.localStorage.getItem(BEST_WIN_MS_STORAGE_KEY)).toBeNull()
     expect(window.sessionStorage.getItem(ROUND_STORAGE_KEY)).toBeNull()
   })
 })
