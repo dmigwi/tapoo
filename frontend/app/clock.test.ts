@@ -24,4 +24,14 @@ describe("GameClock", () => {
     expect(clock.elapsed(6_100)).toBe(3_500)
     expect(clock.remaining(6_100)).toBe(6_500)
   })
+
+  it("toggles the blink phase every half second", () => {
+    const clock = new GameClock(10_000)
+    clock.startedAt = 100
+
+    expect(clock.blink(100)).toBe(true)
+    expect(clock.blink(599)).toBe(true)
+    expect(clock.blink(600)).toBe(false)
+    expect(clock.blink(1_100)).toBe(true)
+  })
 })

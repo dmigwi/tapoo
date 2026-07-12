@@ -18,6 +18,7 @@ fi
   ./frontend/page-meta.ts \
   --bundle \
   --minify \
+  --mangle-props=^__ \
   --platform=browser \
   --target=es2022 \
   --define:__TAPOO_BUILD_YEAR__=${BUILD_YEAR} \
@@ -27,6 +28,7 @@ fi
   ./frontend/top-menu.ts \
   --bundle \
   --minify \
+  --mangle-props=^__ \
   --platform=browser \
   --target=es2022 \
   --outfile=./public/js/top-menu.min.js
@@ -35,6 +37,7 @@ fi
   ./frontend/tapoo.ts \
   --bundle \
   --minify \
+  --mangle-props=^__ \
   --platform=browser \
   --target=es2022 \
   --outfile=./public/js/tapoo.min.js

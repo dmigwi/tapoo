@@ -16,12 +16,20 @@ import {
 } from "./maze"
 import { render } from "./render"
 import {
+  isFinishedStatus,
+  isLostStatus,
+  isPausedStatus,
+  isRunningStatus,
+  isTooSmallStatus,
+  isWonStatus,
+} from "./status"
+import {
   clearPersistedRound,
   loadPersistedSnapshot,
   savePersistedPreferences,
   savePersistedRoundState,
 } from "./storage"
-import type { PersistedRound, Position, State } from "./types"
+import type { MoveAction, PersistedRound, Position, State } from "./types"
 
 const state: State = {
   level: 1,
@@ -39,6 +47,21 @@ const state: State = {
 }
 
 let scheduledRoundPersist: number | null = null
+let lastBlinkVisible: boolean | null = null
+
+const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
+  MoveLeft: [0, -1],
+  MoveRight: [0, 1],
+  MoveUp: [-1, 0],
+  MoveDown: [1, 0],
+}
+
+const KEY_TO_MOVE_ACTION: Partial<Record<string, MoveAction>> = {
+  ArrowLeft: "MoveLeft",
+  ArrowRight: "MoveRight",
+  ArrowUp: "MoveUp",
+  ArrowDown: "MoveDown",
+}
 
 function calculateScore(totalCells: number, elapsedMs: number): number {
   return (
@@ -173,6 +196,19 @@ function persistStateNow(): void {
   persistRoundNow()
 }
 
+function currentBlinkVisible(): boolean | null {
+  if (!isRunningStatus(state.status) || !state.clock) {
+    return null
+  }
+
+  return state.clock.blink()
+}
+
+function renderState(): void {
+  lastBlinkVisible = currentBlinkVisible()
+  render(elements, state)
+}
+
 function scheduleRoundPersistence(): void {
   cancelScheduledRoundPersist()
   scheduledRoundPersist = window.setTimeout(() => {
@@ -195,7 +231,7 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
     applyTooSmallState(snapshot.level)
     state.wallWeight = snapshot.wallWeight
     persistStateNow()
-    render(elements, state)
+    renderState()
     return true
   }
 
@@ -212,10 +248,10 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   state.lastRoundScore = snapshot.lastRoundScore
   state.canResume = false
 
-  if (snapshot.status === "won" || snapshot.status === "lost") {
+  if (isFinishedStatus(snapshot.status)) {
     state.status = snapshot.status
     state.clock = null
-    render(elements, state)
+    renderState()
     return true
   }
 
@@ -224,7 +260,7 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   state.clock.pause()
   state.status = "paused"
   state.canResume = true
-  render(elements, state)
+  renderState()
   return true
 }
 
@@ -235,7 +271,7 @@ function startRound(level: number): void {
   if (!dimensions) {
     applyTooSmallState(level)
     persistStateNow()
-    render(elements, state)
+    renderState()
     return
   }
 
@@ -254,7 +290,7 @@ function startRound(level: number): void {
   state.clock = new GameClock(totalCells * 1000)
   state.score = calculateScore(totalCells, 0)
   persistStateNow()
-  render(elements, state)
+  renderState()
 }
 
 function restartGame(): void {
@@ -264,32 +300,28 @@ function restartGame(): void {
 }
 
 function resumeOrProceed(): void {
-  if (state.status === "paused" && state.canResume && state.clock) {
+  if (isPausedStatus(state.status) && state.canResume && state.clock) {
     state.clock.resume()
     state.status = "running"
     state.canResume = false
     persistRoundNow()
-    render(elements, state)
+    renderState()
     return
   }
 
-  if (state.status === "won") {
+  if (isWonStatus(state.status)) {
     startRound(state.level + 1)
     return
   }
 
-  if (state.status === "lost") {
+  if (isLostStatus(state.status)) {
     startRound(state.level)
     return
-  }
-
-  if (state.status === "too-small") {
-    restartGame()
   }
 }
 
 function pauseGame(): void {
-  if (state.status !== "running" || !state.clock) {
+  if (!isRunningStatus(state.status) || !state.clock) {
     return
   }
 
@@ -297,7 +329,7 @@ function pauseGame(): void {
   state.status = "paused"
   state.canResume = true
   persistStateNow()
-  render(elements, state)
+  renderState()
 }
 
 function cycleWallWeight(): void {
@@ -309,7 +341,7 @@ function cycleWallWeight(): void {
 
   state.wallWeight = nextWeight
   persistStateNow()
-  render(elements, state)
+  renderState()
 }
 
 function handleWinCheck(): boolean {
@@ -334,7 +366,7 @@ function handleWinCheck(): boolean {
 
 function movePlayer(rowDelta: number, columnDelta: number): void {
   if (
-    state.status !== "running" ||
+    !isRunningStatus(state.status) ||
     !state.maze ||
     !state.dims ||
     !state.playerPosition
@@ -369,11 +401,11 @@ function movePlayer(rowDelta: number, columnDelta: number): void {
   } else {
     scheduleRoundPersistence()
   }
-  render(elements, state)
+  renderState()
 }
 
 function handleLoss(): void {
-  if (state.status !== "running" || !state.dims) {
+  if (!isRunningStatus(state.status) || !state.dims) {
     return
   }
 
@@ -386,18 +418,20 @@ function handleLoss(): void {
   state.canResume = false
   state.lastRoundScore = state.score
   persistStateNow()
-  render(elements, state)
+  renderState()
 }
 
 function tick(): void {
-  if (state.status !== "running" || !state.clock || !state.dims) {
+  if (!isRunningStatus(state.status) || !state.clock || !state.dims) {
     return
   }
 
   const totalCells = state.dims.length * state.dims.width
   const nextScore = calculateScore(totalCells, state.clock.elapsed())
   const remainingMs = state.clock.remaining()
+  const nextBlinkVisible = state.clock.blink()
   const scoreChanged = nextScore !== state.score
+  const blinkChanged = nextBlinkVisible !== lastBlinkVisible
   state.score = nextScore
 
   if (remainingMs <= 0) {
@@ -405,18 +439,24 @@ function tick(): void {
     return
   }
 
-  if (scoreChanged) {
-    render(elements, state)
+  if (scoreChanged || blinkChanged) {
+    renderState()
   }
+}
+
+function handleMove(action: MoveAction): void {
+  const [rowDelta, columnDelta] = MOVE_DELTAS[action]
+  movePlayer(rowDelta, columnDelta)
 }
 
 function handleKeydown(event: KeyboardEvent): void {
   const key = event.key
   const lowerKey = key.toLowerCase()
   const controlCombo = event.ctrlKey || event.metaKey
+  const moveAction = KEY_TO_MOVE_ACTION[key]
 
   if (
-    key.startsWith("Arrow") ||
+    moveAction ||
     key === " " ||
     key === "Enter" ||
     (controlCombo && lowerKey === "b") ||
@@ -437,10 +477,9 @@ function handleKeydown(event: KeyboardEvent): void {
 
   if (
     key === "Enter" &&
-    (state.status === "paused" ||
-      state.status === "won" ||
-      state.status === "lost" ||
-      state.status === "too-small")
+    (isPausedStatus(state.status) ||
+      isWonStatus(state.status) ||
+      isLostStatus(state.status))
   ) {
     resumeOrProceed()
     return
@@ -451,35 +490,8 @@ function handleKeydown(event: KeyboardEvent): void {
     return
   }
 
-  if (key === "ArrowLeft") {
-    movePlayer(0, -1)
-  } else if (key === "ArrowRight") {
-    movePlayer(0, 1)
-  } else if (key === "ArrowUp") {
-    movePlayer(-1, 0)
-  } else if (key === "ArrowDown") {
-    movePlayer(1, 0)
-  }
-}
-
-function handleMove(direction: string): void {
-  if (direction === "left") {
-    movePlayer(0, -1)
-    return
-  }
-
-  if (direction === "right") {
-    movePlayer(0, 1)
-    return
-  }
-
-  if (direction === "up") {
-    movePlayer(-1, 0)
-    return
-  }
-
-  if (direction === "down") {
-    movePlayer(1, 0)
+  if (moveAction) {
+    handleMove(moveAction)
   }
 }
 
@@ -510,12 +522,12 @@ function handleAction(action: string): void {
 function handleResize(): void {
   syncInputMode()
 
-  if (state.status !== "too-small" && !currentRoundFitsViewport()) {
+  if (!isTooSmallStatus(state.status) && !currentRoundFitsViewport()) {
     applyTooSmallState(state.level)
     persistStateNow()
   }
 
-  if (state.status === "too-small") {
+  if (isTooSmallStatus(state.status)) {
     if (
       restorePersistedRound(
         loadPersistedSnapshot(1, WALL_WEIGHTS[0], isWallWeight).round,
@@ -523,15 +535,9 @@ function handleResize(): void {
     ) {
       return
     }
-
-    const terminalSize = getTerminalSize()
-    if (getMazeDimensions(state.level, terminalSize)) {
-      restartGame()
-      return
-    }
   }
 
-  render(elements, state)
+  renderState()
 }
 
 export function bootstrapGame(): void {
@@ -547,7 +553,7 @@ export function bootstrapGame(): void {
     button.addEventListener("click", () => {
       const move = button.dataset.move
       if (move) {
-        handleMove(move)
+        handleMove(move as MoveAction)
         return
       }
 

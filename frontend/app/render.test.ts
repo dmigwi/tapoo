@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { GameClock } from "./clock"
 import { CONFIG } from "./config"
 import { render } from "./render"
 import type { Elements, State } from "./types"
@@ -34,11 +35,11 @@ function createElements(): Elements {
   const touchControls = document.createElement("div")
   const touchButtons = [
     createButton({ action: "walls" }),
-    createButton({ move: "up" }),
+    createButton({ move: "MoveUp" }),
     createButton({ action: "proceed" }),
-    createButton({ move: "left" }),
-    createButton({ move: "right" }),
-    createButton({ move: "down" }),
+    createButton({ move: "MoveLeft" }),
+    createButton({ move: "MoveRight" }),
+    createButton({ move: "MoveDown" }),
     createButton({ action: "pause" }),
   ]
 
@@ -111,7 +112,41 @@ describe("render", () => {
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual(["up", "left", "right", "down", "pause"])
+    expect(visibleLabels).toEqual([
+      "MoveUp",
+      "MoveLeft",
+      "MoveRight",
+      "MoveDown",
+      "pause",
+    ])
+  })
+
+  it("skips drawing the destination while a running round blink phase is off", () => {
+    const elements = createElements()
+    const clock = new GameClock(10_000)
+    clock.blink = () => false
+
+    render(
+      elements,
+      createState({
+        clock,
+      }),
+    )
+
+    expect(elements.screen.innerHTML).not.toContain('class="maze-cell target"')
+  })
+
+  it("keeps drawing the destination when no active blink clock is present", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        clock: null,
+      }),
+    )
+
+    expect(elements.screen.innerHTML).toContain('class="maze-cell target"')
   })
 
   it("shows paused overlay messaging and walls plus proceed touch controls", () => {
@@ -169,5 +204,118 @@ describe("render", () => {
     expect(
       elements.touchControls.classList.contains("touch-controls--action-pair"),
     ).toBe(true)
+  })
+
+  it("shows the too-small message without proceed touch controls", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        dims: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.tooSmallMessage)
+    expect(text).toContain(CONFIG.tooSmallActionMessage)
+
+    const visibleLabels = elements.touchButtons
+      .filter((button) => !button.hidden)
+      .map((button) => button.dataset.action ?? button.dataset.move)
+
+    expect(visibleLabels).toEqual([])
+    expect(
+      elements.touchControls.classList.contains("touch-controls--action-pair"),
+    ).toBe(false)
+    expect(
+      elements.touchControls.classList.contains(
+        "touch-controls--single-action",
+      ),
+    ).toBe(false)
+    expect(elements.touchControls.hidden).toBe(true)
+  })
+
+  it("shows compact touch navigation on narrow screens", () => {
+    const elements = createElements()
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 360,
+      height: 420,
+      top: 0,
+      right: 360,
+      bottom: 420,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+
+    render(
+      elements,
+      createState({
+        inputMode: "touch",
+        dims: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.touchNavigationCompact)
+    expect(text).toContain(CONFIG.tooSmallMessage)
+    expect(text).toContain(CONFIG.tooSmallActionMessage)
+    expect(elements.touchControls.hidden).toBe(true)
+  })
+
+  it("shows compact keyboard navigation on narrow screens", () => {
+    const elements = createElements()
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 414,
+      height: 896,
+      top: 0,
+      right: 414,
+      bottom: 896,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+
+    render(elements, createState())
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.navigationCompact)
+    expect(text).not.toContain(CONFIG.navigation)
+  })
+
+  it("keeps the full keyboard navigation on medium-width screens", () => {
+    const elements = createElements()
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 600,
+      height: 896,
+      top: 0,
+      right: 600,
+      bottom: 896,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+
+    render(elements, createState())
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.navigation)
+    expect(text).not.toContain(CONFIG.navigationCompact)
   })
 })

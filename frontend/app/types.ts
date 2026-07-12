@@ -1,6 +1,6 @@
 import type { GameClock } from "./clock"
 
-type GameStatus =
+export type GameStatus =
   "boot" | "running" | "paused" | "won" | "lost" | "too-small"
 
 export type Position = [number, number]
@@ -17,41 +17,43 @@ export type LevelDimensions = BaseDimensions & {
 }
 
 export type CellAddress = {
-  bottomCenter: Position
-  bottomLeft: Position
-  bottomRight: Position
-  middleCenter: Position
-  middleLeft: Position
-  middleRight: Position
-  topCenter: Position
-  topLeft: Position
-  topRight: Position
+  __bottomCenter: Position
+  __bottomLeft: Position
+  __bottomRight: Position
+  __middleCenter: Position
+  __middleLeft: Position
+  __middleRight: Position
+  __topCenter: Position
+  __topLeft: Position
+  __topRight: Position
 }
 
 export type CellNeighbors = {
-  bottom: number
-  left: number
-  right: number
-  top: number
+  __bottom: number
+  __left: number
+  __right: number
+  __top: number
 }
 
 export type Direction = "none" | "up" | "down" | "left" | "right"
 
+export type MoveAction = "MoveUp" | "MoveDown" | "MoveLeft" | "MoveRight"
+
 type InputMode = "keyboard" | "touch"
 
 export type NavigationProfile = {
-  softCorridorLimit: number
-  hardCorridorLimit: number
-  preferTurnPercent: number
+  __softCorridorLimit: number
+  __hardCorridorLimit: number
+  __preferTurnPercent: number
 }
 
 export type PathStep = {
-  cellNo: number
-  moveDirection: Direction
-  corridorLength: number
+  __cellNo: number
+  __moveDirection: Direction
+  __corridorLength: number
 }
 
-type PersistedGameStatus = "running" | "paused" | "won" | "lost"
+export type PersistedGameStatus = "running" | "paused" | "won" | "lost"
 
 export type PersistedRound = {
   version: 1
@@ -146,7 +148,9 @@ export type AppConfig = {
 
   // Gameplay text.
   navigation: string
+  navigationCompact: string
   touchNavigation: string
+  touchNavigationCompact: string
   pauseMessage: string
   successMessage: string
   successCompactMessage: string
@@ -155,7 +159,7 @@ export type AppConfig = {
   proceedMessage: string
   touchProceedMessage: string
   tooSmallMessage: string
-  tooSmallCompactMessage: string
+  tooSmallActionMessage: string
   statusTemplate: string
   touchStatusTemplate: string
   highScoreTemplate: string
@@ -186,6 +190,8 @@ export type AppConfig = {
   diff: number
   minMazeDimension: number
   missingElementErrorTemplate: string
+  compactViewportWidth: number
+  compactViewportHeight: number
   terminalHeightInset: number
   terminalHeightScale: number
   terminalWidthInset: number

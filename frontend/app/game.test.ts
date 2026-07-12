@@ -39,11 +39,11 @@ function createElements(): Elements {
   ]
   const touchButtons = [
     createButton({ action: "walls", touch: true }),
-    createButton({ move: "up", touch: true }),
+    createButton({ move: "MoveUp", touch: true }),
     createButton({ action: "proceed", touch: true }),
-    createButton({ move: "left", touch: true }),
-    createButton({ move: "right", touch: true }),
-    createButton({ move: "down", touch: true }),
+    createButton({ move: "MoveLeft", touch: true }),
+    createButton({ move: "MoveRight", touch: true }),
+    createButton({ move: "MoveDown", touch: true }),
     createButton({ action: "pause", touch: true }),
   ]
 
@@ -187,6 +187,7 @@ async function bootstrapHarness({
       pausedAt = 0
       pausedDuration = 0
       elapsedValue = 0
+      blinkValue = true
       remainingValue: number
       pause = vi.fn(() => {
         this.pausedAt = 1
@@ -195,6 +196,7 @@ async function bootstrapHarness({
         this.pausedAt = 0
       })
       elapsed = vi.fn(() => this.elapsedValue)
+      blink = vi.fn(() => this.blinkValue)
       remaining = vi.fn(() => this.remainingValue)
 
       constructor(levelDurationMs: number) {
@@ -572,7 +574,49 @@ describe("bootstrapGame", () => {
     expect(harness.savePersistedRoundState).toHaveBeenCalled()
   })
 
-  it("recovers from a too-small resize once the viewport fits again", async () => {
+  it("re-renders a running round when only the blink phase changes", async () => {
+    const harness = await bootstrapHarness({
+      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      round: createHorizontalRound(),
+    })
+
+    const renderCallsBeforeTick = harness.render.mock.calls.length
+    const stateBeforeTick = latestRenderedState(harness.render)
+    if (!stateBeforeTick.clock || !harness.intervalCallback) {
+      throw new Error("expected running round clock and interval callback")
+    }
+
+    const clock = stateBeforeTick.clock as NonNullable<State["clock"]> & {
+      blinkValue: boolean
+      elapsedValue: number
+      remainingValue: number
+    }
+
+    clock.elapsedValue = 0
+    clock.remainingValue = 2_000
+    clock.blinkValue = false
+
+    harness.intervalCallback()
+
+    expect(harness.render.mock.calls.length).toBe(renderCallsBeforeTick + 1)
+    expect(latestRenderedState(harness.render).status).toBe("running")
+  })
+
+  it("restores a persisted round in paused mode once the viewport fits again", async () => {
+    const persistedRound: PersistedRound = {
+      version: 1,
+      level: 1,
+      dims: { length: 2, width: 1 },
+      maze: createHorizontalRound().maze,
+      playerPosition: [1, 1],
+      finalPosition: [1, 3],
+      wallWeight: 1,
+      status: "running",
+      score: 200,
+      lastRoundScore: 0,
+      remainingMs: 1500,
+    }
+
     const harness = await bootstrapHarness({
       dimensionsResults: [
         { level: 1, length: 2, width: 1 },
@@ -580,6 +624,12 @@ describe("bootstrapGame", () => {
         { level: 1, length: 2, width: 1 },
       ],
       round: createHorizontalRound(),
+      persistedSnapshots: [
+        {
+          preferences: { level: 1, wallWeight: 1 },
+          round: persistedRound,
+        },
+      ],
       terminalSizes: [
         { length: 20, width: 20 },
         { length: 1, width: 1 },
@@ -597,8 +647,34 @@ describe("bootstrapGame", () => {
     window.dispatchEvent(new Event("resize"))
 
     state = latestRenderedState(harness.render)
-    expect(state.status).toBe("running")
-    expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(4)
+    expect(state.status).toBe("paused")
+    expect(state.canResume).toBe(true)
+    expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(3)
+  })
+
+  it("does not auto-restart a too-small game when the viewport fits again without a persisted round", async () => {
+    const harness = await bootstrapHarness({
+      dimensionsResults: [
+        null,
+        { level: 1, length: 2, width: 1 },
+      ],
+      persistedSnapshots: [
+        { preferences: { level: 1, wallWeight: 1 }, round: null },
+      ],
+      terminalSizes: [
+        { length: 1, width: 1 },
+        { length: 20, width: 20 },
+      ],
+    })
+
+    const initialState = latestRenderedState(harness.render)
+    expect(initialState.status).toBe("too-small")
+
+    window.dispatchEvent(new Event("resize"))
+
+    const state = latestRenderedState(harness.render)
+    expect(state.status).toBe("too-small")
+    expect(harness.generateMaze).not.toHaveBeenCalled()
   })
 
   it("handles touch controls and page lifecycle persistence", async () => {

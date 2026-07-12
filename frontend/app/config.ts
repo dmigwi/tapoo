@@ -34,7 +34,9 @@ export const CONFIG: AppConfig = {
   // Gameplay text.
   navigation:
     "Use Arrow Keys to guide Blue (Player) to Red. Ctrl+B changes walls.",
+  navigationCompact: "Guide Blue (Player) to Red. Ctrl+B changes walls.",
   touchNavigation: "Use touch controls to guide Blue (Player) to Red.",
+  touchNavigationCompact: "Guide Blue to Red with touch controls.",
   pauseMessage: "Game paused !!!",
   successMessage:
     "Game over! Congratulations, You won by locating the target on time.",
@@ -44,9 +46,8 @@ export const CONFIG: AppConfig = {
   failedCompactMessage: "Game over! You lost.",
   proceedMessage: "Press Enter or Ctrl+P to Proceed",
   touchProceedMessage: "Use the buttons below.",
-  tooSmallMessage:
-    "The next maze needs more screen room. Enlarge the window to keep playing.",
-  tooSmallCompactMessage: "Needs more screen room for the next maze.",
+  tooSmallMessage: "This maze needs more screen room!",
+  tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
   statusTemplate:
     "Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
   touchStatusTemplate: "Level: {level}   Scores: {score}",
@@ -82,6 +83,8 @@ export const CONFIG: AppConfig = {
   diff: 10,
   minMazeDimension: 5,
   missingElementErrorTemplate: "missing required element: {id}",
+  compactViewportWidth: 540,
+  compactViewportHeight: 520,
   terminalHeightInset: 5,
   terminalHeightScale: 4,
   terminalWidthInset: 10,

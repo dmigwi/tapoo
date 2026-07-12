@@ -6,6 +6,7 @@ import {
   STORE_ENCODING_PREFIX,
   WALL_WEIGHT_STORAGE_KEY,
 } from "./config"
+import { canPersistRoundStatus } from "./status"
 import type {
   PersistedPreferences,
   PersistedRound,
@@ -86,10 +87,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     !state.maze ||
     !state.playerPosition ||
     !state.finalPosition ||
-    (state.status !== "running" &&
-      state.status !== "paused" &&
-      state.status !== "won" &&
-      state.status !== "lost")
+    !canPersistRoundStatus(state.status)
   ) {
     return null
   }
