@@ -1,4 +1,16 @@
-import type { AppConfig, WallWeight } from "./types"
+import type { AppConfig, NavigationProfile, WallWeight } from "./types"
+
+const NAVIGATION_FRIENDLY_PROFILE: NavigationProfile = {
+  __softCorridorLimit: 8,
+  __hardCorridorLimit: 10,
+  __preferTurnPercent: 90,
+}
+
+const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
+  __softCorridorLimit: 2,
+  __hardCorridorLimit: 3,
+  __preferTurnPercent: 55,
+}
 
 export const CONFIG: AppConfig = {
   // Shared page chrome.
@@ -78,6 +90,10 @@ export const CONFIG: AppConfig = {
   scoreMultiplier: 100,
   percentScale: 100,
   refreshInterval: 250,
+  navigationFriendlyMaxArea: 130,
+  navigationHardestArea: 1600,
+  navigationFriendlyProfile: NAVIGATION_FRIENDLY_PROFILE,
+  navigationHardestProfile: NAVIGATION_HARDEST_PROFILE,
   mazeLeftPadding: 3,
   seed: 100,
   diff: 10,

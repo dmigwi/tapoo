@@ -35,9 +35,9 @@ export type CellNeighbors = {
   __top: number
 }
 
-export type Direction = "none" | "up" | "down" | "left" | "right"
-
 export type MoveAction = "MoveUp" | "MoveDown" | "MoveLeft" | "MoveRight"
+
+export type Direction = "none" | MoveAction
 
 export type NavigationProfile = {
   __softCorridorLimit: number
@@ -182,6 +182,10 @@ export type AppConfig = {
   scoreMultiplier: number
   percentScale: number
   refreshInterval: number
+  navigationFriendlyMaxArea: number
+  navigationHardestArea: number
+  navigationFriendlyProfile: NavigationProfile
+  navigationHardestProfile: NavigationProfile
   mazeLeftPadding: number
   seed: number
   diff: number

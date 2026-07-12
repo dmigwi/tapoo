@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   generateMaze,
+  getNavigationProfile,
   getMazeDimensions,
   isSpaceFound,
   isWallWeight,
@@ -50,6 +51,32 @@ describe("maze", () => {
 
   it("returns no dimensions when the viewport cannot fit the maze area", () => {
     expect(getMazeDimensions(1, { length: 10, width: 10 })).toBeNull()
+  })
+
+  it("tightens the navigation profile as maze area grows", () => {
+    expect(getNavigationProfile({ length: 10, width: 11 })).toEqual({
+      __softCorridorLimit: 8,
+      __hardCorridorLimit: 10,
+      __preferTurnPercent: 90,
+    })
+
+    expect(getNavigationProfile({ length: 20, width: 20 })).toEqual({
+      __softCorridorLimit: 5,
+      __hardCorridorLimit: 7,
+      __preferTurnPercent: 75,
+    })
+
+    expect(getNavigationProfile({ length: 30, width: 30 })).toEqual({
+      __softCorridorLimit: 4,
+      __hardCorridorLimit: 5,
+      __preferTurnPercent: 65,
+    })
+
+    expect(getNavigationProfile({ length: 60, width: 60 })).toEqual({
+      __softCorridorLimit: 2,
+      __hardCorridorLimit: 3,
+      __preferTurnPercent: 55,
+    })
   })
 
   it("generates a deterministic maze layout for a fixed random source", () => {

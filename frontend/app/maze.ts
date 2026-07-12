@@ -318,67 +318,56 @@ function getPresentNeighbors(
   return present
 }
 
-function getNavigationProfile(dimensions: BaseDimensions): NavigationProfile {
-  const bands: Array<{ maxArea: number; profile: NavigationProfile }> = [
-    {
-      maxArea: 180,
-      profile: {
-        __softCorridorLimit: 2,
-        __hardCorridorLimit: 3,
-        __preferTurnPercent: 80,
-      },
-    },
-    {
-      maxArea: 300,
-      profile: {
-        __softCorridorLimit: 3,
-        __hardCorridorLimit: 4,
-        __preferTurnPercent: 70,
-      },
-    },
-    {
-      maxArea: 450,
-      profile: {
-        __softCorridorLimit: 4,
-        __hardCorridorLimit: 5,
-        __preferTurnPercent: 60,
-      },
-    },
-    {
-      maxArea: 600,
-      profile: {
-        __softCorridorLimit: 5,
-        __hardCorridorLimit: 6,
-        __preferTurnPercent: 50,
-      },
-    },
-    {
-      maxArea: 1000,
-      profile: {
-        __softCorridorLimit: 5,
-        __hardCorridorLimit: 7,
-        __preferTurnPercent: 45,
-      },
-    },
-    {
-      maxArea: 1600,
-      profile: {
-        __softCorridorLimit: 6,
-        __hardCorridorLimit: 7,
-        __preferTurnPercent: 40,
-      },
-    },
-  ]
-
+// getNavigationProfile maps maze area into the same smooth difficulty curve used
+// by the Go runtime. Smaller mazes keep longer corridors, while larger mazes
+// tighten the limits until they reach the hardest supported profile.
+export function getNavigationProfile(
+  dimensions: BaseDimensions,
+): NavigationProfile {
   const area = dimensions.length * dimensions.width
-  return (
-    bands.find((band) => area <= band.maxArea)?.profile ??
-    {
-      __softCorridorLimit: 6,
-      __hardCorridorLimit: 8,
-      __preferTurnPercent: 35,
-    }
-  )
+  const difficultyFactor = navigationDifficultyFactor(area)
+
+  return {
+    __softCorridorLimit: interpolateNavigationValue(
+      CONFIG.navigationFriendlyProfile.__softCorridorLimit,
+      CONFIG.navigationHardestProfile.__softCorridorLimit,
+      difficultyFactor,
+    ),
+    __hardCorridorLimit: interpolateNavigationValue(
+      CONFIG.navigationFriendlyProfile.__hardCorridorLimit,
+      CONFIG.navigationHardestProfile.__hardCorridorLimit,
+      difficultyFactor,
+    ),
+    __preferTurnPercent: interpolateNavigationValue(
+      CONFIG.navigationFriendlyProfile.__preferTurnPercent,
+      CONFIG.navigationHardestProfile.__preferTurnPercent,
+      difficultyFactor,
+    ),
+  }
+}
+
+function navigationDifficultyFactor(area: number): number {
+  if (area <= CONFIG.navigationFriendlyMaxArea) {
+    return 0
+  }
+
+  if (area >= CONFIG.navigationHardestArea) {
+    return 1
+  }
+
+  const normalizedArea =
+    (area - CONFIG.navigationFriendlyMaxArea) /
+    (CONFIG.navigationHardestArea - CONFIG.navigationFriendlyMaxArea)
+
+  return Math.sqrt(normalizedArea)
+}
+
+function interpolateNavigationValue(
+  friendly: number,
+  hardest: number,
+  difficultyFactor: number,
+): number {
+  return Math.round(friendly + (hardest - friendly) * difficultyFactor)
 }
 
 function directionBetween(
@@ -389,19 +378,19 @@ function directionBetween(
   const neighbors = getCellNeighbors(dimensions, currentCell)
 
   if (nextCell === neighbors.__top) {
-    return "up"
+    return "MoveUp"
   }
 
   if (nextCell === neighbors.__bottom) {
-    return "down"
+    return "MoveDown"
   }
 
   if (nextCell === neighbors.__left) {
-    return "left"
+    return "MoveLeft"
   }
 
   if (nextCell === neighbors.__right) {
-    return "right"
+    return "MoveRight"
   }
 
   return "none"
