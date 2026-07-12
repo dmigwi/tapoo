@@ -353,7 +353,7 @@ func CalculateScorePercent(totalCells, score int) int {
 		return 0
 	}
 
-	percent := (score*percentScale + maxScore/2) / maxScore
+	percent := (score*percentScale + maxScore/roundingDivisor) / maxScore
 	if percent < 0 {
 		return 0
 	}
@@ -365,12 +365,32 @@ func CalculateScorePercent(totalCells, score int) int {
 	return percent
 }
 
-// BuildWinSummary formats the win-pace comparison against the stored last attempt and best clear.
-func BuildWinSummary(current, lastAttempt, best time.Duration) string {
+// CalculateScoreRetention converts the preserved level score into a normalized fixed-point retention value.
+func CalculateScoreRetention(totalCells, score int) uint32 {
+	maxScore := totalCells * scoreMultiplier
+	if maxScore <= 0 {
+		return 0
+	}
+
+	retention := (int64(score)*retentionScale + int64(maxScore/roundingDivisor)) / int64(maxScore)
+	if retention < 0 {
+		return 0
+	}
+
+	if retention > retentionScale {
+		return retentionScale
+	}
+
+	return uint32(retention)
+}
+
+// BuildWinSummary formats the retention comparison against the stored previous attempt and best win,
+// then converts those normalized deltas back into time using the current level duration.
+func BuildWinSummary(current uint32, lastAttempt, best *uint32, levelDuration time.Duration) string {
 	// Compare the current clear against the previous attempt and the best clear independently,
 	// then let the template selector combine those states into one display string.
-	previousCmp, previousDelta := compareWinSummaryPrevious(current, lastAttempt)
-	bestCmp, bestDelta := compareWinSummaryBest(current, best)
+	previousCmp, previousDelta := compareWinSummaryPrevious(current, lastAttempt, levelDuration)
+	bestCmp, bestDelta := compareWinSummaryBest(current, best, levelDuration)
 	template := selectWinSummaryTemplate(previousCmp, bestCmp)
 
 	switch previousCmp {
@@ -408,29 +428,40 @@ func formatWinSummaryDuration(duration time.Duration) string {
 	}
 }
 
-func compareWinSummaryPrevious(current, lastAttempt time.Duration) (winSummaryPreviousComparison, string) {
-	if lastAttempt <= 0 {
+func formatWinSummaryRetentionDelta(delta uint32, levelDuration time.Duration) string {
+	levelDurationMs := float64(levelDuration) / float64(time.Millisecond)
+	deltaDurationMs := math.Round((float64(delta) * levelDurationMs) / retentionScale)
+	deltaDuration := time.Duration(deltaDurationMs) * time.Millisecond
+	return formatWinSummaryDuration(deltaDuration)
+}
+
+func compareWinSummaryPrevious(
+	current uint32, lastAttempt *uint32, levelDuration time.Duration,
+) (winSummaryPreviousComparison, string) {
+	if lastAttempt == nil {
 		return winSummaryPreviousNone, ""
 	}
 
 	switch {
-	case current < lastAttempt:
-		return winSummaryPreviousFaster, formatWinSummaryDuration(lastAttempt - current)
-	case current > lastAttempt:
-		return winSummaryPreviousSlower, formatWinSummaryDuration(current - lastAttempt)
+	case current > *lastAttempt:
+		return winSummaryPreviousFaster, formatWinSummaryRetentionDelta(current-*lastAttempt, levelDuration)
+	case current < *lastAttempt:
+		return winSummaryPreviousSlower, formatWinSummaryRetentionDelta(*lastAttempt-current, levelDuration)
 	default:
 		return winSummaryPreviousMatched, ""
 	}
 }
 
-func compareWinSummaryBest(current, best time.Duration) (winSummaryBestComparison, string) {
+func compareWinSummaryBest(
+	current uint32, best *uint32, levelDuration time.Duration,
+) (winSummaryBestComparison, string) {
 	switch {
-	case best <= 0 || current < best:
+	case best == nil || current > *best:
 		return winSummaryBestNewRecord, ""
-	case current == best:
+	case current == *best:
 		return winSummaryBestMatched, ""
 	default:
-		return winSummaryBestBehind, formatWinSummaryDuration(current - best)
+		return winSummaryBestBehind, formatWinSummaryRetentionDelta(*best-current, levelDuration)
 	}
 }
 
@@ -483,22 +514,8 @@ func selectWinSummaryTemplate(
 	return winMatchedPrevBest
 }
 
-const maxStoredDurationMilliseconds = uint64(math.MaxInt64 / int64(time.Millisecond))
-
-func durationFromMilliseconds(milliseconds uint64) time.Duration {
-	if milliseconds > maxStoredDurationMilliseconds {
-		milliseconds = maxStoredDurationMilliseconds
-	}
-
-	return time.Duration(milliseconds) * time.Millisecond
-}
-
-func durationMilliseconds(duration time.Duration) uint64 {
-	dur := duration.Milliseconds()
-	if dur < 0 {
-		return 0
-	}
-	return uint64(dur)
+func retentionPointer(value uint32) *uint32 {
+	return &value
 }
 
 func (state *gameState) handleTick(
@@ -523,18 +540,23 @@ func (state *gameState) handleTick(
 	}
 
 	stopTimer(timeout)
-	lastAttempt := durationFromMilliseconds(state.persisted.LastAttemptMs)
-	bestWin := durationFromMilliseconds(state.persisted.BestWinMs)
+	currentRetention := CalculateScoreRetention(state.totalCells, state.scores)
+	levelDuration := time.Duration(state.totalCells) * time.Second
 	state.overlay = &UIOverlay{
 		Message:       gameOverSucceed,
 		Color:         termbox.ColorCyan,
 		ShowHighScore: true,
 		ScorePercent:  CalculateScorePercent(state.totalCells, state.scores),
-		WinSummary:    BuildWinSummary(elapsed, lastAttempt, bestWin),
+		WinSummary: BuildWinSummary(
+			currentRetention,
+			state.persisted.LastAttemptRetention,
+			state.persisted.BestWinRetention,
+			levelDuration,
+		),
 	}
-	state.persisted.LastAttemptMs = durationMilliseconds(elapsed)
-	if state.persisted.BestWinMs == 0 || elapsed < bestWin {
-		state.persisted.BestWinMs = durationMilliseconds(elapsed)
+	state.persisted.LastAttemptRetention = retentionPointer(currentRetention)
+	if state.persisted.BestWinRetention == nil || currentRetention > *state.persisted.BestWinRetention {
+		state.persisted.BestWinRetention = retentionPointer(currentRetention)
 	}
 	state.nextLevel = state.persisted.Level + 1
 	state.persisted.State = GameProgressWon
@@ -550,7 +572,7 @@ func (state *gameState) handleTick(
 }
 
 func (state *gameState) handleTimeout(ui UI, data [][]string) error {
-	state.persisted.LastAttemptMs = durationMilliseconds(time.Duration(state.totalCells) * time.Second)
+	state.persisted.LastAttemptRetention = retentionPointer(0)
 	state.overlay = &UIOverlay{
 		Message:       gameOverFailed,
 		Color:         termbox.ColorRed,

@@ -167,63 +167,80 @@ func TestCalculateScore(t *testing.T) {
 	}
 }
 
+func TestCalculateScoreRetention(t *testing.T) {
+	t.Parallel()
+
+	got := maze.CalculateScoreRetention(10, 675)
+	if got != 675000 {
+		t.Fatalf("unexpected score retention: got %d want %d", got, 675000)
+	}
+}
+
 func TestBuildWinSummary(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
 		name        string
-		current     time.Duration
-		lastAttempt time.Duration
-		best        time.Duration
+		current     uint32
+		lastAttempt *uint32
+		best        *uint32
+		duration    time.Duration
 		want        string
 	}{
 		{
 			name:        "reports a faster run that is still behind the best",
-			current:     1800 * time.Millisecond,
-			lastAttempt: 3 * time.Second,
-			best:        time.Second,
+			current:     660000,
+			lastAttempt: uint32Ptr(540000),
+			best:        uint32Ptr(740000),
+			duration:    10 * time.Second,
 			want:        "               1.20s faster than previous (0.80s behind best)                  ",
 		},
 		{
 			name:        "reports a faster run that sets a new record",
-			current:     1800 * time.Millisecond,
-			lastAttempt: 3 * time.Second,
-			best:        2 * time.Second,
+			current:     660000,
+			lastAttempt: uint32Ptr(540000),
+			best:        uint32Ptr(620000),
+			duration:    10 * time.Second,
 			want:        "               1.20s faster than previous (new record)                      ",
 		},
 		{
 			name:        "falls back to the best summary when no last attempt is stored",
-			current:     1800 * time.Millisecond,
-			lastAttempt: 0,
-			best:        0,
+			current:     660000,
+			lastAttempt: nil,
+			best:        nil,
+			duration:    10 * time.Second,
 			want:        "               New scores retention record                               ",
 		},
 		{
 			name:        "reports a first stored run that matches the best clear",
-			current:     2 * time.Second,
-			lastAttempt: 0,
-			best:        2 * time.Second,
+			current:     660000,
+			lastAttempt: nil,
+			best:        uint32Ptr(660000),
+			duration:    10 * time.Second,
 			want:        "               Matched best scores retention                             ",
 		},
 		{
 			name:        "reports a matched previous run that is still behind the best",
-			current:     2800 * time.Millisecond,
-			lastAttempt: 2800 * time.Millisecond,
-			best:        2 * time.Second,
+			current:     660000,
+			lastAttempt: uint32Ptr(660000),
+			best:        uint32Ptr(740000),
+			duration:    10 * time.Second,
 			want:        "               Matched previous (0.80s behind best)                         ",
 		},
 		{
 			name:        "formats longer differences in minutes",
-			current:     3 * time.Minute,
-			lastAttempt: 255 * time.Second,
-			best:        2 * time.Minute,
+			current:     500000,
+			lastAttempt: uint32Ptr(250000),
+			best:        uint32Ptr(700000),
+			duration:    5 * time.Minute,
 			want:        "               1.25m faster than previous (1.00m behind best)                  ",
 		},
 		{
 			name:        "formats very long differences in hours",
-			current:     4 * time.Hour,
-			lastAttempt: 30 * time.Minute,
-			best:        2 * time.Hour,
+			current:     150000,
+			lastAttempt: uint32Ptr(500000),
+			best:        uint32Ptr(350000),
+			duration:    10 * time.Hour,
 			want:        "               3.50h slower than previous (2.00h behind best)                  ",
 		},
 	}
@@ -232,12 +249,16 @@ func TestBuildWinSummary(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := maze.BuildWinSummary(testCase.current, testCase.lastAttempt, testCase.best)
+			got := maze.BuildWinSummary(testCase.current, testCase.lastAttempt, testCase.best, testCase.duration)
 			if got != testCase.want {
 				t.Fatalf("unexpected win summary: got %q want %q", got, testCase.want)
 			}
 		})
 	}
+}
+
+func uint32Ptr(value uint32) *uint32 {
+	return &value
 }
 
 func TestStartWithUI(t *testing.T) {

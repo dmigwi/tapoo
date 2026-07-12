@@ -102,6 +102,7 @@ export const CONFIG: AppConfig = {
   moveStep: 2,
   scoreMultiplier: 100,
   percentScale: 100,
+  retentionScale: 1_000_000,
   refreshInterval: 250,
   navigationFriendlyMaxArea: 130,
   navigationHardestArea: 1600,
@@ -126,8 +127,8 @@ export const WALL_WEIGHTS = Object.keys(CONFIG.walls)
 
 export const WALL_WEIGHT_STORAGE_KEY = "tapoo.wallWeight"
 export const LEVEL_STORAGE_KEY = "tapoo.level"
-export const LAST_ATTEMPT_MS_STORAGE_KEY = "tapoo.lastAttemptMs"
-export const BEST_WIN_MS_STORAGE_KEY = "tapoo.bestWinMs"
+export const LAST_ATTEMPT_RETENTION_STORAGE_KEY = "tapoo.lastAttemptRetention"
+export const BEST_WIN_RETENTION_STORAGE_KEY = "tapoo.bestWinRetention"
 export const ROUND_STORAGE_KEY = "tapoo.round"
 export const ROUND_STORAGE_VERSION = 1
 export const TERMINAL_SAMPLE_WIDTH = 10

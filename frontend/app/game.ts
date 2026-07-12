@@ -36,8 +36,8 @@ const state: State = {
   status: "boot",
   score: 0,
   lastRoundScore: 0,
-  lastAttemptMs: 0,
-  bestWinMs: 0,
+  lastAttemptRetention: null,
+  bestWinRetention: null,
   winSummary: "",
   canResume: false,
   wallWeight: WALL_WEIGHTS[0],
@@ -83,25 +83,59 @@ function formatWinSummaryDuration(durationMs: number): string {
   return `${(durationMs / 3_600_000).toFixed(2)}h`
 }
 
+function calculateScoreRetention(totalCells: number, score: number): number {
+  const maxScore = totalCells * CONFIG.scoreMultiplier
+  if (maxScore <= 0) {
+    return 0
+  }
+
+  return Math.max(
+    0,
+    Math.min(
+      CONFIG.retentionScale,
+      Math.floor(
+        (score * CONFIG.retentionScale + Math.floor(maxScore / 2)) / maxScore,
+      ),
+    ),
+  )
+}
+
+function formatWinSummaryRetentionDelta(
+  deltaRetention: number,
+  levelDurationMs: number,
+): string {
+  const deltaMs = Math.round(
+    (deltaRetention * levelDurationMs) / CONFIG.retentionScale,
+  )
+  return formatWinSummaryDuration(deltaMs)
+}
+
 function compareWinSummaryPrevious(
-  currentMs: number,
-  lastAttemptMs: number,
+  currentRetention: number,
+  lastAttemptRetention: number | null,
+  levelDurationMs: number,
 ): { comparison: WinSummaryPreviousComparison; delta: string } {
-  if (lastAttemptMs <= 0) {
+  if (lastAttemptRetention === null) {
     return { comparison: "none", delta: "" }
   }
 
-  if (currentMs < lastAttemptMs) {
+  if (currentRetention > lastAttemptRetention) {
     return {
       comparison: "faster",
-      delta: formatWinSummaryDuration(lastAttemptMs - currentMs),
+      delta: formatWinSummaryRetentionDelta(
+        currentRetention - lastAttemptRetention,
+        levelDurationMs,
+      ),
     }
   }
 
-  if (currentMs > lastAttemptMs) {
+  if (currentRetention < lastAttemptRetention) {
     return {
       comparison: "slower",
-      delta: formatWinSummaryDuration(currentMs - lastAttemptMs),
+      delta: formatWinSummaryRetentionDelta(
+        lastAttemptRetention - currentRetention,
+        levelDurationMs,
+      ),
     }
   }
 
@@ -109,17 +143,21 @@ function compareWinSummaryPrevious(
 }
 
 function compareWinSummaryBest(
-  currentMs: number,
-  bestWinMs: number,
+  currentRetention: number,
+  bestWinRetention: number | null,
+  levelDurationMs: number,
 ): { comparison: WinSummaryBestComparison; delta: string } {
-  if (bestWinMs <= 0 || currentMs < bestWinMs) {
+  if (bestWinRetention === null || currentRetention > bestWinRetention) {
     return { comparison: "new-record", delta: "" }
   }
 
-  if (currentMs > bestWinMs) {
+  if (currentRetention < bestWinRetention) {
     return {
       comparison: "behind-best",
-      delta: formatWinSummaryDuration(currentMs - bestWinMs),
+      delta: formatWinSummaryRetentionDelta(
+        bestWinRetention - currentRetention,
+        levelDurationMs,
+      ),
     }
   }
 
@@ -187,12 +225,21 @@ function selectWinSummaryTemplate(
 }
 
 function buildWinSummary(
-  currentMs: number,
-  lastAttemptMs: number,
-  bestWinMs: number,
+  currentRetention: number,
+  lastAttemptRetention: number | null,
+  bestWinRetention: number | null,
+  levelDurationMs: number,
 ): string {
-  const previous = compareWinSummaryPrevious(currentMs, lastAttemptMs)
-  const best = compareWinSummaryBest(currentMs, bestWinMs)
+  const previous = compareWinSummaryPrevious(
+    currentRetention,
+    lastAttemptRetention,
+    levelDurationMs,
+  )
+  const best = compareWinSummaryBest(
+    currentRetention,
+    bestWinRetention,
+    levelDurationMs,
+  )
   const template = selectWinSummaryTemplate(
     previous.comparison,
     best.comparison,
@@ -427,8 +474,8 @@ function restartGame(): void {
   cancelScheduledRoundPersist()
   clearPersistedSnapshot()
   state.wallWeight = WALL_WEIGHTS[0]
-  state.lastAttemptMs = 0
-  state.bestWinMs = 0
+  state.lastAttemptRetention = null
+  state.bestWinRetention = null
   state.lastRoundScore = 0
   state.winSummary = ""
   startRound(1, false)
@@ -483,6 +530,7 @@ function handleWinCheck(): boolean {
   if (state.clock && state.dims) {
     const totalCells = state.dims.length * state.dims.width
     const elapsedMs = state.clock.elapsed()
+    const levelDurationMs = totalCells * 1000
     state.score = calculateScore(totalCells, elapsedMs)
 
     if (
@@ -490,16 +538,19 @@ function handleWinCheck(): boolean {
       state.finalPosition &&
       positionsEqual(state.playerPosition, state.finalPosition)
     ) {
+      const currentRetention = calculateScoreRetention(totalCells, state.score)
       state.winSummary = buildWinSummary(
-        elapsedMs,
-        state.lastAttemptMs,
-        state.bestWinMs,
+        currentRetention,
+        state.lastAttemptRetention,
+        state.bestWinRetention,
+        levelDurationMs,
       )
-      state.lastAttemptMs = elapsedMs
-      state.bestWinMs =
-        state.bestWinMs <= 0 || elapsedMs < state.bestWinMs
-          ? elapsedMs
-          : state.bestWinMs
+      state.lastAttemptRetention = currentRetention
+      state.bestWinRetention =
+        state.bestWinRetention === null ||
+        currentRetention > state.bestWinRetention
+          ? currentRetention
+          : state.bestWinRetention
     }
   }
 
@@ -570,7 +621,7 @@ function handleLoss(): void {
   state.status = "lost"
   state.canResume = false
   state.lastRoundScore = state.score
-  state.lastAttemptMs = state.dims.length * state.dims.width * 1000
+  state.lastAttemptRetention = 0
   state.winSummary = ""
   persistStateNow()
   renderState()
@@ -731,8 +782,10 @@ export function bootstrapGame(): void {
   )
   state.wallWeight = persistedSnapshot.preferences.wallWeight
   state.level = persistedSnapshot.preferences.level
-  state.lastAttemptMs = persistedSnapshot.preferences.lastAttemptMs ?? 0
-  state.bestWinMs = persistedSnapshot.preferences.bestWinMs ?? 0
+  state.lastAttemptRetention =
+    persistedSnapshot.preferences.lastAttemptRetention ?? null
+  state.bestWinRetention =
+    persistedSnapshot.preferences.bestWinRetention ?? null
 
   if (!restorePersistedRound(persistedSnapshot.round)) {
     startRound(state.level)

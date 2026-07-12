@@ -24,11 +24,11 @@ func TestStore(t *testing.T) {
 		}
 
 		if err := gameStore.Save(maze.StoredGameState{
-			Level:         7,
-			WallWeight:    maze.WallWeightBold,
-			State:         maze.GameProgressWon,
-			LastAttemptMs: 1200,
-			BestWinMs:     900,
+			Level:                7,
+			WallWeight:           maze.WallWeightBold,
+			State:                maze.GameProgressWon,
+			LastAttemptRetention: storeUint32Ptr(710000),
+			BestWinRetention:     storeUint32Ptr(820000),
 		}); err != nil {
 			t.Fatalf("save returned error: %v", err)
 		}
@@ -50,12 +50,12 @@ func TestStore(t *testing.T) {
 			t.Fatalf("unexpected stored progress state: got %s want %s", state.State, maze.GameProgressWon)
 		}
 
-		if state.LastAttemptMs != 1200 {
-			t.Fatalf("unexpected stored last attempt duration: got %d want %d", state.LastAttemptMs, 1200)
+		if state.LastAttemptRetention == nil || *state.LastAttemptRetention != 710000 {
+			t.Fatalf("unexpected stored last attempt retention: got %v want %d", state.LastAttemptRetention, 710000)
 		}
 
-		if state.BestWinMs != 900 {
-			t.Fatalf("unexpected stored best win duration: got %d want %d", state.BestWinMs, 900)
+		if state.BestWinRetention == nil || *state.BestWinRetention != 820000 {
+			t.Fatalf("unexpected stored best win retention: got %v want %d", state.BestWinRetention, 820000)
 		}
 
 		if _, err := os.Stat(storePath); err != nil {
@@ -116,11 +116,11 @@ func TestStore(t *testing.T) {
 		}
 
 		if err := gameStore.Save(maze.StoredGameState{
-			Level:         0,
-			WallWeight:    maze.WallWeight(99),
-			State:         maze.GameProgress(99),
-			LastAttemptMs: 1,
-			BestWinMs:     1,
+			Level:                0,
+			WallWeight:           maze.WallWeight(99),
+			State:                maze.GameProgress(99),
+			LastAttemptRetention: storeUint32Ptr(1_000_001),
+			BestWinRetention:     storeUint32Ptr(1_000_001),
 		}); err != nil {
 			t.Fatalf("save returned error: %v", err)
 		}
@@ -148,4 +148,8 @@ func TestStore(t *testing.T) {
 			t.Fatalf("unexpected resumed level: got %d want %d", got, 30001)
 		}
 	})
+}
+
+func storeUint32Ptr(value uint32) *uint32 {
+	return &value
 }

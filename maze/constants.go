@@ -24,8 +24,10 @@ const (
 
 	moveStep              = 2
 	minPlayableMazeCells  = 2
+	roundingDivisor       = 2
 	scoreMultiplier       = 100
 	percentScale          = 100
+	retentionScale        = 1_000_000
 	goalBlinkInterval     = time.Second
 	goalBlinkOnDuration   = goalBlinkInterval / 2
 	refreshInterval       = 250 * time.Millisecond

@@ -1,7 +1,7 @@
 import {
-  BEST_WIN_MS_STORAGE_KEY,
+  BEST_WIN_RETENTION_STORAGE_KEY,
   LEVEL_STORAGE_KEY,
-  LAST_ATTEMPT_MS_STORAGE_KEY,
+  LAST_ATTEMPT_RETENTION_STORAGE_KEY,
   ROUND_STORAGE_KEY,
   ROUND_STORAGE_VERSION,
   STORE_BLEND_KEY,
@@ -124,12 +124,12 @@ function savePreferences(preferences: PersistedPreferences): void {
       encodeStoredPayload(preferences.level),
     )
     window.localStorage.setItem(
-      LAST_ATTEMPT_MS_STORAGE_KEY,
-      encodeStoredPayload(preferences.lastAttemptMs ?? 0),
+      LAST_ATTEMPT_RETENTION_STORAGE_KEY,
+      encodeStoredPayload(preferences.lastAttemptRetention ?? null),
     )
     window.localStorage.setItem(
-      BEST_WIN_MS_STORAGE_KEY,
-      encodeStoredPayload(preferences.bestWinMs ?? 0),
+      BEST_WIN_RETENTION_STORAGE_KEY,
+      encodeStoredPayload(preferences.bestWinRetention ?? null),
     )
   } catch {
     // Ignore storage failures so durable browser preferences remain best-effort only.
@@ -144,22 +144,24 @@ function loadPreferences(
   try {
     const storedLevel = window.localStorage.getItem(LEVEL_STORAGE_KEY)
     const storedWeight = window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY)
-    const storedLastAttemptMs = window.localStorage.getItem(
-      LAST_ATTEMPT_MS_STORAGE_KEY,
+    const storedLastAttemptRetention = window.localStorage.getItem(
+      LAST_ATTEMPT_RETENTION_STORAGE_KEY,
     )
-    const storedBestWinMs = window.localStorage.getItem(BEST_WIN_MS_STORAGE_KEY)
+    const storedBestWinRetention = window.localStorage.getItem(
+      BEST_WIN_RETENTION_STORAGE_KEY,
+    )
     const parsedLevel =
       storedLevel === null ? null : decodeStoredPayload<number>(storedLevel)
     const parsedWeight =
       storedWeight === null ? null : decodeStoredPayload<number>(storedWeight)
-    const parsedLastAttemptMs =
-      storedLastAttemptMs === null
+    const parsedLastAttemptRetention =
+      storedLastAttemptRetention === null
         ? null
-        : decodeStoredPayload<number>(storedLastAttemptMs)
-    const parsedBestWinMs =
-      storedBestWinMs === null
+        : decodeStoredPayload<number | null>(storedLastAttemptRetention)
+    const parsedBestWinRetention =
+      storedBestWinRetention === null
         ? null
-        : decodeStoredPayload<number>(storedBestWinMs)
+        : decodeStoredPayload<number | null>(storedBestWinRetention)
 
     return {
       level:
@@ -167,21 +169,25 @@ function loadPreferences(
           ? parsedLevel
           : defaultLevel,
       wallWeight: isWallWeight(parsedWeight) ? parsedWeight : defaultWeight,
-      lastAttemptMs:
-        Number.isFinite(parsedLastAttemptMs) && parsedLastAttemptMs >= 0
-          ? parsedLastAttemptMs
-          : 0,
-      bestWinMs:
-        Number.isFinite(parsedBestWinMs) && parsedBestWinMs >= 0
-          ? parsedBestWinMs
-          : 0,
+      lastAttemptRetention:
+        Number.isFinite(parsedLastAttemptRetention) &&
+        parsedLastAttemptRetention >= 0 &&
+        parsedLastAttemptRetention <= 1_000_000
+          ? parsedLastAttemptRetention
+          : null,
+      bestWinRetention:
+        Number.isFinite(parsedBestWinRetention) &&
+        parsedBestWinRetention >= 0 &&
+        parsedBestWinRetention <= 1_000_000
+          ? parsedBestWinRetention
+          : null,
     }
   } catch {
     return {
       level: defaultLevel,
       wallWeight: defaultWeight,
-      lastAttemptMs: 0,
-      bestWinMs: 0,
+      lastAttemptRetention: null,
+      bestWinRetention: null,
     }
   }
 }
@@ -232,13 +238,16 @@ export function loadPersistedSnapshot(
 }
 
 export function savePersistedPreferences(
-  state: Pick<State, "level" | "wallWeight" | "lastAttemptMs" | "bestWinMs">,
+  state: Pick<
+    State,
+    "level" | "wallWeight" | "lastAttemptRetention" | "bestWinRetention"
+  >,
 ): void {
   savePreferences({
     level: state.level,
     wallWeight: state.wallWeight,
-    lastAttemptMs: state.lastAttemptMs,
-    bestWinMs: state.bestWinMs,
+    lastAttemptRetention: state.lastAttemptRetention,
+    bestWinRetention: state.bestWinRetention,
   })
 }
 
@@ -254,8 +263,8 @@ export function clearPersistedSnapshot(): void {
   try {
     window.localStorage.removeItem(LEVEL_STORAGE_KEY)
     window.localStorage.removeItem(WALL_WEIGHT_STORAGE_KEY)
-    window.localStorage.removeItem(LAST_ATTEMPT_MS_STORAGE_KEY)
-    window.localStorage.removeItem(BEST_WIN_MS_STORAGE_KEY)
+    window.localStorage.removeItem(LAST_ATTEMPT_RETENTION_STORAGE_KEY)
+    window.localStorage.removeItem(BEST_WIN_RETENTION_STORAGE_KEY)
   } catch {
     // Ignore storage failures so reset remains best-effort only.
   }

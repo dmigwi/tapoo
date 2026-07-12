@@ -71,8 +71,8 @@ export type PersistedRound = {
 export type PersistedPreferences = {
   level: number
   wallWeight: WallWeight
-  lastAttemptMs?: number
-  bestWinMs?: number
+  lastAttemptRetention?: number | null
+  bestWinRetention?: number | null
 }
 
 export type PersistedSnapshot = {
@@ -111,8 +111,8 @@ export type State = {
   status: GameStatus
   score: number
   lastRoundScore: number
-  lastAttemptMs: number
-  bestWinMs: number
+  lastAttemptRetention: number | null
+  bestWinRetention: number | null
   winSummary: string
   canResume: boolean
   wallWeight: WallWeight
@@ -199,6 +199,7 @@ export type AppConfig = {
   moveStep: number
   scoreMultiplier: number
   percentScale: number
+  retentionScale: number
   refreshInterval: number
   navigationFriendlyMaxArea: number
   navigationHardestArea: number

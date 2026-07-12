@@ -48,12 +48,25 @@ func (state GameProgress) String() string {
 }
 
 // StoredGameState stores the small amount of runtime state we want to restore on restart.
+// Retention values are persisted as normalized fixed-point scores on the range [0, retentionScale],
+// where 0 means no retained score and retentionScale means the full starting score was preserved.
+// That normalization keeps win-history comparisons fair across levels even though larger mazes
+// have more total cells and therefore longer time budgets than earlier levels.
 type StoredGameState struct {
-	Level         int          `json:"level"`
-	WallWeight    WallWeight   `json:"wall_weight"`
-	State         GameProgress `json:"state"`
-	LastAttemptMs uint64       `json:"last_attempt_ms,omitempty"`
-	BestWinMs     uint64       `json:"best_win_ms,omitempty"`
+	// Level is the most recent level reached before the current process stopped.
+	Level int `json:"level"`
+
+	// WallWeight is the preferred maze wall style that should be restored on startup.
+	WallWeight WallWeight `json:"wall_weight"`
+
+	// State records whether the stored level was still in progress, won, or failed.
+	State GameProgress `json:"state"`
+
+	// LastAttemptRetention tracks the normalized retention from the most recent completed attempt.
+	LastAttemptRetention *uint32 `json:"last_attempt_retention,omitempty"`
+
+	// BestWinRetention tracks the strongest normalized retention from any successful clear so far.
+	BestWinRetention *uint32 `json:"best_win_retention,omitempty"`
 }
 
 // Store handles best-effort persistence for the current level and wall weight.
@@ -92,6 +105,14 @@ func (stateStore *Store) Load() (*StoredGameState, error) {
 
 	if !state.State.IsValid() {
 		return nil, fmt.Errorf("invalid stored game state: %s", state.State)
+	}
+
+	if state.LastAttemptRetention != nil && *state.LastAttemptRetention > retentionScale {
+		return nil, fmt.Errorf("invalid stored last attempt retention: %d", *state.LastAttemptRetention)
+	}
+
+	if state.BestWinRetention != nil && *state.BestWinRetention > retentionScale {
+		return nil, fmt.Errorf("invalid stored best win retention: %d", *state.BestWinRetention)
 	}
 
 	return &state, nil

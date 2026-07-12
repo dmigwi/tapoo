@@ -512,8 +512,8 @@ describe("bootstrapGame", () => {
           preferences: {
             level: 7,
             wallWeight: 3,
-            lastAttemptMs: 3_000,
-            bestWinMs: 1_200,
+            lastAttemptRetention: 710000,
+            bestWinRetention: 880000,
           },
           round: null,
         },
@@ -533,8 +533,8 @@ describe("bootstrapGame", () => {
     expect(state.level).toBe(1)
     expect(state.wallWeight).toBe(1)
     expect(state.status).toBe("running")
-    expect(state.lastAttemptMs).toBe(0)
-    expect(state.bestWinMs).toBe(0)
+    expect(state.lastAttemptRetention).toBeNull()
+    expect(state.bestWinRetention).toBeNull()
     expect(state.lastRoundScore).toBe(0)
     expect(state.winSummary).toBe("")
   })
@@ -582,8 +582,8 @@ describe("bootstrapGame", () => {
     expect(state.playerPosition).toEqual([1, 3])
     expect(state.status).toBe("won")
     expect(state.lastRoundScore).toBe(200)
-    expect(state.lastAttemptMs).toBe(0)
-    expect(state.bestWinMs).toBe(0)
+    expect(state.lastAttemptRetention).toBe(1_000_000)
+    expect(state.bestWinRetention).toBe(1_000_000)
     expect(state.winSummary).toBe("New scores retention record")
     expect(harness.savePersistedRoundState).toHaveBeenCalled()
   })
@@ -597,8 +597,8 @@ describe("bootstrapGame", () => {
           preferences: {
             level: 1,
             wallWeight: 1,
-            lastAttemptMs: 3000,
-            bestWinMs: 1000,
+            lastAttemptRetention: 0,
+            bestWinRetention: 1_000_000,
           },
           round: null,
         },
@@ -613,7 +613,7 @@ describe("bootstrapGame", () => {
     const clock = stateBeforeMove.clock as NonNullable<State["clock"]> & {
       elapsedValue: number
     }
-    clock.elapsedValue = 1800
+    clock.elapsedValue = 800
 
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -624,8 +624,8 @@ describe("bootstrapGame", () => {
 
     const state = latestRenderedState(harness.render)
     expect(state.status).toBe("won")
-    expect(state.lastAttemptMs).toBe(1800)
-    expect(state.bestWinMs).toBe(1000)
+    expect(state.lastAttemptRetention).toBe(600000)
+    expect(state.bestWinRetention).toBe(1_000_000)
     expect(state.winSummary).toBe(
       "1.20s faster than previous (0.80s behind best)",
     )
@@ -656,7 +656,7 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.status).toBe("lost")
     expect(state.lastRoundScore).toBe(100)
-    expect(state.lastAttemptMs).toBe(2000)
+    expect(state.lastAttemptRetention).toBe(0)
     expect(state.winSummary).toBe("")
     expect(harness.savePersistedRoundState).toHaveBeenCalled()
   })

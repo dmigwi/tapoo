@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
 import {
-  BEST_WIN_MS_STORAGE_KEY,
+  BEST_WIN_RETENTION_STORAGE_KEY,
   LEVEL_STORAGE_KEY,
-  LAST_ATTEMPT_MS_STORAGE_KEY,
+  LAST_ATTEMPT_RETENTION_STORAGE_KEY,
   ROUND_STORAGE_KEY,
   STORE_ENCODING_PREFIX,
   WALL_WEIGHT_STORAGE_KEY,
@@ -60,8 +60,8 @@ function createState(overrides: Partial<State> = {}): State {
     status: "running",
     score: 1200,
     lastRoundScore: 700,
-    lastAttemptMs: 1400,
-    bestWinMs: 1200,
+    lastAttemptRetention: 700000,
+    bestWinRetention: 820000,
     winSummary: "",
     canResume: false,
     wallWeight: 2,
@@ -89,21 +89,23 @@ describe("storage", () => {
     savePersistedPreferences({
       level: 8,
       wallWeight: 3,
-      lastAttemptMs: 2100,
-      bestWinMs: 1800,
+      lastAttemptRetention: 710000,
+      bestWinRetention: 840000,
     })
 
     const storedLevel = window.localStorage.getItem(LEVEL_STORAGE_KEY)
     const storedWeight = window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY)
-    const storedLastAttemptMs = window.localStorage.getItem(
-      LAST_ATTEMPT_MS_STORAGE_KEY,
+    const storedLastAttemptRetention = window.localStorage.getItem(
+      LAST_ATTEMPT_RETENTION_STORAGE_KEY,
     )
-    const storedBestWinMs = window.localStorage.getItem(BEST_WIN_MS_STORAGE_KEY)
+    const storedBestWinRetention = window.localStorage.getItem(
+      BEST_WIN_RETENTION_STORAGE_KEY,
+    )
 
     expect(storedLevel).toContain(STORE_ENCODING_PREFIX)
     expect(storedWeight).toContain(STORE_ENCODING_PREFIX)
-    expect(storedLastAttemptMs).toContain(STORE_ENCODING_PREFIX)
-    expect(storedBestWinMs).toContain(STORE_ENCODING_PREFIX)
+    expect(storedLastAttemptRetention).toContain(STORE_ENCODING_PREFIX)
+    expect(storedBestWinRetention).toContain(STORE_ENCODING_PREFIX)
     expect(storedLevel).not.toBe("8")
     expect(storedWeight).not.toBe("3")
 
@@ -112,8 +114,8 @@ describe("storage", () => {
     expect(snapshot.preferences).toEqual({
       level: 8,
       wallWeight: 3,
-      lastAttemptMs: 2100,
-      bestWinMs: 1800,
+      lastAttemptRetention: 710000,
+      bestWinRetention: 840000,
     })
   })
 
@@ -153,8 +155,8 @@ describe("storage", () => {
     expect(snapshot.preferences).toEqual({
       level: 2,
       wallWeight: 1,
-      lastAttemptMs: 0,
-      bestWinMs: 0,
+      lastAttemptRetention: null,
+      bestWinRetention: null,
     })
     expect(snapshot.round).toBeNull()
     expect(window.sessionStorage.getItem(ROUND_STORAGE_KEY)).toBeNull()
@@ -199,8 +201,8 @@ describe("storage", () => {
     savePersistedPreferences({
       level: 8,
       wallWeight: 3,
-      lastAttemptMs: 2100,
-      bestWinMs: 1800,
+      lastAttemptRetention: 710000,
+      bestWinRetention: 840000,
     })
     savePersistedRoundState(
       createState({
@@ -213,8 +215,8 @@ describe("storage", () => {
 
     expect(window.localStorage.getItem(LEVEL_STORAGE_KEY)).toBeNull()
     expect(window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY)).toBeNull()
-    expect(window.localStorage.getItem(LAST_ATTEMPT_MS_STORAGE_KEY)).toBeNull()
-    expect(window.localStorage.getItem(BEST_WIN_MS_STORAGE_KEY)).toBeNull()
+    expect(window.localStorage.getItem(LAST_ATTEMPT_RETENTION_STORAGE_KEY)).toBeNull()
+    expect(window.localStorage.getItem(BEST_WIN_RETENTION_STORAGE_KEY)).toBeNull()
     expect(window.sessionStorage.getItem(ROUND_STORAGE_KEY)).toBeNull()
   })
 })
