@@ -19,12 +19,8 @@ export const CONFIG: AppConfig = {
   // Shared page chrome.
   appName: "Tapoo",
   appSubtitle: "maze runner (hide & seek)",
-  appControlsAriaLabel: "Application controls",
-  moreActionsAriaLabel: "More actions",
-  footerAriaLabel: "Copyright",
   pageVersionTemplate: "v{version} © {year} Tapoo",
   contactLabel: "Contact",
-  contactAriaLabel: "Contact the author",
 
   // Game page chrome.
   gameDocumentTitle: "Tapoo Maze Runner | Game",
@@ -32,19 +28,13 @@ export const CONFIG: AppConfig = {
     "Tapoo maze runner hide and seek game rendered as a browser-based terminal experience.",
   gamePageLabel: "Game",
   aiAgentsLabel: "AI Agents",
-  aiAgentsPageAriaLabel: "AI Agents page",
   resetProgressLabel: "Reset Progress",
-  resetProgressAriaLabel: "Caution reset progress",
-  terminalAriaLabel: "Tapoo browser terminal",
-  touchControlsAriaLabel: "Touch game controls",
 
   // AI Agents page chrome.
   agentsDocumentTitle: "Tapoo Maze Runner | AI Agents",
   agentsDescription: "Tapoo maze runner AI agents page temporarily unavailable.",
   agentsPageLabel: "AI Agents",
-  agentsPageAriaLabel: "AI Agents page temporarily unavailable",
   backToGameLabel: "Back To Game",
-  backToGameAriaLabel: "Back to game",
 
   // Gameplay text.
   navigation:
@@ -85,10 +75,6 @@ export const CONFIG: AppConfig = {
   wallsTouchLabel: "Walls",
   pauseTouchLabel: "Pause",
   proceedTouchLabel: "Proceed",
-  touchMoveUpAriaLabel: "Move up",
-  touchMoveLeftAriaLabel: "Move left",
-  touchMoveRightAriaLabel: "Move right",
-  touchMoveDownAriaLabel: "Move down",
 
   // Maze rendering.
   playerMarker: "▓",

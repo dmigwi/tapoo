@@ -3,7 +3,7 @@ import { APP_VERSION } from "./app/version"
 
 declare const __TAPOO_BUILD_YEAR__: number
 
-// configText resolves a text entry from CONFIG and rejects non-string keys early.
+// configText resolves a visible text entry from CONFIG and rejects non-string keys early.
 function configText(key: string): string {
   const value = CONFIG[key as keyof typeof CONFIG]
   if (typeof value !== "string") {
@@ -16,7 +16,7 @@ function configText(key: string): string {
 // applyConfigAttribute copies CONFIG-backed text into matching DOM attributes.
 function applyConfigAttribute(
   selector: string,
-  attributeName: "aria-label" | "content" | "textContent",
+  attributeName: "content" | "textContent",
 ): void {
   const nodes = document.querySelectorAll<HTMLElement>(selector)
 
@@ -67,7 +67,6 @@ function applyPageVersion(): void {
 function applyPageText(): void {
   applyDocumentTitle()
   applyConfigAttribute("[data-config-text]", "textContent")
-  applyConfigAttribute("[data-config-aria-label]", "aria-label")
   applyConfigAttribute("meta[data-config-key]", "content")
 }
 

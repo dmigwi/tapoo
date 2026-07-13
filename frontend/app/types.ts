@@ -182,31 +182,21 @@ export type AppConfig = {
   // Shared page chrome.
   appName: string
   appSubtitle: string
-  appControlsAriaLabel: string
-  moreActionsAriaLabel: string
-  footerAriaLabel: string
   pageVersionTemplate: string
   contactLabel: string
-  contactAriaLabel: string
 
   // Game page chrome.
   gameDocumentTitle: string
   gameDescription: string
   gamePageLabel: string
   aiAgentsLabel: string
-  aiAgentsPageAriaLabel: string
   resetProgressLabel: string
-  resetProgressAriaLabel: string
-  terminalAriaLabel: string
-  touchControlsAriaLabel: string
 
   // AI Agents page chrome.
   agentsDocumentTitle: string
   agentsDescription: string
   agentsPageLabel: string
-  agentsPageAriaLabel: string
   backToGameLabel: string
-  backToGameAriaLabel: string
 
   // Gameplay text.
   navigation: string
@@ -242,10 +232,6 @@ export type AppConfig = {
   wallsTouchLabel: string
   pauseTouchLabel: string
   proceedTouchLabel: string
-  touchMoveUpAriaLabel: string
-  touchMoveLeftAriaLabel: string
-  touchMoveRightAriaLabel: string
-  touchMoveDownAriaLabel: string
 
   // Maze rendering.
   playerMarker: string

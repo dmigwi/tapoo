@@ -17,14 +17,14 @@
   </head>
   <body data-tapoo-control-mode="keyboard">
     <main class="app-shell">
-      <header class="top-bar" data-config-aria-label data-config-key="appControlsAriaLabel">
+      <header class="top-bar" aria-label="Application controls">
         <div class="top-bar__brand">
           <strong class="top-bar__title" data-config-text data-config-key="appName"></strong>
           <span class="top-bar__subtitle" data-config-text data-config-key="appSubtitle"></span>
           <span class="top-bar__page-tag" aria-current="page" data-config-text data-config-key="gamePageLabel"></span>
         </div>
         <details class="top-menu">
-          <summary class="top-bar__button top-bar__button--icon top-menu__summary" data-config-aria-label data-config-key="moreActionsAriaLabel">
+          <summary class="top-bar__button top-bar__button--icon top-menu__summary" aria-label="More actions">
             <span class="top-menu__icon" aria-hidden="true">
               <svg class="top-menu__icon-svg" viewBox="0 0 24 24" focusable="false">
                 <circle cx="8" cy="8" r="2" fill="currentColor" />
@@ -34,8 +34,8 @@
               </svg>
             </span>
           </summary>
-          <div class="top-menu__panel" role="menu" data-config-aria-label data-config-key="moreActionsAriaLabel">
-            <a class="top-menu__item" href="./agents.html" data-config-aria-label data-config-key="aiAgentsPageAriaLabel">
+          <div class="top-menu__panel" role="menu" aria-label="More actions">
+            <a class="top-menu__item" href="./agents.html" aria-label="AI Agents page">
               <span class="top-bar__glyph" aria-hidden="true">
                 <svg class="top-bar__glyph-svg" viewBox="0 0 24 24" focusable="false">
                   <path
@@ -49,7 +49,7 @@
                 </svg>
               </span><span data-config-text data-config-key="aiAgentsLabel"></span>
             </a>
-            <button class="top-menu__item" type="button" data-action="restart" data-config-aria-label data-config-key="resetProgressAriaLabel">
+            <button class="top-menu__item" type="button" data-action="restart" aria-label="Caution reset progress">
               <span class="top-bar__warning" aria-hidden="true">⚠</span><span data-config-text data-config-key="resetProgressLabel"></span>
             </button>
             <a
@@ -57,8 +57,7 @@
               href="https://www.linkedin.com/in/migwi-ndungu/"
               target="_blank"
               rel="noreferrer noopener"
-              data-config-aria-label
-              data-config-key="contactAriaLabel"
+              aria-label="Contact the author"
             >
               <span class="top-bar__glyph" aria-hidden="true">
                 <svg class="top-bar__glyph-svg" viewBox="0 0 24 24" focusable="false">
@@ -78,13 +77,13 @@
         </details>
       </header>
 
-      <section id="terminal-app" class="terminal-app" tabindex="0" data-config-aria-label data-config-key="terminalAriaLabel">
+      <section id="terminal-app" class="terminal-app" tabindex="0" aria-label="Tapoo browser terminal">
         <div class="page-stage page-stage--terminal">
           <div class="terminal-frame">
             <div id="terminal-body" class="terminal-body">
               <pre id="terminal-screen" aria-live="polite"></pre>
               <span id="terminal-measure" class="terminal-measure">MMMMMMMMMM</span>
-              <div id="touch-controls" class="touch-controls" hidden data-config-aria-label data-config-key="touchControlsAriaLabel">
+              <div id="touch-controls" class="touch-controls" hidden aria-label="Touch game controls">
                 <button
                   class="touch-controls__button touch-controls__button--walls"
                   type="button"
@@ -99,8 +98,7 @@
                   type="button"
                   data-touch-control="true"
                   data-move="MoveUp"
-                  data-config-aria-label
-                  data-config-key="touchMoveUpAriaLabel"
+                  aria-label="Move up"
                 >
                   <svg class="touch-controls__arrow-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path
@@ -118,8 +116,7 @@
                   type="button"
                   data-touch-control="true"
                   data-move="MoveLeft"
-                  data-config-aria-label
-                  data-config-key="touchMoveLeftAriaLabel"
+                  aria-label="Move left"
                 >
                   <svg class="touch-controls__arrow-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path
@@ -137,8 +134,7 @@
                   type="button"
                   data-touch-control="true"
                   data-move="MoveRight"
-                  data-config-aria-label
-                  data-config-key="touchMoveRightAriaLabel"
+                  aria-label="Move right"
                 >
                   <svg class="touch-controls__arrow-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path
@@ -165,8 +161,7 @@
                   type="button"
                   data-touch-control="true"
                   data-move="MoveDown"
-                  data-config-aria-label
-                  data-config-key="touchMoveDownAriaLabel"
+                  aria-label="Move down"
                 >
                   <svg class="touch-controls__arrow-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path
@@ -194,7 +189,7 @@
         </div>
       </section>
 
-      <footer class="page-footer" data-config-aria-label data-config-key="footerAriaLabel">
+      <footer class="page-footer" aria-label="Copyright">
         <small class="page-footer__copy" data-page-version></small>
       </footer>
     </main>
