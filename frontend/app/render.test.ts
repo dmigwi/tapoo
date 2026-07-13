@@ -60,7 +60,7 @@ function createElements(): Elements {
 // createState builds a representative runtime state for render scenarios.
 function createState(overrides: Partial<State> = {}): State {
   return {
-    controlMode: "keyboard",
+    controlMode: "interactive",
     level: 1,
     dims: { length: 2, width: 2 },
     maze: [
@@ -203,13 +203,13 @@ describe("render", () => {
     ])
   })
 
-  it("hides touch controls when the agents control mode is active", () => {
+  it("hides touch controls when the agent-api control mode is active", () => {
     const elements = createElements()
 
     render(
       elements,
       createState({
-        controlMode: "agents",
+        controlMode: "agent-api",
       }),
     )
 

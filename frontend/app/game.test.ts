@@ -160,7 +160,7 @@ async function bootstrapHarness({
   ],
   reweightedMaze,
   round = createRound(),
-  mode = "keyboard",
+  mode = "interactive",
   terminalSizes = [{ length: 20, width: 20 }],
 }: {
   dimensionsResults?: DimensionsResult[]
@@ -171,7 +171,7 @@ async function bootstrapHarness({
   }>
   reweightedMaze?: string[][]
   round?: RoundState
-  mode?: "keyboard" | "agents"
+  mode?: "interactive" | "agent-api"
   terminalSizes?: Array<{ length: number; width: number }>
 } = {}): Promise<GameHarness> {
   const elements = createElements()
@@ -270,11 +270,11 @@ async function bootstrapHarness({
     },
   )
 
-  const { createAgentsMode } = await import("./control/agents")
-  const { createKeyboardMode } = await import("./control/keyboard")
+  const { createAgentMode } = await import("./control/agent")
+  const { createInteractiveMode } = await import("./control/interactive")
   const { bootstrapGame } = await import("./game")
   const controlMode =
-    mode === "agents" ? createAgentsMode(elements) : createKeyboardMode(elements)
+    mode === "agent-api" ? createAgentMode(elements) : createInteractiveMode(elements)
   const runtime = bootstrapGame(controlMode, elements)
 
   return {
@@ -346,10 +346,10 @@ describe("bootstrapGame", () => {
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
-    const { createKeyboardMode } = await import("./control/keyboard")
+    const { createInteractiveMode } = await import("./control/interactive")
     const { bootstrapGame } = await import("./game")
 
-    bootstrapGame(createKeyboardMode(elements), elements)
+    bootstrapGame(createInteractiveMode(elements), elements)
 
     expect(loadPersistedSnapshot).toHaveBeenCalledWith(
       1,
@@ -414,10 +414,10 @@ describe("bootstrapGame", () => {
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
-    const { createKeyboardMode } = await import("./control/keyboard")
+    const { createInteractiveMode } = await import("./control/interactive")
     const { bootstrapGame } = await import("./game")
 
-    bootstrapGame(createKeyboardMode(elements), elements)
+    bootstrapGame(createInteractiveMode(elements), elements)
 
     expect(addViewportListener).toHaveBeenCalledWith(
       "resize",
@@ -463,10 +463,10 @@ describe("bootstrapGame", () => {
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
-    const { createKeyboardMode } = await import("./control/keyboard")
+    const { createInteractiveMode } = await import("./control/interactive")
     const { bootstrapGame } = await import("./game")
 
-    bootstrapGame(createKeyboardMode(elements), elements)
+    bootstrapGame(createInteractiveMode(elements), elements)
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "p",
@@ -519,10 +519,10 @@ describe("bootstrapGame", () => {
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
-    const { createKeyboardMode } = await import("./control/keyboard")
+    const { createInteractiveMode } = await import("./control/interactive")
     const { bootstrapGame } = await import("./game")
 
-    bootstrapGame(createKeyboardMode(elements), elements)
+    bootstrapGame(createInteractiveMode(elements), elements)
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "b",
@@ -572,7 +572,7 @@ describe("bootstrapGame", () => {
     expect(state.winSummary).toBe("")
   })
 
-  it("pauses and resumes a running round through keyboard controls", async () => {
+  it("pauses and resumes a running round through interactive controls", async () => {
     const harness = await bootstrapHarness()
 
     window.dispatchEvent(
@@ -845,10 +845,10 @@ describe("bootstrapGame", () => {
     expect(focusSpy).toHaveBeenCalled()
   })
 
-  it("accepts runtime commands in agents mode without keyboard control side effects", async () => {
+  it("accepts runtime commands in agent-api mode without interactive control side effects", async () => {
     const harness = await bootstrapHarness({
       dimensionsResults: [{ level: 1, length: 2, width: 1 }],
-      mode: "agents",
+      mode: "agent-api",
       round: createHorizontalRound(),
     })
 
@@ -862,7 +862,7 @@ describe("bootstrapGame", () => {
     let state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
     expect(state.playerPosition).toEqual([1, 1])
-    expect(state.controlMode).toBe("agents")
+    expect(state.controlMode).toBe("agent-api")
 
     harness.runtime.dispatch({ type: "move", move: "MoveRight" })
 
@@ -880,9 +880,9 @@ describe("bootstrapGame", () => {
     })
   })
 
-  it("records contextual pause, proceed, and restart feedback for agents mode", async () => {
+  it("records contextual pause, proceed, and restart feedback for agent-api mode", async () => {
     const harness = await bootstrapHarness({
-      mode: "agents",
+      mode: "agent-api",
     })
 
     harness.runtime.dispatch({ type: "pause" })

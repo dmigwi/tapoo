@@ -51,7 +51,7 @@ function createMemoryStorage(): Storage {
 // createState builds a restorable runtime state for storage-oriented scenarios.
 function createState(overrides: Partial<State> = {}): State {
   return {
-    controlMode: "keyboard",
+    controlMode: "interactive",
     level: 4,
     dims: { length: 5, width: 5 },
     maze: [

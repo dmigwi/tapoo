@@ -5,8 +5,8 @@ import type {
   MazeControlMode,
 } from "../types"
 
-// createAgentsMode keeps the agent-facing control contract ready while transport wiring is pending.
-export function createAgentsMode(
+// createAgentMode keeps the agent-facing control contract ready while transport wiring is pending.
+export function createAgentMode(
   elements: Elements,
 ): MazeControlMode {
   let attached = false
@@ -14,7 +14,7 @@ export function createAgentsMode(
   void elements
 
   return {
-    name: "agents",
+    name: "agent-api",
     attach(dispatch: MazeControlDispatch) {
       if (attached) {
         return

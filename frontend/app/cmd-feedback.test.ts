@@ -6,7 +6,7 @@ import type { MoveAction, State } from "./types"
 // createState builds a compact agent-facing runtime state for command feedback tests.
 function createState(overrides: Partial<State> = {}): State {
   return {
-    controlMode: "agents",
+    controlMode: "agent-api",
     level: 4,
     dims: { length: 2, width: 1 },
     maze: [

@@ -35,7 +35,7 @@ import type {
 } from "./types"
 
 const state: State = {
-  controlMode: "keyboard",
+  controlMode: "interactive",
   level: 1,
   dims: null,
   maze: null,
@@ -812,7 +812,7 @@ export function bootstrapGame(
     startRound(state.level)
   }
 
-  if (controlMode.name === "keyboard") {
+  if (controlMode.name === "interactive") {
     runtimeElements.app.focus()
   }
 

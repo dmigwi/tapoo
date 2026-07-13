@@ -9,44 +9,44 @@ describe("tapoo entrypoint", () => {
   it("boots the game on import", async () => {
     const bootstrapGame = vi.fn()
     const getGameElements = vi.fn(() => ({ app: {} }))
-    const keyboardMode = { attach: vi.fn(), detach: vi.fn(), name: "keyboard" }
+    const interactiveMode = { attach: vi.fn(), detach: vi.fn(), name: "interactive" }
 
-    document.body.dataset.tapooControlMode = "keyboard"
+    document.body.dataset.tapooControlMode = "interactive"
 
     vi.doMock("./app/dom", () => ({ getGameElements }))
-    vi.doMock("./app/control/keyboard", () => ({
-      createKeyboardMode: vi.fn(() => keyboardMode),
+    vi.doMock("./app/control/interactive", () => ({
+      createInteractiveMode: vi.fn(() => interactiveMode),
     }))
-    vi.doMock("./app/control/agents", () => ({
-      createAgentsMode: vi.fn(),
+    vi.doMock("./app/control/agent", () => ({
+      createAgentMode: vi.fn(),
     }))
     vi.doMock("./app/game", () => ({ bootstrapGame }))
 
     await import("./tapoo")
 
     expect(bootstrapGame).toHaveBeenCalledTimes(1)
-    expect(bootstrapGame).toHaveBeenCalledWith(keyboardMode, { app: {} })
+    expect(bootstrapGame).toHaveBeenCalledWith(interactiveMode, { app: {} })
   })
 
-  it("uses the agents page mode when configured in html", async () => {
+  it("uses the agent-api page mode when configured in html", async () => {
     const bootstrapGame = vi.fn()
     const elements = { app: {} }
-    const agentsMode = { attach: vi.fn(), detach: vi.fn(), name: "agents" }
+    const agentMode = { attach: vi.fn(), detach: vi.fn(), name: "agent-api" }
 
-    document.body.dataset.tapooControlMode = "agents"
+    document.body.dataset.tapooControlMode = "agent-api"
 
     vi.doMock("./app/dom", () => ({ getGameElements: vi.fn(() => elements) }))
-    vi.doMock("./app/control/keyboard", () => ({
-      createKeyboardMode: vi.fn(),
+    vi.doMock("./app/control/interactive", () => ({
+      createInteractiveMode: vi.fn(),
     }))
-    vi.doMock("./app/control/agents", () => ({
-      createAgentsMode: vi.fn(() => agentsMode),
+    vi.doMock("./app/control/agent", () => ({
+      createAgentMode: vi.fn(() => agentMode),
     }))
     vi.doMock("./app/game", () => ({ bootstrapGame }))
 
     await import("./tapoo")
 
-    expect(bootstrapGame).toHaveBeenCalledWith(agentsMode, elements)
+    expect(bootstrapGame).toHaveBeenCalledWith(agentMode, elements)
   })
 
   it("does not boot the game bundle on pages without a terminal host", async () => {

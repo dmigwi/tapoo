@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest"
 import {
   controlCommandFromButton,
   controlCommandFromKeyboardEvent,
-  createKeyboardMode,
-} from "./keyboard"
+  createInteractiveMode,
+} from "./interactive"
 
 // createButton reproduces the data attributes used by keyboard and touch controls.
 function createButton({
@@ -27,8 +27,8 @@ function createButton({
   return button
 }
 
-// These tests guard the keyboard-mode translation layer and contract shape.
-describe("keyboard control mode", () => {
+// These tests guard the interactive-mode translation layer and contract shape.
+describe("interactive control mode", () => {
   it("translates keyboard events into semantic maze commands", () => {
     expect(
       controlCommandFromKeyboardEvent({
@@ -89,9 +89,9 @@ describe("keyboard control mode", () => {
     elements.app.focus = vi.fn()
     const dispatch = vi.fn()
 
-    const mode = createKeyboardMode(elements)
+    const mode = createInteractiveMode(elements)
 
-    expect(mode.name).toBe("keyboard")
+    expect(mode.name).toBe("interactive")
     expect(mode.expectsCommandFeedback()).toBe(false)
     expect(mode.getLastCommandFeedback()).toBeNull()
 

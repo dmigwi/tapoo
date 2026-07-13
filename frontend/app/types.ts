@@ -48,7 +48,7 @@ export type MoveAction = "MoveUp" | "MoveDown" | "MoveLeft" | "MoveRight"
 // Direction extends MoveAction with the neutral "none" state used during generation.
 export type Direction = "none" | MoveAction
 
-export type MazeControlModeName = "keyboard" | "agents"
+export type MazeControlModeName = "interactive" | "agent-api"
 
 // MazeControlCommand describes one abstract control operation issued to the runtime.
 export type MazeControlCommand =

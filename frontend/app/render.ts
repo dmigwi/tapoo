@@ -108,7 +108,7 @@ function navigationText(elements: Elements): string {
   return compact ? CONFIG.navigationCompact : CONFIG.navigation
 }
 
-// proceedText picks the keyboard or touch proceed hint for the viewport.
+// proceedText picks the interactive or touch proceed hint for the viewport.
 function proceedText(elements: Elements): string {
   return isCompactDisplay(elements)
     ? CONFIG.touchProceedMessage
@@ -356,7 +356,7 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
 
 // updateTouchControls shows only the touch controls that make sense for the current state.
 function updateTouchControls(elements: Elements, state: State): void {
-  if (state.controlMode !== "keyboard") {
+  if (state.controlMode !== "interactive") {
     elements.touchControls.hidden = true
     elements.touchControls.classList.remove("touch-controls--action-pair")
     elements.touchControls.classList.remove("touch-controls--single-action")

@@ -78,8 +78,8 @@ export function controlCommandFromButton(
   }
 }
 
-// createKeyboardMode wires keyboard and touch buttons into the shared control contract.
-export function createKeyboardMode(
+// createInteractiveMode wires keyboard and touch buttons into the shared control contract.
+export function createInteractiveMode(
   elements: Elements,
 ): MazeControlMode {
   let attached = false
@@ -127,7 +127,7 @@ export function createKeyboardMode(
   }
 
   return {
-    name: "keyboard",
+    name: "interactive",
     attach(dispatch) {
       if (attached) {
         return
@@ -186,7 +186,7 @@ export function createKeyboardMode(
       return null
     },
     receiveCommandFeedback(feedback: MazeControlFeedback) {
-      // Keyboard and touch controls already provide immediate visual feedback in the game view.
+      // Interactive controls already provide immediate visual feedback in the game view.
       void feedback
     },
   }

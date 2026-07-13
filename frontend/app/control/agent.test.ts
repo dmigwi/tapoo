@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { createAgentsMode } from "./agents"
+import { createAgentMode } from "./agent"
 
 // These tests lock down the lightweight agent-mode contract before transport wiring exists.
-describe("agents control mode", () => {
+describe("agent control mode", () => {
   it("implements the shared control mode contract", () => {
     const elements = {
       app: document.createElement("div"),
@@ -15,9 +15,9 @@ describe("agents control mode", () => {
       touchControls: document.createElement("div"),
     }
     const dispatch = vi.fn()
-    const mode = createAgentsMode(elements)
+    const mode = createAgentMode(elements)
 
-    expect(mode.name).toBe("agents")
+    expect(mode.name).toBe("agent-api")
     expect(mode.expectsCommandFeedback()).toBe(true)
     expect(mode.getLastCommandFeedback()).toBeNull()
 
