@@ -70,6 +70,9 @@ function createState(overrides: Partial<State> = {}): State {
     status: "running",
     score: 900,
     lastRoundScore: 0,
+    lastAttemptRetention: null,
+    bestWinRetention: null,
+    winSummary: "",
     canResume: false,
     wallWeight: 1,
     clock: null,
@@ -92,6 +95,80 @@ describe("render", () => {
         dispatchEvent: vi.fn(),
       })),
     )
+
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1024,
+    })
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 768,
+    })
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 1024,
+    })
+    Object.defineProperty(document.documentElement, "clientHeight", {
+      configurable: true,
+      value: 768,
+    })
+    Object.defineProperty(window.screen, "width", {
+      configurable: true,
+      value: 1024,
+    })
+    Object.defineProperty(window.screen, "height", {
+      configurable: true,
+      value: 768,
+    })
+    Object.defineProperty(window.screen, "availWidth", {
+      configurable: true,
+      value: 1024,
+    })
+    Object.defineProperty(window.screen, "availHeight", {
+      configurable: true,
+      value: 768,
+    })
+    Reflect.deleteProperty(window, "visualViewport")
+  })
+
+  it("uses shared compact copy when the viewport width is narrow", () => {
+    const elements = createElements()
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 620,
+      bottom: 915,
+      width: 620,
+      height: 915,
+      toJSON: () => ({}),
+    })
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 915,
+    })
+
+    render(
+      elements,
+      createState({
+        dims: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.navigationCompact)
+    expect(text).toContain("Level 1 needs more screen room!")
+    expect(text).toContain(CONFIG.tooSmallActionMessage)
   })
 
   it("renders the maze, markers, and running status line", () => {
@@ -179,14 +256,77 @@ describe("render", () => {
     ).toBe(false)
   })
 
+  it("uses the touch proceed message when the real viewport is compact", () => {
+    const elements = createElements()
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 620,
+      bottom: 915,
+      width: 620,
+      height: 915,
+      toJSON: () => ({}),
+    })
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 980,
+    })
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 915,
+    })
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(document.documentElement, "clientHeight", {
+      configurable: true,
+      value: 915,
+    })
+    Object.defineProperty(window.screen, "width", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "height", {
+      configurable: true,
+      value: 915,
+    })
+    Object.defineProperty(window.screen, "availWidth", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "availHeight", {
+      configurable: true,
+      value: 915,
+    })
+
+    render(
+      elements,
+      createState({
+        status: "paused",
+        canResume: true,
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.touchProceedMessage)
+    expect(text).not.toContain(CONFIG.proceedMessage)
+  })
+
   it("shows walls plus proceed touch controls after a win", () => {
     const elements = createElements()
 
     render(
       elements,
       createState({
+        dims: { length: 3, width: 3 },
+        level: 3,
         status: "won",
         lastRoundScore: 900,
+        winSummary: "1.20s faster than previous (new record)",
       }),
     )
 
@@ -194,6 +334,8 @@ describe("render", () => {
 
     expect(text).toContain(CONFIG.successMessage)
     expect(text).toContain(CONFIG.proceedMessage)
+    expect(text).toContain("Final Level 3 Scores:  900 (100% retention)")
+    expect(text).toContain("1.20s faster than previous (new record)")
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -203,6 +345,45 @@ describe("render", () => {
     expect(
       elements.touchControls.classList.contains("touch-controls--action-pair"),
     ).toBe(true)
+  })
+
+  it("shows a Level 1 win summary when prior metrics exist", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        dims: { length: 3, width: 3 },
+        level: 1,
+        status: "won",
+        lastRoundScore: 900,
+        winSummary: "1.20s faster than previous (new record)",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain("Final Level 1 Scores:  900 (100% retention)")
+    expect(text).toContain("1.20s faster than previous (new record)")
+  })
+
+  it("keeps the loss overlay free of the final score summary", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        level: 3,
+        status: "lost",
+        lastRoundScore: 0,
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(CONFIG.failedMessage)
+    expect(text).toContain(CONFIG.proceedMessage)
+    expect(text).not.toContain("Final Level 3 Scores:")
   })
 
   it("shows the too-small message without proceed touch controls", () => {
@@ -221,7 +402,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.tooSmallMessage)
+    expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(CONFIG.tooSmallActionMessage)
 
     const visibleLabels = elements.touchButtons
@@ -240,7 +421,7 @@ describe("render", () => {
     expect(elements.touchControls.hidden).toBe(true)
   })
 
-  it("shows compact navigation on narrow screens", () => {
+  it("shows compact navigation and too-small messaging on narrow screens", () => {
     const elements = createElements()
     elements.body.getBoundingClientRect = vi.fn(() => ({
       width: 360,
@@ -267,31 +448,55 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.touchNavigationCompact)
-    expect(text).toContain(CONFIG.tooSmallMessage)
+    expect(text).toContain(CONFIG.navigationCompact)
+    expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(CONFIG.tooSmallActionMessage)
     expect(elements.touchControls.hidden).toBe(true)
   })
 
-  it("shows compact navigation on narrow screens", () => {
+  it("shows compact navigation on a 412px wide phone viewport", () => {
     const elements = createElements()
     elements.body.getBoundingClientRect = vi.fn(() => ({
-      width: 414,
+      width: 620,
       height: 896,
       top: 0,
-      right: 414,
+      right: 620,
       bottom: 896,
       left: 0,
       x: 0,
       y: 0,
       toJSON: () => ({}),
     }))
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 915,
+    })
+    Object.defineProperty(window.screen, "width", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "height", {
+      configurable: true,
+      value: 915,
+    })
+    Object.defineProperty(window.screen, "availWidth", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "availHeight", {
+      configurable: true,
+      value: 915,
+    })
 
     render(elements, createState())
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.touchNavigationCompact)
+    expect(text).toContain(CONFIG.navigationCompact)
     expect(text).not.toContain(CONFIG.navigation)
   })
 

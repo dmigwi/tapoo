@@ -19,6 +19,7 @@ import {
   isWonStatus,
 } from "./status"
 import {
+  clearPersistedSnapshot,
   clearPersistedRound,
   loadPersistedSnapshot,
   savePersistedPreferences,
@@ -35,6 +36,9 @@ const state: State = {
   status: "boot",
   score: 0,
   lastRoundScore: 0,
+  lastAttemptRetention: null,
+  bestWinRetention: null,
+  winSummary: "",
   canResume: false,
   wallWeight: WALL_WEIGHTS[0],
   clock: null,
@@ -58,10 +62,190 @@ const KEY_TO_MOVE_ACTION: Partial<Record<string, MoveAction>> = {
 }
 
 function calculateScore(totalCells: number, elapsedMs: number): number {
-  return (
-    Math.max(0, totalCells - Math.floor(elapsedMs / 1000)) *
-    CONFIG.scoreMultiplier
+  const maxScore = totalCells * CONFIG.scoreMultiplier
+  const elapsedPenalty = Math.floor((elapsedMs * CONFIG.scoreMultiplier) / 1000)
+
+  return Math.max(0, maxScore - elapsedPenalty)
+}
+
+type WinSummaryPreviousComparison = "none" | "faster" | "slower" | "matched"
+type WinSummaryBestComparison = "new-record" | "matched-best" | "behind-best"
+
+function formatWinSummaryDuration(durationMs: number): string {
+  if (durationMs < 60_000) {
+    return `${(durationMs / 1000).toFixed(2)}s`
+  }
+
+  if (durationMs < 3_600_000) {
+    return `${(durationMs / 60_000).toFixed(2)}m`
+  }
+
+  return `${(durationMs / 3_600_000).toFixed(2)}h`
+}
+
+function calculateScoreRetention(totalCells: number, score: number): number {
+  const maxScore = totalCells * CONFIG.scoreMultiplier
+  if (maxScore <= 0) {
+    return 0
+  }
+
+  return Math.max(
+    0,
+    Math.min(
+      CONFIG.retentionScale,
+      Math.floor(
+        (score * CONFIG.retentionScale + Math.floor(maxScore / 2)) / maxScore,
+      ),
+    ),
   )
+}
+
+function formatWinSummaryRetentionDelta(
+  deltaRetention: number,
+  levelDurationMs: number,
+): string {
+  const deltaMs = Math.round(
+    (deltaRetention * levelDurationMs) / CONFIG.retentionScale,
+  )
+  return formatWinSummaryDuration(deltaMs)
+}
+
+function compareWinSummaryPrevious(
+  currentRetention: number,
+  lastAttemptRetention: number | null,
+  levelDurationMs: number,
+): { comparison: WinSummaryPreviousComparison; delta: string } {
+  if (lastAttemptRetention === null) {
+    return { comparison: "none", delta: "" }
+  }
+
+  if (currentRetention > lastAttemptRetention) {
+    return {
+      comparison: "faster",
+      delta: formatWinSummaryRetentionDelta(
+        currentRetention - lastAttemptRetention,
+        levelDurationMs,
+      ),
+    }
+  }
+
+  if (currentRetention < lastAttemptRetention) {
+    return {
+      comparison: "slower",
+      delta: formatWinSummaryRetentionDelta(
+        lastAttemptRetention - currentRetention,
+        levelDurationMs,
+      ),
+    }
+  }
+
+  return { comparison: "matched", delta: "" }
+}
+
+function compareWinSummaryBest(
+  currentRetention: number,
+  bestWinRetention: number | null,
+  levelDurationMs: number,
+): { comparison: WinSummaryBestComparison; delta: string } {
+  if (bestWinRetention === null || currentRetention > bestWinRetention) {
+    return { comparison: "new-record", delta: "" }
+  }
+
+  if (currentRetention < bestWinRetention) {
+    return {
+      comparison: "behind-best",
+      delta: formatWinSummaryRetentionDelta(
+        bestWinRetention - currentRetention,
+        levelDurationMs,
+      ),
+    }
+  }
+
+  return { comparison: "matched-best", delta: "" }
+}
+
+function replaceWinSummaryDelta(
+  template: string,
+  delta: string,
+  bestDelta = "",
+): string {
+  return template
+    .replace("{delta}", delta)
+    .replace("{bestDelta}", bestDelta)
+}
+
+function selectWinSummaryTemplate(
+  previousComparison: WinSummaryPreviousComparison, bestComparison: WinSummaryBestComparison,
+): string {
+  if (previousComparison === "none") {
+    if (bestComparison === "new-record") {
+      return CONFIG.winNoPrevNewRecord
+    }
+
+    if (bestComparison === "matched-best") {
+      return CONFIG.winNoPrevMatchedBest
+    }
+
+    return CONFIG.winNoPrevBehindBest
+  }
+
+  if (previousComparison === "faster") {
+    if (bestComparison === "new-record") {
+      return CONFIG.winFasterPrevNewRecord
+    }
+
+    if (bestComparison === "matched-best") {
+      return CONFIG.winFasterPrevMatchedBest
+    }
+
+    return CONFIG.winFasterPrevBehindBest
+  }
+
+  if (previousComparison === "slower") {
+    if (bestComparison === "new-record") {
+      return CONFIG.winSlowerPrevNewRecord
+    }
+
+    if (bestComparison === "matched-best") {
+      return CONFIG.winSlowerPrevMatchedBest
+    }
+
+    return CONFIG.winSlowerPrevBehindBest
+  }
+
+  if (bestComparison === "new-record") {
+    return CONFIG.winMatchedPrevNewRecord
+  }
+
+  if (bestComparison === "matched-best") {
+    return CONFIG.winMatchedPrevBest
+  }
+
+  return CONFIG.winMatchedPrevBehindBest
+}
+
+function buildWinSummary(
+  currentRetention: number,
+  lastAttemptRetention: number | null,
+  bestWinRetention: number | null,
+  levelDurationMs: number,
+): string {
+  const previous = compareWinSummaryPrevious(
+    currentRetention,
+    lastAttemptRetention,
+    levelDurationMs,
+  )
+  const best = compareWinSummaryBest(
+    currentRetention,
+    bestWinRetention,
+    levelDurationMs,
+  )
+  const template = selectWinSummaryTemplate(
+    previous.comparison,
+    best.comparison,
+  )
+
+  return replaceWinSummaryDelta(template, previous.delta, best.delta)
 }
 
 function positionsEqual(left: Position, right: Position): boolean {
@@ -98,6 +282,7 @@ function applyTooSmallState(level: number): void {
   state.finalPosition = null
   state.score = 0
   state.lastRoundScore = 0
+  state.winSummary = ""
   state.canResume = false
   state.clock = null
 }
@@ -231,6 +416,7 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   state.finalPosition = [snapshot.finalPosition[0], snapshot.finalPosition[1]]
   state.score = snapshot.score
   state.lastRoundScore = snapshot.lastRoundScore
+  state.winSummary = snapshot.winSummary ?? ""
   state.canResume = false
 
   if (isFinishedStatus(snapshot.status)) {
@@ -244,18 +430,21 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   state.clock = restoreClock(totalCells, snapshot.remainingMs)
   state.clock.pause()
   state.status = "paused"
+  state.winSummary = ""
   state.canResume = true
   renderState()
   return true
 }
 
-function startRound(level: number): void {
+function startRound(level: number, persist = true): void {
   const terminalSize = getTerminalSize()
   const dimensions = getMazeDimensions(level, terminalSize)
 
   if (!dimensions) {
     applyTooSmallState(level)
-    persistStateNow()
+    if (persist) {
+      persistStateNow()
+    }
     renderState()
     return
   }
@@ -270,18 +459,26 @@ function startRound(level: number): void {
   state.status = "running"
   state.canResume = false
   state.lastRoundScore = 0
+  state.winSummary = ""
 
   const totalCells = dimensions.length * dimensions.width
   state.clock = new GameClock(totalCells * 1000)
   state.score = calculateScore(totalCells, 0)
-  persistStateNow()
+  if (persist) {
+    persistStateNow()
+  }
   renderState()
 }
 
 function restartGame(): void {
-  const snapshot = loadPersistedSnapshot(1, WALL_WEIGHTS[0], isWallWeight)
-  state.wallWeight = snapshot.preferences.wallWeight
-  startRound(snapshot.preferences.level)
+  cancelScheduledRoundPersist()
+  clearPersistedSnapshot()
+  state.wallWeight = WALL_WEIGHTS[0]
+  state.lastAttemptRetention = null
+  state.bestWinRetention = null
+  state.lastRoundScore = 0
+  state.winSummary = ""
+  startRound(1, false)
 }
 
 function resumeOrProceed(): void {
@@ -332,7 +529,29 @@ function cycleWallWeight(): void {
 function handleWinCheck(): boolean {
   if (state.clock && state.dims) {
     const totalCells = state.dims.length * state.dims.width
-    state.score = calculateScore(totalCells, state.clock.elapsed())
+    const elapsedMs = state.clock.elapsed()
+    const levelDurationMs = totalCells * 1000
+    state.score = calculateScore(totalCells, elapsedMs)
+
+    if (
+      state.playerPosition &&
+      state.finalPosition &&
+      positionsEqual(state.playerPosition, state.finalPosition)
+    ) {
+      const currentRetention = calculateScoreRetention(totalCells, state.score)
+      state.winSummary = buildWinSummary(
+        currentRetention,
+        state.lastAttemptRetention,
+        state.bestWinRetention,
+        levelDurationMs,
+      )
+      state.lastAttemptRetention = currentRetention
+      state.bestWinRetention =
+        state.bestWinRetention === null ||
+        currentRetention > state.bestWinRetention
+          ? currentRetention
+          : state.bestWinRetention
+    }
   }
 
   if (
@@ -402,6 +621,8 @@ function handleLoss(): void {
   state.status = "lost"
   state.canResume = false
   state.lastRoundScore = state.score
+  state.lastAttemptRetention = 0
+  state.winSummary = ""
   persistStateNow()
   renderState()
 }
@@ -561,6 +782,10 @@ export function bootstrapGame(): void {
   )
   state.wallWeight = persistedSnapshot.preferences.wallWeight
   state.level = persistedSnapshot.preferences.level
+  state.lastAttemptRetention =
+    persistedSnapshot.preferences.lastAttemptRetention ?? null
+  state.bestWinRetention =
+    persistedSnapshot.preferences.bestWinRetention ?? null
 
   if (!restorePersistedRound(persistedSnapshot.round)) {
     startRound(state.level)

@@ -1,4 +1,16 @@
-import type { AppConfig, WallWeight } from "./types"
+import type { AppConfig, NavigationProfile, WallWeight } from "./types"
+
+const NAVIGATION_FRIENDLY_PROFILE: NavigationProfile = {
+  __softCorridorLimit: 8,
+  __hardCorridorLimit: 10,
+  __preferTurnPercent: 90,
+}
+
+const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
+  __softCorridorLimit: 2,
+  __hardCorridorLimit: 3,
+  __preferTurnPercent: 55,
+}
 
 export const CONFIG: AppConfig = {
   // Shared page chrome.
@@ -46,12 +58,25 @@ export const CONFIG: AppConfig = {
   failedCompactMessage: "Game over! You lost.",
   proceedMessage: "Press Enter or Ctrl+P to Proceed",
   touchProceedMessage: "Use the buttons below.",
-  tooSmallMessage: "This maze needs more screen room!",
+  tooSmallMessage: "Level {level} needs more screen room!",
   tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
   statusTemplate:
     "Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
   touchStatusTemplate: "Level: {level}   Scores: {score}",
-  highScoreTemplate: "Final Game Level Scores: {score}",
+  highScoreTemplate:
+    "Final Level {level} Scores:  {score} ({percent}% retention)",
+  winNoPrevNewRecord: "New scores retention record",
+  winNoPrevMatchedBest: "Matched best scores retention",
+  winNoPrevBehindBest: "{delta} behind best scores retention",
+  winFasterPrevNewRecord: "{delta} faster than previous (new record)",
+  winFasterPrevMatchedBest: "{delta} faster than previous (matched best)",
+  winFasterPrevBehindBest: "{delta} faster than previous ({bestDelta} behind best)",
+  winSlowerPrevNewRecord: "{delta} slower than previous (new record)",
+  winSlowerPrevMatchedBest: "{delta} slower than previous (matched best)",
+  winSlowerPrevBehindBest: "{delta} slower than previous ({bestDelta} behind best)",
+  winMatchedPrevNewRecord: "Matched previous (new record)",
+  winMatchedPrevBest: "Matched previous (matched best)",
+  winMatchedPrevBehindBest: "Matched previous ({bestDelta} behind best)",
 
   // Touch-control labels.
   wallsTouchLabel: "Walls",
@@ -77,9 +102,14 @@ export const CONFIG: AppConfig = {
   moveStep: 2,
   scoreMultiplier: 100,
   percentScale: 100,
+  retentionScale: 1_000_000,
   refreshInterval: 250,
+  navigationFriendlyMaxArea: 130,
+  navigationHardestArea: 1600,
+  navigationFriendlyProfile: NAVIGATION_FRIENDLY_PROFILE,
+  navigationHardestProfile: NAVIGATION_HARDEST_PROFILE,
   mazeLeftPadding: 3,
-  seed: 100,
+  seed: 60,
   diff: 10,
   minMazeDimension: 5,
   missingElementErrorTemplate: "missing required element: {id}",
@@ -97,6 +127,8 @@ export const WALL_WEIGHTS = Object.keys(CONFIG.walls)
 
 export const WALL_WEIGHT_STORAGE_KEY = "tapoo.wallWeight"
 export const LEVEL_STORAGE_KEY = "tapoo.level"
+export const LAST_ATTEMPT_RETENTION_STORAGE_KEY = "tapoo.lastAttemptRetention"
+export const BEST_WIN_RETENTION_STORAGE_KEY = "tapoo.bestWinRetention"
 export const ROUND_STORAGE_KEY = "tapoo.round"
 export const ROUND_STORAGE_VERSION = 1
 export const TERMINAL_SAMPLE_WIDTH = 10

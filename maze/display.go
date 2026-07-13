@@ -20,6 +20,12 @@ type UIOverlay struct {
 
 	// ShowHighScore controls whether the overlay renders the high score banner.
 	ShowHighScore bool
+
+	// ScorePercent reports how much of the level's starting score was preserved on a winning run.
+	ScorePercent int
+
+	// WinSummary reports how the latest winning pace compares with the stored attempt history.
+	WinSummary string
 }
 
 // fill prints a string to the termbox view box on the given coordinates.
@@ -61,12 +67,7 @@ func DrawMaze(ui UI, data [][]string) error {
 
 // introMessage adds the build version to the startup banner when one is available from the UI.
 func introMessage(version string) string {
-	trimmedVersion := strings.TrimSpace(version)
-	if trimmedVersion == "" {
-		return "   You are playing the Maze runner, hide and seek game (Tapoo).      "
-	}
-
-	return fmt.Sprintf(introFormat, trimmedVersion)
+	return fmt.Sprintf(introFormat, strings.TrimSpace(version))
 }
 
 // RenderMazeUI redraws the maze either as the live game view or as an interrupt overlay.
@@ -74,6 +75,12 @@ func introMessage(version string) string {
 // returned bool reports whether the player is already on the goal. When overlay is provided,
 // the centered pause or game-over panel is rendered instead.
 func RenderMazeUI(ui UI, config *Dimensions, level, score int, data [][]string, overlay *UIOverlay) (bool, error) {
+	return renderMazeUI(ui, config, level, score, data, overlay, true)
+}
+
+func renderMazeUI(
+	ui UI, config *Dimensions, level, score int, data [][]string, overlay *UIOverlay, showGoal bool,
+) (bool, error) {
 	if err := DrawMaze(ui, data); err != nil {
 		return false, err
 	}
@@ -83,14 +90,14 @@ func RenderMazeUI(ui UI, config *Dimensions, level, score int, data [][]string, 
 			return false, errors.New("render live maze ui: missing dimensions")
 		}
 
-		targetReached := renderLiveScene(ui, config, level, score, data)
+		targetReached := renderLiveScene(ui, config, level, score, data, showGoal)
 		if err := ui.Flush(); err != nil {
 			return false, err
 		}
 		return targetReached, nil
 	}
 
-	renderOverlayScene(ui, score, data, overlay)
+	renderOverlayScene(ui, level, score, data, overlay)
 	if err := ui.Flush(); err != nil {
 		return false, err
 	}
@@ -99,19 +106,21 @@ func RenderMazeUI(ui UI, config *Dimensions, level, score int, data [][]string, 
 }
 
 // renderLiveScene adds the player marker, goal marker, and status banner to the base maze view.
-func renderLiveScene(ui UI, config *Dimensions, level, score int, data [][]string) bool {
+func renderLiveScene(ui UI, config *Dimensions, level, score int, data [][]string, showGoal bool) bool {
 	targetPos := config.FinalPosition
 	startPos := config.StartPosition
 
 	// StartPosition and FinalPosition store maze-grid coordinates, so they are remapped into
 	// termbox coordinates here using the same doubled-grid math used during generation.
-	ui.SetCell(
-		(targetPos[1]*cellSpan)+mazeLeftPadding,
-		targetPos[0]+mazeTopPadding,
-		goalMarker,
-		termbox.ColorRed,
-		termbox.ColorRed,
-	)
+	if showGoal {
+		ui.SetCell(
+			(targetPos[1]*cellSpan)+mazeLeftPadding,
+			targetPos[0]+mazeTopPadding,
+			goalMarker,
+			termbox.ColorRed,
+			termbox.ColorRed,
+		)
+	}
 	ui.SetCell(
 		(startPos[1]*cellSpan)+mazeLeftPadding,
 		startPos[0]+mazeTopPadding,
@@ -128,30 +137,47 @@ func renderLiveScene(ui UI, config *Dimensions, level, score int, data [][]strin
 }
 
 // renderOverlayScene clears the center panel area and draws the pause or game-over content.
-func renderOverlayScene(ui UI, score int, data [][]string, overlay *UIOverlay) {
-	// The overlay clears a small box in the middle of the maze before drawing pause or game-over text.
+func renderOverlayScene(ui UI, level, score int, data [][]string, overlay *UIOverlay) {
 	xAxis := mazeWidth(data) / overlayLeftDivisor
 
-	for _, loc := range []int{overlayClearRowOne, overlayClearRowTwo, overlayClearRowTree, overlayClearRowFour} {
-		fill(ui, xAxis, len(data)/2+loc, space, coldef)
+	type overlayLine struct {
+		msg   string
+		color termbox.Attribute
 	}
 
-	for _, message := range []struct {
-		row int
-		msg string
-	}{
-		{row: overlayRowMessage, msg: overlay.Message},
-		{row: overlayRowNavigate, msg: gameOverNavigation},
-	} {
-		fill(ui, xAxis, len(data)/2+message.row, message.msg, coldef)
-	}
+	lines := []overlayLine{{
+		msg:   overlay.Message,
+		color: coldef,
+	}}
 
-	scoresMsg := space
 	if overlay.ShowHighScore {
-		scoresMsg = fmt.Sprintf(highScores, score)
+		lines = append(lines, overlayLine{
+			msg:   fmt.Sprintf(highScores, level, score, overlay.ScorePercent),
+			color: overlay.Color,
+		})
 	}
 
-	fill(ui, xAxis, len(data)/2+scoreRowOffset, scoresMsg, overlay.Color)
+	if overlay.WinSummary != "" {
+		lines = append(lines, overlayLine{
+			msg:   overlay.WinSummary,
+			color: overlay.Color,
+		})
+	}
+
+	lines = append(lines, overlayLine{
+		msg:   gameOverNavigation,
+		color: coldef,
+	})
+
+	// Clear one spacer row above the first overlay line, one between each line, and one below the last.
+	for spacerIndex := 0; spacerIndex <= len(lines); spacerIndex++ {
+		yAxis := len(data)/2 + overlayRowMessage - 1 + spacerIndex*overlayRowSpacing
+		fill(ui, xAxis, yAxis, space, coldef)
+	}
+
+	for index, line := range lines {
+		fill(ui, xAxis, len(data)/2+overlayRowMessage+(index*overlayRowSpacing), line.msg, line.color)
+	}
 }
 
 func mazeWidth(data [][]string) int {

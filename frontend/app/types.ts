@@ -35,9 +35,9 @@ export type CellNeighbors = {
   __top: number
 }
 
-export type Direction = "none" | "up" | "down" | "left" | "right"
-
 export type MoveAction = "MoveUp" | "MoveDown" | "MoveLeft" | "MoveRight"
+
+export type Direction = "none" | MoveAction
 
 export type NavigationProfile = {
   __softCorridorLimit: number
@@ -65,11 +65,14 @@ export type PersistedRound = {
   score: number
   lastRoundScore: number
   remainingMs: number
+  winSummary?: string
 }
 
 export type PersistedPreferences = {
   level: number
   wallWeight: WallWeight
+  lastAttemptRetention?: number | null
+  bestWinRetention?: number | null
 }
 
 export type PersistedSnapshot = {
@@ -108,6 +111,9 @@ export type State = {
   status: GameStatus
   score: number
   lastRoundScore: number
+  lastAttemptRetention: number | null
+  bestWinRetention: number | null
+  winSummary: string
   canResume: boolean
   wallWeight: WallWeight
   clock: GameClock | null
@@ -160,6 +166,18 @@ export type AppConfig = {
   statusTemplate: string
   touchStatusTemplate: string
   highScoreTemplate: string
+  winNoPrevNewRecord: string
+  winNoPrevMatchedBest: string
+  winNoPrevBehindBest: string
+  winFasterPrevNewRecord: string
+  winFasterPrevMatchedBest: string
+  winFasterPrevBehindBest: string
+  winSlowerPrevNewRecord: string
+  winSlowerPrevMatchedBest: string
+  winSlowerPrevBehindBest: string
+  winMatchedPrevNewRecord: string
+  winMatchedPrevBest: string
+  winMatchedPrevBehindBest: string
 
   // Touch-control labels.
   wallsTouchLabel: string
@@ -181,7 +199,12 @@ export type AppConfig = {
   moveStep: number
   scoreMultiplier: number
   percentScale: number
+  retentionScale: number
   refreshInterval: number
+  navigationFriendlyMaxArea: number
+  navigationHardestArea: number
+  navigationFriendlyProfile: NavigationProfile
+  navigationHardestProfile: NavigationProfile
   mazeLeftPadding: number
   seed: number
   diff: number

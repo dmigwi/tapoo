@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { Elements, PersistedRound, RoundState, State } from "./types"
+import type {
+  Elements,
+  PersistedPreferences,
+  PersistedRound,
+  RoundState,
+  State,
+} from "./types"
 
 function createButton({
   action,
@@ -99,6 +105,7 @@ function createPersistedWonRound(): PersistedRound {
     score: 500,
     lastRoundScore: 500,
     remainingMs: 1000,
+    winSummary: "1.20s faster than previous (new record)",
   }
 }
 
@@ -121,6 +128,7 @@ type DimensionsResult = {
 } | null
 
 type GameHarness = {
+  clearPersistedSnapshot: ReturnType<typeof vi.fn>
   clearPersistedRound: ReturnType<typeof vi.fn>
   elements: Elements
   generateMaze: ReturnType<typeof vi.fn>
@@ -146,7 +154,7 @@ async function bootstrapHarness({
   dimensionsResults?: DimensionsResult[]
   isSpaceFound?: (cell: string) => boolean
   persistedSnapshots?: Array<{
-    preferences: { level: number; wallWeight: 1 | 2 | 3 }
+    preferences: PersistedPreferences
     round: PersistedRound | null
   }>
   reweightedMaze?: string[][]
@@ -157,6 +165,7 @@ async function bootstrapHarness({
   const render = vi.fn<(elements: Elements, state: State) => void>()
   const savePersistedPreferences = vi.fn()
   const savePersistedRoundState = vi.fn()
+  const clearPersistedSnapshot = vi.fn()
   const clearPersistedRound = vi.fn()
   const generateMaze = vi.fn(() => round)
   const reweightMaze = vi.fn(() => reweightedMaze ?? round.maze)
@@ -227,6 +236,7 @@ async function bootstrapHarness({
   }))
   vi.doMock("./render", () => ({ render }))
   vi.doMock("./storage", () => ({
+    clearPersistedSnapshot,
     clearPersistedRound,
     loadPersistedSnapshot,
     savePersistedPreferences,
@@ -249,6 +259,7 @@ async function bootstrapHarness({
   bootstrapGame()
 
   return {
+    clearPersistedSnapshot,
     clearPersistedRound,
     elements,
     generateMaze,
@@ -304,6 +315,7 @@ describe("bootstrapGame", () => {
     }))
     vi.doMock("./render", () => ({ render }))
     vi.doMock("./storage", () => ({
+      clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       loadPersistedSnapshot,
       savePersistedPreferences: vi.fn(),
@@ -365,6 +377,7 @@ describe("bootstrapGame", () => {
     }))
     vi.doMock("./render", () => ({ render }))
     vi.doMock("./storage", () => ({
+      clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       loadPersistedSnapshot: vi.fn(() => ({
         preferences: { level: 1, wallWeight: 1 },
@@ -413,6 +426,7 @@ describe("bootstrapGame", () => {
     }))
     vi.doMock("./render", () => ({ render }))
     vi.doMock("./storage", () => ({
+      clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       loadPersistedSnapshot,
       savePersistedPreferences: vi.fn(),
@@ -462,6 +476,7 @@ describe("bootstrapGame", () => {
     }))
     vi.doMock("./render", () => ({ render }))
     vi.doMock("./storage", () => ({
+      clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       loadPersistedSnapshot: vi.fn(() => ({
         preferences: { level: 1, wallWeight: 1 },
@@ -488,6 +503,40 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(render)
     expect(state.wallWeight).toBe(2)
     expect(state.maze).toEqual(reweightedMaze)
+  })
+
+  it("clears persisted browser state before restarting from level 1", async () => {
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        {
+          preferences: {
+            level: 7,
+            wallWeight: 3,
+            lastAttemptRetention: 710000,
+            bestWinRetention: 880000,
+          },
+          round: null,
+        },
+      ],
+    })
+
+    harness.elements.controls[0].click()
+
+    expect(harness.clearPersistedSnapshot).toHaveBeenCalledTimes(1)
+    expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(1)
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(1, {
+      length: 20,
+      width: 20,
+    })
+
+    const state = latestRenderedState(harness.render)
+    expect(state.level).toBe(1)
+    expect(state.wallWeight).toBe(1)
+    expect(state.status).toBe("running")
+    expect(state.lastAttemptRetention).toBeNull()
+    expect(state.bestWinRetention).toBeNull()
+    expect(state.lastRoundScore).toBe(0)
+    expect(state.winSummary).toBe("")
   })
 
   it("pauses and resumes a running round through keyboard controls", async () => {
@@ -533,7 +582,53 @@ describe("bootstrapGame", () => {
     expect(state.playerPosition).toEqual([1, 3])
     expect(state.status).toBe("won")
     expect(state.lastRoundScore).toBe(200)
+    expect(state.lastAttemptRetention).toBe(1_000_000)
+    expect(state.bestWinRetention).toBe(1_000_000)
+    expect(state.winSummary).toBe("New scores retention record")
     expect(harness.savePersistedRoundState).toHaveBeenCalled()
+  })
+
+  it("builds a browser win summary from persisted timing history", async () => {
+    const harness = await bootstrapHarness({
+      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      round: createHorizontalRound(),
+      persistedSnapshots: [
+        {
+          preferences: {
+            level: 1,
+            wallWeight: 1,
+            lastAttemptRetention: 0,
+            bestWinRetention: 1_000_000,
+          },
+          round: null,
+        },
+      ],
+    })
+
+    const stateBeforeMove = latestRenderedState(harness.render)
+    if (!stateBeforeMove.clock) {
+      throw new Error("expected a running round clock before the winning move")
+    }
+
+    const clock = stateBeforeMove.clock as NonNullable<State["clock"]> & {
+      elapsedValue: number
+    }
+    clock.elapsedValue = 800
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowRight",
+        bubbles: true,
+      }),
+    )
+
+    const state = latestRenderedState(harness.render)
+    expect(state.status).toBe("won")
+    expect(state.lastAttemptRetention).toBe(600000)
+    expect(state.bestWinRetention).toBe(1_000_000)
+    expect(state.winSummary).toBe(
+      "1.20s faster than previous (0.80s behind best)",
+    )
   })
 
 
@@ -561,6 +656,8 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.status).toBe("lost")
     expect(state.lastRoundScore).toBe(100)
+    expect(state.lastAttemptRetention).toBe(0)
+    expect(state.winSummary).toBe("")
     expect(harness.savePersistedRoundState).toHaveBeenCalled()
   })
 
@@ -592,6 +689,34 @@ describe("bootstrapGame", () => {
     expect(latestRenderedState(harness.render).status).toBe("running")
   })
 
+  it("updates the running score with sub-second precision on refresh ticks", async () => {
+    const harness = await bootstrapHarness({
+      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      round: createHorizontalRound(),
+    })
+
+    const stateBeforeTick = latestRenderedState(harness.render)
+    if (!stateBeforeTick.clock || !harness.intervalCallback) {
+      throw new Error("expected running round clock and interval callback")
+    }
+
+    const clock = stateBeforeTick.clock as NonNullable<State["clock"]> & {
+      blinkValue: boolean
+      elapsedValue: number
+      remainingValue: number
+    }
+
+    clock.elapsedValue = 250
+    clock.remainingValue = 1_750
+    clock.blinkValue = true
+
+    harness.intervalCallback()
+
+    const state = latestRenderedState(harness.render)
+    expect(state.status).toBe("running")
+    expect(state.score).toBe(175)
+  })
+
   it("restores a persisted round in paused mode once the viewport fits again", async () => {
     const persistedRound: PersistedRound = {
       version: 1,
@@ -605,13 +730,13 @@ describe("bootstrapGame", () => {
       score: 200,
       lastRoundScore: 0,
       remainingMs: 1500,
+      winSummary: "",
     }
 
     const harness = await bootstrapHarness({
       dimensionsResults: [
-        { level: 1, length: 2, width: 1 },
         null,
-        { level: 1, length: 2, width: 1 },
+        null,
       ],
       round: createHorizontalRound(),
       persistedSnapshots: [
@@ -624,7 +749,6 @@ describe("bootstrapGame", () => {
         { length: 20, width: 20 },
         { length: 1, width: 1 },
         { length: 1, width: 1 },
-        { length: 20, width: 20 },
         { length: 20, width: 20 },
       ],
     })

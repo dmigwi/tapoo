@@ -47,20 +47,57 @@ function statusText(elements: Elements, state: State): string {
     .replace("{score}", String(state.score))
 }
 
-function isCompactDisplay(elements: Elements): boolean {
+function viewportMetrics(elements: Elements): {
+  heightCandidates: number[]
+  widthCandidates: number[]
+} {
   const rect = elements.body.getBoundingClientRect()
-  const availableWidth = rect.width || window.innerWidth
-  const availableHeight = rect.height || window.innerHeight
+  const widthCandidates = [
+    window.screen.width,
+    window.screen.availWidth,
+    rect.width,
+    window.visualViewport?.width ?? 0,
+    document.documentElement.clientWidth,
+    window.innerWidth,
+  ].filter((value) => value > 0)
+  const heightCandidates = [
+    window.screen.height,
+    window.screen.availHeight,
+    rect.height,
+    window.visualViewport?.height ?? 0,
+    document.documentElement.clientHeight,
+    window.innerHeight,
+  ].filter((value) => value > 0)
 
-  return (
-    availableWidth <= CONFIG.compactViewportWidth ||
-    availableHeight <= CONFIG.compactViewportHeight
+  return {
+    widthCandidates,
+    heightCandidates,
+  }
+}
+
+function isCompactDisplay(elements: Elements): boolean {
+  const { availableWidth, availableHeight } = {
+    availableWidth: window.matchMedia(
+      `(max-width: ${CONFIG.compactViewportWidth}px)`,
+    ).matches,
+    availableHeight: window.matchMedia(
+      `(max-height: ${CONFIG.compactViewportHeight}px)`,
+    ).matches,
+  }
+  const { widthCandidates, heightCandidates } = viewportMetrics(elements)
+  const compactWidth = widthCandidates.some(
+    (width) => width <= CONFIG.compactViewportWidth,
   )
+  const compactHeight = heightCandidates.some(
+    (height) => height <= CONFIG.compactViewportHeight,
+  )
+
+  return availableWidth || availableHeight || compactWidth || compactHeight
 }
 
 function navigationText(elements: Elements): string {
   const compact = isCompactDisplay(elements)
-  return compact ? CONFIG.touchNavigationCompact : CONFIG.navigation
+  return compact ? CONFIG.navigationCompact : CONFIG.navigation
 }
 
 function proceedText(elements: Elements): string {
@@ -89,21 +126,24 @@ function rowsWithSpacer(...rows: ScreenLine[]): ScreenLine[] {
   return rows.flatMap((row) => [emptyTextRow(), row])
 }
 
-function tooSmallRows(): ScreenLine[] {
+function tooSmallRows(state: State): ScreenLine[] {
   return [
-    centeredTextRow(CONFIG.tooSmallMessage, "status"),
+    centeredTextRow(
+      CONFIG.tooSmallMessage.replace("{level}", String(state.level)),
+      "status",
+    ),
     centeredTextRow(CONFIG.tooSmallActionMessage),
   ]
 }
 
-function successText(): string {
-  return window.matchMedia("(max-width: 720px)").matches
+function successText(elements: Elements): string {
+  return isCompactDisplay(elements)
     ? CONFIG.successCompactMessage
     : CONFIG.successMessage
 }
 
-function failedText(): string {
-  return window.matchMedia("(max-width: 720px)").matches
+function failedText(elements: Elements): string {
+  return isCompactDisplay(elements)
     ? CONFIG.failedCompactMessage
     : CONFIG.failedMessage
 }
@@ -166,6 +206,26 @@ function renderTextLine(value: string, className = "screen-text"): string {
   return `<span class="${className}">${html}</span>`
 }
 
+function scorePercent(state: State): number {
+  if (!state.dims) {
+    return 0
+  }
+
+  const maxScore =
+    state.dims.length * state.dims.width * CONFIG.scoreMultiplier
+  if (maxScore <= 0) {
+    return 0
+  }
+
+  return Math.max(
+    0,
+    Math.min(
+      CONFIG.percentScale,
+      Math.round((state.lastRoundScore * CONFIG.percentScale) / maxScore),
+    ),
+  )
+}
+
 function overlayRows(elements: Elements, state: State): ScreenLine[] {
   if (isPausedStatus(state.status)) {
     return [
@@ -175,26 +235,32 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
   }
 
   if (isWonStatus(state.status)) {
-    const scoresMsg = CONFIG.highScoreTemplate.replace(
-      "{score}",
-      String(state.lastRoundScore),
-    )
-    return [
-      centeredTextRow(successText(), "status"),
+    const scoresMsg = CONFIG.highScoreTemplate
+      .replace("{level}", String(state.level))
+      .replace("{score}", String(state.lastRoundScore))
+      .replace("{percent}", String(scorePercent(state)))
+    const rows = [
+      centeredTextRow(successText(elements), "status"),
       centeredTextRow(scoresMsg, "accent"),
-      centeredTextRow(proceedText(elements)),
     ]
+
+    if (state.winSummary) {
+      rows.push(centeredTextRow(state.winSummary, "accent"))
+    }
+
+    rows.push(centeredTextRow(proceedText(elements)))
+    return rows
   }
 
   if (isLostStatus(state.status)) {
     return [
-      centeredTextRow(failedText(), "status"),
+      centeredTextRow(failedText(elements), "status"),
       centeredTextRow(proceedText(elements)),
     ]
   }
 
   if (isTooSmallStatus(state.status)) {
-    return tooSmallRows()
+    return tooSmallRows(state)
   }
 
   return []

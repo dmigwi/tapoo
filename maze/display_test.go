@@ -79,10 +79,12 @@ func TestRenderMazeUI(t *testing.T) {
 		t.Parallel()
 
 		ui := newFakeUI(40, 80)
-		reachedTarget, err := maze.RenderMazeUI(ui, nil, 0, 400, sampleMazeGrid(), &maze.UIOverlay{
+		reachedTarget, err := maze.RenderMazeUI(ui, nil, 4, 400, sampleMazeGrid(), &maze.UIOverlay{
 			Message:       "Paused",
 			Color:         termbox.ColorYellow,
 			ShowHighScore: true,
+			ScorePercent:  100,
+			WinSummary:    "1.20s faster than previous (new record)",
 		})
 		if err != nil {
 			t.Fatalf("render maze ui returned error: %v", err)
@@ -100,8 +102,31 @@ func TestRenderMazeUI(t *testing.T) {
 			t.Fatal("expected render maze ui to render the overlay message")
 		}
 
-		if !ui.containsText("Final Game Level Scores: 400") {
+		if !ui.containsText("Final Level 4 Scores:  400 (100% retention)") {
 			t.Fatal("expected render maze ui to render the high score text")
+		}
+
+		if !ui.containsText("1.20s faster than previous (new record)") {
+			t.Fatal("expected render maze ui to render the win summary text")
+		}
+	})
+
+	t.Run("pause overlay only clears the spacer rows it needs", func(t *testing.T) {
+		t.Parallel()
+
+		ui := newFakeUI(40, 80)
+		_, err := maze.RenderMazeUI(ui, nil, 1, 0, sampleMazeGrid(), &maze.UIOverlay{
+			Message:       "Paused",
+			Color:         termbox.ColorYellow,
+			ShowHighScore: false,
+		})
+		if err != nil {
+			t.Fatalf("render maze ui returned error: %v", err)
+		}
+
+		// The pause overlay uses two content lines, so the lower maze rows should stay visible.
+		if strings.TrimSpace(ui.rowText(12, 3, 20)) == "" {
+			t.Fatal("expected pause overlay not to blank maze rows below the navigation line")
 		}
 	})
 
@@ -205,7 +230,7 @@ func TestDrawMaze(t *testing.T) {
 					t.Fatal("expected draw maze to render the intro text")
 				}
 
-				if !ui.containsText("Tapoo v" + fakeUIVersion) {
+				if !ui.containsText("Tapoo " + fakeUIVersion) {
 					t.Fatal("expected draw maze to render the embedded version in the intro text")
 				}
 
@@ -226,10 +251,7 @@ func TestDrawMaze(t *testing.T) {
 					if got != want {
 						t.Fatalf(
 							"unexpected rendered maze row %d for %s: got %q want %q",
-							rowIndex,
-							weight,
-							got,
-							want,
+							rowIndex, weight, got, want,
 						)
 					}
 				}

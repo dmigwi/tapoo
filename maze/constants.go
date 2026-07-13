@@ -2,6 +2,7 @@ package maze
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	termbox "github.com/nsf/termbox-go"
@@ -23,8 +24,12 @@ const (
 
 	moveStep              = 2
 	minPlayableMazeCells  = 2
+	roundingDivisor       = 2
 	scoreMultiplier       = 100
 	percentScale          = 100
+	retentionScale        = 1_000_000
+	goalBlinkInterval     = time.Second
+	goalBlinkOnDuration   = goalBlinkInterval / 2
 	refreshInterval       = 250 * time.Millisecond
 	quitNavigationStatus  = 0
 	mazeEdgeNeighborCount = 4
@@ -36,37 +41,63 @@ const RefreshInterval = refreshInterval
 const (
 	// Layout constants keep the termbox overlay aligned with the maze grid.
 
-	mazeLeftPadding     = 3
-	mazeTopPadding      = 7
-	screenTitleDivisor  = 3
-	overlayLeftDivisor  = 4
-	scoreRowOffset      = 6
-	statusRowOffset     = 8
-	overlayClearRowOne  = 3
-	overlayClearRowTwo  = 5
-	overlayClearRowTree = 7
-	overlayClearRowFour = 9
-	messageRowIntro     = 1
-	messageRowWebsite   = 3
-	messageRowControls  = 5
-	overlayRowMessage   = 4
-	overlayRowScore     = 6
-	overlayRowNavigate  = 8
+	mazeLeftPadding    = 3
+	mazeTopPadding     = 7
+	screenTitleDivisor = 3
+	overlayLeftDivisor = 4
+	scoreRowOffset     = 6
+	statusRowOffset    = 8
+	messageRowIntro    = 1
+	messageRowWebsite  = 3
+	messageRowControls = 5
+	overlayRowMessage  = 4
+	overlayRowSpacing  = 2
+)
+
+type winSummaryPreviousComparison int
+
+const (
+	winSummaryPreviousNone winSummaryPreviousComparison = iota
+	winSummaryPreviousFaster
+	winSummaryPreviousSlower
+	winSummaryPreviousMatched
+)
+
+type winSummaryBestComparison int
+
+const (
+	winSummaryBestNewRecord winSummaryBestComparison = iota
+	winSummaryBestMatched
+	winSummaryBestBehind
 )
 
 const (
 	// UI strings are centralized so the display code can focus on placement rather than content.
-	introFormat      = "   You are playing the Maze runner, hide and seek game (Tapoo v%s).      "
+	introFormat      = "   You are playing the Maze runner, hide and seek game (Tapoo %s).      "
 	website          = " Visit https://www.linkedin.com/in/migwi-ndungu/ to contact the developer.  "
 	playerNavigation = " Use Arrow Keys to guide Blue (Player) to Red. Ctrl+B changes walls. "
 	statusMsg        = "   Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: %d   Scores: %d   "
 
 	space              = "                                                                         "
-	pauseMsg           = "                              Game Paused !!!                            "
-	gameOverSucceed    = "    Game Over! Congratulations, You won by locating the target on time.  "
+	pauseMsg           = "                             Game Paused !!!                             "
+	gameOverSucceed    = "   Game Over! Congratulations, You won by locating the target on time.   "
 	gameOverFailed     = "      Game Over! Ooops!!!, You failed to locate the target on time.      "
 	gameOverNavigation = "        Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed         "
-	highScores         = "                   Final Game Level Scores: %d                           "
+	tooSmallMazeFormat = "   level %d needs more screen room; enlarge the window to keep playing   "
+
+	highScores               = "               Final Level %d Scores:  %d (%d%% retention)               "
+	winNoPrevNewRecord       = "               New scores retention record                               "
+	winNoPrevMatchedBest     = "               Matched best scores retention                             "
+	winNoPrevBehindBest      = "               %s behind best scores retention                           "
+	winFasterPrevNewRecord   = "               %s faster than previous (new record)                      "
+	winFasterPrevMatchedBest = "               %s faster than previous (matched best)                    "
+	winFasterPrevBehindBest  = "               %s faster than previous (%s behind best)                  "
+	winSlowerPrevNewRecord   = "               %s slower than previous (new record)                      "
+	winSlowerPrevMatchedBest = "               %s slower than previous (matched best)                    "
+	winSlowerPrevBehindBest  = "               %s slower than previous (%s behind best)                  "
+	winMatchedPrevNewRecord  = "               Matched previous (new record)                             "
+	winMatchedPrevBest       = "               Matched previous (matched best)                           "
+	winMatchedPrevBehindBest = "               Matched previous (%s behind best)                         "
 
 	// playerMarker is the glyph used to show the current player position inside the maze.
 	playerMarker = '▓'
@@ -90,7 +121,7 @@ const (
 
 // seed defines the size of the maze to be used in the training level (level 0).
 // It can also be referred to as the size of the training field.
-const seed = 100
+const seed = 60
 
 // diff defines the difference between maze sizes in consecutive game levels.
 const diff = 10
@@ -190,15 +221,24 @@ const (
 )
 
 const (
-	// These fallback values keep very large mazes on the most conservative corridor profile.
-	navigationFallbackSoftCorridorLimit = 6
-	navigationFallbackHardCorridorLimit = 8
-	navigationFallbackPreferTurnPercent = 35
+	// Navigation difficulty starts from the welcoming profile through this area, then ramps
+	// smoothly until the hardest profile is reached at the max tuned area.
+	navigationFriendlyMaxArea = 130
+	navigationHardestArea     = 1600
+
+	// These fallback values keep very large mazes on the tightest corridor profile.
+	navigationFallbackSoftCorridorLimit = 2
+	navigationFallbackHardCorridorLimit = 3
+	navigationFallbackPreferTurnPercent = 55
+
+	navigationFriendlySoftCorridorLimit = 8
+	navigationFriendlyHardCorridorLimit = 10
+	navigationFriendlyPreferTurnPercent = 90
 )
 
 // NavigationProfile tunes how maze generation manages corridor length as the maze grows.
-// Smaller mazes can tolerate more frequent turns, while larger mazes need slightly longer
-// straight runs so navigation stays challenging without becoming exhausting.
+// Early levels stay more welcoming by allowing longer straight corridors, while later levels
+// tighten those limits so navigation becomes denser and harder to read at a glance.
 type NavigationProfile struct {
 	// SoftCorridorLimit is the straight-run length after which turns should become preferred.
 	SoftCorridorLimit int
@@ -211,35 +251,57 @@ type NavigationProfile struct {
 }
 
 // GetNavigationProfile returns the corridor-management profile derived from the
-// provided maze dimensions. It shapes how quickly the generator should break up
-// long straight passages without changing the separate maze-area progression rules.
+// provided maze dimensions. The first few levels intentionally allow longer
+// straights so the maze feels approachable, then the profile gradually clamps
+// corridor length until the largest mazes use the hardest supported settings.
 func GetNavigationProfile(config Dimensions) NavigationProfile {
-	type navigationProfileBand struct {
-		maxArea int
-		profile NavigationProfile
-	}
-
-	//nolint:mnd // Tuned corridor-length bands used to keep maze generation readable and challenging.
-	bands := [...]navigationProfileBand{
-		{maxArea: 180, profile: NavigationProfile{SoftCorridorLimit: 2, HardCorridorLimit: 3, PreferTurnPercent: 80}},
-		{maxArea: 300, profile: NavigationProfile{SoftCorridorLimit: 3, HardCorridorLimit: 4, PreferTurnPercent: 70}},
-		{maxArea: 450, profile: NavigationProfile{SoftCorridorLimit: 4, HardCorridorLimit: 5, PreferTurnPercent: 60}},
-		{maxArea: 600, profile: NavigationProfile{SoftCorridorLimit: 5, HardCorridorLimit: 6, PreferTurnPercent: 50}},
-		{maxArea: 1000, profile: NavigationProfile{SoftCorridorLimit: 5, HardCorridorLimit: 7, PreferTurnPercent: 45}},
-		{maxArea: 1600, profile: NavigationProfile{SoftCorridorLimit: 6, HardCorridorLimit: 7, PreferTurnPercent: 40}},
-	}
-
 	area := config.Length * config.Width
-	for _, band := range bands {
-		if area <= band.maxArea {
-			return band.profile
-		}
+
+	// Area growth compounds navigation density quickly, so the square-root curve tightens
+	// corridors faster than a plain linear interpolation while still staying smooth.
+	difficultyFactor := navigationDifficultyFactor(area)
+	return NavigationProfile{
+		SoftCorridorLimit: interpolateNavigationValue(
+			navigationFriendlySoftCorridorLimit,
+			navigationFallbackSoftCorridorLimit,
+			difficultyFactor,
+		),
+		HardCorridorLimit: interpolateNavigationValue(
+			navigationFriendlyHardCorridorLimit,
+			navigationFallbackHardCorridorLimit,
+			difficultyFactor,
+		),
+		PreferTurnPercent: interpolateNavigationValue(
+			navigationFriendlyPreferTurnPercent,
+			navigationFallbackPreferTurnPercent,
+			difficultyFactor,
+		),
+	}
+}
+
+// navigationDifficultyFactor maps maze area into a normalized difficulty value
+// between 0 and 1. Areas up to the welcoming threshold stay at 0, areas at or
+// beyond the hardest threshold clamp to 1, and the square-root curve in between
+// tightens difficulty smoothly while ramping it up faster than a plain linear scale.
+func navigationDifficultyFactor(area int) float64 {
+	if area <= navigationFriendlyMaxArea {
+		return 0
 	}
 
-	// Larger mazes reuse the most conservative profile once they exceed the tuned bands above.
-	return NavigationProfile{
-		SoftCorridorLimit: navigationFallbackSoftCorridorLimit,
-		HardCorridorLimit: navigationFallbackHardCorridorLimit,
-		PreferTurnPercent: navigationFallbackPreferTurnPercent,
+	if area >= navigationHardestArea {
+		return 1
 	}
+
+	normalizedArea := float64(area-navigationFriendlyMaxArea) /
+		float64(navigationHardestArea-navigationFriendlyMaxArea)
+
+	return math.Sqrt(normalizedArea)
+}
+
+// interpolateNavigationValue linearly blends one profile setting from the
+// welcoming value to the hardest value using the normalized difficulty factor.
+// A difficulty of 0 returns the friendly value, 1 returns the hardest value,
+// and values in between are rounded to the nearest supported integer.
+func interpolateNavigationValue(friendly, hardest int, difficultyFactor float64) int {
+	return int(math.Round(float64(friendly) + float64(hardest-friendly)*difficultyFactor))
 }

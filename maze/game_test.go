@@ -158,61 +158,107 @@ func TestHandlePlayerMovement(t *testing.T) {
 	})
 }
 
-func TestGameClock(t *testing.T) {
-	t.Parallel()
-
-	t.Run("tracks elapsed time across pause and resume", func(t *testing.T) {
-		t.Parallel()
-
-		clock := maze.NewGameClock(maze.RefreshInterval)
-
-		time.Sleep(30 * time.Millisecond)
-		clock.Pause()
-		time.Sleep(120 * time.Millisecond)
-		clock.Resume()
-
-		remainingAfterResume := clock.Remaining()
-		if remainingAfterResume < 160*time.Millisecond {
-			t.Fatalf("expected paused time to be excluded from remaining duration, got %v", remainingAfterResume)
-		}
-
-		time.Sleep(40 * time.Millisecond)
-
-		elapsed := clock.Elapsed()
-		if elapsed < 50*time.Millisecond || elapsed > 140*time.Millisecond {
-			t.Fatalf("unexpected elapsed duration after pause and resume: %v", elapsed)
-		}
-
-		if got := clock.Remaining(); got >= remainingAfterResume {
-			t.Fatalf(
-				"expected remaining duration to keep decreasing after resume: before=%v after=%v",
-				remainingAfterResume,
-				got,
-			)
-		}
-	})
-
-	t.Run("clamps remaining time at zero after expiration", func(t *testing.T) {
-		t.Parallel()
-
-		clock := maze.NewGameClock(20 * time.Millisecond)
-		clock.Resume()
-
-		time.Sleep(40 * time.Millisecond)
-
-		if got := clock.Remaining(); got != 0 {
-			t.Fatalf("expected remaining duration to clamp at zero, got %v", got)
-		}
-	})
-}
-
 func TestCalculateScore(t *testing.T) {
 	t.Parallel()
 
-	got := maze.CalculateScore(10, 3*time.Second)
-	if got != 700 {
-		t.Fatalf("unexpected score: got %d want %d", got, 700)
+	got := maze.CalculateScore(10, 3*time.Second+250*time.Millisecond)
+	if got != 675 {
+		t.Fatalf("unexpected score: got %d want %d", got, 675)
 	}
+}
+
+func TestCalculateScoreRetention(t *testing.T) {
+	t.Parallel()
+
+	got := maze.CalculateScoreRetention(10, 675)
+	if got != 675000 {
+		t.Fatalf("unexpected score retention: got %d want %d", got, 675000)
+	}
+}
+
+func TestBuildWinSummary(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		current     uint32
+		lastAttempt *uint32
+		best        *uint32
+		duration    time.Duration
+		want        string
+	}{
+		{
+			name:        "reports a faster run that is still behind the best",
+			current:     660000,
+			lastAttempt: uint32Ptr(540000),
+			best:        uint32Ptr(740000),
+			duration:    10 * time.Second,
+			want:        "               1.20s faster than previous (0.80s behind best)                  ",
+		},
+		{
+			name:        "reports a faster run that sets a new record",
+			current:     660000,
+			lastAttempt: uint32Ptr(540000),
+			best:        uint32Ptr(620000),
+			duration:    10 * time.Second,
+			want:        "               1.20s faster than previous (new record)                      ",
+		},
+		{
+			name:        "falls back to the best summary when no last attempt is stored",
+			current:     660000,
+			lastAttempt: nil,
+			best:        nil,
+			duration:    10 * time.Second,
+			want:        "               New scores retention record                               ",
+		},
+		{
+			name:        "reports a first stored run that matches the best clear",
+			current:     660000,
+			lastAttempt: nil,
+			best:        uint32Ptr(660000),
+			duration:    10 * time.Second,
+			want:        "               Matched best scores retention                             ",
+		},
+		{
+			name:        "reports a matched previous run that is still behind the best",
+			current:     660000,
+			lastAttempt: uint32Ptr(660000),
+			best:        uint32Ptr(740000),
+			duration:    10 * time.Second,
+			want:        "               Matched previous (0.80s behind best)                         ",
+		},
+		{
+			name:        "formats longer differences in minutes",
+			current:     500000,
+			lastAttempt: uint32Ptr(250000),
+			best:        uint32Ptr(700000),
+			duration:    5 * time.Minute,
+			want:        "               1.25m faster than previous (1.00m behind best)                  ",
+		},
+		{
+			name:        "formats very long differences in hours",
+			current:     150000,
+			lastAttempt: uint32Ptr(500000),
+			best:        uint32Ptr(350000),
+			duration:    10 * time.Hour,
+			want:        "               3.50h slower than previous (2.00h behind best)                  ",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := maze.BuildWinSummary(testCase.current, testCase.lastAttempt, testCase.best, testCase.duration)
+			if got != testCase.want {
+				t.Fatalf("unexpected win summary: got %q want %q", got, testCase.want)
+			}
+		})
+	}
+}
+
+func uint32Ptr(value uint32) *uint32 {
+	return &value
 }
 
 func TestStartWithUI(t *testing.T) {
@@ -343,6 +389,35 @@ func TestPlayWithUI(t *testing.T) {
 		}
 	})
 
+	t.Run("resumes a paused prepared maze without rebuilding it", func(t *testing.T) {
+		t.Parallel()
+
+		// This viewport is intentionally too small to generate a fresh maze. If proceed ever
+		// calls reloadLevel for a manual pause, the test will fail with a sizing error.
+		ui := newFakeUI(1, 1)
+		t.Cleanup(ui.Close)
+
+		ui.enqueueEvents(
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeySpace},
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlP},
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc},
+		)
+
+		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
+			Length:        3,
+			Width:         3,
+			StartPosition: [2]int{1, 1},
+			FinalPosition: [2]int{3, 3},
+		}, sampleMazeGrid(), maze.StoredGameState{
+			Level:      1,
+			WallWeight: maze.WallWeightRegular,
+			State:      maze.GameProgressInProgress,
+		}, nil)
+		if err != nil {
+			t.Fatalf("pause/resume unexpectedly rebuilt the maze: %v", err)
+		}
+	})
+
 	t.Run("cycles wall weight and renders the updated maze on the next refresh tick", func(t *testing.T) {
 		t.Parallel()
 
@@ -436,6 +511,10 @@ func TestPlayWithUI(t *testing.T) {
 		if !ui.containsText("You failed to locate the target on time") {
 			t.Fatal("expected timeout handling to render the failure overlay")
 		}
+
+		if ui.containsText("Final Level 1 Scores:") {
+			t.Fatal("expected timeout handling not to render the final score summary")
+		}
 	})
 
 	t.Run("proceeds to the same level after a failed run", func(t *testing.T) {
@@ -460,7 +539,7 @@ func TestPlayWithUI(t *testing.T) {
 			t.Fatalf("play with ui returned error: %v", err)
 		}
 
-		if !ui.containsText("Scores: 11000") {
+		if !ui.containsText("Scores: 7000") {
 			t.Fatal("expected Ctrl+P after failure to reload level 1 with its initial score")
 		}
 	})
@@ -522,7 +601,7 @@ func TestPlayWithUI(t *testing.T) {
 			t.Fatalf("play with ui returned error: %v", err)
 		}
 
-		if !ui.containsText("Scores: 12000") {
+		if !ui.containsText("Scores: 8000") {
 			t.Fatal("expected Ctrl+P after a win to load level 2 with its initial score")
 		}
 	})
@@ -541,19 +620,19 @@ func TestPlayWithUIRestoresPersistedProgressState(t *testing.T) {
 			name:      "loads the next level when the last persisted game was won",
 			progress:  maze.GameProgressWon,
 			wantLevel: "Level: 2",
-			wantScore: "Scores: 12000",
+			wantScore: "Scores: 8000",
 		},
 		{
 			name:      "reloads the current level when the last persisted game failed",
 			progress:  maze.GameProgressFail,
 			wantLevel: "Level: 1",
-			wantScore: "Scores: 11000",
+			wantScore: "Scores: 7000",
 		},
 		{
 			name:      "reloads the current level when the last persisted game was still in progress",
 			progress:  maze.GameProgressInProgress,
 			wantLevel: "Level: 1",
-			wantScore: "Scores: 11000",
+			wantScore: "Scores: 7000",
 		},
 	}
 
