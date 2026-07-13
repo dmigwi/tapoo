@@ -17,10 +17,12 @@ import {
 } from "./storage"
 import type { State } from "./types"
 
+// isWallWeight mirrors the production wall-weight guard for persistence tests.
 function isWallWeight(value: number): value is 1 | 2 | 3 {
   return value === 1 || value === 2 || value === 3
 }
 
+// createMemoryStorage provides a minimal Storage implementation for browser persistence tests.
 function createMemoryStorage(): Storage {
   const values = new Map<string, string>()
 
@@ -46,8 +48,10 @@ function createMemoryStorage(): Storage {
   }
 }
 
+// createState builds a restorable runtime state for storage-oriented scenarios.
 function createState(overrides: Partial<State> = {}): State {
   return {
+    controlMode: "keyboard",
     level: 4,
     dims: { length: 5, width: 5 },
     maze: [
@@ -70,6 +74,7 @@ function createState(overrides: Partial<State> = {}): State {
   }
 }
 
+// These tests keep browser persistence resilient to corrupt and partial storage payloads.
 describe("storage", () => {
   beforeEach(() => {
     Object.defineProperty(window, "localStorage", {

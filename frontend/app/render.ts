@@ -10,6 +10,7 @@ import {
 } from "./status"
 import type { Elements, ScreenLine, State } from "./types"
 
+// escapeHtml protects text rows before they are written as HTML.
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -17,10 +18,12 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
 }
 
+// leftPad offsets maze rows so the browser view mirrors the terminal layout.
 function leftPad(value: string, padding: number): string {
   return `${" ".repeat(Math.max(0, padding))}${value}`
 }
 
+// padLine keeps overlay-cleared maze rows aligned to a fixed width.
 function padLine(value: string, width: number): string {
   if (value.length >= width) {
     return value
@@ -29,6 +32,7 @@ function padLine(value: string, width: number): string {
   return `${value}${" ".repeat(width - value.length)}`
 }
 
+// replaceAt swaps a single visible marker into an already-built maze row.
 function replaceAt(line: string, index: number, char: string): string {
   if (index < 0 || index >= line.length) {
     return line
@@ -37,6 +41,7 @@ function replaceAt(line: string, index: number, char: string): string {
   return `${line.slice(0, index)}${char}${line.slice(index + 1)}`
 }
 
+// statusText selects the running-status footer copy for the current display size.
 function statusText(elements: Elements, state: State): string {
   const template = isCompactDisplay(elements)
     ? CONFIG.touchStatusTemplate
@@ -47,6 +52,7 @@ function statusText(elements: Elements, state: State): string {
     .replace("{score}", String(state.score))
 }
 
+// viewportMetrics gathers every meaningful browser measurement used for compact mode detection.
 function viewportMetrics(elements: Elements): {
   heightCandidates: number[]
   widthCandidates: number[]
@@ -75,6 +81,7 @@ function viewportMetrics(elements: Elements): {
   }
 }
 
+// isCompactDisplay collapses copy when any viewport dimension crosses the compact threshold.
 function isCompactDisplay(elements: Elements): boolean {
   const { availableWidth, availableHeight } = {
     availableWidth: window.matchMedia(
@@ -95,17 +102,20 @@ function isCompactDisplay(elements: Elements): boolean {
   return availableWidth || availableHeight || compactWidth || compactHeight
 }
 
+// navigationText picks the verbose or compact navigation hint for the viewport.
 function navigationText(elements: Elements): string {
   const compact = isCompactDisplay(elements)
   return compact ? CONFIG.navigationCompact : CONFIG.navigation
 }
 
+// proceedText picks the keyboard or touch proceed hint for the viewport.
 function proceedText(elements: Elements): string {
   return isCompactDisplay(elements)
     ? CONFIG.touchProceedMessage
     : CONFIG.proceedMessage
 }
 
+// centeredTextRow creates one centered text line for the rendered screen model.
 function centeredTextRow(text: string, className = "screen-text"): ScreenLine {
   return {
     kind: "text",
@@ -114,6 +124,7 @@ function centeredTextRow(text: string, className = "screen-text"): ScreenLine {
   }
 }
 
+// emptyTextRow creates a spacer line while preserving the renderer's line model.
 function emptyTextRow(): ScreenLine {
   return {
     kind: "text",
@@ -122,10 +133,12 @@ function emptyTextRow(): ScreenLine {
   }
 }
 
+// rowsWithSpacer inserts blank lines before each supplied row for terminal-style spacing.
 function rowsWithSpacer(...rows: ScreenLine[]): ScreenLine[] {
   return rows.flatMap((row) => [emptyTextRow(), row])
 }
 
+// tooSmallRows builds the viewport warning shown when the maze no longer fits.
 function tooSmallRows(state: State): ScreenLine[] {
   return [
     centeredTextRow(
@@ -136,18 +149,21 @@ function tooSmallRows(state: State): ScreenLine[] {
   ]
 }
 
+// successText picks the win message sized for the current viewport.
 function successText(elements: Elements): string {
   return isCompactDisplay(elements)
     ? CONFIG.successCompactMessage
     : CONFIG.successMessage
 }
 
+// failedText picks the loss message sized for the current viewport.
 function failedText(elements: Elements): string {
   return isCompactDisplay(elements)
     ? CONFIG.failedCompactMessage
     : CONFIG.failedMessage
 }
 
+// shouldDrawDestination decides whether the blinking destination is visible this frame.
 function shouldDrawDestination(state: State): boolean {
   if (!isRunningStatus(state.status) || !state.clock) {
     return true
@@ -156,6 +172,7 @@ function shouldDrawDestination(state: State): boolean {
   return state.clock.blink()
 }
 
+// buildMazeLines merges the maze grid with the current player and target markers.
 function buildMazeLines(state: State): string[] {
   if (!state.maze) {
     return []
@@ -182,6 +199,7 @@ function buildMazeLines(state: State): string[] {
   return lines.map((line) => leftPad(line, CONFIG.mazeLeftPadding))
 }
 
+// renderMarkedLine wraps one maze row in span markup for colorized rendering.
 function renderMarkedLine(rawLine: string): string {
   let html = ""
 
@@ -200,12 +218,14 @@ function renderMarkedLine(rawLine: string): string {
   return `<span class="maze-row">${html}</span>`
 }
 
+// renderTextLine converts a text row into HTML while preserving spacing.
 function renderTextLine(value: string, className = "screen-text"): string {
   const html =
     value === "" ? "&nbsp;" : escapeHtml(value).replaceAll(" ", "&nbsp;")
   return `<span class="${className}">${html}</span>`
 }
 
+// scorePercent converts the last-round score into a compact retention percentage.
 function scorePercent(state: State): number {
   if (!state.dims) {
     return 0
@@ -226,6 +246,7 @@ function scorePercent(state: State): number {
   )
 }
 
+// overlayRows builds the centered pause, win, loss, or too-small overlay lines.
 function overlayRows(elements: Elements, state: State): ScreenLine[] {
   if (isPausedStatus(state.status)) {
     return [
@@ -266,6 +287,7 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
   return []
 }
 
+// applyOverlayToMaze clears the maze center area and drops the overlay into it.
 function applyOverlayToMaze(
   elements: Elements,
   state: State,
@@ -305,6 +327,7 @@ function applyOverlayToMaze(
   return screenMaze
 }
 
+// buildScreenLines assembles the final screen model for the current state.
 function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
   const mazeLines = buildMazeLines(state)
   const mazeWidth = mazeLines.reduce(
@@ -331,7 +354,15 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
   return lines
 }
 
+// updateTouchControls shows only the touch controls that make sense for the current state.
 function updateTouchControls(elements: Elements, state: State): void {
+  if (state.controlMode !== "keyboard") {
+    elements.touchControls.hidden = true
+    elements.touchControls.classList.remove("touch-controls--action-pair")
+    elements.touchControls.classList.remove("touch-controls--single-action")
+    return
+  }
+
   const canProceed = state.canResume
     ? canProceedStatus(state.status)
     : isWonStatus(state.status) || isLostStatus(state.status)
@@ -374,6 +405,7 @@ function updateTouchControls(elements: Elements, state: State): void {
   )
 }
 
+// render turns the current state into HTML and syncs the touch-control visibility.
 export function render(elements: Elements, state: State): void {
   const screenLines = buildScreenLines(elements, state)
   elements.screen.innerHTML = screenLines

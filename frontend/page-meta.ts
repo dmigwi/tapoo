@@ -3,6 +3,7 @@ import { APP_VERSION } from "./app/version"
 
 declare const __TAPOO_BUILD_YEAR__: number
 
+// configText resolves a text entry from CONFIG and rejects non-string keys early.
 function configText(key: string): string {
   const value = CONFIG[key as keyof typeof CONFIG]
   if (typeof value !== "string") {
@@ -12,6 +13,7 @@ function configText(key: string): string {
   return value
 }
 
+// applyConfigAttribute copies CONFIG-backed text into matching DOM attributes.
 function applyConfigAttribute(
   selector: string,
   attributeName: "aria-label" | "content" | "textContent",
@@ -34,6 +36,7 @@ function applyConfigAttribute(
   }
 }
 
+// applyDocumentTitle keeps the live document title aligned with page metadata.
 function applyDocumentTitle(): void {
   const titleElement = document.querySelector("title[data-config-key]")
   if (!(titleElement instanceof HTMLTitleElement)) {
@@ -60,6 +63,7 @@ function applyPageVersion(): void {
   }
 }
 
+// applyPageText hydrates shared static copy such as labels and meta descriptions.
 function applyPageText(): void {
   applyDocumentTitle()
   applyConfigAttribute("[data-config-text]", "textContent")

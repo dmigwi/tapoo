@@ -1,13 +1,10 @@
 import { GameClock } from "./clock"
 import { CONFIG, ROUND_STORAGE_VERSION, WALL_WEIGHTS } from "./config"
-import { elements, getTerminalSize } from "./dom"
+import { executeCommandWithFeedback } from "./cmd-feedback"
+import { getTerminalSize } from "./dom"
 import {
   generateMaze,
   getMazeDimensions,
-  isSpaceFound,
-  isWallWeight,
-  nextWallWeight,
-  reweightMaze,
 } from "./maze"
 import { render } from "./render"
 import {
@@ -25,9 +22,20 @@ import {
   savePersistedPreferences,
   savePersistedRoundState,
 } from "./storage"
-import type { MoveAction, PersistedRound, Position, State } from "./types"
+import { isSpaceFound, isWallWeight, nextWallWeight, reweightMaze } from "./traversal"
+import type {
+  Elements,
+  GameRuntime,
+  MazeControlCommand,
+  MazeControlMode,
+  MoveAction,
+  PersistedRound,
+  Position,
+  State,
+} from "./types"
 
 const state: State = {
+  controlMode: "keyboard",
   level: 1,
   dims: null,
   maze: null,
@@ -46,6 +54,8 @@ const state: State = {
 
 let scheduledRoundPersist: number | null = null
 let lastBlinkVisible: boolean | null = null
+let activeControlMode: MazeControlMode | null = null
+let runtimeElements: Elements | null = null
 
 const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
   MoveLeft: [0, -1],
@@ -54,13 +64,7 @@ const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
   MoveDown: [1, 0],
 }
 
-const KEY_TO_MOVE_ACTION: Partial<Record<string, MoveAction>> = {
-  ArrowLeft: "MoveLeft",
-  ArrowRight: "MoveRight",
-  ArrowUp: "MoveUp",
-  ArrowDown: "MoveDown",
-}
-
+// calculateScore converts elapsed time into the remaining score for a round.
 function calculateScore(totalCells: number, elapsedMs: number): number {
   const maxScore = totalCells * CONFIG.scoreMultiplier
   const elapsedPenalty = Math.floor((elapsedMs * CONFIG.scoreMultiplier) / 1000)
@@ -71,6 +75,7 @@ function calculateScore(totalCells: number, elapsedMs: number): number {
 type WinSummaryPreviousComparison = "none" | "faster" | "slower" | "matched"
 type WinSummaryBestComparison = "new-record" | "matched-best" | "behind-best"
 
+// formatWinSummaryDuration renders elapsed deltas with compact time units.
 function formatWinSummaryDuration(durationMs: number): string {
   if (durationMs < 60_000) {
     return `${(durationMs / 1000).toFixed(2)}s`
@@ -83,6 +88,7 @@ function formatWinSummaryDuration(durationMs: number): string {
   return `${(durationMs / 3_600_000).toFixed(2)}h`
 }
 
+// calculateScoreRetention normalizes a score into the retained percentage scale.
 function calculateScoreRetention(totalCells: number, score: number): number {
   const maxScore = totalCells * CONFIG.scoreMultiplier
   if (maxScore <= 0) {
@@ -100,6 +106,7 @@ function calculateScoreRetention(totalCells: number, score: number): number {
   )
 }
 
+// formatWinSummaryRetentionDelta projects retention differences back into time.
 function formatWinSummaryRetentionDelta(
   deltaRetention: number,
   levelDurationMs: number,
@@ -110,6 +117,7 @@ function formatWinSummaryRetentionDelta(
   return formatWinSummaryDuration(deltaMs)
 }
 
+// compareWinSummaryPrevious compares the current win against the last attempt.
 function compareWinSummaryPrevious(
   currentRetention: number,
   lastAttemptRetention: number | null,
@@ -142,6 +150,7 @@ function compareWinSummaryPrevious(
   return { comparison: "matched", delta: "" }
 }
 
+// compareWinSummaryBest compares the current win against the best retained score.
 function compareWinSummaryBest(
   currentRetention: number,
   bestWinRetention: number | null,
@@ -164,6 +173,7 @@ function compareWinSummaryBest(
   return { comparison: "matched-best", delta: "" }
 }
 
+// replaceWinSummaryDelta fills the selected summary template with its deltas.
 function replaceWinSummaryDelta(
   template: string,
   delta: string,
@@ -174,6 +184,7 @@ function replaceWinSummaryDelta(
     .replace("{bestDelta}", bestDelta)
 }
 
+// selectWinSummaryTemplate picks the right summary copy for the comparison result.
 function selectWinSummaryTemplate(
   previousComparison: WinSummaryPreviousComparison, bestComparison: WinSummaryBestComparison,
 ): string {
@@ -224,6 +235,7 @@ function selectWinSummaryTemplate(
   return CONFIG.winMatchedPrevBehindBest
 }
 
+// buildWinSummary assembles the final retention summary shown after a win.
 function buildWinSummary(
   currentRetention: number,
   lastAttemptRetention: number | null,
@@ -248,10 +260,12 @@ function buildWinSummary(
   return replaceWinSummaryDelta(template, previous.delta, best.delta)
 }
 
+// positionsEqual compares two maze coordinates without allocating helper objects.
 function positionsEqual(left: Position, right: Position): boolean {
   return left[0] === right[0] && left[1] === right[1]
 }
 
+// restoreClock reconstructs a live clock from persisted remaining time.
 function restoreClock(totalCells: number, remainingMs: number): GameClock {
   const totalDurationMs = totalCells * 1000
   const clampedRemainingMs = Math.max(0, Math.min(totalDurationMs, remainingMs))
@@ -260,6 +274,7 @@ function restoreClock(totalCells: number, remainingMs: number): GameClock {
   return clock
 }
 
+// isTraversablePosition validates that a stored position still lands on open path.
 function isTraversablePosition(data: string[][], position: Position): boolean {
   const [row, column] = position
   if (row < 0 || row >= data.length) {
@@ -273,6 +288,7 @@ function isTraversablePosition(data: string[][], position: Position): boolean {
   return isSpaceFound(data[row][column])
 }
 
+// applyTooSmallState clears the active round when the viewport can no longer fit it.
 function applyTooSmallState(level: number): void {
   state.status = "too-small"
   state.level = level
@@ -287,6 +303,7 @@ function applyTooSmallState(level: number): void {
   state.clock = null
 }
 
+// isValidPersistedRound verifies that a restored round is internally consistent.
 function isValidPersistedRound(snapshot: PersistedRound): boolean {
   if (
     snapshot.version !== ROUND_STORAGE_VERSION ||
@@ -323,26 +340,37 @@ function isValidPersistedRound(snapshot: PersistedRound): boolean {
   return true
 }
 
+// persistedRoundFitsViewport checks whether a saved round still fits the viewport.
 function persistedRoundFitsViewport(snapshot: PersistedRound): boolean {
-  const terminalSize = getTerminalSize()
+  if (!runtimeElements) {
+    return false
+  }
+
+  const terminalSize = getTerminalSize(runtimeElements)
   return (
     snapshot.dims.length <= terminalSize.length &&
     snapshot.dims.width <= terminalSize.width
   )
 }
 
+// currentRoundFitsViewport checks the live round against the current viewport.
 function currentRoundFitsViewport(): boolean {
   if (!state.dims) {
     return true
   }
 
-  const terminalSize = getTerminalSize()
+  if (!runtimeElements) {
+    return false
+  }
+
+  const terminalSize = getTerminalSize(runtimeElements)
   return (
     state.dims.length <= terminalSize.length &&
     state.dims.width <= terminalSize.width
   )
 }
 
+// cancelScheduledRoundPersist stops any deferred round persistence job.
 function cancelScheduledRoundPersist(): void {
   if (scheduledRoundPersist === null) {
     return
@@ -352,20 +380,24 @@ function cancelScheduledRoundPersist(): void {
   scheduledRoundPersist = null
 }
 
+// persistPreferences stores the long-lived level and wall-weight preferences.
 function persistPreferences(): void {
   savePersistedPreferences(state)
 }
 
+// persistRoundNow flushes the current round snapshot immediately.
 function persistRoundNow(): void {
   cancelScheduledRoundPersist()
   savePersistedRoundState(state)
 }
 
+// persistStateNow saves both preferences and the live round in one step.
 function persistStateNow(): void {
   persistPreferences()
   persistRoundNow()
 }
 
+// currentBlinkVisible exposes the current destination blink state for rendering.
 function currentBlinkVisible(): boolean | null {
   if (!isRunningStatus(state.status) || !state.clock) {
     return null
@@ -374,11 +406,17 @@ function currentBlinkVisible(): boolean | null {
   return state.clock.blink()
 }
 
+// renderState pushes the current game state into the terminal-like renderer.
 function renderState(): void {
+  if (!runtimeElements) {
+    return
+  }
+
   lastBlinkVisible = currentBlinkVisible()
-  render(elements, state)
+  render(runtimeElements, state)
 }
 
+// scheduleRoundPersistence batches non-terminal round updates behind the refresh cadence.
 function scheduleRoundPersistence(): void {
   cancelScheduledRoundPersist()
   scheduledRoundPersist = window.setTimeout(() => {
@@ -387,7 +425,12 @@ function scheduleRoundPersistence(): void {
   }, CONFIG.refreshInterval)
 }
 
+// restorePersistedRound rebuilds a saved round or falls back when it is invalid.
 function restorePersistedRound(snapshot: PersistedRound | null): boolean {
+  if (!runtimeElements) {
+    return false
+  }
+
   if (!snapshot) {
     return false
   }
@@ -436,8 +479,13 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   return true
 }
 
+// startRound generates and initializes a fresh round for the requested level.
 function startRound(level: number, persist = true): void {
-  const terminalSize = getTerminalSize()
+  if (!runtimeElements) {
+    return
+  }
+
+  const terminalSize = getTerminalSize(runtimeElements)
   const dimensions = getMazeDimensions(level, terminalSize)
 
   if (!dimensions) {
@@ -470,6 +518,7 @@ function startRound(level: number, persist = true): void {
   renderState()
 }
 
+// restartGame clears persisted progress and restarts from level one.
 function restartGame(): void {
   cancelScheduledRoundPersist()
   clearPersistedSnapshot()
@@ -481,6 +530,7 @@ function restartGame(): void {
   startRound(1, false)
 }
 
+// resumeOrProceed resumes a pause or advances from a finished round.
 function resumeOrProceed(): void {
   if (isPausedStatus(state.status) && state.canResume && state.clock) {
     state.clock.resume()
@@ -502,6 +552,7 @@ function resumeOrProceed(): void {
   }
 }
 
+// pauseGame freezes the current round while preserving it for resume.
 function pauseGame(): void {
   if (!isRunningStatus(state.status) || !state.clock) {
     return
@@ -514,6 +565,7 @@ function pauseGame(): void {
   renderState()
 }
 
+// cycleWallWeight swaps the live maze walls to the next supported weight.
 function cycleWallWeight(): void {
   const nextWeight = nextWallWeight(state.wallWeight)
 
@@ -526,6 +578,7 @@ function cycleWallWeight(): void {
   renderState()
 }
 
+// handleWinCheck updates retention metrics and finalizes the round after a win.
 function handleWinCheck(): boolean {
   if (state.clock && state.dims) {
     const totalCells = state.dims.length * state.dims.width
@@ -568,6 +621,7 @@ function handleWinCheck(): boolean {
   return true
 }
 
+// movePlayer applies one move step and persists the updated round state.
 function movePlayer(rowDelta: number, columnDelta: number): void {
   if (
     !isRunningStatus(state.status) ||
@@ -608,6 +662,7 @@ function movePlayer(rowDelta: number, columnDelta: number): void {
   renderState()
 }
 
+// handleLoss finalizes the round when the timer has fully expired.
 function handleLoss(): void {
   if (!isRunningStatus(state.status) || !state.dims) {
     return
@@ -627,6 +682,7 @@ function handleLoss(): void {
   renderState()
 }
 
+// tick advances score decay and blink state on the shared refresh cadence.
 function tick(): void {
   if (!isRunningStatus(state.status) || !state.clock || !state.dims) {
     return
@@ -650,82 +706,60 @@ function tick(): void {
   }
 }
 
+// handleMove converts a semantic move into row and column deltas.
 function handleMove(action: MoveAction): void {
   const [rowDelta, columnDelta] = MOVE_DELTAS[action]
   movePlayer(rowDelta, columnDelta)
 }
 
-function handleKeydown(event: KeyboardEvent): void {
-  const key = event.key
-  const lowerKey = key.toLowerCase()
-  const controlCombo = event.ctrlKey || event.metaKey
-  const moveAction = KEY_TO_MOVE_ACTION[key]
-
-  if (
-    moveAction ||
-    key === " " ||
-    key === "Enter" ||
-    (controlCombo && lowerKey === "b") ||
-    (controlCombo && lowerKey === "p")
-  ) {
-    event.preventDefault()
-  }
-
-  if (controlCombo && lowerKey === "b") {
-    cycleWallWeight()
-    return
-  }
-
-  if (controlCombo && lowerKey === "p") {
-    resumeOrProceed()
-    return
-  }
-
-  if (
-    key === "Enter" &&
-    (isPausedStatus(state.status) ||
-      isWonStatus(state.status) ||
-      isLostStatus(state.status))
-  ) {
-    resumeOrProceed()
-    return
-  }
-
-  if (key === " ") {
-    pauseGame()
-    return
-  }
-
-  if (moveAction) {
-    handleMove(moveAction)
+// executeCommand runs one semantic control command without building feedback.
+function executeCommand(command: MazeControlCommand): void {
+  switch (command.type) {
+    case "move":
+      handleMove(command.move)
+      return
+    case "pause":
+      pauseGame()
+      return
+    case "proceed":
+      resumeOrProceed()
+      return
+    case "cycle-walls":
+      cycleWallWeight()
+      return
+    case "restart":
+      restartGame()
+      return
   }
 }
 
-function handleAction(action: string): void {
-  elements.app.focus()
-
-  if (action === "restart") {
-    restartGame()
+// dispatchControl routes a command through the plain or feedback-aware path.
+function dispatchControl(command: MazeControlCommand): void {
+  // Control modes translate their own input sources into semantic maze commands,
+  // and the shared runtime resolves those commands here.
+  if (!activeControlMode?.expectsCommandFeedback()) {
+    executeCommand(command)
     return
   }
 
-  if (action === "pause") {
-    pauseGame()
-    return
-  }
-
-  if (action === "walls") {
-    cycleWallWeight()
-    return
-  }
-
-  if (action === "proceed") {
-    resumeOrProceed()
-    return
-  }
+  activeControlMode.receiveCommandFeedback(
+    executeCommandWithFeedback(command, {
+      state,
+      handleMove,
+      pauseGame,
+      resumeOrProceed,
+      cycleWallWeight,
+      restartGame,
+    }),
+  )
 }
 
+// handleResize revalidates the active or persisted round against the viewport.
 function handleResize(): void {
+  if (!runtimeElements) {
+    return
+  }
+
   if (!isTooSmallStatus(state.status) && !currentRoundFitsViewport()) {
     applyTooSmallState(state.level)
     persistStateNow()
@@ -744,36 +778,23 @@ function handleResize(): void {
   renderState()
 }
 
-export function bootstrapGame(): void {
-  elements.controls.forEach((button) => {
-    button.addEventListener("click", () => {
-      handleAction(button.dataset.action || "")
-    })
-  })
+// bootstrapGame wires the runtime, restores persistence, and starts the first render.
+export function bootstrapGame(
+  controlMode: MazeControlMode,
+  elements: Elements,
+): GameRuntime {
+  runtimeElements = elements
+  activeControlMode = controlMode
 
-  elements.touchButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const move = button.dataset.move
-      if (move) {
-        handleMove(move as MoveAction)
-        return
-      }
+  state.controlMode = controlMode.name
+  controlMode.attach(dispatchControl)
 
-      handleAction(button.dataset.action || "")
-    })
-  })
-
-  window.addEventListener("keydown", handleKeydown, { passive: false })
   window.addEventListener("resize", handleResize)
   window.visualViewport?.addEventListener("resize", handleResize)
   window.addEventListener("pagehide", () => {
     persistStateNow()
   })
   window.setInterval(tick, CONFIG.refreshInterval)
-
-  elements.app.addEventListener("click", () => {
-    elements.app.focus()
-  })
 
   const persistedSnapshot = loadPersistedSnapshot(
     1,
@@ -791,5 +812,12 @@ export function bootstrapGame(): void {
     startRound(state.level)
   }
 
-  elements.app.focus()
+  if (controlMode.name === "keyboard") {
+    runtimeElements.app.focus()
+  }
+
+  return {
+    mode: controlMode.name,
+    dispatch: dispatchControl,
+  }
 }

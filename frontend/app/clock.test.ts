@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { GameClock } from "./clock"
 
+// These tests keep timing, pause, and blink semantics stable across refactors.
 describe("GameClock", () => {
   it("tracks elapsed and remaining time from the level duration", () => {
     const clock = new GameClock(10_000)

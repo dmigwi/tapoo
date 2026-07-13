@@ -1,17 +1,20 @@
 import type { AppConfig, NavigationProfile, WallWeight } from "./types"
 
+// NAVIGATION_FRIENDLY_PROFILE defines the easiest corridor settings for small mazes.
 const NAVIGATION_FRIENDLY_PROFILE: NavigationProfile = {
   __softCorridorLimit: 8,
   __hardCorridorLimit: 10,
   __preferTurnPercent: 90,
 }
 
+// NAVIGATION_HARDEST_PROFILE defines the tightest supported corridor settings.
 const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
   __softCorridorLimit: 2,
   __hardCorridorLimit: 3,
   __preferTurnPercent: 55,
 }
 
+// CONFIG centralizes browser-facing copy together with generation and layout constants.
 export const CONFIG: AppConfig = {
   // Shared page chrome.
   appName: "Tapoo",
@@ -121,10 +124,12 @@ export const CONFIG: AppConfig = {
   terminalWidthScale: 2,
 }
 
+// WALL_WEIGHTS keeps wall-style iteration ordered and type-safe for traversal helpers.
 export const WALL_WEIGHTS = Object.keys(CONFIG.walls)
   .map((weight) => Number(weight))
   .sort((left, right) => left - right) as WallWeight[]
 
+// These storage keys keep browser persistence stable across refreshes and upgrades.
 export const WALL_WEIGHT_STORAGE_KEY = "tapoo.wallWeight"
 export const LEVEL_STORAGE_KEY = "tapoo.level"
 export const LAST_ATTEMPT_RETENTION_STORAGE_KEY = "tapoo.lastAttemptRetention"

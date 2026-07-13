@@ -2,12 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type {
   Elements,
+  GameRuntime,
+  MazeControlMode,
   PersistedPreferences,
   PersistedRound,
   RoundState,
   State,
 } from "./types"
 
+// createButton reproduces the control datasets used by the browser runtime.
 function createButton({
   action,
   move,
@@ -34,6 +37,7 @@ function createButton({
   return button
 }
 
+// createElements builds the minimal DOM and control shell required by runtime tests.
 function createElements(): Elements {
   const app = document.createElement("div")
   app.focus = vi.fn()
@@ -64,6 +68,7 @@ function createElements(): Elements {
   }
 }
 
+// createRound returns the smallest square round used by most harness scenarios.
 function createRound(): RoundState {
   return {
     maze: [
@@ -76,6 +81,7 @@ function createRound(): RoundState {
   }
 }
 
+// createHorizontalRound exposes one movable corridor for command-dispatch tests.
 function createHorizontalRound(): RoundState {
   return {
     maze: [
@@ -88,6 +94,7 @@ function createHorizontalRound(): RoundState {
   }
 }
 
+// createPersistedWonRound simulates a stored win that can proceed into the next level.
 function createPersistedWonRound(): PersistedRound {
   return {
     version: 1,
@@ -109,6 +116,7 @@ function createPersistedWonRound(): PersistedRound {
   }
 }
 
+// latestRenderedState pulls the most recent render payload out of the mock renderer.
 function latestRenderedState(
   render: ReturnType<typeof vi.fn<(elements: Elements, state: State) => void>>,
 ): State {
@@ -135,12 +143,15 @@ type GameHarness = {
   getMazeDimensions: ReturnType<typeof vi.fn>
   intervalCallback: (() => void) | null
   loadPersistedSnapshot: ReturnType<typeof vi.fn>
+  mode: MazeControlMode
   render: ReturnType<typeof vi.fn<(elements: Elements, state: State) => void>>
   reweightMaze: ReturnType<typeof vi.fn>
+  runtime: GameRuntime
   savePersistedPreferences: ReturnType<typeof vi.fn>
   savePersistedRoundState: ReturnType<typeof vi.fn>
 }
 
+// bootstrapHarness wires a mocked runtime so high-level browser game flows stay testable.
 async function bootstrapHarness({
   dimensionsResults = [{ level: 1, length: 1, width: 1 }],
   isSpaceFound = () => true,
@@ -149,6 +160,7 @@ async function bootstrapHarness({
   ],
   reweightedMaze,
   round = createRound(),
+  mode = "keyboard",
   terminalSizes = [{ length: 20, width: 20 }],
 }: {
   dimensionsResults?: DimensionsResult[]
@@ -159,6 +171,7 @@ async function bootstrapHarness({
   }>
   reweightedMaze?: string[][]
   round?: RoundState
+  mode?: "keyboard" | "agents"
   terminalSizes?: Array<{ length: number; width: number }>
 } = {}): Promise<GameHarness> {
   const elements = createElements()
@@ -229,6 +242,8 @@ async function bootstrapHarness({
   vi.doMock("./maze", () => ({
     generateMaze,
     getMazeDimensions,
+  }))
+  vi.doMock("./traversal", () => ({
     isSpaceFound: vi.fn(isSpaceFound),
     isWallWeight: vi.fn((value: number) => value >= 1 && value <= 3),
     nextWallWeight: vi.fn((weight: number) => (weight === 3 ? 1 : weight + 1)),
@@ -255,8 +270,12 @@ async function bootstrapHarness({
     },
   )
 
+  const { createAgentsMode } = await import("./control/agents")
+  const { createKeyboardMode } = await import("./control/keyboard")
   const { bootstrapGame } = await import("./game")
-  bootstrapGame()
+  const controlMode =
+    mode === "agents" ? createAgentsMode(elements) : createKeyboardMode(elements)
+  const runtime = bootstrapGame(controlMode, elements)
 
   return {
     clearPersistedSnapshot,
@@ -266,8 +285,10 @@ async function bootstrapHarness({
     getMazeDimensions,
     intervalCallback,
     loadPersistedSnapshot,
+    mode: controlMode,
     render,
     reweightMaze,
+    runtime,
     savePersistedPreferences,
     savePersistedRoundState,
   }
@@ -306,6 +327,8 @@ describe("bootstrapGame", () => {
     vi.doMock("./maze", () => ({
       generateMaze,
       getMazeDimensions,
+    }))
+    vi.doMock("./traversal", () => ({
       isSpaceFound: vi.fn(() => true),
       isWallWeight: vi.fn((value: number) => value >= 1 && value <= 3),
       nextWallWeight: vi.fn((weight: number) =>
@@ -323,9 +346,10 @@ describe("bootstrapGame", () => {
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
+    const { createKeyboardMode } = await import("./control/keyboard")
     const { bootstrapGame } = await import("./game")
 
-    bootstrapGame()
+    bootstrapGame(createKeyboardMode(elements), elements)
 
     expect(loadPersistedSnapshot).toHaveBeenCalledWith(
       1,
@@ -368,6 +392,8 @@ describe("bootstrapGame", () => {
         length: 1,
         width: 1,
       })),
+    }))
+    vi.doMock("./traversal", () => ({
       isSpaceFound: vi.fn(() => true),
       isWallWeight: vi.fn((value: number) => value >= 1 && value <= 3),
       nextWallWeight: vi.fn((weight: number) =>
@@ -388,9 +414,10 @@ describe("bootstrapGame", () => {
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
+    const { createKeyboardMode } = await import("./control/keyboard")
     const { bootstrapGame } = await import("./game")
 
-    bootstrapGame()
+    bootstrapGame(createKeyboardMode(elements), elements)
 
     expect(addViewportListener).toHaveBeenCalledWith(
       "resize",
@@ -417,6 +444,8 @@ describe("bootstrapGame", () => {
     vi.doMock("./maze", () => ({
       generateMaze,
       getMazeDimensions,
+    }))
+    vi.doMock("./traversal", () => ({
       isSpaceFound: vi.fn(() => true),
       isWallWeight: vi.fn((value: number) => value >= 1 && value <= 3),
       nextWallWeight: vi.fn((weight: number) =>
@@ -434,9 +463,10 @@ describe("bootstrapGame", () => {
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
+    const { createKeyboardMode } = await import("./control/keyboard")
     const { bootstrapGame } = await import("./game")
 
-    bootstrapGame()
+    bootstrapGame(createKeyboardMode(elements), elements)
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "p",
@@ -469,6 +499,8 @@ describe("bootstrapGame", () => {
     vi.doMock("./maze", () => ({
       generateMaze: vi.fn(() => createRound()),
       getMazeDimensions: vi.fn(() => ({ level: 1, length: 1, width: 1 })),
+    }))
+    vi.doMock("./traversal", () => ({
       isSpaceFound: vi.fn(() => true),
       isWallWeight: vi.fn((value: number) => value >= 1 && value <= 3),
       nextWallWeight: vi.fn(() => 2),
@@ -487,9 +519,10 @@ describe("bootstrapGame", () => {
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
+    const { createKeyboardMode } = await import("./control/keyboard")
     const { bootstrapGame } = await import("./game")
 
-    bootstrapGame()
+    bootstrapGame(createKeyboardMode(elements), elements)
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "b",
@@ -810,5 +843,79 @@ describe("bootstrapGame", () => {
       typeof vi.fn
     >
     expect(focusSpy).toHaveBeenCalled()
+  })
+
+  it("accepts runtime commands in agents mode without keyboard control side effects", async () => {
+    const harness = await bootstrapHarness({
+      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      mode: "agents",
+      round: createHorizontalRound(),
+    })
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowRight",
+        bubbles: true,
+      }),
+    )
+
+    let state = latestRenderedState(harness.render)
+    expect(state.status).toBe("running")
+    expect(state.playerPosition).toEqual([1, 1])
+    expect(state.controlMode).toBe("agents")
+
+    harness.runtime.dispatch({ type: "move", move: "MoveRight" })
+
+    state = latestRenderedState(harness.render)
+    expect(state.status).toBe("won")
+    expect(state.playerPosition).toEqual([1, 3])
+    expect(harness.mode.getLastCommandFeedback()).toEqual({
+      command: "move",
+      level: 1,
+      message: "MoveRight reached target.",
+      ok: true,
+      score: 200,
+      status: "won",
+      wallWeight: 1,
+    })
+  })
+
+  it("records contextual pause, proceed, and restart feedback for agents mode", async () => {
+    const harness = await bootstrapHarness({
+      mode: "agents",
+    })
+
+    harness.runtime.dispatch({ type: "pause" })
+    expect(harness.mode.getLastCommandFeedback()).toEqual({
+      command: "pause",
+      level: 1,
+      message: "Paused.",
+      ok: true,
+      score: 100,
+      status: "paused",
+      wallWeight: 1,
+    })
+
+    harness.runtime.dispatch({ type: "proceed" })
+    expect(harness.mode.getLastCommandFeedback()).toEqual({
+      command: "proceed",
+      level: 1,
+      message: "Resumed.",
+      ok: true,
+      score: 100,
+      status: "running",
+      wallWeight: 1,
+    })
+
+    harness.runtime.dispatch({ type: "restart" })
+    expect(harness.mode.getLastCommandFeedback()).toEqual({
+      command: "restart",
+      level: 1,
+      message: "Progress reset.",
+      ok: true,
+      score: 100,
+      status: "running",
+      wallWeight: 1,
+    })
   })
 })

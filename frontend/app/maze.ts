@@ -1,4 +1,5 @@
-import { CONFIG, WALL_WEIGHTS } from "./config"
+import { CONFIG } from "./config"
+import { isSpaceFound } from "./traversal"
 import type {
   BaseDimensions,
   CellAddress,
@@ -12,6 +13,7 @@ import type {
   WallWeight,
 } from "./types"
 
+// getRandomNo returns a bounded pseudo-random index for maze generation.
 function getRandomNo(limit: number): number {
   if (limit <= 0) {
     return 0
@@ -20,39 +22,27 @@ function getRandomNo(limit: number): number {
   return Math.floor(Math.random() * limit)
 }
 
+// absInt normalizes signed values when comparing candidate dimensions.
 function absInt(value: number): number {
   return value < 0 ? -value : value
 }
 
+// minInt returns the smaller edge when ranking competing dimensions.
 function minInt(left: number, right: number): number {
   return left < right ? left : right
 }
 
+// getWallCharacters resolves the glyph set for the requested wall weight.
 function getWallCharacters(weight: WallWeight): [string, string, string] {
   return CONFIG.walls[weight]
 }
 
-export function isWallWeight(value: number): value is WallWeight {
-  return WALL_WEIGHTS.includes(value as WallWeight)
-}
-
-export function nextWallWeight(weight: WallWeight): WallWeight {
-  const index = WALL_WEIGHTS.indexOf(weight)
-  if (index === -1) {
-    return WALL_WEIGHTS[0]
-  }
-
-  return WALL_WEIGHTS[(index + 1) % WALL_WEIGHTS.length]
-}
-
-export function isSpaceFound(item: string): boolean {
-  return item.length > 0 && item.charCodeAt(0) === 32
-}
-
+// generateMazeArea turns a level number into the target maze area.
 function generateMazeArea(level: number): number {
   return level * CONFIG.diff + CONFIG.seed
 }
 
+// appendFittingDimensions records factor pairs that still fit the viewport.
 function appendFittingDimensions(
   candidates: BaseDimensions[],
   length: number,
@@ -78,6 +68,7 @@ function appendFittingDimensions(
   return candidates
 }
 
+// fittingDimensionsForArea enumerates all viewport-safe factor pairs for an area.
 function fittingDimensionsForArea(
   area: number,
   terminalSize: BaseDimensions,
@@ -104,6 +95,7 @@ function fittingDimensionsForArea(
   return candidates
 }
 
+// aspectMismatchScore measures how far a candidate is from the viewport aspect ratio.
 function aspectMismatchScore(
   candidate: BaseDimensions,
   terminalSize: BaseDimensions,
@@ -114,6 +106,7 @@ function aspectMismatchScore(
   )
 }
 
+// isPreferredMazeDimensions ranks one candidate against the current best fit.
 function isPreferredMazeDimensions(
   candidate: BaseDimensions,
   currentBest: BaseDimensions,
@@ -144,6 +137,7 @@ function isPreferredMazeDimensions(
   return candidate.width > currentBest.width
 }
 
+// chooseBestMazeDimensions picks the most balanced candidate for the viewport.
 function chooseBestMazeDimensions(
   candidates: BaseDimensions[],
   terminalSize: BaseDimensions,
@@ -159,6 +153,7 @@ function chooseBestMazeDimensions(
   return best
 }
 
+// getMazeDimensions finds the best playable dimensions for a level and viewport.
 export function getMazeDimensions(
   level: number,
   terminalSize: BaseDimensions,
@@ -177,6 +172,7 @@ export function getMazeDimensions(
   return { ...selected, level }
 }
 
+// createPlayingField builds the initial fully-walled maze grid.
 function createPlayingField(
   dimensions: BaseDimensions,
   weight: WallWeight,
@@ -209,6 +205,7 @@ function createPlayingField(
   return data
 }
 
+// getCellAddress maps a cell number to its wall and center coordinates.
 function getCellAddress(
   dimensions: BaseDimensions,
   cellNo: number,
@@ -234,6 +231,7 @@ function getCellAddress(
   }
 }
 
+// getCellNeighbors returns the adjacent cell numbers around one cell.
 function getCellNeighbors(
   dimensions: BaseDimensions,
   cellNo: number,
@@ -269,6 +267,7 @@ function getCellNeighbors(
   return neighbors
 }
 
+// countNeighbors counts how many edges a cell exposes to the grid.
 function countNeighbors(neighbors: CellNeighbors): number {
   let count = 0
 
@@ -291,6 +290,7 @@ function countNeighbors(neighbors: CellNeighbors): number {
   return count
 }
 
+// getPresentNeighbors filters neighboring cells down to the unvisited options.
 function getPresentNeighbors(
   dimensions: BaseDimensions,
   cellNo: number,
@@ -346,6 +346,7 @@ export function getNavigationProfile(
   }
 }
 
+// navigationDifficultyFactor normalizes maze area into a 0..1 difficulty value.
 function navigationDifficultyFactor(area: number): number {
   if (area <= CONFIG.navigationFriendlyMaxArea) {
     return 0
@@ -362,6 +363,7 @@ function navigationDifficultyFactor(area: number): number {
   return Math.sqrt(normalizedArea)
 }
 
+// interpolateNavigationValue blends between the friendly and hardest profile values.
 function interpolateNavigationValue(
   friendly: number,
   hardest: number,
@@ -370,6 +372,7 @@ function interpolateNavigationValue(
   return Math.round(friendly + (hardest - friendly) * difficultyFactor)
 }
 
+// directionBetween converts two adjacent cells into a movement direction.
 function directionBetween(
   dimensions: BaseDimensions,
   currentCell: number,
@@ -391,6 +394,7 @@ function directionBetween(
   }
 }
 
+// backtrackToBranch rewinds the carved path until an unvisited branch is found.
 function backtrackToBranch(
   dimensions: BaseDimensions,
   path: PathStep[],
@@ -410,6 +414,7 @@ function backtrackToBranch(
   throw new Error("failed to backtrack to a maze branch")
 }
 
+// chooseNextCell applies the navigation profile to the next branch decision.
 function chooseNextCell(
   dimensions: BaseDimensions,
   neighbors: number[],
@@ -468,6 +473,7 @@ function chooseNextCell(
   return choices[getRandomNo(choices.length)]
 }
 
+// getStartPosition prefers an edge cell so the opening feels less uniform.
 function getStartPosition(dimensions: BaseDimensions): number {
   const totalCells = dimensions.length * dimensions.width
 
@@ -479,6 +485,7 @@ function getStartPosition(dimensions: BaseDimensions): number {
   }
 }
 
+// createPath removes the wall segment between two connected cells.
 function createPath(
   dimensions: BaseDimensions,
   maze: string[][],
@@ -508,6 +515,7 @@ function createPath(
   }
 }
 
+// replaceChar swaps a junction glyph only when the vertical path stays open.
 function replaceChar(
   dimensions: BaseDimensions,
   point: Position,
@@ -546,6 +554,7 @@ function replaceChar(
   }
 }
 
+// optimizeMaze softens eligible vertical joints after the maze is carved.
 function optimizeMaze(
   dimensions: BaseDimensions,
   weight: WallWeight,
@@ -564,6 +573,7 @@ function optimizeMaze(
   }
 }
 
+// generateMaze carves the maze, then returns the grid plus start and target positions.
 export function generateMaze(
   dimensions: BaseDimensions,
   weight: WallWeight,
@@ -633,19 +643,4 @@ export function generateMaze(
       finalAddress.__middleCenter[1],
     ],
   }
-}
-
-export function reweightMaze(
-  data: string[][],
-  currentWeight: WallWeight,
-): string[][] {
-  const fromChars = getWallCharacters(currentWeight)
-  const toChars = getWallCharacters(nextWallWeight(currentWeight))
-  const replacements = new Map<string, string>([
-    [fromChars[0], toChars[0]],
-    [fromChars[1], toChars[1]],
-    [fromChars[2], toChars[2]],
-  ])
-
-  return data.map((row) => row.map((cell) => replacements.get(cell) ?? cell))
 }

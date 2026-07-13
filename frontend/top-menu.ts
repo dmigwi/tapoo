@@ -1,3 +1,4 @@
+// initTopMenus keeps the shared top-bar menus expanded on desktop and collapsible on compact screens.
 function initTopMenus(): void {
   const menus = Array.from(document.querySelectorAll<HTMLDetailsElement>("details.top-menu"))
   const compactViewport = window.matchMedia("(max-width: 900px)")
@@ -6,20 +7,24 @@ function initTopMenus(): void {
     return
   }
 
+  // isCompactMode centralizes the breakpoint used by the menu behavior.
   function isCompactMode(): boolean {
     return compactViewport.matches
   }
 
+  // closeMenu hides one details menu without duplicating attribute writes.
   function closeMenu(menu: HTMLDetailsElement): void {
     menu.open = false
   }
 
+  // syncMenuMode expands menus on wide screens and collapses them on compact ones.
   function syncMenuMode(): void {
     for (const menu of menus) {
       menu.open = !isCompactMode()
     }
   }
 
+  // closeOtherMenus preserves a single open menu in compact mode.
   function closeOtherMenus(activeMenu: HTMLDetailsElement): void {
     for (const menu of menus) {
       if (menu !== activeMenu) {

@@ -17,6 +17,7 @@ import type {
   WallWeight,
 } from "./types"
 
+// toBase64 converts raw bytes into a storage-safe browser string.
 function toBase64(payloadBytes: Uint8Array): string {
   let binaryPayload = ""
 
@@ -27,6 +28,7 @@ function toBase64(payloadBytes: Uint8Array): string {
   return window.btoa(binaryPayload)
 }
 
+// fromBase64 decodes stored browser payloads back into raw bytes.
 function fromBase64(encodedPayload: string): Uint8Array | null {
   try {
     const binaryPayload = window.atob(encodedPayload)
@@ -38,6 +40,7 @@ function fromBase64(encodedPayload: string): Uint8Array | null {
   }
 }
 
+// xorStoredPayload applies the lightweight reversible obfuscation used for browser storage.
 function xorStoredPayload(payloadBytes: Uint8Array): Uint8Array {
   const passphraseBytes = new TextEncoder().encode(STORE_BLEND_KEY)
   const encodedBytes = new Uint8Array(payloadBytes.length)
@@ -50,12 +53,14 @@ function xorStoredPayload(payloadBytes: Uint8Array): Uint8Array {
   return encodedBytes
 }
 
+// encodeStoredPayload serializes and obfuscates values before persistence.
 function encodeStoredPayload(value: unknown): string {
   const jsonPayload = JSON.stringify(value)
   const payloadBytes = new TextEncoder().encode(jsonPayload)
   return `${STORE_ENCODING_PREFIX}${toBase64(xorStoredPayload(payloadBytes))}`
 }
 
+// decodeStoredPayload reverses the browser storage encoding back into JSON.
 function decodeStoredPayload<T>(encodedPayload: string): T | null {
   const payloadBytes = encodedPayload.startsWith(STORE_ENCODING_PREFIX)
     ? (() => {
@@ -83,6 +88,7 @@ function decodeStoredPayload<T>(encodedPayload: string): T | null {
   }
 }
 
+// buildRoundSnapshot extracts the restorable round state from the live runtime.
 function buildRoundSnapshot(state: State): PersistedRound | null {
   if (
     !state.dims ||
@@ -113,6 +119,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
   }
 }
 
+// savePreferences persists the long-lived browser preferences in local storage.
 function savePreferences(preferences: PersistedPreferences): void {
   try {
     window.localStorage.setItem(
@@ -136,6 +143,7 @@ function savePreferences(preferences: PersistedPreferences): void {
   }
 }
 
+// loadPreferences restores browser preferences while validating their value ranges.
 function loadPreferences(
   defaultLevel: number,
   defaultWeight: WallWeight,
@@ -192,6 +200,7 @@ function loadPreferences(
   }
 }
 
+// saveRound persists the short-lived active round in session storage.
 function saveRound(round: PersistedRound | null): void {
   try {
     if (!round) {
@@ -205,6 +214,7 @@ function saveRound(round: PersistedRound | null): void {
   }
 }
 
+// loadRound restores the current round snapshot and clears corrupt payloads.
 function loadRound(): PersistedRound | null {
   let rawSnapshot: string | null
 
@@ -226,6 +236,7 @@ function loadRound(): PersistedRound | null {
   return snapshot
 }
 
+// loadPersistedSnapshot restores both browser preferences and the active round.
 export function loadPersistedSnapshot(
   defaultLevel: number,
   defaultWeight: WallWeight,
@@ -237,6 +248,7 @@ export function loadPersistedSnapshot(
   }
 }
 
+// savePersistedPreferences writes the preference subset of the live game state.
 export function savePersistedPreferences(
   state: Pick<
     State,
@@ -251,14 +263,17 @@ export function savePersistedPreferences(
   })
 }
 
+// savePersistedRoundState writes the round subset of the live game state.
 export function savePersistedRoundState(state: State): void {
   saveRound(buildRoundSnapshot(state))
 }
 
+// clearPersistedRound drops only the short-lived active round snapshot.
 export function clearPersistedRound(): void {
   saveRound(null)
 }
 
+// clearPersistedSnapshot clears both long-lived preferences and the active round.
 export function clearPersistedSnapshot(): void {
   try {
     window.localStorage.removeItem(LEVEL_STORAGE_KEY)

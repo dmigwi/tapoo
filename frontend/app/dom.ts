@@ -6,6 +6,7 @@ import {
 } from "./config"
 import type { BaseDimensions, Elements } from "./types"
 
+// mustElement fetches a required terminal node and fails fast when it is missing.
 function mustElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id)
   if (!(element instanceof HTMLElement)) {
@@ -15,23 +16,42 @@ function mustElement<T extends HTMLElement>(id: string): T {
   return element as T
 }
 
-export const elements: Elements = {
-  app: mustElement<HTMLElement>("terminal-app"),
-  body: mustElement<HTMLElement>("terminal-body"),
-  screen: mustElement<HTMLElement>("terminal-screen"),
-  measure: mustElement<HTMLElement>("terminal-measure"),
-  controls: Array.from(
-    document.querySelectorAll<HTMLButtonElement>(
-      "[data-action]:not([data-touch-control])",
-    ),
-  ),
-  touchControls: mustElement<HTMLElement>("touch-controls"),
-  touchButtons: Array.from(
-    document.querySelectorAll<HTMLButtonElement>("[data-touch-control]"),
-  ),
+// hasTerminalElements checks whether the current page actually hosts the terminal UI.
+function hasTerminalElements(): boolean {
+  return (
+    document.getElementById("terminal-app") instanceof HTMLElement &&
+    document.getElementById("terminal-body") instanceof HTMLElement &&
+    document.getElementById("terminal-screen") instanceof HTMLElement &&
+    document.getElementById("terminal-measure") instanceof HTMLElement &&
+    document.getElementById("touch-controls") instanceof HTMLElement
+  )
 }
 
-export function getTerminalSize(): BaseDimensions {
+// getGameElements gathers the DOM handles used by the runtime and renderer.
+export function getGameElements(): Elements | null {
+  if (!hasTerminalElements()) {
+    return null
+  }
+
+  return {
+    app: mustElement<HTMLElement>("terminal-app"),
+    body: mustElement<HTMLElement>("terminal-body"),
+    screen: mustElement<HTMLElement>("terminal-screen"),
+    measure: mustElement<HTMLElement>("terminal-measure"),
+    controls: Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        "[data-action]:not([data-touch-control])",
+      ),
+    ),
+    touchControls: mustElement<HTMLElement>("touch-controls"),
+    touchButtons: Array.from(
+      document.querySelectorAll<HTMLButtonElement>("[data-touch-control]"),
+    ),
+  }
+}
+
+// getTerminalSize converts DOM measurements into logical maze dimensions.
+export function getTerminalSize(elements: Elements): BaseDimensions {
   const rect = elements.body.getBoundingClientRect()
   const sampleRect = elements.measure.getBoundingClientRect()
   const screenStyle = window.getComputedStyle(elements.screen)

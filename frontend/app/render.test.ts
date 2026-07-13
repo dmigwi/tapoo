@@ -5,10 +5,12 @@ import { CONFIG } from "./config"
 import { render } from "./render"
 import type { Elements, State } from "./types"
 
+// normalizeScreenText keeps DOM assertions readable by collapsing non-breaking spaces.
 function normalizeScreenText(value: string | null): string {
   return (value ?? "").replaceAll("\u00a0", " ")
 }
 
+// createButton reproduces the control-button dataset contract expected by the renderer.
 function createButton({
   action,
   move,
@@ -30,6 +32,7 @@ function createButton({
   return button
 }
 
+// createElements assembles the DOM shell consumed by the renderer during tests.
 function createElements(): Elements {
   const screen = document.createElement("div")
   const touchControls = document.createElement("div")
@@ -54,8 +57,10 @@ function createElements(): Elements {
   }
 }
 
+// createState builds a representative runtime state for render scenarios.
 function createState(overrides: Partial<State> = {}): State {
   return {
+    controlMode: "keyboard",
     level: 1,
     dims: { length: 2, width: 2 },
     maze: [
@@ -80,6 +85,7 @@ function createState(overrides: Partial<State> = {}): State {
   }
 }
 
+// These tests keep browser terminal output and touch-control visibility consistent.
 describe("render", () => {
   beforeEach(() => {
     vi.stubGlobal(
@@ -195,6 +201,19 @@ describe("render", () => {
       "MoveDown",
       "pause",
     ])
+  })
+
+  it("hides touch controls when the agents control mode is active", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        controlMode: "agents",
+      }),
+    )
+
+    expect(elements.touchControls.hidden).toBe(true)
   })
 
   it("skips drawing the destination while a running round blink phase is off", () => {

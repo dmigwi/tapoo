@@ -7,6 +7,7 @@ import {
   VERSION_PATCH,
 } from "./version"
 
+// These tests guard the SPA semantic version that appears in page metadata and the footer.
 describe("APP_VERSION", () => {
   it("uses semantic versioning", () => {
     expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
