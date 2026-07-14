@@ -1,6 +1,6 @@
 import { GameClock } from "./clock"
 import { CONFIG, ROUND_STORAGE_VERSION, WALL_WEIGHTS } from "./config"
-import { executeCommandWithFeedback } from "./cmd-feedback"
+import { executeActionWithFeedback } from "./cmd-feedback"
 import { getTerminalSize } from "./dom"
 import {
   generateMaze,
@@ -24,13 +24,16 @@ import {
 } from "./storage"
 import { isSpaceFound, isWallWeight, nextWallWeight, reweightMaze } from "./traversal"
 import type {
+  MazeAgentContext,
+  CellCoordinate,
   Elements,
   GameRuntime,
-  MazeControlCommand,
-  MazeControlMode,
+  MazeAction,
+  MazeActionControl,
+  MazeActionDispatchOptions,
   MoveAction,
   PersistedRound,
-  Position,
+  RenderGridPoint,
   State,
 } from "./types"
 
@@ -40,6 +43,7 @@ const state: State = {
   dims: null,
   maze: null,
   playerPosition: null,
+  traversalHistory: [],
   finalPosition: null,
   status: "boot",
   score: 0,
@@ -54,7 +58,8 @@ const state: State = {
 
 let scheduledRoundPersist: number | null = null
 let lastBlinkVisible: boolean | null = null
-let activeControlMode: MazeControlMode | null = null
+// activeControlMode keeps the currently mounted MazeActionControl so feedback and rebinding stay in sync.
+let activeControlMode: MazeActionControl | null = null
 let runtimeElements: Elements | null = null
 
 const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
@@ -260,9 +265,80 @@ function buildWinSummary(
   return replaceWinSummaryDelta(template, previous.delta, best.delta)
 }
 
-// positionsEqual compares two maze coordinates without allocating helper objects.
-function positionsEqual(left: Position, right: Position): boolean {
-  return left[0] === right[0] && left[1] === right[1]
+// positionsEqual compares two rendered maze-grid points without allocating helper objects.
+function positionsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean {
+  return left.x === right.x && left.y === right.y
+}
+
+// cellCoordinateFromGridPoint converts one rendered maze-grid point into a logical cell position.
+function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate {
+  return {
+    row: Math.floor((position.y - 1) / CONFIG.cellSpan),
+    col: Math.floor((position.x - 1) / CONFIG.cellSpan),
+  }
+}
+
+// readAgentContext exposes the latest traversal snapshot so the agent can plan the next move.
+function readAgentContext(): MazeAgentContext {
+  return {
+    currentCell: state.playerPosition
+      ? cellCoordinateFromGridPoint(state.playerPosition)
+      : null,
+    destinationCell: state.finalPosition
+      ? cellCoordinateFromGridPoint(state.finalPosition)
+      : null,
+    level: state.level,
+    score: state.score,
+    status: state.status,
+    traversalHistory: state.traversalHistory.map(({ row, col }) => ({
+      row,
+      col,
+    })),
+  }
+}
+
+// gridPointFromCellCoordinate expands a logical cell position back into rendered maze-grid space.
+function gridPointFromCellCoordinate(cell: CellCoordinate): RenderGridPoint {
+  return {
+    x: cell.col * CONFIG.cellSpan + 1,
+    y: cell.row * CONFIG.cellSpan + 1,
+  }
+}
+
+// mazeCellKey builds a stable string key for deduplicating logical maze cells.
+function mazeCellKey(cell: CellCoordinate): string {
+  return `${cell.row}:${cell.col}`
+}
+
+// traversalHistoryIncludes reports whether the ordered visit history already contains a cell.
+function traversalHistoryIncludes(cell: CellCoordinate): boolean {
+  return state.traversalHistory.some(
+    (visitedCell) => mazeCellKey(visitedCell) === mazeCellKey(cell),
+  )
+}
+
+// isCellCoordinate validates one persisted logical cell coordinate.
+function isCellCoordinate(value: unknown): value is CellCoordinate {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("row" in value) ||
+    !("col" in value)
+  ) {
+    return false
+  }
+
+  const row = value.row
+  const col = value.col
+
+  return (
+    typeof row === "number" &&
+    typeof col === "number" &&
+    Number.isInteger(row) &&
+    Number.isInteger(col) &&
+    row >= 0 &&
+    col >= 0
+  )
 }
 
 // restoreClock reconstructs a live clock from persisted remaining time.
@@ -274,18 +350,18 @@ function restoreClock(totalCells: number, remainingMs: number): GameClock {
   return clock
 }
 
-// isTraversablePosition validates that a stored position still lands on open path.
-function isTraversablePosition(data: string[][], position: Position): boolean {
-  const [row, column] = position
-  if (row < 0 || row >= data.length) {
+// isTraversableGridPoint validates that a stored rendered point still lands on open path.
+function isTraversableGridPoint(data: string[][], position: RenderGridPoint): boolean {
+  const { x, y } = position
+  if (y < 0 || y >= data.length) {
     return false
   }
 
-  if (column < 0 || column >= data[row].length) {
+  if (x < 0 || x >= data[y].length) {
     return false
   }
 
-  return isSpaceFound(data[row][column])
+  return isSpaceFound(data[y][x])
 }
 
 // applyTooSmallState clears the active round when the viewport can no longer fit it.
@@ -295,6 +371,7 @@ function applyTooSmallState(level: number): void {
   state.dims = null
   state.maze = null
   state.playerPosition = null
+  state.traversalHistory = []
   state.finalPosition = null
   state.score = 0
   state.lastRoundScore = 0
@@ -329,12 +406,54 @@ function isValidPersistedRound(snapshot: PersistedRound): boolean {
     return false
   }
 
-  if (!isTraversablePosition(snapshot.maze, snapshot.playerPosition)) {
+  if (!isTraversableGridPoint(snapshot.maze, snapshot.playerPosition)) {
     return false
   }
 
-  if (!isTraversablePosition(snapshot.maze, snapshot.finalPosition)) {
+  if (!isTraversableGridPoint(snapshot.maze, snapshot.finalPosition)) {
     return false
+  }
+
+  if (
+    !isCellCoordinate(snapshot.startCell) ||
+    !Array.isArray(snapshot.traversalHistory) ||
+    snapshot.traversalHistory.length === 0
+  ) {
+    return false
+  }
+
+  if (
+    !isTraversableGridPoint(
+      snapshot.maze,
+      gridPointFromCellCoordinate(snapshot.startCell),
+    )
+  ) {
+    return false
+  }
+
+  const firstVisitedCell = snapshot.traversalHistory[0]
+  if (
+    !isCellCoordinate(firstVisitedCell) ||
+    mazeCellKey(firstVisitedCell) !== mazeCellKey(snapshot.startCell)
+  ) {
+    return false
+  }
+
+  const visitedCellKeys = new Set<string>()
+  for (const visitedCell of snapshot.traversalHistory) {
+    if (!isCellCoordinate(visitedCell)) {
+      return false
+    }
+
+    const visitedCellKey = mazeCellKey(visitedCell)
+    if (visitedCellKeys.has(visitedCellKey)) {
+      return false
+    }
+
+    visitedCellKeys.add(visitedCellKey)
+    if (!isTraversableGridPoint(snapshot.maze, gridPointFromCellCoordinate(visitedCell))) {
+      return false
+    }
   }
 
   return true
@@ -452,11 +571,18 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   state.level = snapshot.level
   state.dims = { length: snapshot.dims.length, width: snapshot.dims.width }
   state.maze = snapshot.maze.map((row) => [...row])
-  state.playerPosition = [
-    snapshot.playerPosition[0],
-    snapshot.playerPosition[1],
-  ]
-  state.finalPosition = [snapshot.finalPosition[0], snapshot.finalPosition[1]]
+  state.playerPosition = {
+    x: snapshot.playerPosition.x,
+    y: snapshot.playerPosition.y,
+  }
+  state.traversalHistory = snapshot.traversalHistory.map(({ row, col }) => ({
+    row,
+    col,
+  }))
+  state.finalPosition = {
+    x: snapshot.finalPosition.x,
+    y: snapshot.finalPosition.y,
+  }
   state.score = snapshot.score
   state.lastRoundScore = snapshot.lastRoundScore
   state.winSummary = snapshot.winSummary ?? ""
@@ -502,8 +628,15 @@ function startRound(level: number, persist = true): void {
   state.level = dimensions.level
   state.dims = { length: dimensions.length, width: dimensions.width }
   state.maze = round.maze
-  state.playerPosition = [round.startPosition[0], round.startPosition[1]]
-  state.finalPosition = [round.finalPosition[0], round.finalPosition[1]]
+  state.playerPosition = {
+    x: round.startPosition.x,
+    y: round.startPosition.y,
+  }
+  state.traversalHistory = [cellCoordinateFromGridPoint(round.startPosition)]
+  state.finalPosition = {
+    x: round.finalPosition.x,
+    y: round.finalPosition.y,
+  }
   state.status = "running"
   state.canResume = false
   state.lastRoundScore = 0
@@ -632,27 +765,31 @@ function movePlayer(rowDelta: number, columnDelta: number): void {
     return
   }
 
-  const row = state.playerPosition[0]
-  const column = state.playerPosition[1]
-  const nextRow = row + rowDelta * CONFIG.moveStep
-  const nextColumn = column + columnDelta * CONFIG.moveStep
-  const probeRow = row + rowDelta
-  const probeColumn = column + columnDelta
+  const x = state.playerPosition.x
+  const y = state.playerPosition.y
+  const nextY = y + rowDelta * CONFIG.moveStep
+  const nextX = x + columnDelta * CONFIG.moveStep
+  const probeY = y + rowDelta
+  const probeX = x + columnDelta
 
-  if (nextRow <= 0 || nextRow > state.dims.width * CONFIG.cellSpan) {
+  if (nextY <= 0 || nextY > state.dims.width * CONFIG.cellSpan) {
     return
   }
 
-  if (nextColumn <= 0 || nextColumn > state.dims.length * CONFIG.cellSpan) {
+  if (nextX <= 0 || nextX > state.dims.length * CONFIG.cellSpan) {
     return
   }
 
-  if (!isSpaceFound(state.maze[probeRow][probeColumn])) {
+  if (!isSpaceFound(state.maze[probeY][probeX])) {
     return
   }
 
-  state.playerPosition[0] = nextRow
-  state.playerPosition[1] = nextColumn
+  state.playerPosition.y = nextY
+  state.playerPosition.x = nextX
+  const nextCell = cellCoordinateFromGridPoint({ x: nextX, y: nextY })
+  if (!traversalHistoryIncludes(nextCell)) {
+    state.traversalHistory.push(nextCell)
+  }
 
   if (handleWinCheck()) {
     persistStateNow()
@@ -713,10 +850,13 @@ function handleMove(action: MoveAction): void {
 }
 
 // executeCommand runs one semantic control command without building feedback.
-function executeCommand(command: MazeControlCommand): void {
-  switch (command.type) {
-    case "move":
-      handleMove(command.move)
+function executeCommand(action: MazeAction): void {
+  switch (action.type) {
+    case "MoveLeft":
+    case "MoveRight":
+    case "MoveUp":
+    case "MoveDown":
+      handleMove(action.type)
       return
     case "pause":
       pauseGame()
@@ -733,25 +873,27 @@ function executeCommand(command: MazeControlCommand): void {
   }
 }
 
-// dispatchControl routes a command through the plain or feedback-aware path.
-function dispatchControl(command: MazeControlCommand): void {
+// dispatchControl routes one action and optionally returns command state.
+function dispatchControl(
+  action: MazeAction,
+  options?: MazeActionDispatchOptions,
+): ReturnType<typeof executeActionWithFeedback> | null {
   // Control modes translate their own input sources into semantic maze commands,
   // and the shared runtime resolves those commands here.
-  if (!activeControlMode?.expectsCommandFeedback()) {
-    executeCommand(command)
-    return
+  if (!options?.wantFeedback) {
+    executeCommand(action)
+    return null
   }
 
-  activeControlMode.receiveCommandFeedback(
-    executeCommandWithFeedback(command, {
-      state,
-      handleMove,
-      pauseGame,
-      resumeOrProceed,
-      cycleWallWeight,
-      restartGame,
-    }),
-  )
+  const actionState = executeActionWithFeedback(action, {
+    executeCommand,
+    state,
+    handleMove,
+  })
+  if (actionState) {
+    activeControlMode?.recordActionState(actionState)
+  }
+  return actionState
 }
 
 // handleResize revalidates the active or persisted round against the viewport.
@@ -780,14 +922,15 @@ function handleResize(): void {
 
 // bootstrapGame wires the runtime, restores persistence, and starts the first render.
 export function bootstrapGame(
-  controlMode: MazeControlMode,
+  // controlMode is the page-selected MazeActionControl that supplies the active input behavior.
+  controlMode: MazeActionControl,
   elements: Elements,
 ): GameRuntime {
   runtimeElements = elements
   activeControlMode = controlMode
 
   state.controlMode = controlMode.name
-  controlMode.attach(dispatchControl)
+  controlMode.bindActionDispatch(dispatchControl, readAgentContext)
 
   window.addEventListener("resize", handleResize)
   window.visualViewport?.addEventListener("resize", handleResize)

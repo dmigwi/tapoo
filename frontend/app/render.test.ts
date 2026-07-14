@@ -70,8 +70,9 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "   ", "|", "   ", "|"],
       ["|", "---", "|", "---", "|"],
     ],
-    playerPosition: [1, 1],
-    finalPosition: [1, 2],
+    playerPosition: { x: 1, y: 1 },
+    traversalHistory: [{ row: 0, col: 0 }],
+    finalPosition: { x: 2, y: 1 },
     status: "running",
     score: 900,
     lastRoundScore: 0,
@@ -203,7 +204,7 @@ describe("render", () => {
     ])
   })
 
-  it("hides touch controls when the agent-api control mode is active", () => {
+  it("shows only local action touch controls when the agent-api mode is active", () => {
     const elements = createElements()
 
     render(
@@ -213,7 +214,15 @@ describe("render", () => {
       }),
     )
 
-    expect(elements.touchControls.hidden).toBe(true)
+    const visibleLabels = elements.touchButtons
+      .filter((button) => !button.hidden)
+      .map((button) => button.dataset.action ?? button.dataset.move)
+
+    expect(visibleLabels).toEqual(["pause"])
+    expect(elements.touchControls.hidden).toBe(false)
+    expect(
+      elements.touchControls.classList.contains("touch-controls--single-action"),
+    ).toBe(true)
   })
 
   it("skips drawing the destination while a running round blink phase is off", () => {

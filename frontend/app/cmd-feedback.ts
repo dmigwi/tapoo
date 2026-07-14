@@ -1,12 +1,15 @@
 import { CONFIG } from "./config"
-import { isLostStatus, isPausedStatus, isRunningStatus, isWonStatus } from "./status"
+import { isRunningStatus, isWonStatus } from "./status"
 import { isSpaceFound } from "./traversal"
 import type {
-  MazeControlCommand,
-  MazeControlFeedback,
+  CellCoordinate,
+  CommandStatus,
+  MazeAction,
+  MazeAgentExpectedResponseType,
+  MazeActionState,
   MoveAction,
+  RenderGridPoint,
   State,
-  WallWeight,
 } from "./types"
 
 // MOVE_DELTAS mirrors runtime movement so feedback can validate moves before dispatching them.
@@ -17,7 +20,7 @@ const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
   MoveDown: [1, 0],
 }
 
-// COMMAND_FEEDBACK_MESSAGES keeps agent-focused feedback short and cheap to send repeatedly.
+// COMMAND_FEEDBACK_MESSAGES keeps agent-focused command outcomes short and cheap to send repeatedly.
 const COMMAND_FEEDBACK_MESSAGES = {
   moveUnavailable: (action: MoveAction): string =>
     `${action} unavailable.`,
@@ -29,62 +32,71 @@ const COMMAND_FEEDBACK_MESSAGES = {
     `${action} reached target.`,
   moveSuccess: (action: MoveAction): string =>
     `${action} applied.`,
-  pauseUnavailable: "Pause unavailable.",
-  pauseSuccess: "Paused.",
-  proceedResumed: "Resumed.",
-  proceedUnavailable: "Proceed unavailable.",
-  wallWeightUnchanged: "Walls unchanged.",
-  restartSuccess: "Progress reset.",
 } as const
 
-// proceedStartedLevel reports that proceed advanced into a fresh level.
-export function proceedStartedLevel(level: number): string {
-  return `Level ${level} started.`
-}
+// COMMAND_STATE_INSTRUCTIONS tells the agent what to do next after applying the latest command state.
+const COMMAND_STATE_INSTRUCTIONS = {
+  chooseNextMove: "Choose the next MoveAction.",
+  chooseDifferentMove: "Choose a different MoveAction.",
+} as const
 
-// proceedRestartedLevel reports that proceed retried the current level after a loss.
-export function proceedRestartedLevel(level: number): string {
-  return `Level ${level} restarted.`
-}
+const EXPECTED_AGENT_RESPONSE_TYPE: MazeAgentExpectedResponseType = "MoveAction"
 
-// changedWallWeight reports the wall style currently applied to the maze.
-export function changedWallWeight(weight: WallWeight): string {
-  return `Walls ${weight}.`
-}
-
-type CommandFeedbackContext = {
-  state: State
-  handleMove: (action: MoveAction) => void
-  pauseGame: () => void
-  resumeOrProceed: () => void
-  cycleWallWeight: () => void
-  restartGame: () => void
-}
-
-// currentCommandFeedback snapshots the runtime state immediately after one command resolves.
-function currentCommandFeedback(
-  state: State,
-  command: MazeControlCommand["type"],
-  ok: boolean,
-  message: string,
-): MazeControlFeedback {
+// cellCoordinateFromGridPoint converts one rendered maze-grid point into a logical cell position.
+function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate {
   return {
-    command,
-    level: state.level,
-    message,
-    ok,
-    score: state.score,
-    status: state.status,
-    wallWeight: state.wallWeight,
+    row: Math.floor((position.y - 1) / CONFIG.cellSpan),
+    col: Math.floor((position.x - 1) / CONFIG.cellSpan),
   }
 }
 
-// moveWithFeedback validates a move and returns a compact outcome for agent callers.
-function moveWithFeedback(
-  action: MoveAction,
+// traversalHistoryIncludes reports whether the chronological visit history already contains a cell.
+function traversalHistoryIncludes(
+  traversalHistory: CellCoordinate[],
+  cell: CellCoordinate,
+): boolean {
+  return traversalHistory.some(
+    (visitedCell) =>
+      visitedCell.row === cell.row && visitedCell.col === cell.col,
+  )
+}
+
+type CommandFeedbackContext = {
+  executeCommand: (action: MazeAction) => void
+  state: State
+  handleMove: (action: MoveAction) => void
+}
+
+// isMoveAction reports whether one semantic command is a move that currently supports feedback.
+function isMoveAction(action: MazeAction): action is Extract<MazeAction, { type: MoveAction }> {
+  return action.type in MOVE_DELTAS
+}
+
+// buildCommandState snapshots the runtime state immediately after one command resolves.
+function buildCommandState(
+  command: MazeAction,
+  lastCommandStatus: CommandStatus,
+  lastCommandMessage: string,
+  instruction: string,
+  visitedBefore?: boolean,
+): MazeActionState {
+  return {
+    lastCommand: command,
+    lastCommandStatus,
+    lastCommandMessage,
+    instruction,
+    expectedResponseType: EXPECTED_AGENT_RESPONSE_TYPE,
+    visitedBefore,
+  }
+}
+
+// buildMoveCommandState validates a move and returns a compact outcome for agent callers.
+function buildMoveCommandState(
+  command: Extract<MazeAction, { type: MoveAction }>,
   context: CommandFeedbackContext,
-): MazeControlFeedback {
+): MazeActionState {
   const { state, handleMove } = context
+  const move = command.type
 
   if (
     !isRunningStatus(state.status) ||
@@ -92,192 +104,84 @@ function moveWithFeedback(
     !state.dims ||
     !state.playerPosition
   ) {
-    return currentCommandFeedback(
-      state,
-      "move",
-      false,
-      COMMAND_FEEDBACK_MESSAGES.moveUnavailable(action),
+    return buildCommandState(
+      command,
+      "invalid",
+      COMMAND_FEEDBACK_MESSAGES.moveUnavailable(move),
+      COMMAND_STATE_INSTRUCTIONS.chooseDifferentMove,
     )
   }
 
-  const [rowDelta, columnDelta] = MOVE_DELTAS[action]
-  const row = state.playerPosition[0]
-  const column = state.playerPosition[1]
-  const nextRow = row + rowDelta * CONFIG.moveStep
-  const nextColumn = column + columnDelta * CONFIG.moveStep
-  const probeRow = row + rowDelta
-  const probeColumn = column + columnDelta
+  const [rowDelta, columnDelta] = MOVE_DELTAS[move]
+  const x = state.playerPosition.x
+  const y = state.playerPosition.y
+  const nextY = y + rowDelta * CONFIG.moveStep
+  const nextX = x + columnDelta * CONFIG.moveStep
+  const probeY = y + rowDelta
+  const probeX = x + columnDelta
+  const nextCell = cellCoordinateFromGridPoint({ x: nextX, y: nextY })
 
-  if (nextRow <= 0 || nextRow > state.dims.width * CONFIG.cellSpan) {
-    return currentCommandFeedback(
-      state,
-      "move",
-      false,
-      COMMAND_FEEDBACK_MESSAGES.moveOutOfBounds(action),
+  if (nextY <= 0 || nextY > state.dims.width * CONFIG.cellSpan) {
+    return buildCommandState(
+      command,
+      "invalid",
+      COMMAND_FEEDBACK_MESSAGES.moveOutOfBounds(move),
+      COMMAND_STATE_INSTRUCTIONS.chooseDifferentMove,
     )
   }
 
-  if (nextColumn <= 0 || nextColumn > state.dims.length * CONFIG.cellSpan) {
-    return currentCommandFeedback(
-      state,
-      "move",
-      false,
-      COMMAND_FEEDBACK_MESSAGES.moveOutOfBounds(action),
+  if (nextX <= 0 || nextX > state.dims.length * CONFIG.cellSpan) {
+    return buildCommandState(
+      command,
+      "invalid",
+      COMMAND_FEEDBACK_MESSAGES.moveOutOfBounds(move),
+      COMMAND_STATE_INSTRUCTIONS.chooseDifferentMove,
     )
   }
 
-  if (!isSpaceFound(state.maze[probeRow][probeColumn])) {
-    return currentCommandFeedback(
-      state,
-      "move",
-      false,
-      COMMAND_FEEDBACK_MESSAGES.moveBlocked(action),
+  if (!isSpaceFound(state.maze[probeY][probeX])) {
+    return buildCommandState(
+      command,
+      "invalid",
+      COMMAND_FEEDBACK_MESSAGES.moveBlocked(move),
+      COMMAND_STATE_INSTRUCTIONS.chooseDifferentMove,
     )
   }
 
-  handleMove(action)
+  const visitedBefore = traversalHistoryIncludes(
+    state.traversalHistory,
+    nextCell,
+  )
+  handleMove(move)
 
   if (isWonStatus(state.status)) {
-    return currentCommandFeedback(
-      state,
-      "move",
-      true,
-      COMMAND_FEEDBACK_MESSAGES.moveReachedDestination(action),
+    return buildCommandState(
+      command,
+      "reached-target",
+      COMMAND_FEEDBACK_MESSAGES.moveReachedDestination(move),
+      COMMAND_STATE_INSTRUCTIONS.chooseNextMove,
+      visitedBefore,
     )
   }
 
-  return currentCommandFeedback(
-    state,
-    "move",
-    true,
-    COMMAND_FEEDBACK_MESSAGES.moveSuccess(action),
+  return buildCommandState(
+    command,
+    "applied",
+    COMMAND_FEEDBACK_MESSAGES.moveSuccess(move),
+    COMMAND_STATE_INSTRUCTIONS.chooseNextMove,
+    visitedBefore,
   )
 }
 
-// pauseWithFeedback reports whether pausing was accepted in the current state.
-function pauseWithFeedback(context: CommandFeedbackContext): MazeControlFeedback {
-  const { state, pauseGame } = context
-
-  if (!isRunningStatus(state.status) || !state.clock) {
-    return currentCommandFeedback(
-      state,
-      "pause",
-      false,
-      COMMAND_FEEDBACK_MESSAGES.pauseUnavailable,
-    )
-  }
-
-  pauseGame()
-  return currentCommandFeedback(
-    state,
-    "pause",
-    true,
-    COMMAND_FEEDBACK_MESSAGES.pauseSuccess,
-  )
-}
-
-// proceedWithFeedback reports whether proceed resumed, advanced, retried, or failed.
-function proceedWithFeedback(
+// executeActionWithFeedback classifies a requested command and returns feedback when supported.
+export function executeActionWithFeedback(
+  action: MazeAction,
   context: CommandFeedbackContext,
-): MazeControlFeedback {
-  const { state, resumeOrProceed } = context
-
-  if (isPausedStatus(state.status) && state.canResume && state.clock) {
-    resumeOrProceed()
-    return currentCommandFeedback(
-      state,
-      "proceed",
-      true,
-      COMMAND_FEEDBACK_MESSAGES.proceedResumed,
-    )
+): MazeActionState | null {
+  if (!isMoveAction(action)) {
+    context.executeCommand(action)
+    return null
   }
 
-  if (isWonStatus(state.status)) {
-    const nextLevel = state.level + 1
-    resumeOrProceed()
-    return currentCommandFeedback(
-      state,
-      "proceed",
-      true,
-      proceedStartedLevel(nextLevel),
-    )
-  }
-
-  if (isLostStatus(state.status)) {
-    const currentLevel = state.level
-    resumeOrProceed()
-    return currentCommandFeedback(
-      state,
-      "proceed",
-      true,
-      proceedRestartedLevel(currentLevel),
-    )
-  }
-
-  return currentCommandFeedback(
-    state,
-    "proceed",
-    false,
-    COMMAND_FEEDBACK_MESSAGES.proceedUnavailable,
-  )
-}
-
-// cycleWallsWithFeedback reports whether cycling actually changed the wall style.
-function cycleWallsWithFeedback(
-  context: CommandFeedbackContext,
-): MazeControlFeedback {
-  const { state, cycleWallWeight } = context
-  const previousWeight = state.wallWeight
-  cycleWallWeight()
-
-  if (state.wallWeight === previousWeight) {
-    return currentCommandFeedback(
-      state,
-      "cycle-walls",
-      false,
-      COMMAND_FEEDBACK_MESSAGES.wallWeightUnchanged,
-    )
-  }
-
-  return currentCommandFeedback(
-    state,
-    "cycle-walls",
-    true,
-    changedWallWeight(state.wallWeight),
-  )
-}
-
-// restartWithFeedback reports the post-reset state returned to agent callers.
-function restartWithFeedback(
-  context: CommandFeedbackContext,
-): MazeControlFeedback {
-  const { state, restartGame } = context
-  restartGame()
-  return currentCommandFeedback(
-    state,
-    "restart",
-    true,
-    COMMAND_FEEDBACK_MESSAGES.restartSuccess,
-  )
-}
-
-// executeCommandWithFeedback runs one command and packages the resulting agent feedback.
-export function executeCommandWithFeedback(
-  command: MazeControlCommand,
-  context: CommandFeedbackContext,
-): MazeControlFeedback {
-  switch (command.type) {
-    case "move":
-      // Movement is the only command that carries extra payload.
-      return moveWithFeedback(command.move, context)
-    case "pause":
-      return pauseWithFeedback(context)
-    case "proceed":
-      // Proceed covers resume-after-pause as well as post-win/post-loss flow.
-      return proceedWithFeedback(context)
-    case "cycle-walls":
-      return cycleWallsWithFeedback(context)
-    case "restart":
-      return restartWithFeedback(context)
-  }
+  return buildMoveCommandState(action, context)
 }

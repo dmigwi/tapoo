@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type {
   Elements,
   GameRuntime,
-  MazeControlMode,
+  MazeActionControl,
   PersistedPreferences,
   PersistedRound,
   RoundState,
@@ -76,8 +76,8 @@ function createRound(): RoundState {
       ["|", "   ", "|"],
       ["|", "---", "|"],
     ],
-    startPosition: [1, 1],
-    finalPosition: [1, 1],
+    startPosition: { x: 1, y: 1 },
+    finalPosition: { x: 1, y: 1 },
   }
 }
 
@@ -89,8 +89,8 @@ function createHorizontalRound(): RoundState {
       ["|", "   ", " ", "   ", "|"],
       ["|", "---", "-", "---", "|"],
     ],
-    startPosition: [1, 1],
-    finalPosition: [1, 3],
+    startPosition: { x: 1, y: 1 },
+    finalPosition: { x: 3, y: 1 },
   }
 }
 
@@ -105,8 +105,10 @@ function createPersistedWonRound(): PersistedRound {
       ["|", "   ", "|"],
       ["|", "---", "|"],
     ],
-    playerPosition: [1, 1],
-    finalPosition: [1, 1],
+    playerPosition: { x: 1, y: 1 },
+    startCell: { row: 0, col: 0 },
+    traversalHistory: [{ row: 0, col: 0 }],
+    finalPosition: { x: 1, y: 1 },
     wallWeight: 1,
     status: "won",
     score: 500,
@@ -143,7 +145,7 @@ type GameHarness = {
   getMazeDimensions: ReturnType<typeof vi.fn>
   intervalCallback: (() => void) | null
   loadPersistedSnapshot: ReturnType<typeof vi.fn>
-  mode: MazeControlMode
+  mode: MazeActionControl
   render: ReturnType<typeof vi.fn<(elements: Elements, state: State) => void>>
   reweightMaze: ReturnType<typeof vi.fn>
   runtime: GameRuntime
@@ -367,6 +369,7 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("running")
     expect(state.level).toBe(2)
     expect(state.wallWeight).toBe(1)
+    expect(state.traversalHistory).toEqual([{ row: 0, col: 0 }])
   })
 
   it("subscribes to visual viewport resize events when available", async () => {
@@ -612,7 +615,11 @@ describe("bootstrapGame", () => {
     )
 
     const state = latestRenderedState(harness.render)
-    expect(state.playerPosition).toEqual([1, 3])
+    expect(state.playerPosition).toEqual({ x: 3, y: 1 })
+    expect(state.traversalHistory).toEqual([
+      { row: 0, col: 0 },
+      { row: 0, col: 1 },
+    ])
     expect(state.status).toBe("won")
     expect(state.lastRoundScore).toBe(200)
     expect(state.lastAttemptRetention).toBe(1_000_000)
@@ -662,6 +669,33 @@ describe("bootstrapGame", () => {
     expect(state.winSummary).toBe(
       "1.20s faster than previous (0.80s behind best)",
     )
+  })
+
+  it("does not duplicate traversal history when the player backtracks", async () => {
+    const backtrackRound: RoundState = {
+      maze: [
+        ["|", "---", "|", "---", "|", "---", "|"],
+        ["|", "   ", " ", "   ", " ", "   ", "|"],
+        ["|", "---", "|", "---", "|", "---", "|"],
+      ],
+      startPosition: { x: 1, y: 1 },
+      finalPosition: { x: 5, y: 1 },
+    }
+
+    const harness = await bootstrapHarness({
+      dimensionsResults: [{ level: 1, length: 3, width: 1 }],
+      round: backtrackRound,
+    })
+
+    harness.runtime.dispatch({ type: "MoveRight" })
+    harness.runtime.dispatch({ type: "MoveLeft" })
+
+    const state = latestRenderedState(harness.render)
+    expect(state.playerPosition).toEqual({ x: 1, y: 1 })
+    expect(state.traversalHistory).toEqual([
+      { row: 0, col: 0 },
+      { row: 0, col: 1 },
+    ])
   })
 
 
@@ -756,8 +790,10 @@ describe("bootstrapGame", () => {
       level: 1,
       dims: { length: 2, width: 1 },
       maze: createHorizontalRound().maze,
-      playerPosition: [1, 1],
-      finalPosition: [1, 3],
+      playerPosition: { x: 1, y: 1 },
+      startCell: { row: 0, col: 0 },
+      traversalHistory: [{ row: 0, col: 0 }],
+      finalPosition: { x: 3, y: 1 },
       wallWeight: 1,
       status: "running",
       score: 200,
@@ -796,7 +832,43 @@ describe("bootstrapGame", () => {
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("paused")
     expect(state.canResume).toBe(true)
+    expect(state.traversalHistory).toEqual([{ row: 0, col: 0 }])
     expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(3)
+  })
+
+  it("rejects malformed persisted traversal history and falls back to a fresh round", async () => {
+    const invalidPersistedRound: PersistedRound = {
+      version: 1,
+      level: 2,
+      dims: { length: 2, width: 1 },
+      maze: createHorizontalRound().maze,
+      playerPosition: { x: 3, y: 1 },
+      startCell: { row: 0, col: 0 },
+      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 0 }],
+      finalPosition: { x: 3, y: 1 },
+      wallWeight: 1,
+      status: "running",
+      score: 200,
+      lastRoundScore: 0,
+      remainingMs: 1500,
+      winSummary: "",
+    }
+
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        {
+          preferences: { level: 2, wallWeight: 1 },
+          round: invalidPersistedRound,
+        },
+      ],
+      dimensionsResults: [{ level: 2, length: 1, width: 1 }],
+    })
+
+    const state = latestRenderedState(harness.render)
+    expect(harness.clearPersistedRound).toHaveBeenCalledTimes(1)
+    expect(state.status).toBe("running")
+    expect(state.level).toBe(2)
+    expect(state.traversalHistory).toEqual([{ row: 0, col: 0 }])
   })
 
   it("does not auto-restart a too-small game when the viewport fits again without a persisted round", async () => {
@@ -845,7 +917,7 @@ describe("bootstrapGame", () => {
     expect(focusSpy).toHaveBeenCalled()
   })
 
-  it("accepts runtime commands in agent-api mode without interactive control side effects", async () => {
+  it("keeps traversal input out of local keyboard handling in agent-api mode", async () => {
     const harness = await bootstrapHarness({
       dimensionsResults: [{ level: 1, length: 2, width: 1 }],
       mode: "agent-api",
@@ -861,61 +933,49 @@ describe("bootstrapGame", () => {
 
     let state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
-    expect(state.playerPosition).toEqual([1, 1])
+    expect(state.playerPosition).toEqual({ x: 1, y: 1 })
     expect(state.controlMode).toBe("agent-api")
+    expect(harness.mode.readLastActionState()).toBeNull()
 
-    harness.runtime.dispatch({ type: "move", move: "MoveRight" })
+    const actionState = harness.runtime.dispatch(
+      { type: "MoveRight" },
+      { wantFeedback: true },
+    )
 
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("won")
-    expect(state.playerPosition).toEqual([1, 3])
-    expect(harness.mode.getLastCommandFeedback()).toEqual({
-      command: "move",
-      level: 1,
-      message: "MoveRight reached target.",
-      ok: true,
-      score: 200,
-      status: "won",
-      wallWeight: 1,
+    expect(state.playerPosition).toEqual({ x: 3, y: 1 })
+    expect(actionState).toEqual({
+      expectedResponseType: "MoveAction",
+      instruction: "Choose the next MoveAction.",
+      lastCommand: { type: "MoveRight" },
+      lastCommandStatus: "reached-target",
+      lastCommandMessage: "MoveRight reached target.",
+      visitedBefore: false,
     })
+    expect(harness.mode.readLastActionState()).toEqual(actionState)
   })
 
-  it("records contextual pause, proceed, and restart feedback for agent-api mode", async () => {
+  it("keeps pause, proceed, and wall cycling human-driven in agent-api mode", async () => {
     const harness = await bootstrapHarness({
       mode: "agent-api",
     })
 
-    harness.runtime.dispatch({ type: "pause" })
-    expect(harness.mode.getLastCommandFeedback()).toEqual({
-      command: "pause",
-      level: 1,
-      message: "Paused.",
-      ok: true,
-      score: 100,
-      status: "paused",
-      wallWeight: 1,
-    })
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    )
+    let state = latestRenderedState(harness.render)
+    expect(state.status).toBe("paused")
+    expect(harness.mode.readLastActionState()).toBeNull()
 
-    harness.runtime.dispatch({ type: "proceed" })
-    expect(harness.mode.getLastCommandFeedback()).toEqual({
-      command: "proceed",
-      level: 1,
-      message: "Resumed.",
-      ok: true,
-      score: 100,
-      status: "running",
-      wallWeight: 1,
-    })
+    harness.elements.touchButtons[0].click()
+    state = latestRenderedState(harness.render)
+    expect(state.wallWeight).toBe(2)
+    expect(harness.mode.readLastActionState()).toBeNull()
 
-    harness.runtime.dispatch({ type: "restart" })
-    expect(harness.mode.getLastCommandFeedback()).toEqual({
-      command: "restart",
-      level: 1,
-      message: "Progress reset.",
-      ok: true,
-      score: 100,
-      status: "running",
-      wallWeight: 1,
-    })
+    harness.elements.touchButtons[2].click()
+    state = latestRenderedState(harness.render)
+    expect(state.status).toBe("running")
+    expect(harness.mode.readLastActionState()).toBeNull()
   })
 })

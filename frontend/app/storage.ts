@@ -94,6 +94,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     !state.dims ||
     !state.maze ||
     !state.playerPosition ||
+    state.traversalHistory.length === 0 ||
     !state.finalPosition ||
     !canPersistRoundStatus(state.status)
   ) {
@@ -108,8 +109,22 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     level: state.level,
     dims: { length: state.dims.length, width: state.dims.width },
     maze: state.maze.map((row) => [...row]),
-    playerPosition: [state.playerPosition[0], state.playerPosition[1]],
-    finalPosition: [state.finalPosition[0], state.finalPosition[1]],
+    startCell: {
+      row: state.traversalHistory[0].row,
+      col: state.traversalHistory[0].col,
+    },
+    traversalHistory: state.traversalHistory.map(({ row, col }) => ({
+      row,
+      col,
+    })),
+    playerPosition: {
+      x: state.playerPosition.x,
+      y: state.playerPosition.y,
+    },
+    finalPosition: {
+      x: state.finalPosition.x,
+      y: state.finalPosition.y,
+    },
     wallWeight: state.wallWeight,
     status: state.status,
     score: state.score,

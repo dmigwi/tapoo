@@ -4,8 +4,17 @@ import type { GameClock } from "./clock"
 export type GameStatus =
   "boot" | "running" | "paused" | "won" | "lost" | "too-small"
 
-// Position represents one row and column inside the rendered maze grid.
-export type Position = [number, number]
+// CellCoordinate represents one logical cell position using zero-based row and column indexes.
+export type CellCoordinate = {
+  row: number
+  col: number
+}
+
+// RenderGridPoint represents one drawn maze-grid point using positive x/y coordinates.
+export type RenderGridPoint = {
+  x: number
+  y: number
+}
 
 // WallWeight selects one of the supported visual wall styles.
 export type WallWeight = 1 | 2 | 3
@@ -23,15 +32,15 @@ export type LevelDimensions = BaseDimensions & {
 
 // CellAddress records the render-grid coordinates around a logical maze cell.
 export type CellAddress = {
-  __bottomCenter: Position
-  __bottomLeft: Position
-  __bottomRight: Position
-  __middleCenter: Position
-  __middleLeft: Position
-  __middleRight: Position
-  __topCenter: Position
-  __topLeft: Position
-  __topRight: Position
+  __bottomCenter: RenderGridPoint
+  __bottomLeft: RenderGridPoint
+  __bottomRight: RenderGridPoint
+  __middleCenter: RenderGridPoint
+  __middleLeft: RenderGridPoint
+  __middleRight: RenderGridPoint
+  __topCenter: RenderGridPoint
+  __topLeft: RenderGridPoint
+  __topRight: RenderGridPoint
 }
 
 // CellNeighbors stores the neighboring cell numbers around one logical cell.
@@ -45,40 +54,67 @@ export type CellNeighbors = {
 // MoveAction is the semantic movement vocabulary shared by all control modes.
 export type MoveAction = "MoveUp" | "MoveDown" | "MoveLeft" | "MoveRight"
 
+// SessionAction groups non-movement actions that affect the active game session.
+export type SessionAction = "pause" | "proceed" | "cycle-walls" | "restart"
+
 // Direction extends MoveAction with the neutral "none" state used during generation.
 export type Direction = "none" | MoveAction
 
 export type MazeControlModeName = "interactive" | "agent-api"
 
-// MazeControlCommand describes one abstract control operation issued to the runtime.
-export type MazeControlCommand =
-  | { type: "move"; move: MoveAction }
-  | { type: "pause" }
-  | { type: "proceed" }
-  | { type: "cycle-walls" }
-  | { type: "restart" }
+// MazeAction describes one abstract game action issued to the runtime.
+export type MazeAction =
+  | { type: MoveAction }
+  | { type: SessionAction }
 
-// MazeControlFeedback reports the runtime result of one command back to agents.
-export type MazeControlFeedback = {
-  command: MazeControlCommand["type"]
-  level: number
-  message: string
-  ok: boolean
-  score: number
-  status: GameStatus
-  wallWeight: WallWeight
+// MazeActionState reports only the last issued command plus the next response expected from the agent.
+export type MazeAgentExpectedResponseType = "MoveAction"
+
+// CommandStatus keeps command outcome states short, explicit, and easy for agents to branch on.
+export type CommandStatus =
+  | "invalid"
+  | "applied"
+  | "reached-target"
+
+// MazeActionState reports only the last issued command plus the next response expected from the agent.
+export type MazeActionState = {
+  lastCommand: MazeAction
+  lastCommandStatus: CommandStatus
+  lastCommandMessage: string
+  instruction: string
+  expectedResponseType: MazeAgentExpectedResponseType
+  visitedBefore?: boolean
 }
 
-export type MazeControlDispatch = (command: MazeControlCommand) => void
+// MazeAgentContext exposes the latest traversal state that an external agent uses to choose the next move.
+export type MazeAgentContext = {
+  currentCell: CellCoordinate | null
+  destinationCell: CellCoordinate | null
+  level: number
+  score: number
+  status: GameStatus
+  traversalHistory: CellCoordinate[]
+}
 
-// MazeControlMode defines the contract that each browser control mode implements.
-export type MazeControlMode = {
-  attach: (dispatch: MazeControlDispatch) => void
-  detach: () => void
-  expectsCommandFeedback: () => boolean
-  getLastCommandFeedback: () => MazeControlFeedback | null
+// MazeActionDispatchOptions lets each dispatched command opt into feedback when it needs it.
+export type MazeActionDispatchOptions = {
+  wantFeedback?: boolean
+}
+
+export type MazeActionDispatch = (
+  action: MazeAction,
+  options?: MazeActionDispatchOptions,
+) => MazeActionState | null
+
+// MazeActionControl defines the production contract that each browser action-control mode implements.
+export interface MazeActionControl {
   name: MazeControlModeName
-  receiveCommandFeedback: (feedback: MazeControlFeedback) => void
+  bindActionDispatch: (
+    dispatch: MazeActionDispatch,
+    readAgentContext: () => MazeAgentContext,
+  ) => void
+  readLastActionState: () => MazeActionState | null
+  recordActionState: (actionState: MazeActionState) => void
 }
 
 // NavigationProfile shapes corridor and turning behavior during maze generation.
@@ -103,8 +139,10 @@ export type PersistedRound = {
   level: number
   dims: BaseDimensions
   maze: string[][]
-  playerPosition: Position
-  finalPosition: Position
+  startCell: CellCoordinate
+  traversalHistory: CellCoordinate[]
+  playerPosition: RenderGridPoint
+  finalPosition: RenderGridPoint
   wallWeight: WallWeight
   status: PersistedGameStatus
   score: number
@@ -130,8 +168,8 @@ export type PersistedSnapshot = {
 // RoundState is the maze-generation result consumed by the game runtime.
 export type RoundState = {
   maze: string[][]
-  startPosition: Position
-  finalPosition: Position
+  startPosition: RenderGridPoint
+  finalPosition: RenderGridPoint
 }
 
 // ScreenLine is the renderer's normalized line model before HTML generation.
@@ -158,8 +196,9 @@ export type State = {
   level: number
   dims: BaseDimensions | null
   maze: string[][] | null
-  playerPosition: Position | null
-  finalPosition: Position | null
+  playerPosition: RenderGridPoint | null
+  traversalHistory: CellCoordinate[]
+  finalPosition: RenderGridPoint | null
   status: GameStatus
   score: number
   lastRoundScore: number
@@ -174,7 +213,7 @@ export type State = {
 // GameRuntime exposes the active mode plus a direct dispatch hook for tests and integrations.
 export type GameRuntime = {
   mode: MazeControlModeName
-  dispatch: MazeControlDispatch
+  dispatch: MazeActionDispatch
 }
 
 // AppConfig gathers translatable copy and shared runtime constants.

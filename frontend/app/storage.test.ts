@@ -59,8 +59,9 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "   ", "|"],
       ["|", "---", "|"],
     ],
-    playerPosition: [1, 1],
-    finalPosition: [1, 1 + 0],
+    playerPosition: { x: 1, y: 1 },
+    traversalHistory: [{ row: 0, col: 0 }],
+    finalPosition: { x: 1, y: 1 },
     status: "running",
     score: 1200,
     lastRoundScore: 700,
@@ -126,8 +127,8 @@ describe("storage", () => {
 
   it("saves and reloads the active round state", () => {
     const state = createState({
-      playerPosition: [1, 1],
-      finalPosition: [1, 1],
+      playerPosition: { x: 1, y: 1 },
+      finalPosition: { x: 1, y: 1 },
     })
 
     savePersistedRoundState(state)
@@ -139,8 +140,10 @@ describe("storage", () => {
       level: 4,
       dims: { length: 5, width: 5 },
       maze: state.maze,
-      playerPosition: [1, 1],
-      finalPosition: [1, 1],
+      startCell: { row: 0, col: 0 },
+      traversalHistory: [{ row: 0, col: 0 }],
+      playerPosition: { x: 1, y: 1 },
+      finalPosition: { x: 1, y: 1 },
       wallWeight: 2,
       status: "running",
       score: 1200,
@@ -169,8 +172,8 @@ describe("storage", () => {
 
   it("removes the stored round when the current state cannot be persisted", () => {
     const persistedState = createState({
-      playerPosition: [1, 1],
-      finalPosition: [1, 1],
+      playerPosition: { x: 1, y: 1 },
+      finalPosition: { x: 1, y: 1 },
     })
 
     savePersistedRoundState(persistedState)
@@ -192,8 +195,8 @@ describe("storage", () => {
   it("clears the persisted round on demand", () => {
     savePersistedRoundState(
       createState({
-        playerPosition: [1, 1],
-        finalPosition: [1, 1],
+        playerPosition: { x: 1, y: 1 },
+        finalPosition: { x: 1, y: 1 },
       }),
     )
 
@@ -211,8 +214,8 @@ describe("storage", () => {
     })
     savePersistedRoundState(
       createState({
-        playerPosition: [1, 1],
-        finalPosition: [1, 1],
+        playerPosition: { x: 1, y: 1 },
+        finalPosition: { x: 1, y: 1 },
       }),
     )
 

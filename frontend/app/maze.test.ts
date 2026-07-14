@@ -65,10 +65,10 @@ describe("maze", () => {
 
     expect(round).toMatchSnapshot()
     expect(round.startPosition).not.toEqual(round.finalPosition)
-    expect(round.maze[round.startPosition[0]][round.startPosition[1]]).toBe(
+    expect(round.maze[round.startPosition.y][round.startPosition.x]).toBe(
       "   ",
     )
-    expect(round.maze[round.finalPosition[0]][round.finalPosition[1]]).toBe(
+    expect(round.maze[round.finalPosition.y][round.finalPosition.x]).toBe(
       "   ",
     )
   })

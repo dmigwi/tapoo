@@ -1,11 +1,15 @@
 import type {
   Elements,
-  MazeControlCommand,
-  MazeControlDispatch,
-  MazeControlFeedback,
-  MazeControlMode,
+  MazeActionControl,
+  MazeActionDispatch,
+  MazeActionState,
   MoveAction,
 } from "../types"
+import {
+  releaseAllActionBindings,
+  sessionActionFromButton,
+  sessionActionFromKeyboardEvent,
+} from "./session-actions"
 
 // KEY_TO_MOVE_ACTION maps browser arrow-key events into semantic movement commands.
 const KEY_TO_MOVE_ACTION: Partial<Record<string, MoveAction>> = {
@@ -15,80 +19,13 @@ const KEY_TO_MOVE_ACTION: Partial<Record<string, MoveAction>> = {
   ArrowDown: "MoveDown",
 }
 
-// controlCommandFromKey translates one keyboard gesture into a maze control command.
-function controlCommandFromKey(
-  key: string,
-  lowerKey: string,
-  controlCombo: boolean,
-): MazeControlCommand | null {
-  const moveAction = KEY_TO_MOVE_ACTION[key]
-  if (moveAction) {
-    return { type: "move", move: moveAction }
-  }
-
-  if (controlCombo && lowerKey === "b") {
-    return { type: "cycle-walls" }
-  }
-
-  if (controlCombo && lowerKey === "p") {
-    return { type: "proceed" }
-  }
-
-  if (key === "Enter") {
-    return { type: "proceed" }
-  }
-
-  if (key === " ") {
-    return { type: "pause" }
-  }
-
-  return null
-}
-
-// controlCommandFromKeyboardEvent normalizes a browser keyboard event into one command.
-export function controlCommandFromKeyboardEvent(
-  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey">,
-): MazeControlCommand | null {
-  return controlCommandFromKey(
-    event.key,
-    event.key.toLowerCase(),
-    event.ctrlKey || event.metaKey,
-  )
-}
-
-// controlCommandFromButton translates control-button datasets into runtime commands.
-export function controlCommandFromButton(
-  dataset: DOMStringMap,
-): MazeControlCommand | null {
-  if (dataset.move) {
-    return { type: "move", move: dataset.move as MoveAction }
-  }
-
-  switch (dataset.action) {
-    case "pause":
-      return { type: "pause" }
-    case "proceed":
-      return { type: "proceed" }
-    case "walls":
-      return { type: "cycle-walls" }
-    case "restart":
-      return { type: "restart" }
-    default:
-      return null
-  }
-}
-
-// createInteractiveMode wires keyboard and touch buttons into the shared control contract.
+// createInteractiveMode builds the interactive MazeActionControl used by the main game page.
 export function createInteractiveMode(
   elements: Elements,
-): MazeControlMode {
+): MazeActionControl {
   let attached = false
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null
-  const controlHandlers: Array<{
-    button: HTMLButtonElement
-    onClick: () => void
-  }> = []
-  const touchHandlers: Array<{
+  const buttonBindings: Array<{
     button: HTMLButtonElement
     onClick: () => void
   }> = []
@@ -98,47 +35,75 @@ export function createInteractiveMode(
     elements.app.focus()
   }
 
+  // releaseBindings removes any listeners registered by the last active dispatch binding.
+  const releaseBindings = (): void => {
+    releaseAllActionBindings({
+      attached,
+      buttonBindings,
+      keydownHandler,
+      removeAppFocus: () => {
+        elements.app.removeEventListener("click", focusApp)
+      },
+      setAttached: (nextAttached) => {
+        attached = nextAttached
+      },
+      setKeydownHandler: (nextKeydownHandler) => {
+        keydownHandler = nextKeydownHandler
+      },
+    })
+  }
+
   // handleButtonClick resolves one button press into a semantic runtime command.
   const handleButtonClick = (
     button: HTMLButtonElement,
-    dispatch: MazeControlDispatch,
+    dispatch: MazeActionDispatch,
   ): void => {
-    const command = controlCommandFromButton(button.dataset)
-    if (!command) {
+    const action = button.dataset.move
+      ? { type: button.dataset.move as MoveAction }
+      : sessionActionFromButton(button.dataset)
+    if (!action) {
       return
     }
 
     focusApp()
-    dispatch(command)
+    // Interactive controls do not request feedback; the game view already reflects the outcome.
+    dispatch(action)
   }
 
   // handleKeydown routes keyboard gestures through the same command vocabulary.
   const handleKeydown = (
     event: KeyboardEvent,
-    dispatch: MazeControlDispatch,
+    dispatch: MazeActionDispatch,
   ): void => {
-    const command = controlCommandFromKeyboardEvent(event)
-    if (!command) {
+    const moveAction = KEY_TO_MOVE_ACTION[event.key]
+    const action = moveAction
+      ? { type: moveAction }
+      : sessionActionFromKeyboardEvent(event)
+    if (!action) {
       return
     }
 
     event.preventDefault()
-    dispatch(command)
+    // Interactive controls do not request feedback; the game view already reflects the outcome.
+    dispatch(action)
   }
 
   return {
+    // This MazeActionControl exposes the interactive mode name, binds browser inputs, and ignores stored feedback.
+    // name lets the runtime identify which MazeActionControl implementation is active.
     name: "interactive",
-    attach(dispatch) {
-      if (attached) {
-        return
-      }
+    // bindActionDispatch connects browser keyboard and button events to the shared action dispatcher.
+    bindActionDispatch(dispatch, readAgentContext) {
+      void readAgentContext
+      // Start from a clean slate so rebinding never depends on whatever was attached before.
+      releaseBindings()
 
       elements.controls.forEach((button) => {
         const onClick = (): void => {
           handleButtonClick(button, dispatch)
         }
 
-        controlHandlers.push({ button, onClick })
+        buttonBindings.push({ button, onClick })
         button.addEventListener("click", onClick)
       })
 
@@ -147,7 +112,7 @@ export function createInteractiveMode(
           handleButtonClick(button, dispatch)
         }
 
-        touchHandlers.push({ button, onClick })
+        buttonBindings.push({ button, onClick })
         button.addEventListener("click", onClick)
       })
 
@@ -159,35 +124,14 @@ export function createInteractiveMode(
       elements.app.addEventListener("click", focusApp)
       attached = true
     },
-    detach() {
-      if (!attached) {
-        return
-      }
-
-      controlHandlers.forEach(({ button, onClick }) => {
-        button.removeEventListener("click", onClick)
-      })
-      touchHandlers.forEach(({ button, onClick }) => {
-        button.removeEventListener("click", onClick)
-      })
-      controlHandlers.length = 0
-      touchHandlers.length = 0
-      if (keydownHandler) {
-        window.removeEventListener("keydown", keydownHandler)
-        keydownHandler = null
-      }
-      elements.app.removeEventListener("click", focusApp)
-      attached = false
-    },
-    expectsCommandFeedback() {
-      return false
-    },
-    getLastCommandFeedback() {
+    // readLastActionState stays empty here because interactive users already get visual feedback.
+    readLastActionState() {
       return null
     },
-    receiveCommandFeedback(feedback: MazeControlFeedback) {
+    // recordActionState is a no-op because the interactive mode does not retain command states.
+    recordActionState(actionState: MazeActionState) {
       // Interactive controls already provide immediate visual feedback in the game view.
-      void feedback
+      void actionState
     },
   }
 }

@@ -2,10 +2,10 @@
 
 exports[`maze > generates a deterministic maze layout for a fixed random source 1`] = `
 {
-  "finalPosition": [
-    1,
-    9,
-  ],
+  "finalPosition": {
+    "x": 9,
+    "y": 1,
+  },
   "maze": [
     [
       "|",
@@ -151,9 +151,9 @@ exports[`maze > generates a deterministic maze layout for a fixed random source 
       "|",
     ],
   ],
-  "startPosition": [
-    1,
-    1,
-  ],
+  "startPosition": {
+    "x": 1,
+    "y": 1,
+  },
 }
 `;

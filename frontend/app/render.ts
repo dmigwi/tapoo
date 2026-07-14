@@ -181,17 +181,17 @@ function buildMazeLines(state: State): string[] {
   const lines = state.maze.map((row) => row.join(""))
 
   if (state.finalPosition && shouldDrawDestination(state)) {
-    lines[state.finalPosition[0]] = replaceAt(
-      lines[state.finalPosition[0]],
-      state.finalPosition[1] * CONFIG.cellSpan,
+    lines[state.finalPosition.y] = replaceAt(
+      lines[state.finalPosition.y],
+      state.finalPosition.x * CONFIG.cellSpan,
       CONFIG.destinationMarker,
     )
   }
 
   if (state.playerPosition) {
-    lines[state.playerPosition[0]] = replaceAt(
-      lines[state.playerPosition[0]],
-      state.playerPosition[1] * CONFIG.cellSpan,
+    lines[state.playerPosition.y] = replaceAt(
+      lines[state.playerPosition.y],
+      state.playerPosition.x * CONFIG.cellSpan,
       CONFIG.playerMarker,
     )
   }
@@ -356,17 +356,11 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
 
 // updateTouchControls shows only the touch controls that make sense for the current state.
 function updateTouchControls(elements: Elements, state: State): void {
-  if (state.controlMode !== "interactive") {
-    elements.touchControls.hidden = true
-    elements.touchControls.classList.remove("touch-controls--action-pair")
-    elements.touchControls.classList.remove("touch-controls--single-action")
-    return
-  }
-
   const canProceed = state.canResume
     ? canProceedStatus(state.status)
     : isWonStatus(state.status) || isLostStatus(state.status)
-  const showMoveControls = isRunningStatus(state.status)
+  const showMoveControls =
+    state.controlMode === "interactive" && isRunningStatus(state.status)
   const showPause = isRunningStatus(state.status)
   const showWalls = canShowWallsStatus(state.status)
   let visibleButtons = 0

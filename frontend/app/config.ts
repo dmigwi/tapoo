@@ -32,7 +32,8 @@ export const CONFIG: AppConfig = {
 
   // AI Agents page chrome.
   agentsDocumentTitle: "Tapoo Maze Runner | AI Agents",
-  agentsDescription: "Tapoo maze runner AI agents page temporarily unavailable.",
+  agentsDescription:
+    "Tapoo maze runner played by an HTTP-driven agent with human session controls.",
   agentsPageLabel: "AI Agents",
   backToGameLabel: "Back To Game",
 
@@ -125,6 +126,8 @@ export const ROUND_STORAGE_VERSION = 1
 export const TERMINAL_SAMPLE_WIDTH = 10
 export const MIN_TERMINAL_ROWS = 20
 export const MIN_TERMINAL_COLUMNS = 48
+export const AGENT_MOVE_POLL_INTERVAL_MS = 1_000
+export const DEFAULT_AGENT_MOVE_ENDPOINT = "/api/agent/move"
 export const STORE_ENCODING_PREFIX = "tapoo:v2:"
 export const STORE_BLEND_KEY = ["tapoo:web/vault", "key|spa.persist"].join(`  
   `)

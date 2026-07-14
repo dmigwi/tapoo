@@ -9,7 +9,12 @@ describe("tapoo entrypoint", () => {
   it("boots the game on import", async () => {
     const bootstrapGame = vi.fn()
     const getGameElements = vi.fn(() => ({ app: {} }))
-    const interactiveMode = { attach: vi.fn(), detach: vi.fn(), name: "interactive" }
+    const interactiveMode = {
+      bindActionDispatch: vi.fn(),
+      name: "interactive",
+      readLastActionState: vi.fn(),
+      recordActionState: vi.fn(),
+    }
 
     document.body.dataset.tapooControlMode = "interactive"
 
@@ -31,7 +36,12 @@ describe("tapoo entrypoint", () => {
   it("uses the agent-api page mode when configured in html", async () => {
     const bootstrapGame = vi.fn()
     const elements = { app: {} }
-    const agentMode = { attach: vi.fn(), detach: vi.fn(), name: "agent-api" }
+    const agentMode = {
+      bindActionDispatch: vi.fn(),
+      name: "agent-api",
+      readLastActionState: vi.fn(),
+      recordActionState: vi.fn(),
+    }
 
     document.body.dataset.tapooControlMode = "agent-api"
 

@@ -8,7 +8,7 @@ import type {
   LevelDimensions,
   NavigationProfile,
   PathStep,
-  Position,
+  RenderGridPoint,
   RoundState,
   WallWeight,
 } from "./types"
@@ -219,15 +219,15 @@ function getCellAddress(
   const column = (((cellNo - 1) % dimensions.length) + 1) * CONFIG.cellSpan
 
   return {
-    __bottomCenter: [row, column - 1],
-    __bottomLeft: [row, column - CONFIG.cellSpan],
-    __bottomRight: [row, column],
-    __middleCenter: [row - 1, column - 1],
-    __middleLeft: [row - 1, column - CONFIG.cellSpan],
-    __middleRight: [row - 1, column],
-    __topCenter: [row - CONFIG.cellSpan, column - 1],
-    __topLeft: [row - CONFIG.cellSpan, column - CONFIG.cellSpan],
-    __topRight: [row - CONFIG.cellSpan, column],
+    __bottomCenter: { x: column - 1, y: row },
+    __bottomLeft: { x: column - CONFIG.cellSpan, y: row },
+    __bottomRight: { x: column, y: row },
+    __middleCenter: { x: column - 1, y: row - 1 },
+    __middleLeft: { x: column - CONFIG.cellSpan, y: row - 1 },
+    __middleRight: { x: column, y: row - 1 },
+    __topCenter: { x: column - 1, y: row - CONFIG.cellSpan },
+    __topLeft: { x: column - CONFIG.cellSpan, y: row - CONFIG.cellSpan },
+    __topRight: { x: column, y: row - CONFIG.cellSpan },
   }
 }
 
@@ -501,16 +501,16 @@ function createPath(
 
   switch (nextCellNo) {
     case neighbors.__bottom:
-      maze[address.__bottomCenter[0]][address.__bottomCenter[1]] = "   "
+      maze[address.__bottomCenter.y][address.__bottomCenter.x] = "   "
       break
     case neighbors.__left:
-      maze[address.__middleLeft[0]][address.__middleLeft[1]] = " "
+      maze[address.__middleLeft.y][address.__middleLeft.x] = " "
       break
     case neighbors.__right:
-      maze[address.__middleRight[0]][address.__middleRight[1]] = " "
+      maze[address.__middleRight.y][address.__middleRight.x] = " "
       break
     case neighbors.__top:
-      maze[address.__topCenter[0]][address.__topCenter[1]] = "   "
+      maze[address.__topCenter.y][address.__topCenter.x] = "   "
       break
   }
 }
@@ -518,7 +518,7 @@ function createPath(
 // replaceChar swaps a junction glyph only when the vertical path stays open.
 function replaceChar(
   dimensions: BaseDimensions,
-  point: Position,
+  point: RenderGridPoint,
   replacement: string,
   maze: string[][],
 ): void {
@@ -527,18 +527,18 @@ function replaceChar(
   let hasTop = false
   let hasBottom = false
 
-  if (point[0] - 1 > 0) {
-    topItem = maze[point[0] - 1][point[1]]
+  if (point.y - 1 > 0) {
+    topItem = maze[point.y - 1][point.x]
     hasTop = true
   }
 
-  if (point[0] + 1 <= dimensions.width * CONFIG.cellSpan) {
-    bottomItem = maze[point[0] + 1][point[1]]
+  if (point.y + 1 <= dimensions.width * CONFIG.cellSpan) {
+    bottomItem = maze[point.y + 1][point.x]
     hasBottom = true
   }
 
-  const row = point[0]
-  const column = point[1]
+  const row = point.y
+  const column = point.x
 
   if (!hasTop && hasBottom && isSpaceFound(bottomItem)) {
     maze[row][column] = replacement
@@ -634,13 +634,13 @@ export function generateMaze(
 
   return {
     maze,
-    startPosition: [
-      startAddress.__middleCenter[0],
-      startAddress.__middleCenter[1],
-    ],
-    finalPosition: [
-      finalAddress.__middleCenter[0],
-      finalAddress.__middleCenter[1],
-    ],
+    startPosition: {
+      x: startAddress.__middleCenter.x,
+      y: startAddress.__middleCenter.y,
+    },
+    finalPosition: {
+      x: finalAddress.__middleCenter.x,
+      y: finalAddress.__middleCenter.y,
+    },
   }
 }
