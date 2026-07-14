@@ -1,4 +1,4 @@
-import { AGENT_MOVE_POLL_INTERVAL_MS, DEFAULT_AGENT_MOVE_ENDPOINT } from "../config"
+import { CONFIG, coreDecayIntervalPerCellMs } from "../config"
 import type {
   CommandStatus,
   Elements,
@@ -8,6 +8,10 @@ import type {
   MazeAgentExpectedResponseType,
   MazeActionState,
 } from "../types"
+
+const { runtime, timing } = CONFIG
+const agentMovePollIntervalMs =
+  coreDecayIntervalPerCellMs("agent-api") * timing.agentMovePollSlackFactor
 
 // AgentMoveRequest is the flattened HTTP payload sent to the external agent for the next move decision.
 export type AgentMoveRequest = {
@@ -52,13 +56,14 @@ export type AgentMovePoller = {
   abortActiveRequest: () => void
   clearScheduledTurn: () => void
   scheduleNextAgentTurn: () => void
+  shouldPollAgent: () => boolean
   setAttached: (attached: boolean) => void
   setLastActionState: (actionState: MazeActionState | null) => void
 }
 
 // agentMoveEndpoint resolves the configured HTTP endpoint for agent move polling.
 export function agentMoveEndpoint(elements: Elements): string {
-  return elements.body.dataset.tapooAgentEndpoint ?? DEFAULT_AGENT_MOVE_ENDPOINT
+  return elements.body.dataset.tapooAgentEndpoint ?? runtime.defaultAgentMoveEndpoint
 }
 
 // agentMoveFromResponse extracts one supported maze move from the agent's HTTP response.
@@ -115,16 +120,27 @@ export function handleAgentTurnLoop(
     dispatch,
   } = options
 
-  // scheduleNextAgentTurn waits one second after the previous HTTP response finishes before asking again.
+  // scheduleNextAgentTurn waits for the derived agent-api poll interval before asking again.
   const scheduleNextAgentTurn = (): void => {
-    if (!state.attached) {
+    if (!shouldPollAgent()) {
       return
     }
 
     state.turnTimeout = window.setTimeout(() => {
       state.turnTimeout = null
       void requestNextAgentTurn()
-    }, AGENT_MOVE_POLL_INTERVAL_MS)
+    }, agentMovePollIntervalMs)
+  }
+
+  // shouldPollAgent reports whether the current maze state can accept another agent move.
+  const shouldPollAgent = (): boolean => {
+    const context = readAgentContext()
+    return (
+      state.attached &&
+      context.status === "running" &&
+      Boolean(context.currentCell) &&
+      Boolean(context.destinationCell)
+    )
   }
 
   // requestNextAgentTurn fetches one traversal direction from the HTTP agent and applies it.
@@ -134,12 +150,7 @@ export function handleAgentTurnLoop(
       return
     }
 
-    if (
-      context.status !== "running" ||
-      !context.currentCell ||
-      !context.destinationCell
-    ) {
-      scheduleNextAgentTurn()
+    if (context.status !== "running" || !context.currentCell || !context.destinationCell) {
       return
     }
 
@@ -179,7 +190,7 @@ export function handleAgentTurnLoop(
       if (state.activeRequest === controller) {
         state.activeRequest = null
       }
-      if (state.attached) {
+      if (shouldPollAgent()) {
         scheduleNextAgentTurn()
       }
     }
@@ -197,6 +208,7 @@ export function handleAgentTurnLoop(
       }
     },
     scheduleNextAgentTurn,
+    shouldPollAgent,
     setAttached(attached: boolean) {
       state.attached = attached
     },

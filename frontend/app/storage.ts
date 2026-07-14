@@ -1,9 +1,10 @@
 import {
+  CONFIG,
   BEST_WIN_RETENTION_STORAGE_KEY,
+  coreDecayIntervalPerCellMs,
   LEVEL_STORAGE_KEY,
   LAST_ATTEMPT_RETENTION_STORAGE_KEY,
   ROUND_STORAGE_KEY,
-  ROUND_STORAGE_VERSION,
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
   WALL_WEIGHT_STORAGE_KEY,
@@ -16,6 +17,8 @@ import type {
   State,
   WallWeight,
 } from "./types"
+
+const { runtime } = CONFIG
 
 // toBase64 converts raw bytes into a storage-safe browser string.
 function toBase64(payloadBytes: Uint8Array): string {
@@ -102,10 +105,12 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
   }
 
   const totalCells = state.dims.length * state.dims.width
-  const remainingMs = state.clock ? state.clock.remaining() : totalCells * 1000
+  const remainingMs = state.clock
+    ? state.clock.remaining()
+    : totalCells * coreDecayIntervalPerCellMs(state.controlMode)
 
   return {
-    version: ROUND_STORAGE_VERSION,
+    version: runtime.roundStorageVersion,
     level: state.level,
     dims: { length: state.dims.length, width: state.dims.width },
     maze: state.maze.map((row) => [...row]),

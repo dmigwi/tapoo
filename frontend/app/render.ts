@@ -10,6 +10,8 @@ import {
 } from "./status"
 import type { Elements, ScreenLine, State } from "./types"
 
+const { maze, messages, scoring, viewport } = CONFIG
+
 // escapeHtml protects text rows before they are written as HTML.
 function escapeHtml(value: string): string {
   return value
@@ -44,8 +46,8 @@ function replaceAt(line: string, index: number, char: string): string {
 // statusText selects the running-status footer copy for the current display size.
 function statusText(elements: Elements, state: State): string {
   const template = isCompactDisplay(elements)
-    ? CONFIG.touchStatusTemplate
-    : CONFIG.statusTemplate
+    ? messages.touchStatusTemplate
+    : messages.statusTemplate
 
   return template
     .replace("{level}", String(state.level))
@@ -85,18 +87,18 @@ function viewportMetrics(elements: Elements): {
 function isCompactDisplay(elements: Elements): boolean {
   const { availableWidth, availableHeight } = {
     availableWidth: window.matchMedia(
-      `(max-width: ${CONFIG.compactViewportWidth}px)`,
+      `(max-width: ${viewport.compactWidth}px)`,
     ).matches,
     availableHeight: window.matchMedia(
-      `(max-height: ${CONFIG.compactViewportHeight}px)`,
+      `(max-height: ${viewport.compactHeight}px)`,
     ).matches,
   }
   const { widthCandidates, heightCandidates } = viewportMetrics(elements)
   const compactWidth = widthCandidates.some(
-    (width) => width <= CONFIG.compactViewportWidth,
+    (width) => width <= viewport.compactWidth,
   )
   const compactHeight = heightCandidates.some(
-    (height) => height <= CONFIG.compactViewportHeight,
+    (height) => height <= viewport.compactHeight,
   )
 
   return availableWidth || availableHeight || compactWidth || compactHeight
@@ -105,14 +107,14 @@ function isCompactDisplay(elements: Elements): boolean {
 // navigationText picks the verbose or compact navigation hint for the viewport.
 function navigationText(elements: Elements): string {
   const compact = isCompactDisplay(elements)
-  return compact ? CONFIG.navigationCompact : CONFIG.navigation
+  return compact ? messages.navigation.compact : messages.navigation.default
 }
 
 // proceedText picks the interactive or touch proceed hint for the viewport.
 function proceedText(elements: Elements): string {
   return isCompactDisplay(elements)
-    ? CONFIG.touchProceedMessage
-    : CONFIG.proceedMessage
+    ? messages.touchProceedMessage
+    : messages.proceedMessage
 }
 
 // centeredTextRow creates one centered text line for the rendered screen model.
@@ -142,25 +144,25 @@ function rowsWithSpacer(...rows: ScreenLine[]): ScreenLine[] {
 function tooSmallRows(state: State): ScreenLine[] {
   return [
     centeredTextRow(
-      CONFIG.tooSmallMessage.replace("{level}", String(state.level)),
+      messages.tooSmallMessage.replace("{level}", String(state.level)),
       "status",
     ),
-    centeredTextRow(CONFIG.tooSmallActionMessage),
+    centeredTextRow(messages.tooSmallActionMessage),
   ]
 }
 
 // successText picks the win message sized for the current viewport.
 function successText(elements: Elements): string {
   return isCompactDisplay(elements)
-    ? CONFIG.successCompactMessage
-    : CONFIG.successMessage
+    ? messages.successCompactMessage
+    : messages.successMessage
 }
 
 // failedText picks the loss message sized for the current viewport.
 function failedText(elements: Elements): string {
   return isCompactDisplay(elements)
-    ? CONFIG.failedCompactMessage
-    : CONFIG.failedMessage
+    ? messages.failedCompactMessage
+    : messages.failedMessage
 }
 
 // shouldDrawDestination decides whether the blinking destination is visible this frame.
@@ -183,20 +185,20 @@ function buildMazeLines(state: State): string[] {
   if (state.finalPosition && shouldDrawDestination(state)) {
     lines[state.finalPosition.y] = replaceAt(
       lines[state.finalPosition.y],
-      state.finalPosition.x * CONFIG.cellSpan,
-      CONFIG.destinationMarker,
+      state.finalPosition.x * maze.cellSpan,
+      maze.destinationMarker,
     )
   }
 
   if (state.playerPosition) {
     lines[state.playerPosition.y] = replaceAt(
       lines[state.playerPosition.y],
-      state.playerPosition.x * CONFIG.cellSpan,
-      CONFIG.playerMarker,
+      state.playerPosition.x * maze.cellSpan,
+      maze.playerMarker,
     )
   }
 
-  return lines.map((line) => leftPad(line, CONFIG.mazeLeftPadding))
+  return lines.map((line) => leftPad(line, maze.leftPadding))
 }
 
 // renderMarkedLine wraps one maze row in span markup for colorized rendering.
@@ -206,9 +208,9 @@ function renderMarkedLine(rawLine: string): string {
   for (const char of rawLine) {
     const value = char === " " ? "&nbsp;" : escapeHtml(char)
 
-    if (char === CONFIG.playerMarker) {
+    if (char === maze.playerMarker) {
       html += `<span class="maze-cell player">${value}</span>`
-    } else if (char === CONFIG.destinationMarker) {
+    } else if (char === maze.destinationMarker) {
       html += `<span class="maze-cell target">${value}</span>`
     } else {
       html += `<span class="maze-cell walls">${value}</span>`
@@ -232,7 +234,7 @@ function scorePercent(state: State): number {
   }
 
   const maxScore =
-    state.dims.length * state.dims.width * CONFIG.scoreMultiplier
+    state.dims.length * state.dims.width * scoring.budgetMultiplier
   if (maxScore <= 0) {
     return 0
   }
@@ -240,8 +242,8 @@ function scorePercent(state: State): number {
   return Math.max(
     0,
     Math.min(
-      CONFIG.percentScale,
-      Math.round((state.lastRoundScore * CONFIG.percentScale) / maxScore),
+      scoring.percentScale,
+      Math.round((state.lastRoundScore * scoring.percentScale) / maxScore),
     ),
   )
 }
@@ -250,13 +252,13 @@ function scorePercent(state: State): number {
 function overlayRows(elements: Elements, state: State): ScreenLine[] {
   if (isPausedStatus(state.status)) {
     return [
-      centeredTextRow(CONFIG.pauseMessage, "status"),
+      centeredTextRow(messages.pauseMessage, "status"),
       centeredTextRow(proceedText(elements)),
     ]
   }
 
   if (isWonStatus(state.status)) {
-    const scoresMsg = CONFIG.highScoreTemplate
+    const scoresMsg = messages.highScoreTemplate
       .replace("{level}", String(state.level))
       .replace("{score}", String(state.lastRoundScore))
       .replace("{percent}", String(scorePercent(state)))

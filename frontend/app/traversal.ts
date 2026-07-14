@@ -1,9 +1,11 @@
 import { CONFIG, WALL_WEIGHTS } from "./config"
 import type { WallWeight } from "./types"
 
+const { maze } = CONFIG
+
 // getWallCharacters resolves the glyph set for the requested traversal wall weight.
 function getWallCharacters(weight: WallWeight): [string, string, string] {
-  return CONFIG.walls[weight]
+  return maze.walls[weight]
 }
 
 // isWallWeight validates numeric wall styles restored from storage or tests.

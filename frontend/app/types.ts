@@ -218,86 +218,123 @@ export type GameRuntime = {
 
 // AppConfig gathers translatable copy and shared runtime constants.
 export type AppConfig = {
-  // Shared page chrome.
-  appName: string
-  appSubtitle: string
-  pageVersionTemplate: string
-  contactLabel: string
-
-  // Game page chrome.
-  gameDocumentTitle: string
-  gameDescription: string
-  gamePageLabel: string
-  aiAgentsLabel: string
-  resetProgressLabel: string
-
-  // AI Agents page chrome.
-  agentsDocumentTitle: string
-  agentsDescription: string
-  agentsPageLabel: string
-  backToGameLabel: string
-
-  // Gameplay text.
-  navigation: string
-  navigationCompact: string
-  touchNavigation: string
-  touchNavigationCompact: string
-  pauseMessage: string
-  successMessage: string
-  successCompactMessage: string
-  failedMessage: string
-  failedCompactMessage: string
-  proceedMessage: string
-  touchProceedMessage: string
-  tooSmallMessage: string
-  tooSmallActionMessage: string
-  statusTemplate: string
-  touchStatusTemplate: string
-  highScoreTemplate: string
-  winNoPrevNewRecord: string
-  winNoPrevMatchedBest: string
-  winNoPrevBehindBest: string
-  winFasterPrevNewRecord: string
-  winFasterPrevMatchedBest: string
-  winFasterPrevBehindBest: string
-  winSlowerPrevNewRecord: string
-  winSlowerPrevMatchedBest: string
-  winSlowerPrevBehindBest: string
-  winMatchedPrevNewRecord: string
-  winMatchedPrevBest: string
-  winMatchedPrevBehindBest: string
-
-  // Touch-control labels.
-  wallsTouchLabel: string
-  pauseTouchLabel: string
-  proceedTouchLabel: string
-
-  // Maze rendering.
-  playerMarker: string
-  destinationMarker: string
-  walls: Record<WallWeight, [string, string, string]>
-
-  // Runtime and layout settings.
-  cellSpan: number
-  cellPathWidth: number
-  moveStep: number
-  scoreMultiplier: number
-  percentScale: number
-  retentionScale: number
-  refreshInterval: number
-  navigationFriendlyMaxArea: number
-  navigationHardestArea: number
-  navigationFriendlyProfile: NavigationProfile
-  navigationHardestProfile: NavigationProfile
-  mazeLeftPadding: number
-  seed: number
-  diff: number
-  minMazeDimension: number
-  missingElementErrorTemplate: string
-  compactViewportWidth: number
-  compactViewportHeight: number
-  terminalHeightInset: number
-  terminalHeightScale: number
-  terminalWidthInset: number
-  terminalWidthScale: number
+  chrome: {
+    appName: string
+    appSubtitle: string
+    pageVersionTemplate: string
+    contactLabel: string
+  }
+  pages: {
+    game: {
+      documentTitle: string
+      description: string
+      pageLabel: string
+      aiAgentsLabel: string
+      resetProgressLabel: string
+    }
+    agents: {
+      documentTitle: string
+      description: string
+      pageLabel: string
+      backToGameLabel: string
+      resetProgressLabel: string
+    }
+  }
+  messages: {
+    navigation: {
+      default: string
+      compact: string
+      touch: string
+      touchCompact: string
+    }
+    pauseMessage: string
+    successMessage: string
+    successCompactMessage: string
+    failedMessage: string
+    failedCompactMessage: string
+    proceedMessage: string
+    touchProceedMessage: string
+    tooSmallMessage: string
+    tooSmallActionMessage: string
+    statusTemplate: string
+    touchStatusTemplate: string
+    highScoreTemplate: string
+    winSummary: {
+      noPrevious: {
+        newRecord: string
+        matchedBest: string
+        behindBest: string
+      }
+      fasterPrevious: {
+        newRecord: string
+        matchedBest: string
+        behindBest: string
+      }
+      slowerPrevious: {
+        newRecord: string
+        matchedBest: string
+        behindBest: string
+      }
+      matchedPrevious: {
+        newRecord: string
+        matchedBest: string
+        behindBest: string
+      }
+    }
+  }
+  controls: {
+    touch: {
+      wallsLabel: string
+      pauseLabel: string
+      proceedLabel: string
+    }
+  }
+  maze: {
+    playerMarker: string
+    destinationMarker: string
+    walls: Record<WallWeight, [string, string, string]>
+    cellSpan: number
+    cellPathWidth: number
+    moveStep: number
+    leftPadding: number
+    minDimension: number
+  }
+  generation: {
+    seed: number
+    diff: number
+    navigation: {
+      friendlyMaxArea: number
+      hardestArea: number
+      friendlyProfile: NavigationProfile
+      hardestProfile: NavigationProfile
+    }
+  }
+  scoring: {
+    budgetMultiplier: number
+    percentScale: number
+    retentionScale: number
+  }
+  timing: {
+    refreshInterval: number
+    scoreDecayRate: number
+    interactiveCoreDecayIntervalPerCellMs: number
+    agentApiCoreDecayIntervalPerCellMs: number
+    agentMovePollSlackFactor: number
+  }
+  viewport: {
+    compactWidth: number
+    compactHeight: number
+    terminalSampleWidth: number
+    minTerminalRows: number
+    minTerminalColumns: number
+    terminalHeightInset: number
+    terminalHeightScale: number
+    terminalWidthInset: number
+    terminalWidthScale: number
+  }
+  runtime: {
+    roundStorageVersion: 1
+    defaultAgentMoveEndpoint: string
+    missingElementErrorTemplate: string
+  }
 }

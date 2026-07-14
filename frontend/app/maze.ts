@@ -13,6 +13,8 @@ import type {
   WallWeight,
 } from "./types"
 
+const { generation, maze: mazeConfig, scoring } = CONFIG
+
 // getRandomNo returns a bounded pseudo-random index for maze generation.
 function getRandomNo(limit: number): number {
   if (limit <= 0) {
@@ -34,12 +36,12 @@ function minInt(left: number, right: number): number {
 
 // getWallCharacters resolves the glyph set for the requested wall weight.
 function getWallCharacters(weight: WallWeight): [string, string, string] {
-  return CONFIG.walls[weight]
+  return mazeConfig.walls[weight]
 }
 
 // generateMazeArea turns a level number into the target maze area.
 function generateMazeArea(level: number): number {
-  return level * CONFIG.diff + CONFIG.seed
+  return level * generation.diff + generation.seed
 }
 
 // appendFittingDimensions records factor pairs that still fit the viewport.
@@ -49,7 +51,7 @@ function appendFittingDimensions(
   width: number,
   terminalSize: BaseDimensions,
 ): BaseDimensions[] {
-  if (length < CONFIG.minMazeDimension || width < CONFIG.minMazeDimension) {
+  if (length < mazeConfig.minDimension || width < mazeConfig.minDimension) {
     return candidates
   }
 
@@ -77,7 +79,7 @@ function fittingDimensionsForArea(
 
   for (
     let divisor = Math.floor(Math.sqrt(area));
-    divisor >= CONFIG.minMazeDimension;
+    divisor >= mazeConfig.minDimension;
     divisor -= 1
   ) {
     if (area % divisor !== 0) {
@@ -178,8 +180,8 @@ function createPlayingField(
   weight: WallWeight,
 ): string[][] {
   const chars = getWallCharacters(weight)
-  const rows = CONFIG.cellSpan * dimensions.width + 1
-  const path = " ".repeat(CONFIG.cellPathWidth)
+  const rows = mazeConfig.cellSpan * dimensions.width + 1
+  const path = " ".repeat(mazeConfig.cellPathWidth)
   const data: string[][] = []
 
   for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
@@ -215,19 +217,19 @@ function getCellAddress(
   }
 
   const row =
-    (Math.floor((cellNo - 1) / dimensions.length) + 1) * CONFIG.cellSpan
-  const column = (((cellNo - 1) % dimensions.length) + 1) * CONFIG.cellSpan
+    (Math.floor((cellNo - 1) / dimensions.length) + 1) * mazeConfig.cellSpan
+  const column = (((cellNo - 1) % dimensions.length) + 1) * mazeConfig.cellSpan
 
   return {
     __bottomCenter: { x: column - 1, y: row },
-    __bottomLeft: { x: column - CONFIG.cellSpan, y: row },
+    __bottomLeft: { x: column - mazeConfig.cellSpan, y: row },
     __bottomRight: { x: column, y: row },
     __middleCenter: { x: column - 1, y: row - 1 },
-    __middleLeft: { x: column - CONFIG.cellSpan, y: row - 1 },
+    __middleLeft: { x: column - mazeConfig.cellSpan, y: row - 1 },
     __middleRight: { x: column, y: row - 1 },
-    __topCenter: { x: column - 1, y: row - CONFIG.cellSpan },
-    __topLeft: { x: column - CONFIG.cellSpan, y: row - CONFIG.cellSpan },
-    __topRight: { x: column, y: row - CONFIG.cellSpan },
+    __topCenter: { x: column - 1, y: row - mazeConfig.cellSpan },
+    __topLeft: { x: column - mazeConfig.cellSpan, y: row - mazeConfig.cellSpan },
+    __topRight: { x: column, y: row - mazeConfig.cellSpan },
   }
 }
 
@@ -329,18 +331,18 @@ export function getNavigationProfile(
 
   return {
     __softCorridorLimit: interpolateNavigationValue(
-      CONFIG.navigationFriendlyProfile.__softCorridorLimit,
-      CONFIG.navigationHardestProfile.__softCorridorLimit,
+      generation.navigation.friendlyProfile.__softCorridorLimit,
+      generation.navigation.hardestProfile.__softCorridorLimit,
       difficultyFactor,
     ),
     __hardCorridorLimit: interpolateNavigationValue(
-      CONFIG.navigationFriendlyProfile.__hardCorridorLimit,
-      CONFIG.navigationHardestProfile.__hardCorridorLimit,
+      generation.navigation.friendlyProfile.__hardCorridorLimit,
+      generation.navigation.hardestProfile.__hardCorridorLimit,
       difficultyFactor,
     ),
     __preferTurnPercent: interpolateNavigationValue(
-      CONFIG.navigationFriendlyProfile.__preferTurnPercent,
-      CONFIG.navigationHardestProfile.__preferTurnPercent,
+      generation.navigation.friendlyProfile.__preferTurnPercent,
+      generation.navigation.hardestProfile.__preferTurnPercent,
       difficultyFactor,
     ),
   }
@@ -348,17 +350,17 @@ export function getNavigationProfile(
 
 // navigationDifficultyFactor normalizes maze area into a 0..1 difficulty value.
 function navigationDifficultyFactor(area: number): number {
-  if (area <= CONFIG.navigationFriendlyMaxArea) {
+  if (area <= generation.navigation.friendlyMaxArea) {
     return 0
   }
 
-  if (area >= CONFIG.navigationHardestArea) {
+  if (area >= generation.navigation.hardestArea) {
     return 1
   }
 
   const normalizedArea =
-    (area - CONFIG.navigationFriendlyMaxArea) /
-    (CONFIG.navigationHardestArea - CONFIG.navigationFriendlyMaxArea)
+    (area - generation.navigation.friendlyMaxArea) /
+    (generation.navigation.hardestArea - generation.navigation.friendlyMaxArea)
 
   return Math.sqrt(normalizedArea)
 }
@@ -458,7 +460,7 @@ function chooseNextCell(
   }
 
   if (currentState.__moveDirection !== "none" && turnChoices.length > 0) {
-    const turnPreferenceRoll = getRandomNo(CONFIG.percentScale)
+    const turnPreferenceRoll = getRandomNo(scoring.percentScale)
 
     if (currentState.__corridorLength >= profile.__hardCorridorLimit) {
       choices = turnChoices
@@ -532,7 +534,7 @@ function replaceChar(
     hasTop = true
   }
 
-  if (point.y + 1 <= dimensions.width * CONFIG.cellSpan) {
+  if (point.y + 1 <= dimensions.width * mazeConfig.cellSpan) {
     bottomItem = maze[point.y + 1][point.x]
     hasBottom = true
   }

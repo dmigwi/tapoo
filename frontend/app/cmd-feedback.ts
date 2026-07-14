@@ -12,6 +12,8 @@ import type {
   State,
 } from "./types"
 
+const { maze } = CONFIG
+
 // MOVE_DELTAS mirrors runtime movement so feedback can validate moves before dispatching them.
 const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
   MoveLeft: [0, -1],
@@ -45,8 +47,8 @@ const EXPECTED_AGENT_RESPONSE_TYPE: MazeAgentExpectedResponseType = "MoveAction"
 // cellCoordinateFromGridPoint converts one rendered maze-grid point into a logical cell position.
 function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate {
   return {
-    row: Math.floor((position.y - 1) / CONFIG.cellSpan),
-    col: Math.floor((position.x - 1) / CONFIG.cellSpan),
+    row: Math.floor((position.y - 1) / maze.cellSpan),
+    col: Math.floor((position.x - 1) / maze.cellSpan),
   }
 }
 
@@ -115,13 +117,13 @@ function buildMoveCommandState(
   const [rowDelta, columnDelta] = MOVE_DELTAS[move]
   const x = state.playerPosition.x
   const y = state.playerPosition.y
-  const nextY = y + rowDelta * CONFIG.moveStep
-  const nextX = x + columnDelta * CONFIG.moveStep
+  const nextY = y + rowDelta * maze.moveStep
+  const nextX = x + columnDelta * maze.moveStep
   const probeY = y + rowDelta
   const probeX = x + columnDelta
   const nextCell = cellCoordinateFromGridPoint({ x: nextX, y: nextY })
 
-  if (nextY <= 0 || nextY > state.dims.width * CONFIG.cellSpan) {
+  if (nextY <= 0 || nextY > state.dims.width * maze.cellSpan) {
     return buildCommandState(
       command,
       "invalid",
@@ -130,7 +132,7 @@ function buildMoveCommandState(
     )
   }
 
-  if (nextX <= 0 || nextX > state.dims.length * CONFIG.cellSpan) {
+  if (nextX <= 0 || nextX > state.dims.length * maze.cellSpan) {
     return buildCommandState(
       command,
       "invalid",

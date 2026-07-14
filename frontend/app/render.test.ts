@@ -5,6 +5,8 @@ import { CONFIG } from "./config"
 import { render } from "./render"
 import type { Elements, State } from "./types"
 
+const { messages } = CONFIG
+
 // normalizeScreenText keeps DOM assertions readable by collapsing non-breaking spaces.
 function normalizeScreenText(value: string | null): string {
   return (value ?? "").replaceAll("\u00a0", " ")
@@ -173,9 +175,9 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.navigationCompact)
+    expect(text).toContain(messages.navigation.compact)
     expect(text).toContain("Level 1 needs more screen room!")
-    expect(text).toContain(CONFIG.tooSmallActionMessage)
+    expect(text).toContain(messages.tooSmallActionMessage)
   })
 
   it("renders the maze, markers, and running status line", () => {
@@ -185,7 +187,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.navigation)
+    expect(text).toContain(messages.navigation.default)
     expect(text).toContain("Level: 1")
     expect(text).toContain("Scores: 900")
     expect(elements.screen.innerHTML).toContain('class="maze-cell player"')
@@ -266,8 +268,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.pauseMessage)
-    expect(text).toContain(CONFIG.proceedMessage)
+    expect(text).toContain(messages.pauseMessage)
+    expect(text).toContain(messages.proceedMessage)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -340,8 +342,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.touchProceedMessage)
-    expect(text).not.toContain(CONFIG.proceedMessage)
+    expect(text).toContain(messages.touchProceedMessage)
+    expect(text).not.toContain(messages.proceedMessage)
   })
 
   it("shows walls plus proceed touch controls after a win", () => {
@@ -360,8 +362,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.successMessage)
-    expect(text).toContain(CONFIG.proceedMessage)
+    expect(text).toContain(messages.successMessage)
+    expect(text).toContain(messages.proceedMessage)
     expect(text).toContain("Final Level 3 Scores:  900 (100% retention)")
     expect(text).toContain("1.20s faster than previous (new record)")
 
@@ -409,8 +411,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.failedMessage)
-    expect(text).toContain(CONFIG.proceedMessage)
+    expect(text).toContain(messages.failedMessage)
+    expect(text).toContain(messages.proceedMessage)
     expect(text).not.toContain("Final Level 3 Scores:")
   })
 
@@ -431,7 +433,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain("Level 1 needs more screen room!")
-    expect(text).toContain(CONFIG.tooSmallActionMessage)
+    expect(text).toContain(messages.tooSmallActionMessage)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -476,9 +478,9 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.navigationCompact)
+    expect(text).toContain(messages.navigation.compact)
     expect(text).toContain("Level 1 needs more screen room!")
-    expect(text).toContain(CONFIG.tooSmallActionMessage)
+    expect(text).toContain(messages.tooSmallActionMessage)
     expect(elements.touchControls.hidden).toBe(true)
   })
 
@@ -524,8 +526,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.navigationCompact)
-    expect(text).not.toContain(CONFIG.navigation)
+    expect(text).toContain(messages.navigation.compact)
+    expect(text).not.toContain(messages.navigation.default)
   })
 
   it("keeps the full keyboard navigation on medium-width screens", () => {
@@ -546,7 +548,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.navigation)
-    expect(text).not.toContain(CONFIG.navigationCompact)
+    expect(text).toContain(messages.navigation.default)
+    expect(text).not.toContain(messages.navigation.compact)
   })
 })

@@ -3,9 +3,26 @@ import { APP_VERSION } from "./app/version"
 
 declare const __TAPOO_BUILD_YEAR__: number
 
+// configValue resolves a dotted CONFIG path and rejects missing segments early.
+function configValue(path: string): unknown {
+  return path
+    .split(".")
+    .reduce<unknown>((currentValue, pathSegment) => {
+      if (
+        typeof currentValue !== "object" ||
+        currentValue === null ||
+        !(pathSegment in currentValue)
+      ) {
+        throw new Error(`missing config entry: ${path}`)
+      }
+
+      return currentValue[pathSegment as keyof typeof currentValue]
+    }, CONFIG)
+}
+
 // configText resolves a visible text entry from CONFIG and rejects non-string keys early.
 function configText(key: string): string {
-  const value = CONFIG[key as keyof typeof CONFIG]
+  const value = configValue(key)
   if (typeof value !== "string") {
     throw new Error(`missing translatable config entry: ${key}`)
   }
@@ -57,7 +74,7 @@ function applyDocumentTitle(): void {
 function applyPageVersion(): void {
   const versionCopies = document.querySelectorAll<HTMLElement>("[data-page-version]")
   for (const element of versionCopies) {
-    element.textContent = CONFIG.pageVersionTemplate
+    element.textContent = CONFIG.chrome.pageVersionTemplate
       .replace("{version}", APP_VERSION)
       .replace("{year}", String(__TAPOO_BUILD_YEAR__))
   }

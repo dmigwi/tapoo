@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createAgentMode } from "./agent"
+import { CONFIG, coreDecayIntervalPerCellMs } from "../config"
+import type { MazeAction, MazeActionDispatchOptions } from "../types"
+
+const agentMovePollIntervalMs =
+  coreDecayIntervalPerCellMs("agent-api") * CONFIG.timing.agentMovePollSlackFactor
 
 function createButton({
   action,
@@ -75,7 +80,7 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readAgentContext)
-    await vi.advanceTimersByTimeAsync(1_000)
+    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith(
@@ -190,6 +195,67 @@ describe("agent control mode", () => {
     expect(dispatch).toHaveBeenNthCalledWith(6, { type: "pause" })
     expect(dispatch).toHaveBeenCalledTimes(6)
     expect(mode.readLastActionState()).toBeNull()
+  })
+
+  it("stops polling while the maze is not running and restarts after proceed", async () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [createButton({ action: "proceed" })],
+      touchControls: document.createElement("div"),
+    }
+    elements.app.focus = vi.fn()
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ direction: "MoveRight" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    let status: "paused" | "running" = "paused"
+    const dispatch = vi.fn((action: MazeAction, options?: MazeActionDispatchOptions) => {
+      if (action.type === "proceed") {
+        status = "running"
+        return null
+      }
+
+      if (options?.wantFeedback) {
+        return {
+          expectedResponseType: "MoveAction" as const,
+          instruction: "Choose the next MoveAction.",
+          lastCommand: { type: "MoveRight" as const },
+          lastCommandStatus: "applied" as const,
+          lastCommandMessage: "MoveRight applied.",
+          visitedBefore: false,
+        }
+      }
+
+      return null
+    })
+    const readAgentContext = vi.fn(() => ({
+      currentCell: { row: 0, col: 0 },
+      destinationCell: { row: 0, col: 2 },
+      level: 1,
+      score: 100,
+      status,
+      traversalHistory: [{ row: 0, col: 0 }],
+    }))
+
+    const mode = createAgentMode(elements)
+
+    mode.bindActionDispatch(dispatch, readAgentContext)
+    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    elements.touchButtons[0].click()
+    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "proceed" })
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: "MoveRight" }, { wantFeedback: true })
   })
 
   it("rebinds local controls without keeping stale listeners alive", () => {

@@ -80,12 +80,20 @@ export function createAgentMode(
     ) {
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
-      agentMovePoller = handleAgentTurnLoop({
-        dispatch,
-        dispatchAgentAction,
-        elements,
-        readAgentContext,
-      })
+      agentMovePoller = handleAgentTurnLoop({ dispatch, dispatchAgentAction, elements, readAgentContext })
+
+      // syncAgentMovePoller keeps the HTTP move loop active only while the maze is actually running.
+      const syncAgentMovePoller = (): void => {
+        if (!agentMovePoller) {
+          return
+        }
+
+        agentMovePoller.clearScheduledTurn()
+        agentMovePoller.abortActiveRequest()
+        if (agentMovePoller.shouldPollAgent()) {
+          agentMovePoller.scheduleNextAgentTurn()
+        }
+      }
 
       elements.touchButtons.forEach((button) => {
         const onClick = (): void => {
@@ -97,6 +105,7 @@ export function createAgentMode(
           focusApp()
           // Local human session actions stay on the lightweight path and do not ask for feedback.
           dispatch(command)
+          syncAgentMovePoller()
         }
 
         touchHandlers.push({ button, onClick })
@@ -112,6 +121,7 @@ export function createAgentMode(
         event.preventDefault()
         // Local human session actions stay on the lightweight path and do not ask for feedback.
         dispatch(command)
+        syncAgentMovePoller()
       }
 
       window.addEventListener("keydown", keydownHandler, { passive: false })
@@ -119,7 +129,7 @@ export function createAgentMode(
       attached = true
       agentMovePoller.setAttached(true)
       agentMovePoller.setLastActionState(lastActionState)
-      agentMovePoller.scheduleNextAgentTurn()
+      syncAgentMovePoller()
     },
     // readLastActionState exposes the latest stored response state for agent-side consumers.
     readLastActionState() {

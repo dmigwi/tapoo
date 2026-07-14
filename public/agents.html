@@ -6,10 +6,10 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <title data-config-key="agentsDocumentTitle"></title>
+    <title data-config-key="pages.agents.documentTitle"></title>
     <meta
       name="description"
-      data-config-key="agentsDescription"
+      data-config-key="pages.agents.description"
       content=""
     />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
@@ -19,9 +19,9 @@
     <main class="app-shell">
       <header class="top-bar" aria-label="Application controls">
         <div class="top-bar__brand">
-          <strong class="top-bar__title" data-config-text data-config-key="appName"></strong>
-          <span class="top-bar__subtitle" data-config-text data-config-key="appSubtitle"></span>
-          <span class="top-bar__page-tag" aria-current="page" data-config-text data-config-key="agentsPageLabel"></span>
+          <strong class="top-bar__title" data-config-text data-config-key="chrome.appName"></strong>
+          <span class="top-bar__subtitle" data-config-text data-config-key="chrome.appSubtitle"></span>
+          <span class="top-bar__page-tag" aria-current="page" data-config-text data-config-key="pages.agents.pageLabel"></span>
         </div>
         <details class="top-menu">
           <summary class="top-bar__button top-bar__button--icon top-menu__summary" aria-label="More actions">
@@ -47,10 +47,10 @@
                     stroke-width="1.8"
                   />
                 </svg>
-              </span><span data-config-text data-config-key="backToGameLabel"></span>
+              </span><span data-config-text data-config-key="pages.agents.backToGameLabel"></span>
             </a>
             <button class="top-menu__item" type="button" data-action="restart" aria-label="Caution reset progress">
-              <span class="top-bar__warning" aria-hidden="true">⚠</span><span data-config-text data-config-key="resetProgressLabel"></span>
+              <span class="top-bar__warning" aria-hidden="true">⚠</span><span data-config-text data-config-key="pages.agents.resetProgressLabel"></span>
             </button>
             <a
               class="top-menu__item"
@@ -71,7 +71,7 @@
                     stroke-width="1.8"
                   />
                 </svg>
-              </span><span data-config-text data-config-key="contactLabel"></span>
+              </span><span data-config-text data-config-key="chrome.contactLabel"></span>
             </a>
           </div>
         </details>
@@ -90,7 +90,7 @@
                   data-touch-control="true"
                   data-action="walls"
                   data-config-text
-                  data-config-key="wallsTouchLabel"
+                  data-config-key="controls.touch.wallsLabel"
                 >
                 </button>
                 <button
@@ -153,7 +153,7 @@
                   data-touch-control="true"
                   data-action="pause"
                   data-config-text
-                  data-config-key="pauseTouchLabel"
+                  data-config-key="controls.touch.pauseLabel"
                 >
                 </button>
                 <button
@@ -180,7 +180,7 @@
                   data-touch-control="true"
                   data-action="proceed"
                   data-config-text
-                  data-config-key="proceedTouchLabel"
+                  data-config-key="controls.touch.proceedLabel"
                 >
                 </button>
               </div>

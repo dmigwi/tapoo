@@ -1,16 +1,13 @@
-import {
-  CONFIG,
-  MIN_TERMINAL_COLUMNS,
-  MIN_TERMINAL_ROWS,
-  TERMINAL_SAMPLE_WIDTH,
-} from "./config"
+import { CONFIG } from "./config"
 import type { BaseDimensions, Elements } from "./types"
+
+const { runtime, viewport } = CONFIG
 
 // mustElement fetches a required terminal node and fails fast when it is missing.
 function mustElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id)
   if (!(element instanceof HTMLElement)) {
-    throw new Error(CONFIG.missingElementErrorTemplate.replace("{id}", id))
+    throw new Error(runtime.missingElementErrorTemplate.replace("{id}", id))
   }
 
   return element as T
@@ -55,28 +52,28 @@ export function getTerminalSize(elements: Elements): BaseDimensions {
   const rect = elements.body.getBoundingClientRect()
   const sampleRect = elements.measure.getBoundingClientRect()
   const screenStyle = window.getComputedStyle(elements.screen)
-  const charWidth = sampleRect.width / TERMINAL_SAMPLE_WIDTH || 9
+  const charWidth = sampleRect.width / viewport.terminalSampleWidth || 9
   const measuredRowHeight = sampleRect.height
   const computedLineHeight = Number.parseFloat(screenStyle.lineHeight)
   const computedFontSize = Number.parseFloat(screenStyle.fontSize)
   const terminalRowHeight =
     measuredRowHeight || computedLineHeight || computedFontSize || 16
   const terminalColumns = Math.max(
-    MIN_TERMINAL_COLUMNS,
+    viewport.minTerminalColumns,
     Math.floor(rect.width / charWidth),
   )
   const terminalRows = Math.max(
-    MIN_TERMINAL_ROWS,
+    viewport.minTerminalRows,
     Math.floor(rect.height / terminalRowHeight),
   )
 
   return {
     length: Math.floor(
-      (terminalColumns - CONFIG.terminalHeightInset) /
-        CONFIG.terminalHeightScale,
+      (terminalColumns - viewport.terminalHeightInset) /
+        viewport.terminalHeightScale,
     ),
     width: Math.floor(
-      (terminalRows - CONFIG.terminalWidthInset) / CONFIG.terminalWidthScale,
+      (terminalRows - viewport.terminalWidthInset) / viewport.terminalWidthScale,
     ),
   }
 }

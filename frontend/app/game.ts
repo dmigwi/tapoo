@@ -1,5 +1,9 @@
 import { GameClock } from "./clock"
-import { CONFIG, ROUND_STORAGE_VERSION, WALL_WEIGHTS } from "./config"
+import {
+  CONFIG,
+  coreDecayIntervalPerCellMs,
+  WALL_WEIGHTS,
+} from "./config"
 import { executeActionWithFeedback } from "./cmd-feedback"
 import { getTerminalSize } from "./dom"
 import {
@@ -37,6 +41,8 @@ import type {
   State,
 } from "./types"
 
+const { maze, messages, runtime, scoring, timing } = CONFIG
+
 const state: State = {
   controlMode: "interactive",
   level: 1,
@@ -69,10 +75,21 @@ const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
   MoveDown: [1, 0],
 }
 
+// activeCoreDecayIntervalPerCellMs resolves the current mode's per-cell timing budget.
+function activeCoreDecayIntervalPerCellMs(): number {
+  return coreDecayIntervalPerCellMs(state.controlMode)
+}
+
 // calculateScore converts elapsed time into the remaining score for a round.
-function calculateScore(totalCells: number, elapsedMs: number): number {
-  const maxScore = totalCells * CONFIG.scoreMultiplier
-  const elapsedPenalty = Math.floor((elapsedMs * CONFIG.scoreMultiplier) / 1000)
+function calculateScore(
+  totalCells: number,
+  elapsedMs: number,
+  decayIntervalPerCellMs: number,
+): number {
+  const maxScore = totalCells * scoring.budgetMultiplier
+  const elapsedPenalty = Math.floor(
+    (elapsedMs * timing.scoreDecayRate) / decayIntervalPerCellMs,
+  )
 
   return Math.max(0, maxScore - elapsedPenalty)
 }
@@ -95,7 +112,7 @@ function formatWinSummaryDuration(durationMs: number): string {
 
 // calculateScoreRetention normalizes a score into the retained percentage scale.
 function calculateScoreRetention(totalCells: number, score: number): number {
-  const maxScore = totalCells * CONFIG.scoreMultiplier
+  const maxScore = totalCells * scoring.budgetMultiplier
   if (maxScore <= 0) {
     return 0
   }
@@ -103,9 +120,9 @@ function calculateScoreRetention(totalCells: number, score: number): number {
   return Math.max(
     0,
     Math.min(
-      CONFIG.retentionScale,
+      scoring.retentionScale,
       Math.floor(
-        (score * CONFIG.retentionScale + Math.floor(maxScore / 2)) / maxScore,
+        (score * scoring.retentionScale + Math.floor(maxScore / 2)) / maxScore,
       ),
     ),
   )
@@ -117,7 +134,7 @@ function formatWinSummaryRetentionDelta(
   levelDurationMs: number,
 ): string {
   const deltaMs = Math.round(
-    (deltaRetention * levelDurationMs) / CONFIG.retentionScale,
+    (deltaRetention * levelDurationMs) / scoring.retentionScale,
   )
   return formatWinSummaryDuration(deltaMs)
 }
@@ -195,49 +212,49 @@ function selectWinSummaryTemplate(
 ): string {
   if (previousComparison === "none") {
     if (bestComparison === "new-record") {
-      return CONFIG.winNoPrevNewRecord
+      return messages.winSummary.noPrevious.newRecord
     }
 
     if (bestComparison === "matched-best") {
-      return CONFIG.winNoPrevMatchedBest
+      return messages.winSummary.noPrevious.matchedBest
     }
 
-    return CONFIG.winNoPrevBehindBest
+    return messages.winSummary.noPrevious.behindBest
   }
 
   if (previousComparison === "faster") {
     if (bestComparison === "new-record") {
-      return CONFIG.winFasterPrevNewRecord
+      return messages.winSummary.fasterPrevious.newRecord
     }
 
     if (bestComparison === "matched-best") {
-      return CONFIG.winFasterPrevMatchedBest
+      return messages.winSummary.fasterPrevious.matchedBest
     }
 
-    return CONFIG.winFasterPrevBehindBest
+    return messages.winSummary.fasterPrevious.behindBest
   }
 
   if (previousComparison === "slower") {
     if (bestComparison === "new-record") {
-      return CONFIG.winSlowerPrevNewRecord
+      return messages.winSummary.slowerPrevious.newRecord
     }
 
     if (bestComparison === "matched-best") {
-      return CONFIG.winSlowerPrevMatchedBest
+      return messages.winSummary.slowerPrevious.matchedBest
     }
 
-    return CONFIG.winSlowerPrevBehindBest
+    return messages.winSummary.slowerPrevious.behindBest
   }
 
   if (bestComparison === "new-record") {
-    return CONFIG.winMatchedPrevNewRecord
+    return messages.winSummary.matchedPrevious.newRecord
   }
 
   if (bestComparison === "matched-best") {
-    return CONFIG.winMatchedPrevBest
+    return messages.winSummary.matchedPrevious.matchedBest
   }
 
-  return CONFIG.winMatchedPrevBehindBest
+  return messages.winSummary.matchedPrevious.behindBest
 }
 
 // buildWinSummary assembles the final retention summary shown after a win.
@@ -273,8 +290,8 @@ function positionsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean 
 // cellCoordinateFromGridPoint converts one rendered maze-grid point into a logical cell position.
 function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate {
   return {
-    row: Math.floor((position.y - 1) / CONFIG.cellSpan),
-    col: Math.floor((position.x - 1) / CONFIG.cellSpan),
+    row: Math.floor((position.y - 1) / maze.cellSpan),
+    col: Math.floor((position.x - 1) / maze.cellSpan),
   }
 }
 
@@ -300,8 +317,8 @@ function readAgentContext(): MazeAgentContext {
 // gridPointFromCellCoordinate expands a logical cell position back into rendered maze-grid space.
 function gridPointFromCellCoordinate(cell: CellCoordinate): RenderGridPoint {
   return {
-    x: cell.col * CONFIG.cellSpan + 1,
-    y: cell.row * CONFIG.cellSpan + 1,
+    x: cell.col * maze.cellSpan + 1,
+    y: cell.row * maze.cellSpan + 1,
   }
 }
 
@@ -342,8 +359,14 @@ function isCellCoordinate(value: unknown): value is CellCoordinate {
 }
 
 // restoreClock reconstructs a live clock from persisted remaining time.
-function restoreClock(totalCells: number, remainingMs: number): GameClock {
-  const totalDurationMs = totalCells * 1000
+function restoreClock(
+  totalCells: number,
+  remainingMs: number,
+  controlMode = state.controlMode,
+): GameClock {
+  // Round timing is derived from the shared per-cell cadence so score decay, persisted remaining
+  // time, and any agent polling policy all reconstruct the same allowance after a reload.
+  const totalDurationMs = totalCells * coreDecayIntervalPerCellMs(controlMode)
   const clampedRemainingMs = Math.max(0, Math.min(totalDurationMs, remainingMs))
   const clock = new GameClock(totalDurationMs)
   clock.startedAt = performance.now() - (totalDurationMs - clampedRemainingMs)
@@ -383,7 +406,7 @@ function applyTooSmallState(level: number): void {
 // isValidPersistedRound verifies that a restored round is internally consistent.
 function isValidPersistedRound(snapshot: PersistedRound): boolean {
   if (
-    snapshot.version !== ROUND_STORAGE_VERSION ||
+    snapshot.version !== runtime.roundStorageVersion ||
     snapshot.level < 1 ||
     !isWallWeight(snapshot.wallWeight) ||
     snapshot.dims.length <= 0 ||
@@ -392,7 +415,7 @@ function isValidPersistedRound(snapshot: PersistedRound): boolean {
     return false
   }
 
-  const expectedRows = CONFIG.cellSpan * snapshot.dims.width + 1
+  const expectedRows = maze.cellSpan * snapshot.dims.width + 1
   const expectedColumns = snapshot.dims.length * 2 + 1
   if (snapshot.maze.length !== expectedRows) {
     return false
@@ -541,7 +564,7 @@ function scheduleRoundPersistence(): void {
   scheduledRoundPersist = window.setTimeout(() => {
     scheduledRoundPersist = null
     savePersistedRoundState(state)
-  }, CONFIG.refreshInterval)
+  }, timing.refreshInterval)
 }
 
 // restorePersistedRound rebuilds a saved round or falls back when it is invalid.
@@ -643,8 +666,10 @@ function startRound(level: number, persist = true): void {
   state.winSummary = ""
 
   const totalCells = dimensions.length * dimensions.width
-  state.clock = new GameClock(totalCells * 1000)
-  state.score = calculateScore(totalCells, 0)
+  // The round clock uses the shared per-cell cadence to set both the starting score window and the
+  // maximum amount of playable time for this maze size.
+  state.clock = new GameClock(totalCells * activeCoreDecayIntervalPerCellMs())
+  state.score = calculateScore(totalCells, 0, activeCoreDecayIntervalPerCellMs())
   if (persist) {
     persistStateNow()
   }
@@ -716,8 +741,9 @@ function handleWinCheck(): boolean {
   if (state.clock && state.dims) {
     const totalCells = state.dims.length * state.dims.width
     const elapsedMs = state.clock.elapsed()
-    const levelDurationMs = totalCells * 1000
-    state.score = calculateScore(totalCells, elapsedMs)
+    const decayIntervalPerCellMs = activeCoreDecayIntervalPerCellMs()
+    const levelDurationMs = totalCells * decayIntervalPerCellMs
+    state.score = calculateScore(totalCells, elapsedMs, decayIntervalPerCellMs)
 
     if (
       state.playerPosition &&
@@ -767,16 +793,16 @@ function movePlayer(rowDelta: number, columnDelta: number): void {
 
   const x = state.playerPosition.x
   const y = state.playerPosition.y
-  const nextY = y + rowDelta * CONFIG.moveStep
-  const nextX = x + columnDelta * CONFIG.moveStep
+  const nextY = y + rowDelta * maze.moveStep
+  const nextX = x + columnDelta * maze.moveStep
   const probeY = y + rowDelta
   const probeX = x + columnDelta
 
-  if (nextY <= 0 || nextY > state.dims.width * CONFIG.cellSpan) {
+  if (nextY <= 0 || nextY > state.dims.width * maze.cellSpan) {
     return
   }
 
-  if (nextX <= 0 || nextX > state.dims.length * CONFIG.cellSpan) {
+  if (nextX <= 0 || nextX > state.dims.length * maze.cellSpan) {
     return
   }
 
@@ -807,7 +833,11 @@ function handleLoss(): void {
 
   if (state.clock) {
     const totalCells = state.dims.length * state.dims.width
-    state.score = calculateScore(totalCells, state.clock.elapsed())
+    state.score = calculateScore(
+      totalCells,
+      state.clock.elapsed(),
+      activeCoreDecayIntervalPerCellMs(),
+    )
   }
 
   state.status = "lost"
@@ -826,7 +856,11 @@ function tick(): void {
   }
 
   const totalCells = state.dims.length * state.dims.width
-  const nextScore = calculateScore(totalCells, state.clock.elapsed())
+  const nextScore = calculateScore(
+    totalCells,
+    state.clock.elapsed(),
+    activeCoreDecayIntervalPerCellMs(),
+  )
   const remainingMs = state.clock.remaining()
   const nextBlinkVisible = state.clock.blink()
   const scoreChanged = nextScore !== state.score
@@ -937,7 +971,7 @@ export function bootstrapGame(
   window.addEventListener("pagehide", () => {
     persistStateNow()
   })
-  window.setInterval(tick, CONFIG.refreshInterval)
+  window.setInterval(tick, timing.refreshInterval)
 
   const persistedSnapshot = loadPersistedSnapshot(
     1,
