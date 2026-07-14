@@ -96,6 +96,28 @@ export const CONFIG: AppConfig = {
         behindBest: "Matched previous ({bestDelta} behind best)",
       },
     },
+    agentWinSummary: {
+      noPrevious: {
+        newRecord: "New lowest request count",
+        matchedBest: "Matched best request count",
+        behindBest: "{delta} requests behind best",
+      },
+      fewerPrevious: {
+        newRecord: "{delta} fewer requests than previous (new record)",
+        matchedBest: "{delta} fewer requests than previous (matched best)",
+        behindBest: "{delta} fewer requests than previous ({bestDelta} behind best)",
+      },
+      morePrevious: {
+        newRecord: "{delta} more requests than previous (new record)",
+        matchedBest: "{delta} more requests than previous (matched best)",
+        behindBest: "{delta} more requests than previous ({bestDelta} behind best)",
+      },
+      matchedPrevious: {
+        newRecord: "Matched previous request count (new record)",
+        matchedBest: "Matched previous request count (matched best)",
+        behindBest: "Matched previous request count ({bestDelta} behind best)",
+      },
+    },
   },
   // Touch-control labels used by the browser action pad.
   controls: {
@@ -143,6 +165,8 @@ export const CONFIG: AppConfig = {
     scoreDecayRate: 100,
     interactiveCoreDecayIntervalPerCellMs: 1_000, // Translates to 1s
     agentApiCoreDecayIntervalPerCellMs: 3_000,    // Translates to 3s
+    agentApiResponseTimeoutMs: 180_000,           // Translates to 3min
+    agentApiResponsePenaltyIntervalMs: 30_000,    // Translates to 30s
     // 1.0 matches the agent core per-cell scores decay rate. 1.2 means the agent may get polled 20%
     // slower than that rate while still having a reasonable chance to finish because winning paths
     // are usually shorter than full-maze coverage. Treat ~1.25 as the caution line, ~1.4 as mostly
@@ -163,9 +187,10 @@ export const CONFIG: AppConfig = {
   },
   // Runtime settings back persistence validation and agent-mode bootstrapping.
   runtime: {
-    roundStorageVersion: 1,
+    roundStorageVersion: 2,
     defaultAgentMoveEndpoint: "/api/agent/move",
     missingElementErrorTemplate: "missing required element: {id}",
+    agentApiMistakePenaltyMoves: 5,
   },
 }
 

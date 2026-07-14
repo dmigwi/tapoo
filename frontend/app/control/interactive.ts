@@ -93,8 +93,9 @@ export function createInteractiveMode(
     // name lets the runtime identify which MazeActionControl implementation is active.
     name: "interactive",
     // bindActionDispatch connects browser keyboard and button events to the shared action dispatcher.
-    bindActionDispatch(dispatch, readAgentContext) {
-      void readAgentContext
+    bindActionDispatch(dispatch, readActionState, commitAgentTurn) {
+      void readActionState
+      void commitAgentTurn
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
 

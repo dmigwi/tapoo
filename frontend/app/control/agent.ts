@@ -42,8 +42,7 @@ export function createAgentMode(
       onBeforeRelease: () => {
         attached = false
         agentMovePoller?.setAttached(false)
-        agentMovePoller?.clearScheduledTurn()
-        agentMovePoller?.abortActiveRequest()
+        agentMovePoller?.stopPolling()
       },
       removeAppFocus: () => {
         elements.app.removeEventListener("click", focusApp)
@@ -61,11 +60,13 @@ export function createAgentMode(
   const dispatchAgentAction = (
     action: MazeAction,
     dispatch: MazeActionDispatch,
-  ): MazeActionState | null => {
+  ): MazeActionState => {
     const actionState = dispatch(action, { wantFeedback: true })
-    if (actionState) {
-      lastActionState = actionState
+    if (!actionState) {
+      throw new Error("agent move dispatch must return feedback")
     }
+
+    lastActionState = actionState
     return actionState
   }
 
@@ -76,11 +77,21 @@ export function createAgentMode(
     // bindActionDispatch starts the HTTP-driven move loop while keeping session controls local.
     bindActionDispatch(
       dispatch: MazeActionDispatch,
-      readAgentContext,
+      readActionState,
+      commitAgentTurn,
     ) {
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
-      agentMovePoller = handleAgentTurnLoop({ dispatch, dispatchAgentAction, elements, readAgentContext })
+      agentMovePoller = handleAgentTurnLoop({
+        commitAgentTurn,
+        dispatch,
+        dispatchAgentAction,
+        elements,
+        onActionState: (actionState) => {
+          lastActionState = actionState
+        },
+        readActionState,
+      })
 
       // syncAgentMovePoller keeps the HTTP move loop active only while the maze is actually running.
       const syncAgentMovePoller = (): void => {
@@ -88,8 +99,7 @@ export function createAgentMode(
           return
         }
 
-        agentMovePoller.clearScheduledTurn()
-        agentMovePoller.abortActiveRequest()
+        agentMovePoller.stopPolling()
         if (agentMovePoller.shouldPollAgent()) {
           agentMovePoller.scheduleNextAgentTurn()
         }

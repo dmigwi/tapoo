@@ -97,7 +97,7 @@ function createHorizontalRound(): RoundState {
 // createPersistedWonRound simulates a stored win that can proceed into the next level.
 function createPersistedWonRound(): PersistedRound {
   return {
-    version: 1,
+    version: 2,
     level: 3,
     dims: { length: 1, width: 1 },
     maze: [
@@ -244,6 +244,11 @@ async function bootstrapHarness({
   vi.doMock("./maze", () => ({
     generateMaze,
     getMazeDimensions,
+    getNavigationProfile: vi.fn(() => ({
+      __softCorridorLimit: 8,
+      __hardCorridorLimit: 10,
+      __preferTurnPercent: 90,
+    })),
   }))
   vi.doMock("./traversal", () => ({
     isSpaceFound: vi.fn(isSpaceFound),
@@ -329,6 +334,11 @@ describe("bootstrapGame", () => {
     vi.doMock("./maze", () => ({
       generateMaze,
       getMazeDimensions,
+      getNavigationProfile: vi.fn(() => ({
+        __softCorridorLimit: 8,
+        __hardCorridorLimit: 10,
+        __preferTurnPercent: 90,
+      })),
     }))
     vi.doMock("./traversal", () => ({
       isSpaceFound: vi.fn(() => true),
@@ -354,6 +364,7 @@ describe("bootstrapGame", () => {
     bootstrapGame(createInteractiveMode(elements), elements)
 
     expect(loadPersistedSnapshot).toHaveBeenCalledWith(
+      "interactive",
       1,
       1,
       expect.any(Function),
@@ -394,6 +405,11 @@ describe("bootstrapGame", () => {
         level: 1,
         length: 1,
         width: 1,
+      })),
+      getNavigationProfile: vi.fn(() => ({
+        __softCorridorLimit: 8,
+        __hardCorridorLimit: 10,
+        __preferTurnPercent: 90,
       })),
     }))
     vi.doMock("./traversal", () => ({
@@ -447,6 +463,11 @@ describe("bootstrapGame", () => {
     vi.doMock("./maze", () => ({
       generateMaze,
       getMazeDimensions,
+      getNavigationProfile: vi.fn(() => ({
+        __softCorridorLimit: 8,
+        __hardCorridorLimit: 10,
+        __preferTurnPercent: 90,
+      })),
     }))
     vi.doMock("./traversal", () => ({
       isSpaceFound: vi.fn(() => true),
@@ -502,6 +523,11 @@ describe("bootstrapGame", () => {
     vi.doMock("./maze", () => ({
       generateMaze: vi.fn(() => createRound()),
       getMazeDimensions: vi.fn(() => ({ level: 1, length: 1, width: 1 })),
+      getNavigationProfile: vi.fn(() => ({
+        __softCorridorLimit: 8,
+        __hardCorridorLimit: 10,
+        __preferTurnPercent: 90,
+      })),
     }))
     vi.doMock("./traversal", () => ({
       isSpaceFound: vi.fn(() => true),
@@ -699,7 +725,7 @@ describe("bootstrapGame", () => {
   })
 
 
-  it("marks the round as lost when the tick callback reaches zero remaining time", async () => {
+  it("marks the round as lost when the refresh callback reaches zero remaining time", async () => {
     const harness = await bootstrapHarness({
       dimensionsResults: [{ level: 1, length: 2, width: 1 }],
       round: createHorizontalRound(),
@@ -786,7 +812,7 @@ describe("bootstrapGame", () => {
 
   it("restores a persisted round in paused mode once the viewport fits again", async () => {
     const persistedRound: PersistedRound = {
-      version: 1,
+      version: 2,
       level: 1,
       dims: { length: 2, width: 1 },
       maze: createHorizontalRound().maze,
@@ -838,7 +864,7 @@ describe("bootstrapGame", () => {
 
   it("rejects malformed persisted traversal history and falls back to a fresh round", async () => {
     const invalidPersistedRound: PersistedRound = {
-      version: 1,
+      version: 2,
       level: 2,
       dims: { length: 2, width: 1 },
       maze: createHorizontalRound().maze,
@@ -945,14 +971,15 @@ describe("bootstrapGame", () => {
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("won")
     expect(state.playerPosition).toEqual({ x: 3, y: 1 })
-    expect(actionState).toEqual({
-      expectedResponseType: "MoveAction",
-      instruction: "Choose the next MoveAction.",
-      lastCommand: { type: "MoveRight" },
-      lastCommandStatus: "reached-target",
-      lastCommandMessage: "MoveRight reached target.",
+    expect(actionState).toEqual(expect.objectContaining({
+      currentCell: { row: 0, col: 1 },
+      destinationCell: { row: 0, col: 1 },
+      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+      lastMoveStatus: "reached-target",
       visitedBefore: false,
-    })
+      submittedMoves: ["0:MoveRight"],
+      lastValidMoveIndex: 0,
+    }))
     expect(harness.mode.readLastActionState()).toEqual(actionState)
   })
 

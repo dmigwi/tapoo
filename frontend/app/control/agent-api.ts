@@ -1,195 +1,235 @@
 import { CONFIG, coreDecayIntervalPerCellMs } from "../config"
+import { mergeMazeActionState } from "../cmd-feedback"
+import { isRunningStatus } from "../status"
 import type {
-  CommandStatus,
-  Elements,
-  MazeAgentContext,
   MazeAction,
   MazeActionDispatch,
-  MazeAgentExpectedResponseType,
   MazeActionState,
+  MoveAction,
 } from "../types"
 
 const { runtime, timing } = CONFIG
-const agentMovePollIntervalMs =
-  coreDecayIntervalPerCellMs("agent-api") * timing.agentMovePollSlackFactor
 
-// AgentMoveRequest is the flattened HTTP payload sent to the external agent for the next move decision.
-export type AgentMoveRequest = {
-  currentCell: MazeAgentContext["currentCell"]
-  destinationCell: MazeAgentContext["destinationCell"]
-  level: number
-  score: number
-  status: MazeAgentContext["status"]
-  traversalHistory: MazeAgentContext["traversalHistory"]
-  lastCommand: MazeAction | null
-  lastCommandStatus: CommandStatus | null
-  lastCommandMessage: string | null
-  instruction: string | null
-  expectedResponseType: MazeAgentExpectedResponseType | null
-  visitedBefore: boolean | null
+const agentMovePollIntervalMs = Math.round(
+  coreDecayIntervalPerCellMs("agent-api") * timing.agentMovePollSlackFactor,
+)
+
+type AgentPredictionResponse = {
+  moves?: unknown
 }
 
-// AgentMoveResponse is the compact HTTP response expected back from the external agent.
-export type AgentMoveResponse = {
-  direction?: string
-  move?: string
+// isMoveAction validates one raw prediction entry against the supported move vocabulary.
+function isMoveAction(value: unknown): value is MoveAction {
+  return (
+    value === "MoveUp" ||
+    value === "MoveDown" ||
+    value === "MoveLeft" ||
+    value === "MoveRight"
+  )
 }
 
-type AgentMovePollerState = {
-  activeRequest: AbortController | null
-  attached: boolean
-  lastActionState: MazeActionState | null
-  turnTimeout: number | null
+// parseAgentPrediction extracts the single supported prediction payload from one HTTP response.
+function parseAgentPrediction(payload: unknown): MoveAction[] | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null
+  }
+
+  const { moves } = payload as AgentPredictionResponse
+  if (!Array.isArray(moves) || moves.length === 0) {
+    return null
+  }
+  return moves.every(isMoveAction) ? [...moves] : null
 }
 
-type AgentMovePollerOptions = {
-  elements: Elements
-  readAgentContext: () => MazeAgentContext
-  dispatchAgentAction: (
-    action: MazeAction,
-    dispatch: MazeActionDispatch,
-  ) => MazeActionState | null
-  dispatch: MazeActionDispatch
+// mergeReplayResult reapplies replay metadata on top of the latest committed base state.
+function mergeReplayResult(
+  actionState: MazeActionState,
+  overrides: Partial<MazeActionState>,
+): MazeActionState {
+  return mergeMazeActionState(actionState, overrides)
 }
 
 export type AgentMovePoller = {
-  abortActiveRequest: () => void
-  clearScheduledTurn: () => void
   scheduleNextAgentTurn: () => void
-  shouldPollAgent: () => boolean
   setAttached: (attached: boolean) => void
   setLastActionState: (actionState: MazeActionState | null) => void
+  stopPolling: () => void
+  shouldPollAgent: () => boolean
 }
 
-// agentMoveEndpoint resolves the configured HTTP endpoint for agent move polling.
-export function agentMoveEndpoint(elements: Elements): string {
-  return elements.body.dataset.tapooAgentEndpoint ?? runtime.defaultAgentMoveEndpoint
-}
-
-// agentMoveFromResponse extracts one supported maze move from the agent's HTTP response.
-export function agentMoveFromResponse(
-  payload: AgentMoveResponse,
-): MazeAction | null {
-  const move = payload.move ?? payload.direction
-  switch (move) {
-    case "MoveLeft":
-    case "MoveRight":
-    case "MoveUp":
-    case "MoveDown":
-      return { type: move }
-    default:
-      return null
-  }
-}
-
-// buildAgentMoveRequest flattens runtime context plus the last command state into one agent-facing payload.
-function buildAgentMoveRequest(
-  context: MazeAgentContext,
-  actionState: MazeActionState | null,
-): AgentMoveRequest {
-  return {
-    currentCell: context.currentCell,
-    destinationCell: context.destinationCell,
-    level: context.level,
-    score: context.score,
-    status: context.status,
-    traversalHistory: context.traversalHistory,
-    lastCommand: actionState?.lastCommand ?? null,
-    lastCommandStatus: actionState?.lastCommandStatus ?? null,
-    lastCommandMessage: actionState?.lastCommandMessage ?? null,
-    instruction: actionState?.instruction ?? null,
-    expectedResponseType: actionState?.expectedResponseType ?? null,
-    visitedBefore: actionState?.visitedBefore ?? null,
-  }
+type HandleAgentTurnLoopOptions = {
+  elements: { body: HTMLElement }
+  commitAgentTurn: (decayedMovesCount: number) => MazeActionState
+  dispatch: MazeActionDispatch
+  dispatchAgentAction: (
+    action: MazeAction,
+    dispatch: MazeActionDispatch,
+  ) => MazeActionState
+  onActionState: (actionState: MazeActionState) => void
+  readActionState: () => MazeActionState
 }
 
 // handleAgentTurnLoop owns the HTTP polling cycle used by the agent-api control mode.
-export function handleAgentTurnLoop(
-  options: AgentMovePollerOptions,
-): AgentMovePoller {
-  const state: AgentMovePollerState = {
-    activeRequest: null,
-    attached: false,
-    lastActionState: null,
-    turnTimeout: null,
+export function handleAgentTurnLoop({
+  commitAgentTurn, dispatch, dispatchAgentAction, elements, onActionState, readActionState,
+}: HandleAgentTurnLoopOptions): AgentMovePoller {
+  let attached = false
+  let scheduledTurn: number | null = null
+  let activeController: AbortController | null = null
+  let activeTimeout: number | null = null
+  let lastActionState: MazeActionState | null = null
+
+  // activeActionState returns the most recent replay state, or the live base state before any replay exists.
+  const activeActionState = (): MazeActionState => lastActionState ?? readActionState()
+
+  // clearScheduledTurn stops any queued request cycle.
+  const clearScheduledTurn = (): void => {
+    if (scheduledTurn === null) {
+      return
+    }
+
+    window.clearTimeout(scheduledTurn)
+    scheduledTurn = null
   }
-  const {
-    elements,
-    readAgentContext,
-    dispatchAgentAction,
-    dispatch,
-  } = options
+
+  // abortActiveRequest cancels the in-flight HTTP request and its timeout watcher.
+  const abortActiveRequest = (): void => {
+    activeController?.abort()
+    activeController = null
+    if (activeTimeout !== null) {
+      window.clearTimeout(activeTimeout)
+      activeTimeout = null
+    }
+  }
+
+  // stopPolling clears both queued and active work so callers can reset the loop in one step.
+  const stopPolling = (): void => {
+    clearScheduledTurn()
+    abortActiveRequest()
+  }
+
+  // shouldPollAgent only keeps the replay loop alive while the live round is actively running.
+  const shouldPollAgent = (): boolean => attached && isRunningStatus(readActionState().status)
 
   // scheduleNextAgentTurn waits for the derived agent-api poll interval before asking again.
   const scheduleNextAgentTurn = (): void => {
+    clearScheduledTurn()
     if (!shouldPollAgent()) {
       return
     }
 
-    state.turnTimeout = window.setTimeout(() => {
-      state.turnTimeout = null
+    scheduledTurn = window.setTimeout(() => {
+      scheduledTurn = null
       void requestNextAgentTurn()
     }, agentMovePollIntervalMs)
   }
 
-  // shouldPollAgent reports whether the current maze state can accept another agent move.
-  const shouldPollAgent = (): boolean => {
-    const context = readAgentContext()
-    return (
-      state.attached &&
-      context.status === "running" &&
-      Boolean(context.currentCell) &&
-      Boolean(context.destinationCell)
-    )
-  }
-
-  // requestNextAgentTurn fetches one traversal direction from the HTTP agent and applies it.
+  // requestNextAgentTurn submits the current maze state and replays one predicted batch in order.
   const requestNextAgentTurn = async (): Promise<void> => {
-    const context = readAgentContext()
-    if (!state.attached) {
+    if (!shouldPollAgent()) {
       return
     }
 
-    if (context.status !== "running" || !context.currentCell || !context.destinationCell) {
-      return
-    }
-
+    let didTimeout = false
+    // AbortController lets the timeout watcher cancel slow requests cleanly.
     const controller = new AbortController()
-    state.activeRequest = controller
+    activeController = controller
+    activeTimeout = window.setTimeout(() => {
+      didTimeout = true
+      controller.abort()
+    }, timing.agentApiResponseTimeoutMs)
 
     try {
-      const response = await fetch(agentMoveEndpoint(elements), {
-        method: "POST",
+      const response = await fetch(runtime.defaultAgentMoveEndpoint, {
+        body: JSON.stringify(activeActionState()),
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(
-          buildAgentMoveRequest(context, state.lastActionState),
-        ),
+        method: "POST",
         signal: controller.signal,
       })
+
       if (!response.ok) {
         return
       }
 
-      const payload = (await response.json()) as unknown as AgentMoveResponse
-      const action = agentMoveFromResponse(payload)
-      if (!action) {
+      const submittedMoves = parseAgentPrediction(await response.json())
+
+      if (!submittedMoves) {
+        // Malformed payloads spend the fixed mistake decay without replaying any move.
+        const decayedMovesCount = runtime.agentApiMistakePenaltyMoves
+        const nextState = mergeMazeActionState(
+          commitAgentTurn(decayedMovesCount),
+          { lastMoveStatus: "malformed-response" },
+        )
+        lastActionState = nextState
+        onActionState(nextState)
         return
       }
 
-      const actionState = dispatchAgentAction(action, dispatch)
-      if (actionState) {
-        state.lastActionState = actionState
+      let lastReplayState: MazeActionState | null = null
+      let appliedMoveCount = 0
+
+      for (const move of submittedMoves) {
+        const replayState = dispatchAgentAction({ type: move }, dispatch)
+        lastReplayState = replayState
+        const status = replayState.lastMoveStatus
+
+        if (status === "reached-target") {
+          appliedMoveCount += 1
+          // The destination was reached, so no later prediction can affect this replay.
+          break
+        }
+
+        if (status === "applied") {
+          appliedMoveCount += 1
+          continue
+        }
+
+        // Stop once replay hits the first invalid move in the batch.
+        break
       }
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError")) {
+
+      if (!lastReplayState) {
         return
       }
-    } finally {
-      if (state.activeRequest === controller) {
-        state.activeRequest = null
+
+      const decayedMovesCount = submittedMoves.length
+
+      // Every successfully parsed prediction batch decays by its full submitted move count.
+      const committedState = commitAgentTurn(decayedMovesCount)
+
+      const nextState = mergeReplayResult(committedState, {
+        lastMoveStatus: lastReplayState.lastMoveStatus,
+        visitedBefore: lastReplayState?.visitedBefore,
+        submittedMoves: submittedMoves.map(
+          (move, index) => `${index}:${move}`,
+        ),
+        lastValidMoveIndex: appliedMoveCount > 0 ? appliedMoveCount - 1 : null,
+        decayedMovesCount,
+      })
+
+      lastActionState = nextState
+      onActionState(nextState)
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== "AbortError") {
+        return
       }
+
+      if (!didTimeout) {
+        return
+      }
+
+      // Timed-out requests are treated like other agent mistakes and pay the fixed mistake decay.
+      const decayedMovesCount = runtime.agentApiMistakePenaltyMoves
+      const nextState = mergeMazeActionState(
+        commitAgentTurn(decayedMovesCount),
+        { lastMoveStatus: "response-timeout" },
+      )
+      lastActionState = nextState
+      onActionState(nextState)
+    } finally {
+      abortActiveRequest()
       if (shouldPollAgent()) {
         scheduleNextAgentTurn()
       }
@@ -197,23 +237,15 @@ export function handleAgentTurnLoop(
   }
 
   return {
-    abortActiveRequest() {
-      state.activeRequest?.abort()
-      state.activeRequest = null
-    },
-    clearScheduledTurn() {
-      if (state.turnTimeout !== null) {
-        window.clearTimeout(state.turnTimeout)
-        state.turnTimeout = null
-      }
-    },
     scheduleNextAgentTurn,
+    setAttached(nextAttached) {
+      attached = nextAttached
+      elements.body.dataset.agentControl = nextAttached ? "active" : "idle"
+    },
+    setLastActionState(actionState) {
+      lastActionState = actionState
+    },
+    stopPolling,
     shouldPollAgent,
-    setAttached(attached: boolean) {
-      state.attached = attached
-    },
-    setLastActionState(actionState: MazeActionState | null) {
-      state.lastActionState = actionState
-    },
   }
 }

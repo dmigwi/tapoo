@@ -1,18 +1,37 @@
 import { CONFIG } from "./config"
+import { getNavigationProfile } from "./maze"
 import { isRunningStatus, isWonStatus } from "./status"
 import { isSpaceFound } from "./traversal"
 import type {
   CellCoordinate,
-  CommandStatus,
   MazeAction,
-  MazeAgentExpectedResponseType,
   MazeActionState,
+  MoveStatus,
   MoveAction,
   RenderGridPoint,
   State,
 } from "./types"
 
 const { maze } = CONFIG
+
+// ALLOWED_MOVE_ACTIONS enumerates the only traversal commands the agent may return.
+const ALLOWED_MOVE_ACTIONS: MoveAction[] = [
+  "MoveUp",
+  "MoveDown",
+  "MoveLeft",
+  "MoveRight",
+]
+
+// VALID_PREDICTION_FORMAT documents the one supported agent response payload.
+const VALID_PREDICTION_FORMAT = {
+  validPredictionFormat: {
+    moves: ["MoveRight", "MoveDown"] as MoveAction[],
+  },
+} as const
+
+// AGENT_INSTRUCTION keeps the request guidance compact while still explaining the scoring tradeoff.
+const AGENT_INSTRUCTION =
+  "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination."
 
 // MOVE_DELTAS mirrors runtime movement so feedback can validate moves before dispatching them.
 const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
@@ -21,28 +40,6 @@ const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
   MoveUp: [-1, 0],
   MoveDown: [1, 0],
 }
-
-// COMMAND_FEEDBACK_MESSAGES keeps agent-focused command outcomes short and cheap to send repeatedly.
-const COMMAND_FEEDBACK_MESSAGES = {
-  moveUnavailable: (action: MoveAction): string =>
-    `${action} unavailable.`,
-  moveOutOfBounds: (action: MoveAction): string =>
-    `${action} out of bounds.`,
-  moveBlocked: (action: MoveAction): string =>
-    `${action} blocked.`,
-  moveReachedDestination: (action: MoveAction): string =>
-    `${action} reached target.`,
-  moveSuccess: (action: MoveAction): string =>
-    `${action} applied.`,
-} as const
-
-// COMMAND_STATE_INSTRUCTIONS tells the agent what to do next after applying the latest command state.
-const COMMAND_STATE_INSTRUCTIONS = {
-  chooseNextMove: "Choose the next MoveAction.",
-  chooseDifferentMove: "Choose a different MoveAction.",
-} as const
-
-const EXPECTED_AGENT_RESPONSE_TYPE: MazeAgentExpectedResponseType = "MoveAction"
 
 // cellCoordinateFromGridPoint converts one rendered maze-grid point into a logical cell position.
 function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate {
@@ -63,6 +60,80 @@ function traversalHistoryIncludes(
   )
 }
 
+// recommendedAvgPredictionLimit derives the advisory prediction length from the active navigation profile.
+function recommendedAvgPredictionLimit(state: State): number {
+  if (!state.dims) {
+    return 0
+  }
+
+  const profile = getNavigationProfile(state.dims)
+  return profile.__softCorridorLimit + profile.__hardCorridorLimit
+}
+
+// normalizeSubmittedMoves formats replayed commands into the stable stepNumber:MoveAction shape.
+function normalizeSubmittedMoves(moves: MoveAction[]): string[] {
+  return moves.map((move, index) => `${index}:${move}`)
+}
+
+// buildMazeActionState snapshots the live maze state together with the latest agent replay result.
+export function buildMazeActionState(
+  state: State,
+  overrides: Partial<MazeActionState> = {},
+): MazeActionState {
+  return {
+    level: state.level,
+    status: state.status,
+    score: state.score,
+    currentCell: state.playerPosition
+      ? cellCoordinateFromGridPoint(state.playerPosition)
+      : null,
+    destinationCell: state.finalPosition
+      ? cellCoordinateFromGridPoint(state.finalPosition)
+      : null,
+    traversalHistory: state.traversalHistory.map(({ row, col }) => ({
+      row,
+      col,
+    })),
+    allowedMoves: [...ALLOWED_MOVE_ACTIONS],
+    recommendedAvgPredictionLimit: recommendedAvgPredictionLimit(state),
+    instruction: AGENT_INSTRUCTION,
+    expectedResponseFormat: {
+      validPredictionFormat: {
+        moves: [...VALID_PREDICTION_FORMAT.validPredictionFormat.moves],
+      },
+    },
+    submittedMovesIndexBase: 0,
+    submittedMovesPattern: "<index>:<MoveAction>",
+    submittedMoves: [],
+    lastMoveStatus: null,
+    lastValidMoveIndex: null,
+    decayedMovesCount: 0,
+    ...overrides,
+  }
+}
+
+// mergeMazeActionState reapplies transient replay details on top of the latest normalized base payload.
+export function mergeMazeActionState(
+  actionState: MazeActionState,
+  overrides: Partial<MazeActionState> = {},
+): MazeActionState {
+  return {
+    ...actionState,
+    allowedMoves: [...actionState.allowedMoves],
+    expectedResponseFormat: {
+      validPredictionFormat: {
+        moves: [...actionState.expectedResponseFormat.validPredictionFormat.moves],
+      },
+    },
+    traversalHistory: actionState.traversalHistory.map(({ row, col }) => ({
+      row,
+      col,
+    })),
+    submittedMoves: [...actionState.submittedMoves],
+    ...overrides,
+  }
+}
+
 type CommandFeedbackContext = {
   executeCommand: (action: MazeAction) => void
   state: State
@@ -70,29 +141,31 @@ type CommandFeedbackContext = {
 }
 
 // isMoveAction reports whether one semantic command is a move that currently supports feedback.
-function isMoveAction(action: MazeAction): action is Extract<MazeAction, { type: MoveAction }> {
+function isMoveAction(
+  action: MazeAction,
+): action is Extract<MazeAction, { type: MoveAction }> {
   return action.type in MOVE_DELTAS
 }
 
-// buildCommandState snapshots the runtime state immediately after one command resolves.
-function buildCommandState(
-  command: MazeAction,
-  lastCommandStatus: CommandStatus,
-  lastCommandMessage: string,
-  instruction: string,
+// buildReplayState records the result of one replay step using the shared agent payload shape.
+function buildReplayState(
+  state: State,
+  command: MoveAction,
+  status: MoveStatus,
   visitedBefore?: boolean,
 ): MazeActionState {
-  return {
-    lastCommand: command,
-    lastCommandStatus,
-    lastCommandMessage,
-    instruction,
-    expectedResponseType: EXPECTED_AGENT_RESPONSE_TYPE,
+  const lastValidMoveIndex =
+    status === "applied" || status === "reached-target" ? 0 : null
+
+  return buildMazeActionState(state, {
+    lastMoveStatus: status,
     visitedBefore,
-  }
+    submittedMoves: normalizeSubmittedMoves([command]),
+    lastValidMoveIndex,
+  })
 }
 
-// buildMoveCommandState validates a move and returns a compact outcome for agent callers.
+// buildMoveCommandState validates one move and returns the normalized agent result.
 function buildMoveCommandState(
   command: Extract<MazeAction, { type: MoveAction }>,
   context: CommandFeedbackContext,
@@ -106,12 +179,7 @@ function buildMoveCommandState(
     !state.dims ||
     !state.playerPosition
   ) {
-    return buildCommandState(
-      command,
-      "invalid",
-      COMMAND_FEEDBACK_MESSAGES.moveUnavailable(move),
-      COMMAND_STATE_INSTRUCTIONS.chooseDifferentMove,
-    )
+    return buildReplayState( state, move, "invalid-move")
   }
 
   const [rowDelta, columnDelta] = MOVE_DELTAS[move]
@@ -124,58 +192,28 @@ function buildMoveCommandState(
   const nextCell = cellCoordinateFromGridPoint({ x: nextX, y: nextY })
 
   if (nextY <= 0 || nextY > state.dims.width * maze.cellSpan) {
-    return buildCommandState(
-      command,
-      "invalid",
-      COMMAND_FEEDBACK_MESSAGES.moveOutOfBounds(move),
-      COMMAND_STATE_INSTRUCTIONS.chooseDifferentMove,
-    )
+    return buildReplayState( state, move, "invalid-move")
   }
 
   if (nextX <= 0 || nextX > state.dims.length * maze.cellSpan) {
-    return buildCommandState(
-      command,
-      "invalid",
-      COMMAND_FEEDBACK_MESSAGES.moveOutOfBounds(move),
-      COMMAND_STATE_INSTRUCTIONS.chooseDifferentMove,
-    )
+    return buildReplayState( state, move, "invalid-move" )
   }
 
   if (!isSpaceFound(state.maze[probeY][probeX])) {
-    return buildCommandState(
-      command,
-      "invalid",
-      COMMAND_FEEDBACK_MESSAGES.moveBlocked(move),
-      COMMAND_STATE_INSTRUCTIONS.chooseDifferentMove,
-    )
+    return buildReplayState( state, move, "invalid-move")
   }
 
-  const visitedBefore = traversalHistoryIncludes(
-    state.traversalHistory,
-    nextCell,
-  )
+  const visitedBefore = traversalHistoryIncludes(state.traversalHistory, nextCell)
   handleMove(move)
 
   if (isWonStatus(state.status)) {
-    return buildCommandState(
-      command,
-      "reached-target",
-      COMMAND_FEEDBACK_MESSAGES.moveReachedDestination(move),
-      COMMAND_STATE_INSTRUCTIONS.chooseNextMove,
-      visitedBefore,
-    )
+    return buildReplayState( state, move, "reached-target", visitedBefore)
   }
 
-  return buildCommandState(
-    command,
-    "applied",
-    COMMAND_FEEDBACK_MESSAGES.moveSuccess(move),
-    COMMAND_STATE_INSTRUCTIONS.chooseNextMove,
-    visitedBefore,
-  )
+  return buildReplayState( state, move, "applied", visitedBefore )
 }
 
-// executeActionWithFeedback classifies a requested command and returns feedback when supported.
+// executeActionWithFeedback classifies one requested command and returns feedback when supported.
 export function executeActionWithFeedback(
   action: MazeAction,
   context: CommandFeedbackContext,

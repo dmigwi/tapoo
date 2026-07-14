@@ -4,7 +4,7 @@ import {
   coreDecayIntervalPerCellMs,
   WALL_WEIGHTS,
 } from "./config"
-import { executeActionWithFeedback } from "./cmd-feedback"
+import { buildMazeActionState, executeActionWithFeedback } from "./cmd-feedback"
 import { getTerminalSize } from "./dom"
 import {
   generateMaze,
@@ -28,13 +28,13 @@ import {
 } from "./storage"
 import { isSpaceFound, isWallWeight, nextWallWeight, reweightMaze } from "./traversal"
 import type {
-  MazeAgentContext,
   CellCoordinate,
   Elements,
   GameRuntime,
   MazeAction,
   MazeActionControl,
   MazeActionDispatchOptions,
+  MazeActionState,
   MoveAction,
   PersistedRound,
   RenderGridPoint,
@@ -56,9 +56,13 @@ const state: State = {
   lastRoundScore: 0,
   lastAttemptRetention: null,
   bestWinRetention: null,
+  lastWinRequestCount: null,
+  bestWinRequestCount: null,
   winSummary: "",
   canResume: false,
   wallWeight: WALL_WEIGHTS[0],
+  scoreDecayUnits: 0,
+  agentRequestCount: 0,
   clock: null,
 }
 
@@ -80,18 +84,64 @@ function activeCoreDecayIntervalPerCellMs(): number {
   return coreDecayIntervalPerCellMs(state.controlMode)
 }
 
-// calculateScore converts elapsed time into the remaining score for a round.
-function calculateScore(
+// calculateMaxScore returns the full score budget for one maze before any decay applies.
+function calculateMaxScore(totalCells: number): number {
+  return totalCells * scoring.budgetMultiplier
+}
+
+// calculateElapsedScore converts elapsed time into the remaining score for an interactive round.
+function calculateElapsedScore(
   totalCells: number,
   elapsedMs: number,
   decayIntervalPerCellMs: number,
 ): number {
-  const maxScore = totalCells * scoring.budgetMultiplier
+  const maxScore = calculateMaxScore(totalCells)
   const elapsedPenalty = Math.floor(
     (elapsedMs * timing.scoreDecayRate) / decayIntervalPerCellMs,
   )
 
   return Math.max(0, maxScore - elapsedPenalty)
+}
+
+// calculateScoreAfterDecay converts explicit score-decay units into the remaining score for agent-api rounds.
+function calculateScoreAfterDecay(totalCells: number, scoreDecayUnits: number): number {
+  const maxScore = calculateMaxScore(totalCells)
+  return Math.max(0, maxScore - scoreDecayUnits * timing.scoreDecayRate)
+}
+
+// currentRoundTotalCells reports the current maze area used by both timing and score logic.
+function currentRoundTotalCells(): number | null {
+  if (!state.dims) {
+    return null
+  }
+
+  return state.dims.length * state.dims.width
+}
+
+// calculateResolvedRoundScore computes the authoritative score whenever gameplay state is being
+// committed. Interactive mode resolves from elapsed time, while agent-api resolves from committed
+// decay units only.
+function calculateResolvedRoundScore(totalCells: number): number {
+  if (state.controlMode === "interactive" && state.clock) {
+    return calculateElapsedScore(
+      totalCells,
+      state.clock.elapsed(),
+      activeCoreDecayIntervalPerCellMs(),
+    )
+  }
+
+  return calculateScoreAfterDecay(totalCells, state.scoreDecayUnits)
+}
+
+// calculateDisplayedRunningScore is the refresh-path counterpart to calculateResolvedRoundScore.
+// It keeps interactive rounds live on each refresh cycle, but agent-api must reuse the already
+// committed score so refreshes never spend decay on their own.
+function calculateDisplayedRunningScore(totalCells: number): number {
+  if (state.controlMode === "agent-api") {
+    return state.score
+  }
+
+  return calculateResolvedRoundScore(totalCells)
 }
 
 type WinSummaryPreviousComparison = "none" | "faster" | "slower" | "matched"
@@ -282,6 +332,125 @@ function buildWinSummary(
   return replaceWinSummaryDelta(template, previous.delta, best.delta)
 }
 
+type AgentRequestPreviousComparison = "none" | "fewer" | "more" | "matched"
+type AgentRequestBestComparison = "new-record" | "matched-best" | "behind-best"
+
+// compareAgentRequestsPrevious compares the current solved round against the previous solved request count.
+function compareAgentRequestsPrevious(
+  currentRequests: number,
+  lastWinRequestCount: number | null,
+): { comparison: AgentRequestPreviousComparison; delta: string } {
+  if (lastWinRequestCount === null) {
+    return { comparison: "none", delta: "" }
+  }
+
+  if (currentRequests < lastWinRequestCount) {
+    return {
+      comparison: "fewer",
+      delta: String(lastWinRequestCount - currentRequests),
+    }
+  }
+
+  if (currentRequests > lastWinRequestCount) {
+    return {
+      comparison: "more",
+      delta: String(currentRequests - lastWinRequestCount),
+    }
+  }
+
+  return { comparison: "matched", delta: "" }
+}
+
+// compareAgentRequestsBest compares the current solved round against the best solved request count.
+function compareAgentRequestsBest(
+  currentRequests: number,
+  bestWinRequestCount: number | null,
+): { comparison: AgentRequestBestComparison; delta: string } {
+  if (bestWinRequestCount === null || currentRequests < bestWinRequestCount) {
+    return { comparison: "new-record", delta: "" }
+  }
+
+  if (currentRequests > bestWinRequestCount) {
+    return {
+      comparison: "behind-best",
+      delta: String(currentRequests - bestWinRequestCount),
+    }
+  }
+
+  return { comparison: "matched-best", delta: "" }
+}
+
+// selectAgentWinSummaryTemplate chooses the request-count summary shown after an agent-api win.
+function selectAgentWinSummaryTemplate(
+  previousComparison: AgentRequestPreviousComparison,
+  bestComparison: AgentRequestBestComparison,
+): string {
+  if (previousComparison === "none") {
+    if (bestComparison === "new-record") {
+      return messages.agentWinSummary.noPrevious.newRecord
+    }
+
+    if (bestComparison === "matched-best") {
+      return messages.agentWinSummary.noPrevious.matchedBest
+    }
+
+    return messages.agentWinSummary.noPrevious.behindBest
+  }
+
+  if (previousComparison === "fewer") {
+    if (bestComparison === "new-record") {
+      return messages.agentWinSummary.fewerPrevious.newRecord
+    }
+
+    if (bestComparison === "matched-best") {
+      return messages.agentWinSummary.fewerPrevious.matchedBest
+    }
+
+    return messages.agentWinSummary.fewerPrevious.behindBest
+  }
+
+  if (previousComparison === "more") {
+    if (bestComparison === "new-record") {
+      return messages.agentWinSummary.morePrevious.newRecord
+    }
+
+    if (bestComparison === "matched-best") {
+      return messages.agentWinSummary.morePrevious.matchedBest
+    }
+
+    return messages.agentWinSummary.morePrevious.behindBest
+  }
+
+  if (bestComparison === "new-record") {
+    return messages.agentWinSummary.matchedPrevious.newRecord
+  }
+
+  if (bestComparison === "matched-best") {
+    return messages.agentWinSummary.matchedPrevious.matchedBest
+  }
+
+  return messages.agentWinSummary.matchedPrevious.behindBest
+}
+
+// buildAgentWinSummary assembles the request-count summary shown after an agent-api win.
+function buildAgentWinSummary(
+  currentRequests: number,
+  lastWinRequestCount: number | null,
+  bestWinRequestCount: number | null,
+): string {
+  const previous = compareAgentRequestsPrevious(
+    currentRequests,
+    lastWinRequestCount,
+  )
+  const best = compareAgentRequestsBest(currentRequests, bestWinRequestCount)
+  const template = selectAgentWinSummaryTemplate(
+    previous.comparison,
+    best.comparison,
+  )
+
+  return replaceWinSummaryDelta(template, previous.delta, best.delta)
+}
+
 // positionsEqual compares two rendered maze-grid points without allocating helper objects.
 function positionsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean {
   return left.x === right.x && left.y === right.y
@@ -295,23 +464,9 @@ function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate 
   }
 }
 
-// readAgentContext exposes the latest traversal snapshot so the agent can plan the next move.
-function readAgentContext(): MazeAgentContext {
-  return {
-    currentCell: state.playerPosition
-      ? cellCoordinateFromGridPoint(state.playerPosition)
-      : null,
-    destinationCell: state.finalPosition
-      ? cellCoordinateFromGridPoint(state.finalPosition)
-      : null,
-    level: state.level,
-    score: state.score,
-    status: state.status,
-    traversalHistory: state.traversalHistory.map(({ row, col }) => ({
-      row,
-      col,
-    })),
-  }
+// readActionState exposes the latest flattened agent-api payload so external callers can plan moves.
+function readActionState(): MazeActionState {
+  return buildMazeActionState(state)
 }
 
 // gridPointFromCellCoordinate expands a logical cell position back into rendered maze-grid space.
@@ -398,6 +553,8 @@ function applyTooSmallState(level: number): void {
   state.finalPosition = null
   state.score = 0
   state.lastRoundScore = 0
+  state.scoreDecayUnits = 0
+  state.agentRequestCount = 0
   state.winSummary = ""
   state.canResume = false
   state.clock = null
@@ -524,13 +681,13 @@ function cancelScheduledRoundPersist(): void {
 
 // persistPreferences stores the long-lived level and wall-weight preferences.
 function persistPreferences(): void {
-  savePersistedPreferences(state)
+  savePersistedPreferences(state.controlMode, state)
 }
 
 // persistRoundNow flushes the current round snapshot immediately.
 function persistRoundNow(): void {
   cancelScheduledRoundPersist()
-  savePersistedRoundState(state)
+  savePersistedRoundState(state.controlMode, state)
 }
 
 // persistStateNow saves both preferences and the live round in one step.
@@ -558,12 +715,79 @@ function renderState(): void {
   render(runtimeElements, state)
 }
 
+// applyWinSummary updates retention and mode-specific win summaries after the score has been resolved.
+function applyWinSummary(totalCells: number): void {
+  const currentRetention = calculateScoreRetention(totalCells, state.score)
+
+  if (state.controlMode === "interactive") {
+    const levelDurationMs = totalCells * activeCoreDecayIntervalPerCellMs()
+    state.winSummary = buildWinSummary(
+      currentRetention,
+      state.lastAttemptRetention,
+      state.bestWinRetention,
+      levelDurationMs,
+    )
+    state.lastAttemptRetention = currentRetention
+    state.bestWinRetention =
+      state.bestWinRetention === null || currentRetention > state.bestWinRetention
+        ? currentRetention
+        : state.bestWinRetention
+    return
+  }
+
+  state.winSummary = buildAgentWinSummary(
+    state.agentRequestCount,
+    state.lastWinRequestCount,
+    state.bestWinRequestCount,
+  )
+  state.lastAttemptRetention = currentRetention
+  state.bestWinRetention =
+    state.bestWinRetention === null || currentRetention > state.bestWinRetention
+      ? currentRetention
+      : state.bestWinRetention
+  state.lastWinRequestCount = state.agentRequestCount
+  state.bestWinRequestCount =
+    state.bestWinRequestCount === null ||
+    state.agentRequestCount < state.bestWinRequestCount
+      ? state.agentRequestCount
+      : state.bestWinRequestCount
+}
+
+// commitAgentTurn is the only place agent-api spends score decay after one resolved request.
+function commitAgentTurn(decayedMovesCount: number): MazeActionState {
+  const totalCells = currentRoundTotalCells()
+  if (state.controlMode !== "agent-api" || totalCells === null) {
+    return readActionState()
+  }
+
+  state.agentRequestCount += 1
+
+  state.scoreDecayUnits += decayedMovesCount
+  state.score = calculateResolvedRoundScore(totalCells)
+
+  if (isWonStatus(state.status)) {
+    applyWinSummary(totalCells)
+    persistStateNow()
+    renderState()
+    return readActionState()
+  }
+
+  if (isRunningStatus(state.status) && state.score <= 0) {
+    handleLoss()
+    return readActionState()
+  }
+
+  persistRoundNow()
+  renderState()
+  return readActionState()
+}
+
 // scheduleRoundPersistence batches non-terminal round updates behind the refresh cadence.
 function scheduleRoundPersistence(): void {
   cancelScheduledRoundPersist()
   scheduledRoundPersist = window.setTimeout(() => {
     scheduledRoundPersist = null
-    savePersistedRoundState(state)
+    savePersistedRoundState(state.controlMode, state)
   }, timing.refreshInterval)
 }
 
@@ -578,7 +802,7 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   }
 
   if (!isValidPersistedRound(snapshot)) {
-    clearPersistedRound()
+    clearPersistedRound(state.controlMode)
     return false
   }
 
@@ -608,6 +832,8 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   }
   state.score = snapshot.score
   state.lastRoundScore = snapshot.lastRoundScore
+  state.scoreDecayUnits = snapshot.scoreDecayUnits ?? snapshot.scorePenaltyUnits ?? 0
+  state.agentRequestCount = snapshot.agentRequestCount ?? 0
   state.winSummary = snapshot.winSummary ?? ""
   state.canResume = false
 
@@ -663,13 +889,17 @@ function startRound(level: number, persist = true): void {
   state.status = "running"
   state.canResume = false
   state.lastRoundScore = 0
+  state.scoreDecayUnits = 0
+  state.agentRequestCount = 0
   state.winSummary = ""
 
   const totalCells = dimensions.length * dimensions.width
   // The round clock uses the shared per-cell cadence to set both the starting score window and the
   // maximum amount of playable time for this maze size.
   state.clock = new GameClock(totalCells * activeCoreDecayIntervalPerCellMs())
-  state.score = calculateScore(totalCells, 0, activeCoreDecayIntervalPerCellMs())
+  state.score = state.controlMode === "agent-api"
+    ? calculateScoreAfterDecay(totalCells, 0)
+    : calculateElapsedScore(totalCells, 0, activeCoreDecayIntervalPerCellMs())
   if (persist) {
     persistStateNow()
   }
@@ -679,10 +909,12 @@ function startRound(level: number, persist = true): void {
 // restartGame clears persisted progress and restarts from level one.
 function restartGame(): void {
   cancelScheduledRoundPersist()
-  clearPersistedSnapshot()
+  clearPersistedSnapshot(state.controlMode)
   state.wallWeight = WALL_WEIGHTS[0]
   state.lastAttemptRetention = null
   state.bestWinRetention = null
+  state.lastWinRequestCount = null
+  state.bestWinRequestCount = null
   state.lastRoundScore = 0
   state.winSummary = ""
   startRound(1, false)
@@ -738,32 +970,9 @@ function cycleWallWeight(): void {
 
 // handleWinCheck updates retention metrics and finalizes the round after a win.
 function handleWinCheck(): boolean {
-  if (state.clock && state.dims) {
-    const totalCells = state.dims.length * state.dims.width
-    const elapsedMs = state.clock.elapsed()
-    const decayIntervalPerCellMs = activeCoreDecayIntervalPerCellMs()
-    const levelDurationMs = totalCells * decayIntervalPerCellMs
-    state.score = calculateScore(totalCells, elapsedMs, decayIntervalPerCellMs)
-
-    if (
-      state.playerPosition &&
-      state.finalPosition &&
-      positionsEqual(state.playerPosition, state.finalPosition)
-    ) {
-      const currentRetention = calculateScoreRetention(totalCells, state.score)
-      state.winSummary = buildWinSummary(
-        currentRetention,
-        state.lastAttemptRetention,
-        state.bestWinRetention,
-        levelDurationMs,
-      )
-      state.lastAttemptRetention = currentRetention
-      state.bestWinRetention =
-        state.bestWinRetention === null ||
-        currentRetention > state.bestWinRetention
-          ? currentRetention
-          : state.bestWinRetention
-    }
+  const totalCells = currentRoundTotalCells()
+  if (state.clock && totalCells !== null) {
+    state.score = calculateResolvedRoundScore(totalCells)
   }
 
   if (
@@ -774,6 +983,9 @@ function handleWinCheck(): boolean {
     return false
   }
 
+  if (totalCells !== null) {
+    applyWinSummary(totalCells)
+  }
   state.status = "won"
   state.canResume = false
   state.lastRoundScore = state.score
@@ -817,7 +1029,13 @@ function movePlayer(rowDelta: number, columnDelta: number): void {
     state.traversalHistory.push(nextCell)
   }
 
-  if (handleWinCheck()) {
+  const won = handleWinCheck()
+
+  if (state.controlMode === "agent-api") {
+    return
+  }
+
+  if (won) {
     persistStateNow()
   } else {
     scheduleRoundPersistence()
@@ -827,18 +1045,12 @@ function movePlayer(rowDelta: number, columnDelta: number): void {
 
 // handleLoss finalizes the round when the timer has fully expired.
 function handleLoss(): void {
-  if (!isRunningStatus(state.status) || !state.dims) {
+  const totalCells = currentRoundTotalCells()
+  if (!isRunningStatus(state.status) || totalCells === null) {
     return
   }
 
-  if (state.clock) {
-    const totalCells = state.dims.length * state.dims.width
-    state.score = calculateScore(
-      totalCells,
-      state.clock.elapsed(),
-      activeCoreDecayIntervalPerCellMs(),
-    )
-  }
+  state.score = calculateResolvedRoundScore(totalCells)
 
   state.status = "lost"
   state.canResume = false
@@ -849,25 +1061,23 @@ function handleLoss(): void {
   renderState()
 }
 
-// tick advances score decay and blink state on the shared refresh cadence.
-function tick(): void {
-  if (!isRunningStatus(state.status) || !state.clock || !state.dims) {
+// refreshRunningRound handles presentation-time updates only: interactive score refresh, shared
+// blink refresh, and loss detection. It must never spend additional agent-api decay.
+function refreshRunningRound(): void {
+  const totalCells = currentRoundTotalCells()
+  if (!isRunningStatus(state.status) || !state.clock || totalCells === null) {
     return
   }
 
-  const totalCells = state.dims.length * state.dims.width
-  const nextScore = calculateScore(
-    totalCells,
-    state.clock.elapsed(),
-    activeCoreDecayIntervalPerCellMs(),
-  )
-  const remainingMs = state.clock.remaining()
+  const nextScore = calculateDisplayedRunningScore(totalCells)
+  const remainingMs =
+    state.controlMode === "agent-api" ? Number.POSITIVE_INFINITY : state.clock.remaining()
   const nextBlinkVisible = state.clock.blink()
   const scoreChanged = nextScore !== state.score
   const blinkChanged = nextBlinkVisible !== lastBlinkVisible
   state.score = nextScore
 
-  if (remainingMs <= 0) {
+  if (remainingMs <= 0 || (state.controlMode === "agent-api" && nextScore <= 0)) {
     handleLoss()
     return
   }
@@ -944,7 +1154,12 @@ function handleResize(): void {
   if (isTooSmallStatus(state.status)) {
     if (
       restorePersistedRound(
-        loadPersistedSnapshot(1, WALL_WEIGHTS[0], isWallWeight).round,
+        loadPersistedSnapshot(
+          state.controlMode,
+          1,
+          WALL_WEIGHTS[0],
+          isWallWeight,
+        ).round,
       )
     ) {
       return
@@ -964,16 +1179,17 @@ export function bootstrapGame(
   activeControlMode = controlMode
 
   state.controlMode = controlMode.name
-  controlMode.bindActionDispatch(dispatchControl, readAgentContext)
+  controlMode.bindActionDispatch(dispatchControl, readActionState, commitAgentTurn)
 
   window.addEventListener("resize", handleResize)
   window.visualViewport?.addEventListener("resize", handleResize)
   window.addEventListener("pagehide", () => {
     persistStateNow()
   })
-  window.setInterval(tick, timing.refreshInterval)
+  window.setInterval(refreshRunningRound, timing.refreshInterval)
 
   const persistedSnapshot = loadPersistedSnapshot(
+    controlMode.name,
     1,
     WALL_WEIGHTS[0],
     isWallWeight,
@@ -984,6 +1200,10 @@ export function bootstrapGame(
     persistedSnapshot.preferences.lastAttemptRetention ?? null
   state.bestWinRetention =
     persistedSnapshot.preferences.bestWinRetention ?? null
+  state.lastWinRequestCount =
+    persistedSnapshot.preferences.lastWinRequestCount ?? null
+  state.bestWinRequestCount =
+    persistedSnapshot.preferences.bestWinRequestCount ?? null
 
   if (!restorePersistedRound(persistedSnapshot.round)) {
     startRound(state.level)

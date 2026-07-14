@@ -67,33 +67,42 @@ export type MazeAction =
   | { type: MoveAction }
   | { type: SessionAction }
 
-// MazeActionState reports only the last issued command plus the next response expected from the agent.
-export type MazeAgentExpectedResponseType = "MoveAction"
-
-// CommandStatus keeps command outcome states short, explicit, and easy for agents to branch on.
-export type CommandStatus =
-  | "invalid"
+// MoveStatus keeps single-move and batch-replay outcomes in one shared vocabulary.
+export type MoveStatus =
   | "applied"
+  | "invalid-move"
   | "reached-target"
+  | "response-timeout"
+  | "malformed-response"
 
-// MazeActionState reports only the last issued command plus the next response expected from the agent.
-export type MazeActionState = {
-  lastCommand: MazeAction
-  lastCommandStatus: CommandStatus
-  lastCommandMessage: string
-  instruction: string
-  expectedResponseType: MazeAgentExpectedResponseType
-  visitedBefore?: boolean
+// AgentExpectedResponseFormat documents the one supported prediction payload shape.
+export type AgentExpectedResponseFormat = {
+  validPredictionFormat: {
+    moves: MoveAction[]
+  }
 }
 
-// MazeAgentContext exposes the latest traversal state that an external agent uses to choose the next move.
-export type MazeAgentContext = {
+// MazeActionState is the flattened agent-api payload that combines live maze context with replay results.
+export type MazeActionState = {
+  level: number
+  status: GameStatus
+  score: number
   currentCell: CellCoordinate | null
   destinationCell: CellCoordinate | null
-  level: number
-  score: number
-  status: GameStatus
   traversalHistory: CellCoordinate[]
+
+  instruction: string
+  allowedMoves: MoveAction[]
+  recommendedAvgPredictionLimit: number
+  expectedResponseFormat: AgentExpectedResponseFormat
+
+  submittedMovesPattern: string
+  submittedMovesIndexBase: 0
+  submittedMoves: string[]
+  lastMoveStatus: MoveStatus | null
+  lastValidMoveIndex: number | null
+  visitedBefore?: boolean
+  decayedMovesCount: number
 }
 
 // MazeActionDispatchOptions lets each dispatched command opt into feedback when it needs it.
@@ -111,7 +120,8 @@ export interface MazeActionControl {
   name: MazeControlModeName
   bindActionDispatch: (
     dispatch: MazeActionDispatch,
-    readAgentContext: () => MazeAgentContext,
+    readActionState: () => MazeActionState,
+    commitAgentTurn: (decayedMovesCount: number) => MazeActionState,
   ) => void
   readLastActionState: () => MazeActionState | null
   recordActionState: (actionState: MazeActionState) => void
@@ -135,7 +145,7 @@ export type PersistedGameStatus = "running" | "paused" | "won" | "lost"
 
 // PersistedRound captures the active or finished round state restored across reloads.
 export type PersistedRound = {
-  version: 1
+  version: number
   level: number
   dims: BaseDimensions
   maze: string[][]
@@ -149,6 +159,10 @@ export type PersistedRound = {
   lastRoundScore: number
   remainingMs: number
   winSummary?: string
+  scoreDecayUnits?: number
+  // scorePenaltyUnits keeps older browser snapshots restorable after the score-decay rename.
+  scorePenaltyUnits?: number
+  agentRequestCount?: number
 }
 
 // PersistedPreferences stores the long-lived browser preferences between rounds.
@@ -157,6 +171,8 @@ export type PersistedPreferences = {
   wallWeight: WallWeight
   lastAttemptRetention?: number | null
   bestWinRetention?: number | null
+  lastWinRequestCount?: number | null
+  bestWinRequestCount?: number | null
 }
 
 // PersistedSnapshot bundles long-lived preferences with the short-lived round snapshot.
@@ -204,9 +220,13 @@ export type State = {
   lastRoundScore: number
   lastAttemptRetention: number | null
   bestWinRetention: number | null
+  lastWinRequestCount: number | null
+  bestWinRequestCount: number | null
   winSummary: string
   canResume: boolean
   wallWeight: WallWeight
+  scoreDecayUnits: number
+  agentRequestCount: number
   clock: GameClock | null
 }
 
@@ -281,6 +301,28 @@ export type AppConfig = {
         behindBest: string
       }
     }
+    agentWinSummary: {
+      noPrevious: {
+        newRecord: string
+        matchedBest: string
+        behindBest: string
+      }
+      fewerPrevious: {
+        newRecord: string
+        matchedBest: string
+        behindBest: string
+      }
+      morePrevious: {
+        newRecord: string
+        matchedBest: string
+        behindBest: string
+      }
+      matchedPrevious: {
+        newRecord: string
+        matchedBest: string
+        behindBest: string
+      }
+    }
   }
   controls: {
     touch: {
@@ -319,6 +361,8 @@ export type AppConfig = {
     scoreDecayRate: number
     interactiveCoreDecayIntervalPerCellMs: number
     agentApiCoreDecayIntervalPerCellMs: number
+    agentApiResponseTimeoutMs: number
+    agentApiResponsePenaltyIntervalMs: number
     agentMovePollSlackFactor: number
   }
   viewport: {
@@ -333,8 +377,9 @@ export type AppConfig = {
     terminalWidthScale: number
   }
   runtime: {
-    roundStorageVersion: 1
+    roundStorageVersion: number
     defaultAgentMoveEndpoint: string
     missingElementErrorTemplate: string
+    agentApiMistakePenaltyMoves: number
   }
 }

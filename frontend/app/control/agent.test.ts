@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createAgentMode } from "./agent"
 import { CONFIG, coreDecayIntervalPerCellMs } from "../config"
-import type { MazeAction, MazeActionDispatchOptions } from "../types"
+import type {
+  MazeAction,
+  MazeActionDispatchOptions,
+  MazeActionState,
+} from "../types"
 
 const agentMovePollIntervalMs =
   coreDecayIntervalPerCellMs("agent-api") * CONFIG.timing.agentMovePollSlackFactor
@@ -25,6 +29,35 @@ function createButton({
   }
 
   return button
+}
+
+function createActionState(
+  overrides: Partial<MazeActionState> = {},
+): MazeActionState {
+  return {
+    currentCell: { row: 0, col: 0 },
+    destinationCell: { row: 0, col: 2 },
+    traversalHistory: [{ row: 0, col: 0 }],
+    level: 4,
+    score: 800,
+    status: "running",
+    allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+    recommendedAvgPredictionLimit: 18,
+    instruction:
+      "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+    expectedResponseFormat: {
+      validPredictionFormat: {
+        moves: ["MoveRight", "MoveDown"],
+      },
+    },
+    lastMoveStatus: null,
+    submittedMovesIndexBase: 0,
+    submittedMovesPattern: "<index>:<MoveAction>",
+    submittedMoves: [],
+    lastValidMoveIndex: null,
+    decayedMovesCount: 0,
+    ...overrides,
+  }
 }
 
 describe("agent control mode", () => {
@@ -51,35 +84,44 @@ describe("agent control mode", () => {
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({ direction: "MoveRight" }),
+      json: vi.fn().mockResolvedValue({ moves: ["MoveRight", "MoveDown"] }),
     })
     vi.stubGlobal("fetch", fetchMock)
 
     const dispatch = vi
       .fn()
-      .mockReturnValueOnce({
-        expectedResponseType: "MoveAction",
-        instruction: "Choose the next MoveAction.",
-        lastCommand: { type: "MoveRight" },
-        lastCommandStatus: "applied",
-        lastCommandMessage: "MoveRight applied.",
+      .mockReturnValueOnce(createActionState({
+        currentCell: { row: 0, col: 1 },
+        traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+        lastMoveStatus: "applied",
+        submittedMoves: ["0:MoveRight"],
+        lastValidMoveIndex: 0,
         visitedBefore: false,
-      })
+      }))
+      .mockReturnValueOnce(createActionState({
+        currentCell: { row: 1, col: 1 },
+        traversalHistory: [
+          { row: 0, col: 0 },
+          { row: 0, col: 1 },
+          { row: 1, col: 1 },
+        ],
+        lastMoveStatus: "applied",
+        submittedMoves: ["0:MoveDown"],
+        lastValidMoveIndex: 0,
+        visitedBefore: false,
+      }))
 
-    const readAgentContext = vi
-      .fn()
-      .mockReturnValue({
-        currentCell: { row: 0, col: 0 },
-        destinationCell: { row: 0, col: 2 },
-        level: 4,
-        score: 800,
-        status: "running",
-        traversalHistory: [{ row: 0, col: 0 }],
-      })
+    const readActionState = vi.fn().mockReturnValue(createActionState())
+    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
+      createActionState({
+        currentCell: { row: 1, col: 1 },
+        score: 800 - decayedMovesCount * 100,
+      }),
+    )
 
     const mode = createAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readAgentContext)
+    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -101,29 +143,224 @@ describe("agent control mode", () => {
     expect(JSON.parse(request.body)).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 2 },
-      expectedResponseType: null,
-      instruction: null,
-      lastCommand: null,
-      lastCommandMessage: null,
-      lastCommandStatus: null,
       level: 4,
       score: 800,
       status: "running",
       traversalHistory: [{ row: 0, col: 0 }],
-      visitedBefore: null,
+      allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+      recommendedAvgPredictionLimit: 18,
+      instruction:
+        "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+      expectedResponseFormat: {
+        validPredictionFormat: {
+          moves: ["MoveRight", "MoveDown"],
+        },
+      },
+      lastMoveStatus: null,
+      submittedMovesIndexBase: 0,
+      submittedMovesPattern: "<index>:<MoveAction>",
+      submittedMoves: [],
+      lastValidMoveIndex: null,
+      decayedMovesCount: 0,
     })
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "MoveRight" }, { wantFeedback: true })
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: "MoveDown" }, { wantFeedback: true })
+    expect(commitAgentTurn).toHaveBeenCalledWith(
+      2,
+    )
+    expect(commitAgentTurn).toHaveBeenCalledTimes(1)
+    expect(mode.readLastActionState()).toEqual(
+      expect.objectContaining({
+        currentCell: { row: 1, col: 1 },
+        lastMoveStatus: "applied",
+        submittedMoves: ["0:MoveRight", "1:MoveDown"],
+        lastValidMoveIndex: 1,
+      }),
+    )
+  })
+
+  it("keeps a single successful prediction as applied", async () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [createButton({ action: "pause" })],
+      touchControls: document.createElement("div"),
+    }
+    elements.app.focus = vi.fn()
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ moves: ["MoveRight"] }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const dispatch = vi.fn().mockReturnValueOnce(createActionState({
+      currentCell: { row: 0, col: 1 },
+      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+      lastMoveStatus: "applied",
+      submittedMoves: ["0:MoveRight"],
+      lastValidMoveIndex: 0,
+      visitedBefore: false,
+    }))
+
+    const readActionState = vi.fn().mockReturnValue(createActionState())
+    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
+      createActionState({
+        currentCell: { row: 0, col: 1 },
+        score: 800 - decayedMovesCount * 100,
+      }),
+    )
+
+    const mode = createAgentMode(elements)
+
+    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
+    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(commitAgentTurn).toHaveBeenCalledWith(1)
+    expect(mode.readLastActionState()).toEqual(
+      expect.objectContaining({
+        currentCell: { row: 0, col: 1 },
+        lastMoveStatus: "applied",
+        submittedMoves: ["0:MoveRight"],
+        lastValidMoveIndex: 0,
+        decayedMovesCount: 1,
+      }),
+    )
+  })
+
+  it("applies score decay to every submitted move in a valid prediction batch even when replay stops early", async () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [createButton({ action: "pause" })],
+      touchControls: document.createElement("div"),
+    }
+    elements.app.focus = vi.fn()
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        moves: ["MoveRight", "MoveDown", "MoveLeft"],
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const dispatch = vi
+      .fn()
+      .mockReturnValueOnce(createActionState({
+        currentCell: { row: 0, col: 1 },
+        traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+        lastMoveStatus: "applied",
+        submittedMoves: ["0:MoveRight"],
+        lastValidMoveIndex: 0,
+        visitedBefore: false,
+      }))
+      .mockReturnValueOnce(createActionState({
+        currentCell: { row: 0, col: 1 },
+        traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+        lastMoveStatus: "invalid-move",
+        submittedMoves: ["1:MoveDown"],
+        lastValidMoveIndex: 0,
+        visitedBefore: true,
+      }))
+
+    const readActionState = vi.fn().mockReturnValue(createActionState())
+    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
+      createActionState({
+        currentCell: { row: 0, col: 1 },
+        score: 800 - decayedMovesCount * 100,
+      }),
+    )
+
+    const mode = createAgentMode(elements)
+
+    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
+    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    expect(commitAgentTurn).toHaveBeenCalledWith(
+      3,
+    )
+    expect(mode.readLastActionState()).toEqual(
+      expect.objectContaining({
+        currentCell: { row: 0, col: 1 },
+        lastMoveStatus: "invalid-move",
+        submittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
+        lastValidMoveIndex: 0,
+        decayedMovesCount: 3,
+      }),
+    )
+  })
+
+  it("stops replaying later predictions once a move reaches the target", async () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [createButton({ action: "pause" })],
+      touchControls: document.createElement("div"),
+    }
+    elements.app.focus = vi.fn()
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        moves: ["MoveRight", "MoveDown", "MoveLeft"],
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const dispatch = vi.fn().mockReturnValueOnce(createActionState({
+      currentCell: { row: 0, col: 1 },
+      destinationCell: { row: 0, col: 1 },
+      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+      lastMoveStatus: "reached-target",
+      submittedMoves: ["0:MoveRight"],
+      lastValidMoveIndex: 0,
+      visitedBefore: false,
+      status: "won",
+    }))
+
+    const readActionState = vi.fn().mockReturnValue(createActionState())
+    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
+      createActionState({
+        currentCell: { row: 0, col: 1 },
+        destinationCell: { row: 0, col: 1 },
+        score: 800 - decayedMovesCount * 100,
+        status: "won",
+      }),
+    )
+
+    const mode = createAgentMode(elements)
+
+    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
+    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+
+    expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith(
       { type: "MoveRight" },
       { wantFeedback: true },
     )
-    expect(mode.readLastActionState()).toEqual({
-      expectedResponseType: "MoveAction",
-      instruction: "Choose the next MoveAction.",
-      lastCommand: { type: "MoveRight" },
-      lastCommandStatus: "applied",
-      lastCommandMessage: "MoveRight applied.",
-      visitedBefore: false,
-    })
+    expect(commitAgentTurn).toHaveBeenCalledWith(3)
+    expect(mode.readLastActionState()).toEqual(
+      expect.objectContaining({
+        currentCell: { row: 0, col: 1 },
+        destinationCell: { row: 0, col: 1 },
+        lastMoveStatus: "reached-target",
+        submittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
+        lastValidMoveIndex: 0,
+        decayedMovesCount: 3,
+      }),
+    )
   })
 
   it("keeps local session actions human-driven without requesting feedback", () => {
@@ -145,18 +382,18 @@ describe("agent control mode", () => {
     vi.stubGlobal("fetch", vi.fn())
 
     const dispatch = vi.fn()
-    const readAgentContext = vi.fn().mockReturnValue({
-      currentCell: { row: 0, col: 0 },
-      destinationCell: { row: 0, col: 1 },
-      level: 1,
-      score: 100,
-      status: "paused",
-      traversalHistory: [{ row: 0, col: 0 }],
-    })
+    const readActionState = vi.fn().mockReturnValue(
+      createActionState({
+        destinationCell: { row: 0, col: 1 },
+        level: 1,
+        score: 100,
+        status: "paused",
+      }),
+    )
 
     const mode = createAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readAgentContext)
+    mode.bindActionDispatch(dispatch, readActionState, vi.fn(() => createActionState()))
     elements.touchButtons[0].click()
     elements.touchButtons[1].click()
     elements.touchButtons[2].click()
@@ -211,7 +448,7 @@ describe("agent control mode", () => {
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({ direction: "MoveRight" }),
+      json: vi.fn().mockResolvedValue({ moves: ["MoveRight"] }),
     })
     vi.stubGlobal("fetch", fetchMock)
 
@@ -224,29 +461,31 @@ describe("agent control mode", () => {
 
       if (options?.wantFeedback) {
         return {
-          expectedResponseType: "MoveAction" as const,
-          instruction: "Choose the next MoveAction.",
-          lastCommand: { type: "MoveRight" as const },
-          lastCommandStatus: "applied" as const,
-          lastCommandMessage: "MoveRight applied.",
-          visitedBefore: false,
+          ...createActionState({
+            level: 1,
+            score: 100,
+            lastMoveStatus: "applied",
+            submittedMoves: ["0:MoveRight"],
+            lastValidMoveIndex: 0,
+            visitedBefore: false,
+          }),
         }
       }
 
       return null
     })
-    const readAgentContext = vi.fn(() => ({
-      currentCell: { row: 0, col: 0 },
-      destinationCell: { row: 0, col: 2 },
-      level: 1,
-      score: 100,
-      status,
-      traversalHistory: [{ row: 0, col: 0 }],
-    }))
+    const readActionState = vi.fn(() =>
+      createActionState({
+        level: 1,
+        score: 100,
+        status,
+      }),
+    )
+    const commitAgentTurn = vi.fn(() => createActionState({ level: 1, score: 100, status }))
 
     const mode = createAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readAgentContext)
+    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
     expect(fetchMock).not.toHaveBeenCalled()
 
@@ -274,19 +513,21 @@ describe("agent control mode", () => {
 
     const firstDispatch = vi.fn()
     const secondDispatch = vi.fn()
-    const readAgentContext = vi.fn().mockReturnValue({
-      currentCell: null,
-      destinationCell: null,
-      level: 1,
-      score: 0,
-      status: "boot",
-      traversalHistory: [],
-    })
+    const readActionState = vi.fn().mockReturnValue(
+      createActionState({
+        currentCell: null,
+        destinationCell: null,
+        level: 1,
+        score: 0,
+        status: "boot",
+        traversalHistory: [],
+      }),
+    )
 
     const mode = createAgentMode(elements)
 
-    mode.bindActionDispatch(firstDispatch, readAgentContext)
-    mode.bindActionDispatch(secondDispatch, readAgentContext)
+    mode.bindActionDispatch(firstDispatch, readActionState, vi.fn(() => createActionState()))
+    mode.bindActionDispatch(secondDispatch, readActionState, vi.fn(() => createActionState()))
     elements.touchButtons[0].click()
 
     expect(firstDispatch).not.toHaveBeenCalled()

@@ -80,9 +80,13 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 0,
     lastAttemptRetention: null,
     bestWinRetention: null,
+    lastWinRequestCount: null,
+    bestWinRequestCount: null,
     winSummary: "",
     canResume: false,
     wallWeight: 1,
+    scoreDecayUnits: 0,
+    agentRequestCount: 0,
     clock: null,
     ...overrides,
   }

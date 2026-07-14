@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { createInteractiveMode } from "./interactive"
+import type { MazeActionState } from "../types"
 
 // createButton reproduces the data attributes used by keyboard and touch controls.
 function createButton({
@@ -23,6 +24,35 @@ function createButton({
   return button
 }
 
+// createActionState supplies the shared flattened agent payload shape expected by the control contract.
+function createActionState(
+  overrides: Partial<MazeActionState> = {},
+): MazeActionState {
+  return {
+    currentCell: null,
+    destinationCell: null,
+    traversalHistory: [],
+    level: 1,
+    score: 0,
+    status: "boot",
+    allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+    recommendedAvgPredictionLimit: 0,
+    instruction: "",
+    expectedResponseFormat: {
+      validPredictionFormat: {
+        moves: ["MoveRight", "MoveDown"],
+      },
+    },
+    lastMoveStatus: null,
+    submittedMovesIndexBase: 0,
+    submittedMovesPattern: "<index>:<MoveAction>",
+    submittedMoves: [],
+    lastValidMoveIndex: null,
+    decayedMovesCount: 0,
+    ...overrides,
+  }
+}
+
 // These tests guard the interactive-mode translation layer and contract shape.
 describe("interactive control mode", () => {
   it("implements the shared control mode contract", () => {
@@ -43,14 +73,7 @@ describe("interactive control mode", () => {
     expect(mode.name).toBe("interactive")
     expect(mode.readLastActionState()).toBeNull()
 
-    mode.bindActionDispatch(dispatch, vi.fn(() => ({
-      currentCell: null,
-      destinationCell: null,
-      level: 1,
-      score: 0,
-      status: "boot" as const,
-      traversalHistory: [],
-    })))
+    mode.bindActionDispatch(dispatch, vi.fn(() => createActionState()), vi.fn(() => createActionState()))
     elements.controls[0].click()
     elements.touchButtons[0].click()
     window.dispatchEvent(
@@ -75,13 +98,9 @@ describe("interactive control mode", () => {
       type: "MoveUp",
     })
 
-    mode.recordActionState({
-      expectedResponseType: "MoveAction",
-      instruction: "Choose the next MoveAction.",
-      lastCommand: { type: "MoveRight" },
-      lastCommandStatus: "applied",
-      lastCommandMessage: "ignored",
-    })
+    mode.recordActionState(createActionState({
+      lastMoveStatus: "applied",
+    }))
     expect(mode.readLastActionState()).toBeNull()
   })
 
@@ -100,14 +119,7 @@ describe("interactive control mode", () => {
 
     const mode = createInteractiveMode(elements)
 
-    mode.bindActionDispatch(dispatch, vi.fn(() => ({
-      currentCell: null,
-      destinationCell: null,
-      level: 1,
-      score: 0,
-      status: "boot" as const,
-      traversalHistory: [],
-    })))
+    mode.bindActionDispatch(dispatch, vi.fn(() => createActionState()), vi.fn(() => createActionState()))
     elements.controls[0].click()
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -135,17 +147,10 @@ describe("interactive control mode", () => {
 
     const mode = createInteractiveMode(elements)
 
-    const readAgentContext = vi.fn(() => ({
-      currentCell: null,
-      destinationCell: null,
-      level: 1,
-      score: 0,
-      status: "boot" as const,
-      traversalHistory: [],
-    }))
+    const readActionState = vi.fn(() => createActionState())
 
-    mode.bindActionDispatch(firstDispatch, readAgentContext)
-    mode.bindActionDispatch(secondDispatch, readAgentContext)
+    mode.bindActionDispatch(firstDispatch, readActionState, vi.fn(() => createActionState()))
+    mode.bindActionDispatch(secondDispatch, readActionState, vi.fn(() => createActionState()))
     elements.controls[0].click()
 
     expect(firstDispatch).not.toHaveBeenCalled()

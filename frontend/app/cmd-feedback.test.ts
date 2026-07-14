@@ -22,9 +22,13 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 0,
     lastAttemptRetention: null,
     bestWinRetention: null,
+    lastWinRequestCount: null,
+    bestWinRequestCount: null,
     winSummary: "",
     canResume: false,
     wallWeight: 1,
+    scoreDecayUnits: 0,
+    agentRequestCount: 0,
     clock: null,
     ...overrides,
   }
@@ -72,11 +76,27 @@ describe("cmd feedback", () => {
     expect(
       executeActionWithFeedback(moveAction("MoveLeft"), context),
     ).toEqual({
-      expectedResponseType: "MoveAction",
-      instruction: "Choose a different MoveAction.",
-      lastCommand: { type: "MoveLeft" },
-      lastCommandStatus: "invalid",
-      lastCommandMessage: "MoveLeft unavailable.",
+      currentCell: { row: 0, col: 0 },
+      destinationCell: { row: 0, col: 1 },
+      traversalHistory: [{ row: 0, col: 0 }],
+      level: 4,
+      score: 700,
+      status: "paused",
+      allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+      recommendedAvgPredictionLimit: 18,
+      instruction:
+        "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+      expectedResponseFormat: {
+        validPredictionFormat: {
+          moves: ["MoveRight", "MoveDown"],
+        },
+      },
+      lastMoveStatus: "invalid-move",
+      submittedMovesIndexBase: 0,
+      submittedMovesPattern: "<index>:<MoveAction>",
+      submittedMoves: ["0:MoveLeft"],
+      lastValidMoveIndex: null,
+      decayedMovesCount: 0,
     })
     expect(context.handleMove).not.toHaveBeenCalled()
   })
@@ -94,11 +114,27 @@ describe("cmd feedback", () => {
     expect(
       executeActionWithFeedback(moveAction("MoveRight"), context),
     ).toEqual({
-      expectedResponseType: "MoveAction",
-      instruction: "Choose a different MoveAction.",
-      lastCommand: { type: "MoveRight" },
-      lastCommandStatus: "invalid",
-      lastCommandMessage: "MoveRight blocked.",
+      currentCell: { row: 0, col: 0 },
+      destinationCell: { row: 0, col: 1 },
+      traversalHistory: [{ row: 0, col: 0 }],
+      level: 4,
+      score: 700,
+      status: "running",
+      allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+      recommendedAvgPredictionLimit: 18,
+      instruction:
+        "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+      expectedResponseFormat: {
+        validPredictionFormat: {
+          moves: ["MoveRight", "MoveDown"],
+        },
+      },
+      lastMoveStatus: "invalid-move",
+      submittedMovesIndexBase: 0,
+      submittedMovesPattern: "<index>:<MoveAction>",
+      submittedMoves: ["0:MoveRight"],
+      lastValidMoveIndex: null,
+      decayedMovesCount: 0,
     })
     expect(context.handleMove).not.toHaveBeenCalled()
   })
@@ -117,12 +153,28 @@ describe("cmd feedback", () => {
     expect(
       executeActionWithFeedback(moveAction("MoveRight"), context),
     ).toEqual({
-      expectedResponseType: "MoveAction",
-      instruction: "Choose the next MoveAction.",
-      lastCommand: { type: "MoveRight" },
-      lastCommandStatus: "reached-target",
-      lastCommandMessage: "MoveRight reached target.",
+      currentCell: { row: 0, col: 1 },
+      destinationCell: { row: 0, col: 1 },
+      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+      level: 4,
+      score: 700,
+      status: "won",
+      allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+      recommendedAvgPredictionLimit: 18,
+      instruction:
+        "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+      expectedResponseFormat: {
+        validPredictionFormat: {
+          moves: ["MoveRight", "MoveDown"],
+        },
+      },
+      lastMoveStatus: "reached-target",
       visitedBefore: false,
+      submittedMovesIndexBase: 0,
+      submittedMovesPattern: "<index>:<MoveAction>",
+      submittedMoves: ["0:MoveRight"],
+      lastValidMoveIndex: 0,
+      decayedMovesCount: 0,
     })
     expect(context.handleMove).toHaveBeenCalledWith("MoveRight")
   })
@@ -142,12 +194,28 @@ describe("cmd feedback", () => {
     expect(
       executeActionWithFeedback(moveAction("MoveLeft"), context),
     ).toEqual({
-      expectedResponseType: "MoveAction",
-      instruction: "Choose the next MoveAction.",
-      lastCommand: { type: "MoveLeft" },
-      lastCommandStatus: "applied",
-      lastCommandMessage: "MoveLeft applied.",
+      currentCell: { row: 0, col: 0 },
+      destinationCell: { row: 0, col: 1 },
+      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+      level: 4,
+      score: 700,
+      status: "running",
+      allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+      recommendedAvgPredictionLimit: 18,
+      instruction:
+        "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+      expectedResponseFormat: {
+        validPredictionFormat: {
+          moves: ["MoveRight", "MoveDown"],
+        },
+      },
+      lastMoveStatus: "applied",
       visitedBefore: true,
+      submittedMovesIndexBase: 0,
+      submittedMovesPattern: "<index>:<MoveAction>",
+      submittedMoves: ["0:MoveLeft"],
+      lastValidMoveIndex: 0,
+      decayedMovesCount: 0,
     })
   })
 })

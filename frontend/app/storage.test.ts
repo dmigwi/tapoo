@@ -1,13 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
-import {
-  BEST_WIN_RETENTION_STORAGE_KEY,
-  LEVEL_STORAGE_KEY,
-  LAST_ATTEMPT_RETENTION_STORAGE_KEY,
-  ROUND_STORAGE_KEY,
-  STORE_ENCODING_PREFIX,
-  WALL_WEIGHT_STORAGE_KEY,
-} from "./config"
+import { STORE_ENCODING_PREFIX } from "./config"
 import {
   clearPersistedSnapshot,
   clearPersistedRound,
@@ -16,6 +9,13 @@ import {
   savePersistedRoundState,
 } from "./storage"
 import type { State } from "./types"
+
+const MODE = "interactive"
+
+// storageKey mirrors the production per-mode browser storage naming.
+function storageKey(suffix: string): string {
+  return `tapoo.${MODE}.${suffix}`
+}
 
 // isWallWeight mirrors the production wall-weight guard for persistence tests.
 function isWallWeight(value: number): value is 1 | 2 | 3 {
@@ -67,9 +67,13 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 700,
     lastAttemptRetention: 700000,
     bestWinRetention: 820000,
+    lastWinRequestCount: null,
+    bestWinRequestCount: null,
     winSummary: "",
     canResume: false,
     wallWeight: 2,
+    scoreDecayUnits: 0,
+    agentRequestCount: 0,
     clock: null,
     ...overrides,
   }
@@ -92,20 +96,22 @@ describe("storage", () => {
   })
 
   it("saves and reloads obfuscated frontend preferences", () => {
-    savePersistedPreferences({
+    savePersistedPreferences(MODE, {
       level: 8,
       wallWeight: 3,
       lastAttemptRetention: 710000,
       bestWinRetention: 840000,
+      lastWinRequestCount: null,
+      bestWinRequestCount: null,
     })
 
-    const storedLevel = window.localStorage.getItem(LEVEL_STORAGE_KEY)
-    const storedWeight = window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY)
+    const storedLevel = window.localStorage.getItem(storageKey("level"))
+    const storedWeight = window.localStorage.getItem(storageKey("wallWeight"))
     const storedLastAttemptRetention = window.localStorage.getItem(
-      LAST_ATTEMPT_RETENTION_STORAGE_KEY,
+      storageKey("lastAttemptRetention"),
     )
     const storedBestWinRetention = window.localStorage.getItem(
-      BEST_WIN_RETENTION_STORAGE_KEY,
+      storageKey("bestWinRetention"),
     )
 
     expect(storedLevel).toContain(STORE_ENCODING_PREFIX)
@@ -115,13 +121,15 @@ describe("storage", () => {
     expect(storedLevel).not.toBe("8")
     expect(storedWeight).not.toBe("3")
 
-    const snapshot = loadPersistedSnapshot(1, 1, isWallWeight)
+    const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
 
     expect(snapshot.preferences).toEqual({
       level: 8,
       wallWeight: 3,
       lastAttemptRetention: 710000,
       bestWinRetention: 840000,
+      lastWinRequestCount: null,
+      bestWinRequestCount: null,
     })
   })
 
@@ -131,12 +139,12 @@ describe("storage", () => {
       finalPosition: { x: 1, y: 1 },
     })
 
-    savePersistedRoundState(state)
+    savePersistedRoundState(MODE, state)
 
-    const snapshot = loadPersistedSnapshot(1, 1, isWallWeight)
+    const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
 
     expect(snapshot.round).toEqual({
-      version: 1,
+      version: 2,
       level: 4,
       dims: { length: 5, width: 5 },
       maze: state.maze,
@@ -150,24 +158,28 @@ describe("storage", () => {
       lastRoundScore: 700,
       winSummary: "",
       remainingMs: 25_000,
+      scoreDecayUnits: 0,
+      agentRequestCount: 0,
     })
   })
 
   it("falls back to defaults and clears unreadable stored state", () => {
-    window.localStorage.setItem(LEVEL_STORAGE_KEY, "not-base64")
-    window.localStorage.setItem(WALL_WEIGHT_STORAGE_KEY, "not-base64")
-    window.sessionStorage.setItem(ROUND_STORAGE_KEY, "not-base64")
+    window.localStorage.setItem(storageKey("level"), "not-base64")
+    window.localStorage.setItem(storageKey("wallWeight"), "not-base64")
+    window.sessionStorage.setItem(storageKey("round"), "not-base64")
 
-    const snapshot = loadPersistedSnapshot(2, 1, isWallWeight)
+    const snapshot = loadPersistedSnapshot(MODE, 2, 1, isWallWeight)
 
     expect(snapshot.preferences).toEqual({
       level: 2,
       wallWeight: 1,
       lastAttemptRetention: null,
       bestWinRetention: null,
+      lastWinRequestCount: null,
+      bestWinRequestCount: null,
     })
     expect(snapshot.round).toBeNull()
-    expect(window.sessionStorage.getItem(ROUND_STORAGE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })
 
   it("removes the stored round when the current state cannot be persisted", () => {
@@ -176,10 +188,11 @@ describe("storage", () => {
       finalPosition: { x: 1, y: 1 },
     })
 
-    savePersistedRoundState(persistedState)
-    expect(window.sessionStorage.getItem(ROUND_STORAGE_KEY)).not.toBeNull()
+    savePersistedRoundState(MODE, persistedState)
+    expect(window.sessionStorage.getItem(storageKey("round"))).not.toBeNull()
 
     savePersistedRoundState(
+      MODE,
       createState({
         dims: null,
         maze: null,
@@ -189,42 +202,46 @@ describe("storage", () => {
       }),
     )
 
-    expect(window.sessionStorage.getItem(ROUND_STORAGE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })
 
   it("clears the persisted round on demand", () => {
     savePersistedRoundState(
+      MODE,
       createState({
         playerPosition: { x: 1, y: 1 },
         finalPosition: { x: 1, y: 1 },
       }),
     )
 
-    clearPersistedRound()
+    clearPersistedRound(MODE)
 
-    expect(window.sessionStorage.getItem(ROUND_STORAGE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })
 
   it("clears persisted preferences and the active round on demand", () => {
-    savePersistedPreferences({
+    savePersistedPreferences(MODE, {
       level: 8,
       wallWeight: 3,
       lastAttemptRetention: 710000,
       bestWinRetention: 840000,
+      lastWinRequestCount: null,
+      bestWinRequestCount: null,
     })
     savePersistedRoundState(
+      MODE,
       createState({
         playerPosition: { x: 1, y: 1 },
         finalPosition: { x: 1, y: 1 },
       }),
     )
 
-    clearPersistedSnapshot()
+    clearPersistedSnapshot(MODE)
 
-    expect(window.localStorage.getItem(LEVEL_STORAGE_KEY)).toBeNull()
-    expect(window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY)).toBeNull()
-    expect(window.localStorage.getItem(LAST_ATTEMPT_RETENTION_STORAGE_KEY)).toBeNull()
-    expect(window.localStorage.getItem(BEST_WIN_RETENTION_STORAGE_KEY)).toBeNull()
-    expect(window.sessionStorage.getItem(ROUND_STORAGE_KEY)).toBeNull()
+    expect(window.localStorage.getItem(storageKey("level"))).toBeNull()
+    expect(window.localStorage.getItem(storageKey("wallWeight"))).toBeNull()
+    expect(window.localStorage.getItem(storageKey("lastAttemptRetention"))).toBeNull()
+    expect(window.localStorage.getItem(storageKey("bestWinRetention"))).toBeNull()
+    expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })
 })
