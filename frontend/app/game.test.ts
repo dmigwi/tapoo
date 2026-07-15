@@ -8,7 +8,12 @@ import type {
   PersistedRound,
   RoundState,
   State,
+  TraversalHistoryEntry,
 } from "./types"
+
+function visit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: "Blue", row, col }
+}
 
 // createButton reproduces the control datasets used by the browser runtime.
 function createButton({
@@ -97,7 +102,7 @@ function createHorizontalRound(): RoundState {
 // createPersistedWonRound simulates a stored win that can proceed into the next level.
 function createPersistedWonRound(): PersistedRound {
   return {
-    version: 2,
+    version: 3,
     level: 3,
     dims: { length: 1, width: 1 },
     maze: [
@@ -107,7 +112,7 @@ function createPersistedWonRound(): PersistedRound {
     ],
     playerPosition: { x: 1, y: 1 },
     startCell: { row: 0, col: 0 },
-    traversalHistory: [{ row: 0, col: 0 }],
+    traversalHistory: [visit(0, 0)],
     finalPosition: { x: 1, y: 1 },
     wallWeight: 1,
     status: "won",
@@ -380,7 +385,7 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("running")
     expect(state.level).toBe(2)
     expect(state.wallWeight).toBe(1)
-    expect(state.traversalHistory).toEqual([{ row: 0, col: 0 }])
+    expect(state.traversalHistory).toEqual([visit(0, 0)])
   })
 
   it("subscribes to visual viewport resize events when available", async () => {
@@ -643,8 +648,8 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.playerPosition).toEqual({ x: 3, y: 1 })
     expect(state.traversalHistory).toEqual([
-      { row: 0, col: 0 },
-      { row: 0, col: 1 },
+      visit(0, 0),
+      visit(0, 1),
     ])
     expect(state.status).toBe("won")
     expect(state.lastRoundScore).toBe(200)
@@ -719,8 +724,8 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.playerPosition).toEqual({ x: 1, y: 1 })
     expect(state.traversalHistory).toEqual([
-      { row: 0, col: 0 },
-      { row: 0, col: 1 },
+      visit(0, 0),
+      visit(0, 1),
     ])
   })
 
@@ -812,13 +817,13 @@ describe("bootstrapGame", () => {
 
   it("restores a persisted round in paused mode once the viewport fits again", async () => {
     const persistedRound: PersistedRound = {
-      version: 2,
+      version: 3,
       level: 1,
       dims: { length: 2, width: 1 },
       maze: createHorizontalRound().maze,
       playerPosition: { x: 1, y: 1 },
       startCell: { row: 0, col: 0 },
-      traversalHistory: [{ row: 0, col: 0 }],
+      traversalHistory: [visit(0, 0)],
       finalPosition: { x: 3, y: 1 },
       wallWeight: 1,
       status: "running",
@@ -858,19 +863,19 @@ describe("bootstrapGame", () => {
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("paused")
     expect(state.canResume).toBe(true)
-    expect(state.traversalHistory).toEqual([{ row: 0, col: 0 }])
+    expect(state.traversalHistory).toEqual([visit(0, 0)])
     expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(3)
   })
 
   it("rejects malformed persisted traversal history and falls back to a fresh round", async () => {
     const invalidPersistedRound: PersistedRound = {
-      version: 2,
+      version: 3,
       level: 2,
       dims: { length: 2, width: 1 },
       maze: createHorizontalRound().maze,
       playerPosition: { x: 3, y: 1 },
       startCell: { row: 0, col: 0 },
-      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 0 }],
+      traversalHistory: [visit(0, 0), visit(0, 0)],
       finalPosition: { x: 3, y: 1 },
       wallWeight: 1,
       status: "running",
@@ -894,7 +899,7 @@ describe("bootstrapGame", () => {
     expect(harness.clearPersistedRound).toHaveBeenCalledTimes(1)
     expect(state.status).toBe("running")
     expect(state.level).toBe(2)
-    expect(state.traversalHistory).toEqual([{ row: 0, col: 0 }])
+    expect(state.traversalHistory).toEqual([visit(0, 0)])
   })
 
   it("does not auto-restart a too-small game when the viewport fits again without a persisted round", async () => {
@@ -974,7 +979,7 @@ describe("bootstrapGame", () => {
     expect(actionState).toEqual(expect.objectContaining({
       currentCell: { row: 0, col: 1 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+      traversalHistory: [visit(0, 0), visit(0, 1)],
       lastMoveStatus: "reached-target",
       visitedBefore: false,
       submittedMoves: ["0:MoveRight"],

@@ -10,6 +10,7 @@ import type {
   MoveAction,
   RenderGridPoint,
   State,
+  TraversalHistoryEntry,
 } from "./types"
 
 const { maze } = CONFIG
@@ -51,7 +52,7 @@ function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate 
 
 // traversalHistoryIncludes reports whether the chronological visit history already contains a cell.
 function traversalHistoryIncludes(
-  traversalHistory: CellCoordinate[],
+  traversalHistory: TraversalHistoryEntry[],
   cell: CellCoordinate,
 ): boolean {
   return traversalHistory.some(
@@ -84,13 +85,15 @@ export function buildMazeActionState(
     level: state.level,
     status: state.status,
     score: state.score,
+    playerName: state.playerName,
     currentCell: state.playerPosition
       ? cellCoordinateFromGridPoint(state.playerPosition)
       : null,
     destinationCell: state.finalPosition
       ? cellCoordinateFromGridPoint(state.finalPosition)
       : null,
-    traversalHistory: state.traversalHistory.map(({ row, col }) => ({
+    traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
+      playerName,
       row,
       col,
     })),
@@ -125,7 +128,8 @@ export function mergeMazeActionState(
         moves: [...actionState.expectedResponseFormat.validPredictionFormat.moves],
       },
     },
-    traversalHistory: actionState.traversalHistory.map(({ row, col }) => ({
+    traversalHistory: actionState.traversalHistory.map(({ playerName, row, col }) => ({
+      playerName,
       row,
       col,
     })),

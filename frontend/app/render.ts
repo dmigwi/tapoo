@@ -2,6 +2,7 @@ import { CONFIG } from "./config"
 import {
   canProceedStatus,
   canShowWallsStatus,
+  isAwaitAgentStatus,
   isLostStatus,
   isPausedStatus,
   isRunningStatus,
@@ -250,6 +251,15 @@ function scorePercent(state: State): number {
 
 // overlayRows builds the centered pause, win, loss, or too-small overlay lines.
 function overlayRows(elements: Elements, state: State): ScreenLine[] {
+  if (isAwaitAgentStatus(state.status) && state.controlMode === "agent-api") {
+    return [
+      centeredTextRow(messages.agentAwaitMessage, "status"),
+      centeredTextRow(
+        `${messages.agentAwaitActionMessage} ${proceedText(elements)}`,
+      ),
+    ]
+  }
+
   if (isPausedStatus(state.status)) {
     return [
       centeredTextRow(messages.pauseMessage, "status"),
@@ -360,7 +370,7 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
 function updateTouchControls(elements: Elements, state: State): void {
   const canProceed = state.canResume
     ? canProceedStatus(state.status)
-    : isWonStatus(state.status) || isLostStatus(state.status)
+    : isAwaitAgentStatus(state.status) || isWonStatus(state.status) || isLostStatus(state.status)
   const showMoveControls =
     state.controlMode === "interactive" && isRunningStatus(state.status)
   const showPause = isRunningStatus(state.status)

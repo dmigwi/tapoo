@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { executeActionWithFeedback } from "./cmd-feedback"
-import type { MazeAction, MoveAction, State } from "./types"
+import type { MazeAction, MoveAction, State, TraversalHistoryEntry } from "./types"
+
+function visit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: "Blue", row, col }
+}
 
 // createState builds a compact agent-facing runtime state for movement feedback tests.
 function createState(overrides: Partial<State> = {}): State {
@@ -15,7 +19,8 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "|", "---", "|"],
     ],
     playerPosition: { x: 1, y: 1 },
-    traversalHistory: [{ row: 0, col: 0 }],
+    playerName: "Blue",
+    traversalHistory: [visit(0, 0)],
     finalPosition: { x: 3, y: 1 },
     status: "running",
     score: 700,
@@ -53,7 +58,7 @@ function createContext(state: State) {
     handleMove: vi.fn((action: MoveAction) => {
       if (action === "MoveRight") {
         state.playerPosition = { x: 3, y: 1 }
-        state.traversalHistory = [{ row: 0, col: 0 }, { row: 0, col: 1 }]
+        state.traversalHistory = [visit(0, 0), visit(0, 1)]
       }
     }),
   }
@@ -78,7 +83,8 @@ describe("cmd feedback", () => {
     ).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [{ row: 0, col: 0 }],
+      traversalHistory: [visit(0, 0)],
+      playerName: "Blue",
       level: 4,
       score: 700,
       status: "paused",
@@ -116,7 +122,8 @@ describe("cmd feedback", () => {
     ).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [{ row: 0, col: 0 }],
+      traversalHistory: [visit(0, 0)],
+      playerName: "Blue",
       level: 4,
       score: 700,
       status: "running",
@@ -145,7 +152,7 @@ describe("cmd feedback", () => {
     context.handleMove.mockImplementationOnce((action: MoveAction) => {
       if (action === "MoveRight") {
         state.playerPosition = { x: 3, y: 1 }
-        state.traversalHistory = [{ row: 0, col: 0 }, { row: 0, col: 1 }]
+        state.traversalHistory = [visit(0, 0), visit(0, 1)]
         state.status = "won"
       }
     })
@@ -155,7 +162,8 @@ describe("cmd feedback", () => {
     ).toEqual({
       currentCell: { row: 0, col: 1 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+      traversalHistory: [visit(0, 0), visit(0, 1)],
+      playerName: "Blue",
       level: 4,
       score: 700,
       status: "won",
@@ -182,7 +190,7 @@ describe("cmd feedback", () => {
   it("keeps traversal history stable when a move revisits an older cell", () => {
     const state = createState({
       playerPosition: { x: 3, y: 1 },
-      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+      traversalHistory: [visit(0, 0), visit(0, 1)],
     })
     const context = createContext(state)
     context.handleMove.mockImplementationOnce((action: MoveAction) => {
@@ -196,7 +204,8 @@ describe("cmd feedback", () => {
     ).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+      traversalHistory: [visit(0, 0), visit(0, 1)],
+      playerName: "Blue",
       level: 4,
       score: 700,
       status: "running",

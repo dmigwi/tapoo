@@ -1,5 +1,6 @@
 import type {
   Elements,
+  AgentApiConfig,
   MazeAction,
   MazeActionControl,
   MazeActionDispatch,
@@ -14,10 +15,13 @@ import {
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
 } from "./session-actions"
+import { loadPersistedAgentConfigs } from "../storage"
 
 // createAgentMode builds the agent-api MazeActionControl while transport wiring is still pending.
 export function createAgentMode(
   elements: Elements,
+  readAgentConfigs: () => AgentApiConfig[] = () =>
+    loadPersistedAgentConfigs("agent-api"),
 ): MazeActionControl {
   let attached = false
   let agentMovePoller: AgentMovePoller | null = null
@@ -60,8 +64,9 @@ export function createAgentMode(
   const dispatchAgentAction = (
     action: MazeAction,
     dispatch: MazeActionDispatch,
+    playerName: string,
   ): MazeActionState => {
-    const actionState = dispatch(action, { wantFeedback: true })
+    const actionState = dispatch(action, { wantFeedback: true, playerName })
     if (!actionState) {
       throw new Error("agent move dispatch must return feedback")
     }
@@ -90,6 +95,7 @@ export function createAgentMode(
         onActionState: (actionState) => {
           lastActionState = actionState
         },
+        readAgentConfigs,
         readActionState,
       })
 

@@ -3,9 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { GameClock } from "./clock"
 import { CONFIG } from "./config"
 import { render } from "./render"
-import type { Elements, State } from "./types"
+import type { Elements, State, TraversalHistoryEntry } from "./types"
 
 const { messages } = CONFIG
+
+function visit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: "Blue", row, col }
+}
 
 // normalizeScreenText keeps DOM assertions readable by collapsing non-breaking spaces.
 function normalizeScreenText(value: string | null): string {
@@ -73,7 +77,8 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "|", "---", "|"],
     ],
     playerPosition: { x: 1, y: 1 },
-    traversalHistory: [{ row: 0, col: 0 }],
+    playerName: "Blue",
+    traversalHistory: [visit(0, 0)],
     finalPosition: { x: 2, y: 1 },
     status: "running",
     score: 900,

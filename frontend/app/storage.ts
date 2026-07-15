@@ -1,11 +1,11 @@
 import {
   CONFIG,
-  coreDecayIntervalPerCellMs,
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
 } from "./config"
 import { canPersistRoundStatus } from "./status"
 import type {
+  AgentApiConfig,
   MazeControlModeName,
   PersistedPreferences,
   PersistedRound,
@@ -14,7 +14,9 @@ import type {
   WallWeight,
 } from "./types"
 
-const { runtime } = CONFIG
+const { runtime, timing } = CONFIG
+
+const agentConfigsStorageSuffix = "agentConfigs"
 
 // storageKey namespaces browser persistence per control mode so interactive and agent-api do not collide.
 function storageKey(
@@ -95,6 +97,51 @@ function decodeStoredPayload<T>(encodedPayload: string): T | null {
   }
 }
 
+// isAgentApiConfig validates one persisted HTTP agent configuration.
+function isAgentApiConfig(value: unknown): value is AgentApiConfig {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("id" in value) ||
+    !("playerName" in value) ||
+    !("endpoint" in value) ||
+    !("enabled" in value)
+  ) {
+    return false
+  }
+
+  return (
+    typeof value.id === "string" &&
+    value.id.length > 0 &&
+    typeof value.playerName === "string" &&
+    value.playerName.length > 0 &&
+    typeof value.endpoint === "string" &&
+    value.endpoint.length > 0 &&
+    typeof value.enabled === "boolean"
+  )
+}
+
+// normalizeAgentApiConfigs keeps only valid configs and de-duplicates by stable id.
+function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
+  if (!Array.isArray(configs)) {
+    return []
+  }
+
+  const seenIds = new Set<string>()
+  const normalizedConfigs: AgentApiConfig[] = []
+
+  for (const config of configs) {
+    if (!isAgentApiConfig(config) || seenIds.has(config.id)) {
+      continue
+    }
+
+    seenIds.add(config.id)
+    normalizedConfigs.push({ ...config })
+  }
+
+  return normalizedConfigs
+}
+
 // buildRoundSnapshot extracts the restorable round state from the live runtime.
 function buildRoundSnapshot(state: State): PersistedRound | null {
   if (
@@ -109,9 +156,12 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
   }
 
   const totalCells = state.dims.length * state.dims.width
+  const decayIntervalPerCellMs = state.controlMode === "agent-api"
+    ? timing.agentApiCoreDecayIntervalPerCellMs
+    : timing.interactiveCoreDecayIntervalPerCellMs
   const remainingMs = state.clock
     ? state.clock.remaining()
-    : totalCells * coreDecayIntervalPerCellMs(state.controlMode)
+    : totalCells * decayIntervalPerCellMs
 
   return {
     version: runtime.roundStorageVersion,
@@ -122,9 +172,8 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
       row: state.traversalHistory[0].row,
       col: state.traversalHistory[0].col,
     },
-    traversalHistory: state.traversalHistory.map(({ row, col }) => ({
-      row,
-      col,
+    traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
+      playerName, row, col,
     })),
     playerPosition: {
       x: state.playerPosition.x,
@@ -142,6 +191,50 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     winSummary: state.winSummary,
     scoreDecayUnits: state.scoreDecayUnits,
     agentRequestCount: state.agentRequestCount,
+  }
+}
+
+// loadPersistedAgentConfigs restores the configurable HTTP agents for a control mode.
+export function loadPersistedAgentConfigs(
+  modeName: MazeControlModeName,
+): AgentApiConfig[] {
+  try {
+    const storedConfigs = window.localStorage.getItem(
+      storageKey(modeName, agentConfigsStorageSuffix),
+    )
+    if (!storedConfigs) {
+      return []
+    }
+
+    return normalizeAgentApiConfigs(
+      decodeStoredPayload<unknown>(storedConfigs),
+    )
+  } catch {
+    return []
+  }
+}
+
+// savePersistedAgentConfigs stores the configured HTTP agents separately from game progress.
+export function savePersistedAgentConfigs(
+  modeName: MazeControlModeName,
+  configs: AgentApiConfig[],
+): void {
+  try {
+    window.localStorage.setItem(
+      storageKey(modeName, agentConfigsStorageSuffix),
+      encodeStoredPayload(normalizeAgentApiConfigs(configs)),
+    )
+  } catch {
+    // Ignore storage failures so agent configuration remains best-effort only.
+  }
+}
+
+// clearPersistedAgentConfigs removes agent setup without touching game progress.
+export function clearPersistedAgentConfigs(modeName: MazeControlModeName): void {
+  try {
+    window.localStorage.removeItem(storageKey(modeName, agentConfigsStorageSuffix))
+  } catch {
+    // Ignore storage failures so clearing remains best-effort only.
   }
 }
 

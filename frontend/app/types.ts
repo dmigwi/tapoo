@@ -2,12 +2,23 @@ import type { GameClock } from "./clock"
 
 // Shared runtime types live here so rendering, control, storage, and generation stay aligned.
 export type GameStatus =
-  "boot" | "running" | "paused" | "won" | "lost" | "too-small"
+  | "boot"
+  | "running"
+  | "paused"
+  | "won"
+  | "lost"
+  | "too-small"
+  | "await-agent"
 
 // CellCoordinate represents one logical cell position using zero-based row and column indexes.
 export type CellCoordinate = {
   row: number
   col: number
+}
+
+// TraversalHistoryEntry records one chronological logical-cell visit for the named player.
+export type TraversalHistoryEntry = CellCoordinate & {
+  playerName: string
 }
 
 // RenderGridPoint represents one drawn maze-grid point using positive x/y coordinates.
@@ -55,7 +66,12 @@ export type CellNeighbors = {
 export type MoveAction = "MoveUp" | "MoveDown" | "MoveLeft" | "MoveRight"
 
 // SessionAction groups non-movement actions that affect the active game session.
-export type SessionAction = "pause" | "proceed" | "cycle-walls" | "restart"
+export type SessionAction =
+  | "pause"
+  | "proceed"
+  | "cycle-walls"
+  | "restart"
+  | "await-agent"
 
 // Direction extends MoveAction with the neutral "none" state used during generation.
 export type Direction = "none" | MoveAction
@@ -82,14 +98,23 @@ export type AgentExpectedResponseFormat = {
   }
 }
 
+// AgentApiConfig stores one HTTP-controlled agent that can join the shared agent-api maze.
+export type AgentApiConfig = {
+  id: string
+  playerName: string
+  endpoint: string
+  enabled: boolean
+}
+
 // MazeActionState is the flattened agent-api payload that combines live maze context with replay results.
 export type MazeActionState = {
   level: number
   status: GameStatus
   score: number
+  playerName: string
   currentCell: CellCoordinate | null
   destinationCell: CellCoordinate | null
-  traversalHistory: CellCoordinate[]
+  traversalHistory: TraversalHistoryEntry[]
 
   instruction: string
   allowedMoves: MoveAction[]
@@ -108,6 +133,7 @@ export type MazeActionState = {
 // MazeActionDispatchOptions lets each dispatched command opt into feedback when it needs it.
 export type MazeActionDispatchOptions = {
   wantFeedback?: boolean
+  playerName?: string
 }
 
 export type MazeActionDispatch = (
@@ -141,7 +167,12 @@ export type PathStep = {
   __corridorLength: number
 }
 
-export type PersistedGameStatus = "running" | "paused" | "won" | "lost"
+export type PersistedGameStatus =
+  | "running"
+  | "paused"
+  | "won"
+  | "lost"
+  | "await-agent"
 
 // PersistedRound captures the active or finished round state restored across reloads.
 export type PersistedRound = {
@@ -150,7 +181,7 @@ export type PersistedRound = {
   dims: BaseDimensions
   maze: string[][]
   startCell: CellCoordinate
-  traversalHistory: CellCoordinate[]
+  traversalHistory: TraversalHistoryEntry[]
   playerPosition: RenderGridPoint
   finalPosition: RenderGridPoint
   wallWeight: WallWeight
@@ -213,7 +244,8 @@ export type State = {
   dims: BaseDimensions | null
   maze: string[][] | null
   playerPosition: RenderGridPoint | null
-  traversalHistory: CellCoordinate[]
+  playerName: string
+  traversalHistory: TraversalHistoryEntry[]
   finalPosition: RenderGridPoint | null
   status: GameStatus
   score: number
@@ -274,6 +306,8 @@ export type AppConfig = {
     failedCompactMessage: string
     proceedMessage: string
     touchProceedMessage: string
+    agentAwaitMessage: string
+    agentAwaitActionMessage: string
     tooSmallMessage: string
     tooSmallActionMessage: string
     statusTemplate: string
@@ -333,6 +367,7 @@ export type AppConfig = {
   }
   maze: {
     playerMarker: string
+    playerName: string
     destinationMarker: string
     walls: Record<WallWeight, [string, string, string]>
     cellSpan: number
@@ -362,8 +397,6 @@ export type AppConfig = {
     interactiveCoreDecayIntervalPerCellMs: number
     agentApiCoreDecayIntervalPerCellMs: number
     agentApiResponseTimeoutMs: number
-    agentApiResponsePenaltyIntervalMs: number
-    agentMovePollSlackFactor: number
   }
   viewport: {
     compactWidth: number
@@ -378,7 +411,6 @@ export type AppConfig = {
   }
   runtime: {
     roundStorageVersion: number
-    defaultAgentMoveEndpoint: string
     missingElementErrorTemplate: string
     agentApiMistakePenaltyMoves: number
   }

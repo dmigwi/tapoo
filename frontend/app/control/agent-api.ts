@@ -1,7 +1,8 @@
-import { CONFIG, coreDecayIntervalPerCellMs } from "../config"
+import { CONFIG } from "../config"
 import { mergeMazeActionState } from "../cmd-feedback"
 import { isRunningStatus } from "../status"
 import type {
+  AgentApiConfig,
   MazeAction,
   MazeActionDispatch,
   MazeActionState,
@@ -9,10 +10,6 @@ import type {
 } from "../types"
 
 const { runtime, timing } = CONFIG
-
-const agentMovePollIntervalMs = Math.round(
-  coreDecayIntervalPerCellMs("agent-api") * timing.agentMovePollSlackFactor,
-)
 
 type AgentPredictionResponse = {
   moves?: unknown
@@ -64,23 +61,39 @@ type HandleAgentTurnLoopOptions = {
   dispatchAgentAction: (
     action: MazeAction,
     dispatch: MazeActionDispatch,
+    playerName: string,
   ) => MazeActionState
+  readAgentConfigs: () => AgentApiConfig[]
   onActionState: (actionState: MazeActionState) => void
   readActionState: () => MazeActionState
 }
 
 // handleAgentTurnLoop owns the HTTP polling cycle used by the agent-api control mode.
 export function handleAgentTurnLoop({
-  commitAgentTurn, dispatch, dispatchAgentAction, elements, onActionState, readActionState,
+  commitAgentTurn, dispatch, dispatchAgentAction, elements, onActionState, readActionState, readAgentConfigs,
 }: HandleAgentTurnLoopOptions): AgentMovePoller {
   let attached = false
   let scheduledTurn: number | null = null
   let activeController: AbortController | null = null
   let activeTimeout: number | null = null
   let lastActionState: MazeActionState | null = null
+  let agentCursor = 0
 
   // activeActionState returns the most recent replay state, or the live base state before any replay exists.
   const activeActionState = (): MazeActionState => lastActionState ?? readActionState()
+
+  // nextAgent rotates through all enabled agents configured for the shared maze.
+  const nextAgent = (): AgentApiConfig | null => {
+    const enabledAgents = readAgentConfigs().filter((agent) => agent.enabled)
+
+    if (enabledAgents.length === 0) {
+      return null
+    }
+
+    const selectedAgent = enabledAgents[agentCursor % enabledAgents.length]
+    agentCursor += 1
+    return selectedAgent
+  }
 
   // clearScheduledTurn stops any queued request cycle.
   const clearScheduledTurn = (): void => {
@@ -118,6 +131,7 @@ export function handleAgentTurnLoop({
       return
     }
 
+    const agentMovePollIntervalMs = timing.agentApiCoreDecayIntervalPerCellMs
     scheduledTurn = window.setTimeout(() => {
       scheduledTurn = null
       void requestNextAgentTurn()
@@ -133,6 +147,7 @@ export function handleAgentTurnLoop({
     let didTimeout = false
     // AbortController lets the timeout watcher cancel slow requests cleanly.
     const controller = new AbortController()
+    let selectedAgent: AgentApiConfig | null = null
     activeController = controller
     activeTimeout = window.setTimeout(() => {
       didTimeout = true
@@ -140,8 +155,19 @@ export function handleAgentTurnLoop({
     }, timing.agentApiResponseTimeoutMs)
 
     try {
-      const response = await fetch(runtime.defaultAgentMoveEndpoint, {
-        body: JSON.stringify(activeActionState()),
+      const currentActionState = activeActionState()
+      selectedAgent = nextAgent()
+      if (!selectedAgent) {
+        dispatch({ type: "await-agent" })
+        return
+      }
+
+      const requestActionState = mergeMazeActionState(currentActionState, {
+          playerName: selectedAgent.playerName,
+      })
+
+      const response = await fetch(selectedAgent.endpoint, {
+        body: JSON.stringify(requestActionState),
         headers: {
           "Content-Type": "application/json",
         },
@@ -160,7 +186,10 @@ export function handleAgentTurnLoop({
         const decayedMovesCount = runtime.agentApiMistakePenaltyMoves
         const nextState = mergeMazeActionState(
           commitAgentTurn(decayedMovesCount),
-          { lastMoveStatus: "malformed-response" },
+          {
+            playerName: selectedAgent.playerName,
+            lastMoveStatus: "malformed-response",
+          },
         )
         lastActionState = nextState
         onActionState(nextState)
@@ -171,7 +200,11 @@ export function handleAgentTurnLoop({
       let appliedMoveCount = 0
 
       for (const move of submittedMoves) {
-        const replayState = dispatchAgentAction({ type: move }, dispatch)
+        const replayState = dispatchAgentAction(
+          { type: move },
+          dispatch,
+          selectedAgent.playerName,
+        )
         lastReplayState = replayState
         const status = replayState.lastMoveStatus
 
@@ -200,6 +233,7 @@ export function handleAgentTurnLoop({
       const committedState = commitAgentTurn(decayedMovesCount)
 
       const nextState = mergeReplayResult(committedState, {
+        playerName: selectedAgent.playerName,
         lastMoveStatus: lastReplayState.lastMoveStatus,
         visitedBefore: lastReplayState?.visitedBefore,
         submittedMoves: submittedMoves.map(
@@ -224,7 +258,10 @@ export function handleAgentTurnLoop({
       const decayedMovesCount = runtime.agentApiMistakePenaltyMoves
       const nextState = mergeMazeActionState(
         commitAgentTurn(decayedMovesCount),
-        { lastMoveStatus: "response-timeout" },
+        {
+          playerName: selectedAgent?.playerName ?? activeActionState().playerName,
+          lastMoveStatus: "response-timeout",
+        },
       )
       lastActionState = nextState
       onActionState(nextState)

@@ -2,19 +2,32 @@ import { beforeEach, describe, expect, it } from "vitest"
 
 import { STORE_ENCODING_PREFIX } from "./config"
 import {
+  clearPersistedAgentConfigs,
   clearPersistedSnapshot,
   clearPersistedRound,
+  loadPersistedAgentConfigs,
   loadPersistedSnapshot,
+  savePersistedAgentConfigs,
   savePersistedPreferences,
   savePersistedRoundState,
 } from "./storage"
-import type { State } from "./types"
+import type { State, TraversalHistoryEntry } from "./types"
 
 const MODE = "interactive"
+const AGENT_MODE = "agent-api"
+
+function visit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: "Blue", row, col }
+}
 
 // storageKey mirrors the production per-mode browser storage naming.
 function storageKey(suffix: string): string {
   return `tapoo.${MODE}.${suffix}`
+}
+
+// agentStorageKey mirrors the separate agent-api storage namespace.
+function agentStorageKey(suffix: string): string {
+  return `tapoo.${AGENT_MODE}.${suffix}`
 }
 
 // isWallWeight mirrors the production wall-weight guard for persistence tests.
@@ -60,7 +73,8 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "|"],
     ],
     playerPosition: { x: 1, y: 1 },
-    traversalHistory: [{ row: 0, col: 0 }],
+    playerName: "Blue",
+    traversalHistory: [visit(0, 0)],
     finalPosition: { x: 1, y: 1 },
     status: "running",
     score: 1200,
@@ -133,6 +147,50 @@ describe("storage", () => {
     })
   })
 
+  it("saves and reloads configured agent api details separately from game progress", () => {
+    savePersistedAgentConfigs(AGENT_MODE, [
+      {
+        id: "agent-a",
+        playerName: "Agent A",
+        endpoint: "/api/agents/a/move",
+        enabled: true,
+      },
+      {
+        id: "agent-b",
+        playerName: "Agent B",
+        endpoint: "/api/agents/b/move",
+        enabled: false,
+      },
+    ])
+
+    const storedConfigs = window.localStorage.getItem(
+      agentStorageKey("agentConfigs"),
+    )
+
+    expect(storedConfigs).toContain(STORE_ENCODING_PREFIX)
+    expect(storedConfigs).not.toContain("/api/agents/a/move")
+    expect(loadPersistedAgentConfigs(AGENT_MODE)).toEqual([
+      {
+        id: "agent-a",
+        playerName: "Agent A",
+        endpoint: "/api/agents/a/move",
+        enabled: true,
+      },
+      {
+        id: "agent-b",
+        playerName: "Agent B",
+        endpoint: "/api/agents/b/move",
+        enabled: false,
+      },
+    ])
+
+    clearPersistedSnapshot(AGENT_MODE)
+    expect(loadPersistedAgentConfigs(AGENT_MODE)).toHaveLength(2)
+
+    clearPersistedAgentConfigs(AGENT_MODE)
+    expect(loadPersistedAgentConfigs(AGENT_MODE)).toEqual([])
+  })
+
   it("saves and reloads the active round state", () => {
     const state = createState({
       playerPosition: { x: 1, y: 1 },
@@ -144,12 +202,12 @@ describe("storage", () => {
     const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
 
     expect(snapshot.round).toEqual({
-      version: 2,
+      version: 3,
       level: 4,
       dims: { length: 5, width: 5 },
       maze: state.maze,
       startCell: { row: 0, col: 0 },
-      traversalHistory: [{ row: 0, col: 0 }],
+      traversalHistory: [visit(0, 0)],
       playerPosition: { x: 1, y: 1 },
       finalPosition: { x: 1, y: 1 },
       wallWeight: 2,

@@ -1,15 +1,35 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createAgentMode } from "./agent"
-import { CONFIG, coreDecayIntervalPerCellMs } from "../config"
+import { CONFIG } from "../config"
 import type {
+  AgentApiConfig,
   MazeAction,
   MazeActionDispatchOptions,
   MazeActionState,
+  TraversalHistoryEntry,
 } from "../types"
 
-const agentMovePollIntervalMs =
-  coreDecayIntervalPerCellMs("agent-api") * CONFIG.timing.agentMovePollSlackFactor
+const agentMovePollIntervalMs = CONFIG.timing.agentApiCoreDecayIntervalPerCellMs
+
+function enabledAgentConfigs(): AgentApiConfig[] {
+  return [
+    {
+      id: "blue-agent",
+      playerName: "Blue",
+      endpoint: "/api/agent/move",
+      enabled: true,
+    },
+  ]
+}
+
+function createTestAgentMode(elements: Parameters<typeof createAgentMode>[0]) {
+  return createAgentMode(elements, enabledAgentConfigs)
+}
+
+function visit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: "Blue", row, col }
+}
 
 function createButton({
   action,
@@ -37,7 +57,8 @@ function createActionState(
   return {
     currentCell: { row: 0, col: 0 },
     destinationCell: { row: 0, col: 2 },
-    traversalHistory: [{ row: 0, col: 0 }],
+    traversalHistory: [visit(0, 0)],
+    playerName: "Blue",
     level: 4,
     score: 800,
     status: "running",
@@ -92,7 +113,7 @@ describe("agent control mode", () => {
       .fn()
       .mockReturnValueOnce(createActionState({
         currentCell: { row: 0, col: 1 },
-        traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+        traversalHistory: [visit(0, 0), visit(0, 1)],
         lastMoveStatus: "applied",
         submittedMoves: ["0:MoveRight"],
         lastValidMoveIndex: 0,
@@ -100,11 +121,7 @@ describe("agent control mode", () => {
       }))
       .mockReturnValueOnce(createActionState({
         currentCell: { row: 1, col: 1 },
-        traversalHistory: [
-          { row: 0, col: 0 },
-          { row: 0, col: 1 },
-          { row: 1, col: 1 },
-        ],
+        traversalHistory: [visit(0, 0), visit(0, 1), visit(1, 1)],
         lastMoveStatus: "applied",
         submittedMoves: ["0:MoveDown"],
         lastValidMoveIndex: 0,
@@ -119,7 +136,7 @@ describe("agent control mode", () => {
       }),
     )
 
-    const mode = createAgentMode(elements)
+    const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
@@ -143,10 +160,11 @@ describe("agent control mode", () => {
     expect(JSON.parse(request.body)).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 2 },
+      playerName: "Blue",
       level: 4,
       score: 800,
       status: "running",
-      traversalHistory: [{ row: 0, col: 0 }],
+      traversalHistory: [visit(0, 0)],
       allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
       instruction:
@@ -163,8 +181,16 @@ describe("agent control mode", () => {
       lastValidMoveIndex: null,
       decayedMovesCount: 0,
     })
-    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "MoveRight" }, { wantFeedback: true })
-    expect(dispatch).toHaveBeenNthCalledWith(2, { type: "MoveDown" }, { wantFeedback: true })
+    expect(dispatch).toHaveBeenNthCalledWith(
+      1,
+      { type: "MoveRight" },
+      { wantFeedback: true, playerName: "Blue" },
+    )
+    expect(dispatch).toHaveBeenNthCalledWith(
+      2,
+      { type: "MoveDown" },
+      { wantFeedback: true, playerName: "Blue" },
+    )
     expect(commitAgentTurn).toHaveBeenCalledWith(
       2,
     )
@@ -199,7 +225,7 @@ describe("agent control mode", () => {
 
     const dispatch = vi.fn().mockReturnValueOnce(createActionState({
       currentCell: { row: 0, col: 1 },
-      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+      traversalHistory: [visit(0, 0), visit(0, 1)],
       lastMoveStatus: "applied",
       submittedMoves: ["0:MoveRight"],
       lastValidMoveIndex: 0,
@@ -214,7 +240,7 @@ describe("agent control mode", () => {
       }),
     )
 
-    const mode = createAgentMode(elements)
+    const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
@@ -256,7 +282,7 @@ describe("agent control mode", () => {
       .fn()
       .mockReturnValueOnce(createActionState({
         currentCell: { row: 0, col: 1 },
-        traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+        traversalHistory: [visit(0, 0), visit(0, 1)],
         lastMoveStatus: "applied",
         submittedMoves: ["0:MoveRight"],
         lastValidMoveIndex: 0,
@@ -264,7 +290,7 @@ describe("agent control mode", () => {
       }))
       .mockReturnValueOnce(createActionState({
         currentCell: { row: 0, col: 1 },
-        traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+        traversalHistory: [visit(0, 0), visit(0, 1)],
         lastMoveStatus: "invalid-move",
         submittedMoves: ["1:MoveDown"],
         lastValidMoveIndex: 0,
@@ -279,7 +305,7 @@ describe("agent control mode", () => {
       }),
     )
 
-    const mode = createAgentMode(elements)
+    const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
@@ -322,7 +348,7 @@ describe("agent control mode", () => {
     const dispatch = vi.fn().mockReturnValueOnce(createActionState({
       currentCell: { row: 0, col: 1 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [{ row: 0, col: 0 }, { row: 0, col: 1 }],
+      traversalHistory: [visit(0, 0), visit(0, 1)],
       lastMoveStatus: "reached-target",
       submittedMoves: ["0:MoveRight"],
       lastValidMoveIndex: 0,
@@ -340,7 +366,7 @@ describe("agent control mode", () => {
       }),
     )
 
-    const mode = createAgentMode(elements)
+    const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
@@ -348,7 +374,7 @@ describe("agent control mode", () => {
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith(
       { type: "MoveRight" },
-      { wantFeedback: true },
+      { wantFeedback: true, playerName: "Blue" },
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(3)
     expect(mode.readLastActionState()).toEqual(
@@ -391,7 +417,7 @@ describe("agent control mode", () => {
       }),
     )
 
-    const mode = createAgentMode(elements)
+    const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readActionState, vi.fn(() => createActionState()))
     elements.touchButtons[0].click()
@@ -483,7 +509,7 @@ describe("agent control mode", () => {
     )
     const commitAgentTurn = vi.fn(() => createActionState({ level: 1, score: 100, status }))
 
-    const mode = createAgentMode(elements)
+    const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
@@ -494,7 +520,11 @@ describe("agent control mode", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: "proceed" })
-    expect(dispatch).toHaveBeenNthCalledWith(2, { type: "MoveRight" }, { wantFeedback: true })
+    expect(dispatch).toHaveBeenNthCalledWith(
+      2,
+      { type: "MoveRight" },
+      { wantFeedback: true, playerName: "Blue" },
+    )
   })
 
   it("rebinds local controls without keeping stale listeners alive", () => {
@@ -524,7 +554,7 @@ describe("agent control mode", () => {
       }),
     )
 
-    const mode = createAgentMode(elements)
+    const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(firstDispatch, readActionState, vi.fn(() => createActionState()))
     mode.bindActionDispatch(secondDispatch, readActionState, vi.fn(() => createActionState()))

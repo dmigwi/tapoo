@@ -1,7 +1,6 @@
 import { GameClock } from "./clock"
 import {
   CONFIG,
-  coreDecayIntervalPerCellMs,
   WALL_WEIGHTS,
 } from "./config"
 import { buildMazeActionState, executeActionWithFeedback } from "./cmd-feedback"
@@ -13,6 +12,7 @@ import {
 import { render } from "./render"
 import {
   isFinishedStatus,
+  isAwaitAgentStatus,
   isLostStatus,
   isPausedStatus,
   isRunningStatus,
@@ -39,6 +39,7 @@ import type {
   PersistedRound,
   RenderGridPoint,
   State,
+  TraversalHistoryEntry,
 } from "./types"
 
 const { maze, messages, runtime, scoring, timing } = CONFIG
@@ -49,6 +50,7 @@ const state: State = {
   dims: null,
   maze: null,
   playerPosition: null,
+  playerName: maze.playerName,
   traversalHistory: [],
   finalPosition: null,
   status: "boot",
@@ -81,7 +83,9 @@ const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
 
 // activeCoreDecayIntervalPerCellMs resolves the current mode's per-cell timing budget.
 function activeCoreDecayIntervalPerCellMs(): number {
-  return coreDecayIntervalPerCellMs(state.controlMode)
+  return state.controlMode === "agent-api"
+    ? timing.agentApiCoreDecayIntervalPerCellMs
+    : timing.interactiveCoreDecayIntervalPerCellMs
 }
 
 // calculateMaxScore returns the full score budget for one maze before any decay applies.
@@ -482,6 +486,14 @@ function mazeCellKey(cell: CellCoordinate): string {
   return `${cell.row}:${cell.col}`
 }
 
+// traversalHistoryEntry records one logical-cell visit for the active player.
+function traversalHistoryEntry(cell: CellCoordinate): TraversalHistoryEntry {
+  return {
+    ...cell,
+    playerName: state.playerName,
+  }
+}
+
 // traversalHistoryIncludes reports whether the ordered visit history already contains a cell.
 function traversalHistoryIncludes(cell: CellCoordinate): boolean {
   return state.traversalHistory.some(
@@ -513,6 +525,16 @@ function isCellCoordinate(value: unknown): value is CellCoordinate {
   )
 }
 
+// isTraversalHistoryEntry validates one persisted named visit record.
+function isTraversalHistoryEntry(value: unknown): value is TraversalHistoryEntry {
+  return (
+    isCellCoordinate(value) &&
+    "playerName" in value &&
+    typeof value.playerName === "string" &&
+    value.playerName.length > 0
+  )
+}
+
 // restoreClock reconstructs a live clock from persisted remaining time.
 function restoreClock(
   totalCells: number,
@@ -521,7 +543,11 @@ function restoreClock(
 ): GameClock {
   // Round timing is derived from the shared per-cell cadence so score decay, persisted remaining
   // time, and any agent polling policy all reconstruct the same allowance after a reload.
-  const totalDurationMs = totalCells * coreDecayIntervalPerCellMs(controlMode)
+  const totalDurationMs = totalCells * (
+    controlMode === "agent-api"
+      ? timing.agentApiCoreDecayIntervalPerCellMs
+      : timing.interactiveCoreDecayIntervalPerCellMs
+  )
   const clampedRemainingMs = Math.max(0, Math.min(totalDurationMs, remainingMs))
   const clock = new GameClock(totalDurationMs)
   clock.startedAt = performance.now() - (totalDurationMs - clampedRemainingMs)
@@ -549,6 +575,7 @@ function applyTooSmallState(level: number): void {
   state.dims = null
   state.maze = null
   state.playerPosition = null
+  state.playerName = maze.playerName
   state.traversalHistory = []
   state.finalPosition = null
   state.score = 0
@@ -613,7 +640,7 @@ function isValidPersistedRound(snapshot: PersistedRound): boolean {
 
   const firstVisitedCell = snapshot.traversalHistory[0]
   if (
-    !isCellCoordinate(firstVisitedCell) ||
+    !isTraversalHistoryEntry(firstVisitedCell) ||
     mazeCellKey(firstVisitedCell) !== mazeCellKey(snapshot.startCell)
   ) {
     return false
@@ -621,7 +648,7 @@ function isValidPersistedRound(snapshot: PersistedRound): boolean {
 
   const visitedCellKeys = new Set<string>()
   for (const visitedCell of snapshot.traversalHistory) {
-    if (!isCellCoordinate(visitedCell)) {
+    if (!isTraversalHistoryEntry(visitedCell)) {
       return false
     }
 
@@ -822,7 +849,9 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
     x: snapshot.playerPosition.x,
     y: snapshot.playerPosition.y,
   }
-  state.traversalHistory = snapshot.traversalHistory.map(({ row, col }) => ({
+  state.playerName = snapshot.traversalHistory[0].playerName
+  state.traversalHistory = snapshot.traversalHistory.map(({ playerName, row, col }) => ({
+    playerName,
     row,
     col,
   }))
@@ -847,6 +876,14 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   const totalCells = snapshot.dims.length * snapshot.dims.width
   state.clock = restoreClock(totalCells, snapshot.remainingMs)
   state.clock.pause()
+  if (isAwaitAgentStatus(snapshot.status)) {
+    state.status = "await-agent"
+    state.winSummary = ""
+    state.canResume = false
+    renderState()
+    return true
+  }
+
   state.status = "paused"
   state.winSummary = ""
   state.canResume = true
@@ -881,7 +918,10 @@ function startRound(level: number, persist = true): void {
     x: round.startPosition.x,
     y: round.startPosition.y,
   }
-  state.traversalHistory = [cellCoordinateFromGridPoint(round.startPosition)]
+  state.playerName = maze.playerName
+  state.traversalHistory = [
+    traversalHistoryEntry(cellCoordinateFromGridPoint(round.startPosition)),
+  ]
   state.finalPosition = {
     x: round.finalPosition.x,
     y: round.finalPosition.y,
@@ -922,6 +962,15 @@ function restartGame(): void {
 
 // resumeOrProceed resumes a pause or advances from a finished round.
 function resumeOrProceed(): void {
+  if (isAwaitAgentStatus(state.status) && state.controlMode === "agent-api") {
+    state.clock?.resume()
+    state.status = "running"
+    state.canResume = false
+    persistStateNow()
+    renderState()
+    return
+  }
+
   if (isPausedStatus(state.status) && state.canResume && state.clock) {
     state.clock.resume()
     state.status = "running"
@@ -940,6 +989,19 @@ function resumeOrProceed(): void {
     startRound(state.level)
     return
   }
+}
+
+// awaitAgent pauses agent-api play before any HTTP agent has been explicitly enabled.
+function awaitAgent(): void {
+  if (state.controlMode !== "agent-api" || !isRunningStatus(state.status)) {
+    return
+  }
+
+  state.clock?.pause()
+  state.status = "await-agent"
+  state.canResume = false
+  persistStateNow()
+  renderState()
 }
 
 // pauseGame freezes the current round while preserving it for resume.
@@ -1026,7 +1088,7 @@ function movePlayer(rowDelta: number, columnDelta: number): void {
   state.playerPosition.x = nextX
   const nextCell = cellCoordinateFromGridPoint({ x: nextX, y: nextY })
   if (!traversalHistoryIncludes(nextCell)) {
-    state.traversalHistory.push(nextCell)
+    state.traversalHistory.push(traversalHistoryEntry(nextCell))
   }
 
   const won = handleWinCheck()
@@ -1114,6 +1176,9 @@ function executeCommand(action: MazeAction): void {
     case "restart":
       restartGame()
       return
+    case "await-agent":
+      awaitAgent()
+      return
   }
 }
 
@@ -1129,11 +1194,20 @@ function dispatchControl(
     return null
   }
 
+  const previousPlayerName = state.playerName
+  if (options.playerName) {
+    state.playerName = options.playerName
+  }
+
   const actionState = executeActionWithFeedback(action, {
     executeCommand,
     state,
     handleMove,
   })
+  if (!actionState) {
+    state.playerName = previousPlayerName
+  }
+
   if (actionState) {
     activeControlMode?.recordActionState(actionState)
   }

@@ -32,6 +32,7 @@ function createActionState(
     currentCell: null,
     destinationCell: null,
     traversalHistory: [],
+    playerName: "Blue",
     level: 1,
     score: 0,
     status: "boot",

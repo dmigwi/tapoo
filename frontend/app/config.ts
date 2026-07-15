@@ -1,6 +1,5 @@
 import type {
   AppConfig,
-  MazeControlModeName,
   NavigationProfile,
   WallWeight,
 } from "./types"
@@ -66,6 +65,8 @@ export const CONFIG: AppConfig = {
     failedCompactMessage: "Game over! You lost.",
     proceedMessage: "Press Enter or Ctrl+P to Proceed",
     touchProceedMessage: "Use the buttons below.",
+    agentAwaitMessage: "No enabled agent API is configured.",
+    agentAwaitActionMessage: "Configure an agent. ",
     tooSmallMessage: "Level {level} needs more screen room!",
     tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
     statusTemplate:
@@ -130,6 +131,7 @@ export const CONFIG: AppConfig = {
   // Maze glyphs and geometry shared by generation, traversal, and rendering.
   maze: {
     playerMarker: "▓",
+    playerName: "Blue",
     destinationMarker: "█",
     walls: {
       1: ["|", "---", "-"],
@@ -164,14 +166,8 @@ export const CONFIG: AppConfig = {
     refreshInterval: 250,
     scoreDecayRate: 100,
     interactiveCoreDecayIntervalPerCellMs: 1_000, // Translates to 1s
-    agentApiCoreDecayIntervalPerCellMs: 3_000,    // Translates to 3s
+    agentApiCoreDecayIntervalPerCellMs: 30_000,   // Translates to 30s
     agentApiResponseTimeoutMs: 180_000,           // Translates to 3min
-    agentApiResponsePenaltyIntervalMs: 30_000,    // Translates to 30s
-    // 1.0 matches the agent core per-cell scores decay rate. 1.2 means the agent may get polled 20%
-    // slower than that rate while still having a reasonable chance to finish because winning paths
-    // are usually shorter than full-maze coverage. Treat ~1.25 as the caution line, ~1.4 as mostly
-    // for advanced agents, and ~1.6+ as near-breakpoint territory.
-    agentMovePollSlackFactor: 1.2,
   },
   // Viewport thresholds translate measured DOM space into logical maze room.
   viewport: {
@@ -187,8 +183,7 @@ export const CONFIG: AppConfig = {
   },
   // Runtime settings back persistence validation and agent-mode bootstrapping.
   runtime: {
-    roundStorageVersion: 2,
-    defaultAgentMoveEndpoint: "/api/agent/move",
+    roundStorageVersion: 3,
     missingElementErrorTemplate: "missing required element: {id}",
     agentApiMistakePenaltyMoves: 5,
   },
@@ -198,15 +193,6 @@ export const CONFIG: AppConfig = {
 export const WALL_WEIGHTS = Object.keys(CONFIG.maze.walls)
   .map((weight) => Number(weight))
   .sort((left, right) => left - right) as WallWeight[]
-
-// coreDecayIntervalPerCellMs returns the per-cell score-decay interval for one browser control mode.
-export function coreDecayIntervalPerCellMs(
-  modeName: MazeControlModeName,
-): number {
-  return modeName === "agent-api"
-    ? CONFIG.timing.agentApiCoreDecayIntervalPerCellMs
-    : CONFIG.timing.interactiveCoreDecayIntervalPerCellMs
-}
 
 // These storage keys keep browser persistence stable across refreshes and upgrades.
 export const WALL_WEIGHT_STORAGE_KEY = "tapoo.wallWeight"
