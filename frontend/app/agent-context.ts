@@ -13,15 +13,10 @@ import type {
   TraversalHistoryEntry,
 } from "./types"
 
-const { maze } = CONFIG
+const { maze, runtime } = CONFIG
 
 // ALLOWED_MOVE_ACTIONS enumerates the only traversal commands the agent may return.
-const ALLOWED_MOVE_ACTIONS: MoveAction[] = [
-  "MoveUp",
-  "MoveDown",
-  "MoveLeft",
-  "MoveRight",
-]
+const ALLOWED_MOVE_ACTIONS: MoveAction[] = ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"]
 
 // VALID_PREDICTION_FORMAT documents the one supported agent response payload.
 const VALID_PREDICTION_FORMAT = {
@@ -30,9 +25,10 @@ const VALID_PREDICTION_FORMAT = {
   },
 } as const
 
-// AGENT_INSTRUCTION keeps the request guidance compact while still explaining the scoring tradeoff.
-const AGENT_INSTRUCTION =
-  "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination."
+// agentPrompt keeps request guidance compact while naming the active agent for history lookup.
+function agentPrompt(playerName: string): string {
+  return `Your name is ${playerName}. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.`
+}
 
 // MOVE_DELTAS mirrors runtime movement so feedback can validate moves before dispatching them.
 const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
@@ -79,27 +75,25 @@ function normalizeSubmittedMoves(moves: MoveAction[]): string[] {
 // buildMazeActionState snapshots the live maze state together with the latest agent replay result.
 export function buildMazeActionState(
   state: State,
+  playerName = runtime.interactivePlayerName,
   overrides: Partial<MazeActionState> = {},
 ): MazeActionState {
   return {
     level: state.level,
     status: state.status,
     score: state.score,
-    playerName: state.playerName,
-    currentCell: state.playerPosition
-      ? cellCoordinateFromGridPoint(state.playerPosition)
-      : null,
-    destinationCell: state.finalPosition
-      ? cellCoordinateFromGridPoint(state.finalPosition)
-      : null,
+    model: "",
+    stream: false,
+    format: "json",
+    playerName,
+    currentCell: state.playerPosition ? cellCoordinateFromGridPoint(state.playerPosition) : null,
+    destinationCell: state.finalPosition ? cellCoordinateFromGridPoint(state.finalPosition) : null,
     traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
-      playerName,
-      row,
-      col,
+      playerName, row, col,
     })),
     allowedMoves: [...ALLOWED_MOVE_ACTIONS],
     recommendedAvgPredictionLimit: recommendedAvgPredictionLimit(state),
-    instruction: AGENT_INSTRUCTION,
+    prompt: agentPrompt(playerName),
     expectedResponseFormat: {
       validPredictionFormat: {
         moves: [...VALID_PREDICTION_FORMAT.validPredictionFormat.moves],
@@ -120,6 +114,8 @@ export function mergeMazeActionState(
   actionState: MazeActionState,
   overrides: Partial<MazeActionState> = {},
 ): MazeActionState {
+  const playerName = overrides.playerName ?? actionState.playerName
+
   return {
     ...actionState,
     allowedMoves: [...actionState.allowedMoves],
@@ -129,19 +125,19 @@ export function mergeMazeActionState(
       },
     },
     traversalHistory: actionState.traversalHistory.map(({ playerName, row, col }) => ({
-      playerName,
-      row,
-      col,
+      playerName, row, col,
     })),
     submittedMoves: [...actionState.submittedMoves],
+    prompt: overrides.prompt ?? agentPrompt(playerName),
     ...overrides,
   }
 }
 
 type CommandFeedbackContext = {
-  executeCommand: (action: MazeAction) => void
   state: State
-  handleMove: (action: MoveAction) => void
+  playerName: string
+  executeCommand: (action: MazeAction) => void
+  handleMove: (action: MoveAction, playerName?: string) => void
 }
 
 // isMoveAction reports whether one semantic command is a move that currently supports feedback.
@@ -154,18 +150,21 @@ function isMoveAction(
 // buildReplayState records the result of one replay step using the shared agent payload shape.
 function buildReplayState(
   state: State,
+  playerName: string,
   command: MoveAction,
   status: MoveStatus,
   visitedBefore?: boolean,
 ): MazeActionState {
   const lastValidMoveIndex =
     status === "applied" || status === "reached-target" ? 0 : null
+  const visitedBeforeState =
+    visitedBefore === undefined ? {} : { visitedBefore }
 
-  return buildMazeActionState(state, {
+  return buildMazeActionState(state, playerName, {
     lastMoveStatus: status,
-    visitedBefore,
     submittedMoves: normalizeSubmittedMoves([command]),
     lastValidMoveIndex,
+    ...visitedBeforeState,
   })
 }
 
@@ -174,7 +173,7 @@ function buildMoveCommandState(
   command: Extract<MazeAction, { type: MoveAction }>,
   context: CommandFeedbackContext,
 ): MazeActionState {
-  const { state, handleMove } = context
+  const { state, handleMove, playerName } = context
   const move = command.type
 
   if (
@@ -183,7 +182,7 @@ function buildMoveCommandState(
     !state.dims ||
     !state.playerPosition
   ) {
-    return buildReplayState( state, move, "invalid-move")
+    return buildReplayState(state, playerName, move, "invalid-move")
   }
 
   const [rowDelta, columnDelta] = MOVE_DELTAS[move]
@@ -196,25 +195,25 @@ function buildMoveCommandState(
   const nextCell = cellCoordinateFromGridPoint({ x: nextX, y: nextY })
 
   if (nextY <= 0 || nextY > state.dims.width * maze.cellSpan) {
-    return buildReplayState( state, move, "invalid-move")
+    return buildReplayState(state, playerName, move, "invalid-move")
   }
 
   if (nextX <= 0 || nextX > state.dims.length * maze.cellSpan) {
-    return buildReplayState( state, move, "invalid-move" )
+    return buildReplayState(state, playerName, move, "invalid-move")
   }
 
   if (!isSpaceFound(state.maze[probeY][probeX])) {
-    return buildReplayState( state, move, "invalid-move")
+    return buildReplayState(state, playerName, move, "invalid-move")
   }
 
   const visitedBefore = traversalHistoryIncludes(state.traversalHistory, nextCell)
-  handleMove(move)
+  handleMove(move, playerName)
 
   if (isWonStatus(state.status)) {
-    return buildReplayState( state, move, "reached-target", visitedBefore)
+    return buildReplayState(state, playerName, move, "reached-target", visitedBefore)
   }
 
-  return buildReplayState( state, move, "applied", visitedBefore )
+  return buildReplayState(state, playerName, move, "applied", visitedBefore)
 }
 
 // executeActionWithFeedback classifies one requested command and returns feedback when supported.

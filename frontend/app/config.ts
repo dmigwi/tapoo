@@ -131,7 +131,6 @@ export const CONFIG: AppConfig = {
   // Maze glyphs and geometry shared by generation, traversal, and rendering.
   maze: {
     playerMarker: "▓",
-    playerName: "Blue",
     destinationMarker: "█",
     walls: {
       1: ["|", "---", "-"],
@@ -165,27 +164,28 @@ export const CONFIG: AppConfig = {
   timing: {
     refreshInterval: 250,
     scoreDecayRate: 100,
-    interactiveCoreDecayIntervalPerCellMs: 1_000, // Translates to 1s
-    agentApiCoreDecayIntervalPerCellMs: 30_000,   // Translates to 30s
+    interactiveCoreDecayIntervalPerCellMs: 1_000, // Translates to 1sec
+    agentApiCoreDecayIntervalPerCellMs: 30_000,   // Translates to 30sec
     agentApiResponseTimeoutMs: 180_000,           // Translates to 3min
   },
   // Viewport thresholds translate measured DOM space into logical maze room.
   viewport: {
     compactWidth: 540,
     compactHeight: 520,
-    terminalSampleWidth: 10,
     minTerminalRows: 20,
     minTerminalColumns: 48,
     terminalHeightInset: 5,
     terminalHeightScale: 4,
     terminalWidthInset: 10,
     terminalWidthScale: 2,
+    terminalSampleWidth: 10,
   },
   // Runtime settings back persistence validation and agent-mode bootstrapping.
   runtime: {
     roundStorageVersion: 3,
     missingElementErrorTemplate: "missing required element: {id}",
     agentApiMistakePenaltyMoves: 5,
+    interactivePlayerName: "Self",
   },
 }
 

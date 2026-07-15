@@ -20,18 +20,12 @@ function getRandomNo(limit: number): number {
   if (limit <= 0) {
     return 0
   }
-
   return Math.floor(Math.random() * limit)
 }
 
 // absInt normalizes signed values when comparing candidate dimensions.
 function absInt(value: number): number {
   return value < 0 ? -value : value
-}
-
-// minInt returns the smaller edge when ranking competing dimensions.
-function minInt(left: number, right: number): number {
-  return left < right ? left : right
 }
 
 // getWallCharacters resolves the glyph set for the requested wall weight.
@@ -103,8 +97,7 @@ function aspectMismatchScore(
   terminalSize: BaseDimensions,
 ): number {
   return absInt(
-    candidate.length * terminalSize.width -
-      candidate.width * terminalSize.length,
+    candidate.length * terminalSize.width - candidate.width * terminalSize.length,
   )
 }
 
@@ -114,29 +107,22 @@ function isPreferredMazeDimensions(
   currentBest: BaseDimensions,
   terminalSize: BaseDimensions,
 ): boolean {
-  const candidatePenalty = aspectMismatchScore(candidate, terminalSize)
-  const bestPenalty = aspectMismatchScore(currentBest, terminalSize)
-  if (candidatePenalty !== bestPenalty) {
-    return candidatePenalty < bestPenalty
-  }
-
+  // Prefer the less skewed (close to square) shape so the maze stays balanced and playable.
   const candidateSkew = absInt(candidate.length - candidate.width)
   const bestSkew = absInt(currentBest.length - currentBest.width)
   if (candidateSkew !== bestSkew) {
     return candidateSkew < bestSkew
   }
 
-  const candidateMinEdge = minInt(candidate.length, candidate.width)
-  const bestMinEdge = minInt(currentBest.length, currentBest.width)
-  if (candidateMinEdge !== bestMinEdge) {
-    return candidateMinEdge > bestMinEdge
+  // When skew ties, choose the shape that better matches the viewport.
+  const candidatePenalty = aspectMismatchScore(candidate, terminalSize)
+  const bestPenalty = aspectMismatchScore(currentBest, terminalSize)
+  if (candidatePenalty !== bestPenalty) {
+    return candidatePenalty < bestPenalty
   }
 
-  if (candidate.length !== currentBest.length) {
-    return candidate.length > currentBest.length
-  }
-
-  return candidate.width > currentBest.width
+  // Remaining ties are equivalent enough that the first deterministic candidate should stay selected.
+  return false
 }
 
 // chooseBestMazeDimensions picks the most balanced candidate for the viewport.

@@ -17,6 +17,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
     {
       id: "blue-agent",
       playerName: "Blue",
+      model: "llama3.2",
       endpoint: "/api/agent/move",
       enabled: true,
     },
@@ -61,11 +62,14 @@ function createActionState(
     playerName: "Blue",
     level: 4,
     score: 800,
+    model: "llama3.2",
+    stream: false,
+    format: "json",
     status: "running",
     allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
     recommendedAvgPredictionLimit: 18,
-    instruction:
-      "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+    prompt:
+      "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
     expectedResponseFormat: {
       validPredictionFormat: {
         moves: ["MoveRight", "MoveDown"],
@@ -163,12 +167,15 @@ describe("agent control mode", () => {
       playerName: "Blue",
       level: 4,
       score: 800,
+      model: "llama3.2",
+      stream: false,
+      format: "json",
       status: "running",
       traversalHistory: [visit(0, 0)],
       allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
-      instruction:
-        "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+      prompt:
+        "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
       expectedResponseFormat: {
         validPredictionFormat: {
           moves: ["MoveRight", "MoveDown"],
@@ -450,12 +457,12 @@ describe("agent control mode", () => {
       }),
     )
 
-    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "cycle-walls" })
-    expect(dispatch).toHaveBeenNthCalledWith(2, { type: "proceed" })
-    expect(dispatch).toHaveBeenNthCalledWith(3, { type: "pause" })
-    expect(dispatch).toHaveBeenNthCalledWith(4, { type: "cycle-walls" })
-    expect(dispatch).toHaveBeenNthCalledWith(5, { type: "proceed" })
-    expect(dispatch).toHaveBeenNthCalledWith(6, { type: "pause" })
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "cycle-walls" }, { playerName: "Self" })
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: "proceed" }, { playerName: "Self" })
+    expect(dispatch).toHaveBeenNthCalledWith(3, { type: "pause" }, { playerName: "Self" })
+    expect(dispatch).toHaveBeenNthCalledWith(4, { type: "cycle-walls" }, { playerName: "Self" })
+    expect(dispatch).toHaveBeenNthCalledWith(5, { type: "proceed" }, { playerName: "Self" })
+    expect(dispatch).toHaveBeenNthCalledWith(6, { type: "pause" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenCalledTimes(6)
     expect(mode.readLastActionState()).toBeNull()
   })
@@ -519,7 +526,7 @@ describe("agent control mode", () => {
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "proceed" })
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "proceed" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenNthCalledWith(
       2,
       { type: "MoveRight" },
@@ -561,6 +568,6 @@ describe("agent control mode", () => {
     elements.touchButtons[0].click()
 
     expect(firstDispatch).not.toHaveBeenCalled()
-    expect(secondDispatch).toHaveBeenCalledWith({ type: "pause" })
+    expect(secondDispatch).toHaveBeenCalledWith({ type: "pause" }, { playerName: "Self" })
   })
 })

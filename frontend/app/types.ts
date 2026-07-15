@@ -1,14 +1,15 @@
 import type { GameClock } from "./clock"
 
-// Shared runtime types live here so rendering, control, storage, and generation stay aligned.
-export type GameStatus =
-  | "boot"
+// PersistedGameStatus lists only round states that are safe to restore from browser storage.
+export type PersistedGameStatus =
   | "running"
   | "paused"
   | "won"
   | "lost"
-  | "too-small"
   | "await-agent"
+
+// Shared runtime types live here so rendering, control, storage, and generation stay aligned.
+export type GameStatus = PersistedGameStatus | "boot" | "too-small"
 
 // CellCoordinate represents one logical cell position using zero-based row and column indexes.
 export type CellCoordinate = {
@@ -69,8 +70,8 @@ export type MoveAction = "MoveUp" | "MoveDown" | "MoveLeft" | "MoveRight"
 export type SessionAction =
   | "pause"
   | "proceed"
-  | "cycle-walls"
   | "restart"
+  | "cycle-walls"
   | "await-agent"
 
 // Direction extends MoveAction with the neutral "none" state used during generation.
@@ -102,6 +103,7 @@ export type AgentExpectedResponseFormat = {
 export type AgentApiConfig = {
   id: string
   playerName: string
+  model: string
   endpoint: string
   enabled: boolean
 }
@@ -111,12 +113,15 @@ export type MazeActionState = {
   level: number
   status: GameStatus
   score: number
+  model: string
+  stream: false
+  format: "json"
   playerName: string
   currentCell: CellCoordinate | null
   destinationCell: CellCoordinate | null
   traversalHistory: TraversalHistoryEntry[]
 
-  instruction: string
+  prompt: string
   allowedMoves: MoveAction[]
   recommendedAvgPredictionLimit: number
   expectedResponseFormat: AgentExpectedResponseFormat
@@ -133,12 +138,12 @@ export type MazeActionState = {
 // MazeActionDispatchOptions lets each dispatched command opt into feedback when it needs it.
 export type MazeActionDispatchOptions = {
   wantFeedback?: boolean
-  playerName?: string
+  playerName: string
 }
 
 export type MazeActionDispatch = (
   action: MazeAction,
-  options?: MazeActionDispatchOptions,
+  options: MazeActionDispatchOptions,
 ) => MazeActionState | null
 
 // MazeActionControl defines the production contract that each browser action-control mode implements.
@@ -166,13 +171,6 @@ export type PathStep = {
   __moveDirection: Direction
   __corridorLength: number
 }
-
-export type PersistedGameStatus =
-  | "running"
-  | "paused"
-  | "won"
-  | "lost"
-  | "await-agent"
 
 // PersistedRound captures the active or finished round state restored across reloads.
 export type PersistedRound = {
@@ -244,7 +242,6 @@ export type State = {
   dims: BaseDimensions | null
   maze: string[][] | null
   playerPosition: RenderGridPoint | null
-  playerName: string
   traversalHistory: TraversalHistoryEntry[]
   finalPosition: RenderGridPoint | null
   status: GameStatus
@@ -367,7 +364,6 @@ export type AppConfig = {
   }
   maze: {
     playerMarker: string
-    playerName: string
     destinationMarker: string
     walls: Record<WallWeight, [string, string, string]>
     cellSpan: number
@@ -413,5 +409,6 @@ export type AppConfig = {
     roundStorageVersion: number
     missingElementErrorTemplate: string
     agentApiMistakePenaltyMoves: number
+    interactivePlayerName: string
   }
 }

@@ -35,10 +35,13 @@ function createActionState(
     playerName: "Blue",
     level: 1,
     score: 0,
+    model: "",
+    stream: false,
+    format: "json",
     status: "boot",
     allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
     recommendedAvgPredictionLimit: 0,
-    instruction: "",
+    prompt: "",
     expectedResponseFormat: {
       validPredictionFormat: {
         moves: ["MoveRight", "MoveDown"],
@@ -90,14 +93,14 @@ describe("interactive control mode", () => {
       }),
     )
 
-    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "restart" })
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "restart" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenNthCalledWith(2, {
       type: "MoveRight",
-    })
-    expect(dispatch).toHaveBeenNthCalledWith(3, { type: "pause" })
+    }, { playerName: "Self" })
+    expect(dispatch).toHaveBeenNthCalledWith(3, { type: "pause" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenNthCalledWith(4, {
       type: "MoveUp",
-    })
+    }, { playerName: "Self" })
 
     mode.recordActionState(createActionState({
       lastMoveStatus: "applied",
@@ -155,6 +158,6 @@ describe("interactive control mode", () => {
     elements.controls[0].click()
 
     expect(firstDispatch).not.toHaveBeenCalled()
-    expect(secondDispatch).toHaveBeenCalledWith({ type: "restart" })
+    expect(secondDispatch).toHaveBeenCalledWith({ type: "restart" }, { playerName: "Self" })
   })
 })

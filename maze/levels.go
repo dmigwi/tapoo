@@ -51,34 +51,23 @@ func aspectMismatchScore(candidate, terminalSize Dimensions) int {
 
 // isPreferredMazeDimensions compares two fitting candidates and reports whether candidate should win.
 // Preference order is:
-// 1. Closest aspect ratio match to the terminal.
-// 2. Lowest internal skew so more balanced mazes win ties.
-// 3. Largest smaller edge so narrow mazes lose when quality is otherwise equal.
-// 4. Deterministic final ordering by length, then width.
+// 1. Lowest internal skew so more balanced mazes win first.
+// 2. Closest aspect ratio match to the terminal.
+// Any remaining tie keeps the first deterministic candidate.
 func isPreferredMazeDimensions(candidate, currentBest, terminalSize Dimensions) bool {
-	candidatePenalty := aspectMismatchScore(candidate, terminalSize)
-	bestPenalty := aspectMismatchScore(currentBest, terminalSize)
-	if candidatePenalty != bestPenalty {
-		return candidatePenalty < bestPenalty
-	}
-
 	candidateSkew := absInt(candidate.Length - candidate.Width)
 	bestSkew := absInt(currentBest.Length - currentBest.Width)
 	if candidateSkew != bestSkew {
 		return candidateSkew < bestSkew
 	}
 
-	candidateMinEdge := min(candidate.Length, candidate.Width)
-	bestMinEdge := min(currentBest.Length, currentBest.Width)
-	if candidateMinEdge != bestMinEdge {
-		return candidateMinEdge > bestMinEdge
+	candidatePenalty := aspectMismatchScore(candidate, terminalSize)
+	bestPenalty := aspectMismatchScore(currentBest, terminalSize)
+	if candidatePenalty != bestPenalty {
+		return candidatePenalty < bestPenalty
 	}
 
-	if candidate.Length != currentBest.Length {
-		return candidate.Length > currentBest.Length
-	}
-
-	return candidate.Width > currentBest.Width
+	return false
 }
 
 // chooseBestMazeDimensions selects the single candidate that best matches the current terminal.

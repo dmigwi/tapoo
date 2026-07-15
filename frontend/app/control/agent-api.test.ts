@@ -26,11 +26,14 @@ function createActionState(
     playerName: "Blue",
     level: 2,
     score: 600,
+    model: "llama3.2",
+    stream: false,
+    format: "json",
     status: "running",
     allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
     recommendedAvgPredictionLimit: 18,
-    instruction:
-      "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+    prompt:
+      "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
     expectedResponseFormat: {
       validPredictionFormat: {
         moves: ["MoveRight", "MoveDown"],
@@ -51,6 +54,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
     {
       id: "blue-agent",
       playerName: "Blue",
+      model: "llama3.2",
       endpoint: "/api/agent/move",
       enabled: true,
     },
@@ -125,7 +129,7 @@ describe("agent api turn loop", () => {
     poller.scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
-    expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" })
+    expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -216,24 +220,28 @@ describe("agent api turn loop", () => {
       {
         id: "agent-a",
         playerName: "Agent A",
+        model: "llama3.2",
         endpoint: "/api/agents/a/move",
         enabled: true,
       },
       {
         id: "agent-b",
         playerName: "Agent B",
+        model: "gemma4",
         endpoint: "/api/agents/b/move",
         enabled: true,
       },
       {
         id: "agent-disabled",
         playerName: "Disabled Agent",
+        model: "disabled-model",
         endpoint: "/api/agents/disabled/move",
         enabled: false,
       },
       {
         id: "agent-c",
         playerName: "Agent C",
+        model: "qwen3",
         endpoint: "/api/agents/c/move",
         enabled: true,
       },
@@ -297,15 +305,21 @@ describe("agent api turn loop", () => {
       throw new Error("expected agent request bodies to be serialized json")
     }
 
-    expect(JSON.parse(firstRequest.body)).toEqual(
-      expect.objectContaining({ playerName: "Agent A" }),
-    )
-    expect(JSON.parse(secondRequest.body)).toEqual(
-      expect.objectContaining({ playerName: "Agent B" }),
-    )
-    expect(JSON.parse(thirdRequest.body)).toEqual(
-      expect.objectContaining({ playerName: "Agent C" }),
-    )
+    const firstRequestBody = JSON.parse(firstRequest.body) as MazeActionState
+    const secondRequestBody = JSON.parse(secondRequest.body) as MazeActionState
+    const thirdRequestBody = JSON.parse(thirdRequest.body) as MazeActionState
+
+    expect(firstRequestBody.playerName).toBe("Agent A")
+    expect(firstRequestBody.model).toBe("llama3.2")
+    expect(firstRequestBody.stream).toBe(false)
+    expect(firstRequestBody.format).toBe("json")
+    expect(firstRequestBody.prompt).toContain("Your name is Agent A.")
+    expect(secondRequestBody.playerName).toBe("Agent B")
+    expect(secondRequestBody.model).toBe("gemma4")
+    expect(secondRequestBody.prompt).toContain("Your name is Agent B.")
+    expect(thirdRequestBody.playerName).toBe("Agent C")
+    expect(thirdRequestBody.model).toBe("qwen3")
+    expect(thirdRequestBody.prompt).toContain("Your name is Agent C.")
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       1,
       { type: "MoveRight" },

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
-import { STORE_ENCODING_PREFIX } from "./config"
+import { CONFIG, STORE_ENCODING_PREFIX } from "./config"
 import {
   clearPersistedAgentConfigs,
   clearPersistedSnapshot,
@@ -8,8 +8,8 @@ import {
   loadPersistedAgentConfigs,
   loadPersistedSnapshot,
   savePersistedAgentConfigs,
-  savePersistedPreferences,
-  savePersistedRoundState,
+  saveGameProgress,
+  saveActiveRoundSnapshot,
 } from "./storage"
 import type { State, TraversalHistoryEntry } from "./types"
 
@@ -73,7 +73,6 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "|"],
     ],
     playerPosition: { x: 1, y: 1 },
-    playerName: "Blue",
     traversalHistory: [visit(0, 0)],
     finalPosition: { x: 1, y: 1 },
     status: "running",
@@ -110,7 +109,7 @@ describe("storage", () => {
   })
 
   it("saves and reloads obfuscated frontend preferences", () => {
-    savePersistedPreferences(MODE, {
+    saveGameProgress(MODE, {
       level: 8,
       wallWeight: 3,
       lastAttemptRetention: 710000,
@@ -152,12 +151,14 @@ describe("storage", () => {
       {
         id: "agent-a",
         playerName: "Agent A",
+        model: "llama3.2",
         endpoint: "/api/agents/a/move",
         enabled: true,
       },
       {
         id: "agent-b",
         playerName: "Agent B",
+        model: "gemma4",
         endpoint: "/api/agents/b/move",
         enabled: false,
       },
@@ -173,12 +174,14 @@ describe("storage", () => {
       {
         id: "agent-a",
         playerName: "Agent A",
+        model: "llama3.2",
         endpoint: "/api/agents/a/move",
         enabled: true,
       },
       {
         id: "agent-b",
         playerName: "Agent B",
+        model: "gemma4",
         endpoint: "/api/agents/b/move",
         enabled: false,
       },
@@ -197,7 +200,7 @@ describe("storage", () => {
       finalPosition: { x: 1, y: 1 },
     })
 
-    savePersistedRoundState(MODE, state)
+    saveActiveRoundSnapshot(MODE, state)
 
     const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
 
@@ -240,16 +243,59 @@ describe("storage", () => {
     expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })
 
+  it("falls back to defaults and clears stale active rounds after a storage version change", () => {
+    const originalStorageVersion = CONFIG.runtime.roundStorageVersion
+
+    try {
+      saveGameProgress(MODE, {
+        level: 8,
+        wallWeight: 3,
+        lastAttemptRetention: 710000,
+        bestWinRetention: 840000,
+        lastWinRequestCount: 6,
+        bestWinRequestCount: 4,
+      })
+      saveActiveRoundSnapshot(
+        MODE,
+        createState({
+          playerPosition: { x: 1, y: 1 },
+          finalPosition: { x: 1, y: 1 },
+        }),
+      )
+      expect(window.sessionStorage.getItem(storageKey("round"))).not.toBeNull()
+
+      CONFIG.runtime.roundStorageVersion = originalStorageVersion + 1
+      const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
+
+      expect(snapshot.preferences).toEqual({
+        level: 1,
+        wallWeight: 1,
+        lastAttemptRetention: null,
+        bestWinRetention: null,
+        lastWinRequestCount: null,
+        bestWinRequestCount: null,
+      })
+      expect(snapshot.round).toBeNull()
+      expect(window.localStorage.getItem(storageKey("level"))).toBeNull()
+      expect(window.localStorage.getItem(storageKey("wallWeight"))).toBeNull()
+      expect(window.localStorage.getItem(storageKey("lastAttemptRetention"))).toBeNull()
+      expect(window.localStorage.getItem(storageKey("bestWinRetention"))).toBeNull()
+      expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
+    } finally {
+      CONFIG.runtime.roundStorageVersion = originalStorageVersion
+    }
+  })
+
   it("removes the stored round when the current state cannot be persisted", () => {
     const persistedState = createState({
       playerPosition: { x: 1, y: 1 },
       finalPosition: { x: 1, y: 1 },
     })
 
-    savePersistedRoundState(MODE, persistedState)
+    saveActiveRoundSnapshot(MODE, persistedState)
     expect(window.sessionStorage.getItem(storageKey("round"))).not.toBeNull()
 
-    savePersistedRoundState(
+    saveActiveRoundSnapshot(
       MODE,
       createState({
         dims: null,
@@ -264,7 +310,7 @@ describe("storage", () => {
   })
 
   it("clears the persisted round on demand", () => {
-    savePersistedRoundState(
+    saveActiveRoundSnapshot(
       MODE,
       createState({
         playerPosition: { x: 1, y: 1 },
@@ -278,7 +324,7 @@ describe("storage", () => {
   })
 
   it("clears persisted preferences and the active round on demand", () => {
-    savePersistedPreferences(MODE, {
+    saveGameProgress(MODE, {
       level: 8,
       wallWeight: 3,
       lastAttemptRetention: 710000,
@@ -286,7 +332,7 @@ describe("storage", () => {
       lastWinRequestCount: null,
       bestWinRequestCount: null,
     })
-    savePersistedRoundState(
+    saveActiveRoundSnapshot(
       MODE,
       createState({
         playerPosition: { x: 1, y: 1 },

@@ -10,6 +10,9 @@ import {
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
 } from "./session-actions"
+import { CONFIG } from "../config"
+
+const { runtime } = CONFIG
 
 // KEY_TO_MOVE_ACTION maps browser arrow-key events into semantic movement commands.
 const KEY_TO_MOVE_ACTION: Partial<Record<string, MoveAction>> = {
@@ -67,7 +70,7 @@ export function createInteractiveMode(
 
     focusApp()
     // Interactive controls do not request feedback; the game view already reflects the outcome.
-    dispatch(action)
+    dispatch(action, { playerName: runtime.interactivePlayerName })
   }
 
   // handleKeydown routes keyboard gestures through the same command vocabulary.
@@ -85,7 +88,7 @@ export function createInteractiveMode(
 
     event.preventDefault()
     // Interactive controls do not request feedback; the game view already reflects the outcome.
-    dispatch(action)
+    dispatch(action, { playerName: runtime.interactivePlayerName })
   }
 
   return {

@@ -16,6 +16,9 @@ import {
   sessionActionFromKeyboardEvent,
 } from "./session-actions"
 import { loadPersistedAgentConfigs } from "../storage"
+import { CONFIG } from "../config"
+
+const { runtime } = CONFIG
 
 // createAgentMode builds the agent-api MazeActionControl while transport wiring is still pending.
 export function createAgentMode(
@@ -120,7 +123,7 @@ export function createAgentMode(
 
           focusApp()
           // Local human session actions stay on the lightweight path and do not ask for feedback.
-          dispatch(command)
+          dispatch(command, { playerName: runtime.interactivePlayerName })
           syncAgentMovePoller()
         }
 
@@ -136,7 +139,7 @@ export function createAgentMode(
 
         event.preventDefault()
         // Local human session actions stay on the lightweight path and do not ask for feedback.
-        dispatch(command)
+        dispatch(command, { playerName: runtime.interactivePlayerName })
         syncAgentMovePoller()
       }
 

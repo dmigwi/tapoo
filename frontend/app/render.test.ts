@@ -77,7 +77,6 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "|", "---", "|"],
     ],
     playerPosition: { x: 1, y: 1 },
-    playerName: "Blue",
     traversalHistory: [visit(0, 0)],
     finalPosition: { x: 2, y: 1 },
     status: "running",

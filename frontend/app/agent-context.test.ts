@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { executeActionWithFeedback } from "./cmd-feedback"
+import { executeActionWithFeedback } from "./agent-context"
 import type { MazeAction, MoveAction, State, TraversalHistoryEntry } from "./types"
 
 function visit(row: number, col: number): TraversalHistoryEntry {
@@ -19,7 +19,6 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "|", "---", "|"],
     ],
     playerPosition: { x: 1, y: 1 },
-    playerName: "Blue",
     traversalHistory: [visit(0, 0)],
     finalPosition: { x: 3, y: 1 },
     status: "running",
@@ -61,6 +60,7 @@ function createContext(state: State) {
         state.traversalHistory = [visit(0, 0), visit(0, 1)]
       }
     }),
+    playerName: "Blue",
   }
 }
 
@@ -87,11 +87,14 @@ describe("cmd feedback", () => {
       playerName: "Blue",
       level: 4,
       score: 700,
+      model: "",
+      stream: false,
+      format: "json",
       status: "paused",
       allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
-      instruction:
-        "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+      prompt:
+        "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
       expectedResponseFormat: {
         validPredictionFormat: {
           moves: ["MoveRight", "MoveDown"],
@@ -126,11 +129,14 @@ describe("cmd feedback", () => {
       playerName: "Blue",
       level: 4,
       score: 700,
+      model: "",
+      stream: false,
+      format: "json",
       status: "running",
       allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
-      instruction:
-        "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+      prompt:
+        "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
       expectedResponseFormat: {
         validPredictionFormat: {
           moves: ["MoveRight", "MoveDown"],
@@ -166,11 +172,14 @@ describe("cmd feedback", () => {
       playerName: "Blue",
       level: 4,
       score: 700,
+      model: "",
+      stream: false,
+      format: "json",
       status: "won",
       allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
-      instruction:
-        "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+      prompt:
+        "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
       expectedResponseFormat: {
         validPredictionFormat: {
           moves: ["MoveRight", "MoveDown"],
@@ -184,7 +193,7 @@ describe("cmd feedback", () => {
       lastValidMoveIndex: 0,
       decayedMovesCount: 0,
     })
-    expect(context.handleMove).toHaveBeenCalledWith("MoveRight")
+    expect(context.handleMove).toHaveBeenCalledWith("MoveRight", "Blue")
   })
 
   it("keeps traversal history stable when a move revisits an older cell", () => {
@@ -208,11 +217,14 @@ describe("cmd feedback", () => {
       playerName: "Blue",
       level: 4,
       score: 700,
+      model: "",
+      stream: false,
+      format: "json",
       status: "running",
       allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
-      instruction:
-        "Every submitted prediction counts toward score decay, so return the moves you believe will minimize score loss while reaching the destination.",
+      prompt:
+        "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
       expectedResponseFormat: {
         validPredictionFormat: {
           moves: ["MoveRight", "MoveDown"],

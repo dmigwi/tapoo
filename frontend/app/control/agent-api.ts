@@ -1,5 +1,5 @@
 import { CONFIG } from "../config"
-import { mergeMazeActionState } from "../cmd-feedback"
+import { mergeMazeActionState } from "../agent-context"
 import { isRunningStatus } from "../status"
 import type {
   AgentApiConfig,
@@ -158,12 +158,13 @@ export function handleAgentTurnLoop({
       const currentActionState = activeActionState()
       selectedAgent = nextAgent()
       if (!selectedAgent) {
-        dispatch({ type: "await-agent" })
+        dispatch({ type: "await-agent" }, { playerName: activeActionState().playerName })
         return
       }
 
       const requestActionState = mergeMazeActionState(currentActionState, {
-          playerName: selectedAgent.playerName,
+        model: selectedAgent.model,
+        playerName: selectedAgent.playerName,
       })
 
       const response = await fetch(selectedAgent.endpoint, {

@@ -15,6 +15,10 @@ function visit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Blue", row, col }
 }
 
+function selfVisit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: "Self", row, col }
+}
+
 // createButton reproduces the control datasets used by the browser runtime.
 function createButton({
   action,
@@ -154,8 +158,8 @@ type GameHarness = {
   render: ReturnType<typeof vi.fn<(elements: Elements, state: State) => void>>
   reweightMaze: ReturnType<typeof vi.fn>
   runtime: GameRuntime
-  savePersistedPreferences: ReturnType<typeof vi.fn>
-  savePersistedRoundState: ReturnType<typeof vi.fn>
+  saveGameProgress: ReturnType<typeof vi.fn>
+  saveActiveRoundSnapshot: ReturnType<typeof vi.fn>
 }
 
 // bootstrapHarness wires a mocked runtime so high-level browser game flows stay testable.
@@ -183,8 +187,8 @@ async function bootstrapHarness({
 } = {}): Promise<GameHarness> {
   const elements = createElements()
   const render = vi.fn<(elements: Elements, state: State) => void>()
-  const savePersistedPreferences = vi.fn()
-  const savePersistedRoundState = vi.fn()
+  const saveGameProgress = vi.fn()
+  const saveActiveRoundSnapshot = vi.fn()
   const clearPersistedSnapshot = vi.fn()
   const clearPersistedRound = vi.fn()
   const generateMaze = vi.fn(() => round)
@@ -266,8 +270,8 @@ async function bootstrapHarness({
     clearPersistedSnapshot,
     clearPersistedRound,
     loadPersistedSnapshot,
-    savePersistedPreferences,
-    savePersistedRoundState,
+    saveGameProgress,
+    saveActiveRoundSnapshot,
   }))
   vi.spyOn(window, "setInterval").mockImplementation(
     (handler: TimerHandler) => {
@@ -301,8 +305,8 @@ async function bootstrapHarness({
     render,
     reweightMaze,
     runtime,
-    savePersistedPreferences,
-    savePersistedRoundState,
+    saveGameProgress,
+    saveActiveRoundSnapshot,
   }
 }
 
@@ -358,8 +362,8 @@ describe("bootstrapGame", () => {
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       loadPersistedSnapshot,
-      savePersistedPreferences: vi.fn(),
-      savePersistedRoundState: vi.fn(),
+      saveGameProgress: vi.fn(),
+      saveActiveRoundSnapshot: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
@@ -385,7 +389,7 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("running")
     expect(state.level).toBe(2)
     expect(state.wallWeight).toBe(1)
-    expect(state.traversalHistory).toEqual([visit(0, 0)])
+    expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
   })
 
   it("subscribes to visual viewport resize events when available", async () => {
@@ -433,8 +437,8 @@ describe("bootstrapGame", () => {
         preferences: { level: 1, wallWeight: 1 },
         round: null,
       })),
-      savePersistedPreferences: vi.fn(),
-      savePersistedRoundState: vi.fn(),
+      saveGameProgress: vi.fn(),
+      saveActiveRoundSnapshot: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
@@ -487,8 +491,8 @@ describe("bootstrapGame", () => {
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       loadPersistedSnapshot,
-      savePersistedPreferences: vi.fn(),
-      savePersistedRoundState: vi.fn(),
+      saveGameProgress: vi.fn(),
+      saveActiveRoundSnapshot: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
@@ -548,8 +552,8 @@ describe("bootstrapGame", () => {
         preferences: { level: 1, wallWeight: 1 },
         round: null,
       })),
-      savePersistedPreferences: vi.fn(),
-      savePersistedRoundState: vi.fn(),
+      saveGameProgress: vi.fn(),
+      saveActiveRoundSnapshot: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
@@ -616,8 +620,8 @@ describe("bootstrapGame", () => {
     let state = latestRenderedState(harness.render)
     expect(state.status).toBe("paused")
     expect(state.canResume).toBe(true)
-    expect(harness.savePersistedPreferences).toHaveBeenCalled()
-    expect(harness.savePersistedRoundState).toHaveBeenCalled()
+    expect(harness.saveGameProgress).toHaveBeenCalled()
+    expect(harness.saveActiveRoundSnapshot).toHaveBeenCalled()
 
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -648,15 +652,15 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.playerPosition).toEqual({ x: 3, y: 1 })
     expect(state.traversalHistory).toEqual([
-      visit(0, 0),
-      visit(0, 1),
+      selfVisit(0, 0),
+      selfVisit(0, 1),
     ])
     expect(state.status).toBe("won")
     expect(state.lastRoundScore).toBe(200)
     expect(state.lastAttemptRetention).toBe(1_000_000)
     expect(state.bestWinRetention).toBe(1_000_000)
     expect(state.winSummary).toBe("New scores retention record")
-    expect(harness.savePersistedRoundState).toHaveBeenCalled()
+    expect(harness.saveActiveRoundSnapshot).toHaveBeenCalled()
   })
 
   it("builds a browser win summary from persisted timing history", async () => {
@@ -718,19 +722,19 @@ describe("bootstrapGame", () => {
       round: backtrackRound,
     })
 
-    harness.runtime.dispatch({ type: "MoveRight" })
-    harness.runtime.dispatch({ type: "MoveLeft" })
+    harness.runtime.dispatch({ type: "MoveRight" }, { playerName: "Self" })
+    harness.runtime.dispatch({ type: "MoveLeft" }, { playerName: "Self" })
 
     const state = latestRenderedState(harness.render)
     expect(state.playerPosition).toEqual({ x: 1, y: 1 })
     expect(state.traversalHistory).toEqual([
-      visit(0, 0),
-      visit(0, 1),
+      selfVisit(0, 0),
+      selfVisit(0, 1),
     ])
   })
 
 
-  it("marks the round as lost when the refresh callback reaches zero remaining time", async () => {
+  it("marks the round as lost when the refresh callback depletes the score", async () => {
     const harness = await bootstrapHarness({
       dimensionsResults: [{ level: 1, length: 2, width: 1 }],
       round: createHorizontalRound(),
@@ -746,17 +750,17 @@ describe("bootstrapGame", () => {
       remainingValue: number
     }
 
-    clock.elapsedValue = 1000
+    clock.elapsedValue = 2000
     clock.remainingValue = 0
 
     harness.intervalCallback()
 
     const state = latestRenderedState(harness.render)
     expect(state.status).toBe("lost")
-    expect(state.lastRoundScore).toBe(100)
+    expect(state.lastRoundScore).toBe(0)
     expect(state.lastAttemptRetention).toBe(0)
     expect(state.winSummary).toBe("")
-    expect(harness.savePersistedRoundState).toHaveBeenCalled()
+    expect(harness.saveActiveRoundSnapshot).toHaveBeenCalled()
   })
 
   it("re-renders a running round when only the blink phase changes", async () => {
@@ -815,6 +819,51 @@ describe("bootstrapGame", () => {
     expect(state.score).toBe(175)
   })
 
+  it("redraws the current level when an alternate maze shape still fits after resize", async () => {
+    const harness = await bootstrapHarness({
+      dimensionsResults: [
+        { level: 1, length: 4, width: 1 },
+        { level: 1, length: 1, width: 4 },
+      ],
+      round: createHorizontalRound(),
+      terminalSizes: [
+        { length: 20, width: 20 },
+        { length: 1, width: 20 },
+        { length: 1, width: 20 },
+      ],
+    })
+
+    window.dispatchEvent(new Event("resize"))
+
+    const state = latestRenderedState(harness.render)
+    expect(state.status).toBe("running")
+    expect(state.level).toBe(1)
+    expect(state.dims).toEqual({ length: 1, width: 4 })
+    expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
+    expect(harness.generateMaze).toHaveBeenCalledTimes(2)
+    expect(harness.generateMaze).toHaveBeenLastCalledWith(
+      { level: 1, length: 1, width: 4 },
+      1,
+    )
+  })
+
+  it("keeps the too-small flow when both maze axes exceed the resized viewport", async () => {
+    const harness = await bootstrapHarness({
+      dimensionsResults: [{ level: 1, length: 4, width: 4 }],
+      terminalSizes: [
+        { length: 20, width: 20 },
+        { length: 1, width: 1 },
+      ],
+    })
+
+    window.dispatchEvent(new Event("resize"))
+
+    const state = latestRenderedState(harness.render)
+    expect(state.status).toBe("too-small")
+    expect(harness.getMazeDimensions).toHaveBeenCalledTimes(1)
+    expect(harness.generateMaze).toHaveBeenCalledTimes(1)
+  })
+
   it("restores a persisted round in paused mode once the viewport fits again", async () => {
     const persistedRound: PersistedRound = {
       version: 3,
@@ -847,6 +896,7 @@ describe("bootstrapGame", () => {
       ],
       terminalSizes: [
         { length: 20, width: 20 },
+        { length: 1, width: 1 },
         { length: 1, width: 1 },
         { length: 1, width: 1 },
         { length: 20, width: 20 },
@@ -899,7 +949,7 @@ describe("bootstrapGame", () => {
     expect(harness.clearPersistedRound).toHaveBeenCalledTimes(1)
     expect(state.status).toBe("running")
     expect(state.level).toBe(2)
-    expect(state.traversalHistory).toEqual([visit(0, 0)])
+    expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
   })
 
   it("does not auto-restart a too-small game when the viewport fits again without a persisted round", async () => {
@@ -939,7 +989,7 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("won")
 
     window.dispatchEvent(new Event("pagehide"))
-    expect(harness.savePersistedRoundState).toHaveBeenCalled()
+    expect(harness.saveActiveRoundSnapshot).toHaveBeenCalled()
 
     harness.elements.app.click()
     const focusSpy = Reflect.get(harness.elements.app, "focus") as ReturnType<
@@ -970,7 +1020,7 @@ describe("bootstrapGame", () => {
 
     const actionState = harness.runtime.dispatch(
       { type: "MoveRight" },
-      { wantFeedback: true },
+      { wantFeedback: true, playerName: "Blue" },
     )
 
     state = latestRenderedState(harness.render)
@@ -979,7 +1029,7 @@ describe("bootstrapGame", () => {
     expect(actionState).toEqual(expect.objectContaining({
       currentCell: { row: 0, col: 1 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [visit(0, 0), visit(0, 1)],
+      traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "reached-target",
       visitedBefore: false,
       submittedMoves: ["0:MoveRight"],

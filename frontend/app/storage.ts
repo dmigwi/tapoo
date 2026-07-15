@@ -104,6 +104,7 @@ function isAgentApiConfig(value: unknown): value is AgentApiConfig {
     value === null ||
     !("id" in value) ||
     !("playerName" in value) ||
+    !("model" in value) ||
     !("endpoint" in value) ||
     !("enabled" in value)
   ) {
@@ -115,6 +116,8 @@ function isAgentApiConfig(value: unknown): value is AgentApiConfig {
     value.id.length > 0 &&
     typeof value.playerName === "string" &&
     value.playerName.length > 0 &&
+    typeof value.model === "string" &&
+    value.model.length > 0 &&
     typeof value.endpoint === "string" &&
     value.endpoint.length > 0 &&
     typeof value.enabled === "boolean"
@@ -377,7 +380,7 @@ function saveRound(
   }
 }
 
-// loadRound restores the current round snapshot and clears corrupt payloads.
+// loadRound restores the current round snapshot and clears corrupt or stale payloads.
 function loadRound(modeName: MazeControlModeName): PersistedRound | null {
   let rawSnapshot: string | null
 
@@ -394,6 +397,12 @@ function loadRound(modeName: MazeControlModeName): PersistedRound | null {
   const snapshot = decodeStoredPayload<PersistedRound>(rawSnapshot)
   if (!snapshot) {
     clearPersistedRound(modeName)
+    return null
+  }
+
+  if (snapshot.version !== runtime.roundStorageVersion) {
+    clearPersistedSnapshot(modeName)
+    return null
   }
 
   return snapshot
@@ -406,6 +415,8 @@ export function loadPersistedSnapshot(
   defaultWeight: WallWeight,
   isWallWeight: (value: number) => value is WallWeight,
 ): PersistedSnapshot {
+  const round = loadRound(modeName)
+
   return {
     preferences: loadPreferences(
       modeName,
@@ -413,12 +424,12 @@ export function loadPersistedSnapshot(
       defaultWeight,
       isWallWeight,
     ),
-    round: loadRound(modeName),
+    round,
   }
 }
 
-// savePersistedPreferences writes the preference subset of the live game state.
-export function savePersistedPreferences(
+// saveGameProgress writes long-lived localStorage progress from the live game state.
+export function saveGameProgress(
   modeName: MazeControlModeName,
   state: Pick<
     State,
@@ -440,8 +451,8 @@ export function savePersistedPreferences(
   })
 }
 
-// savePersistedRoundState writes the round subset of the live game state.
-export function savePersistedRoundState(
+// saveActiveRoundSnapshot writes the short-lived sessionStorage round snapshot.
+export function saveActiveRoundSnapshot(
   modeName: MazeControlModeName,
   state: State,
 ): void {

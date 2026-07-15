@@ -15,8 +15,16 @@ describe("maze", () => {
   it("returns the preferred maze dimensions for a fitting viewport", () => {
     expect(getMazeDimensions(1, { length: 20, width: 20 })).toEqual({
       level: 1,
+      length: 7,
+      width: 10,
+    })
+  })
+
+  it("prefers balanced maze dimensions before viewport aspect ratio", () => {
+    expect(getMazeDimensions(2, { length: 30, width: 10 })).toEqual({
+      level: 2,
       length: 10,
-      width: 7,
+      width: 8,
     })
   })
 
