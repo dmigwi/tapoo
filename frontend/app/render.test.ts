@@ -68,7 +68,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: "interactive",
     level: 1,
-    dims: { length: 2, width: 2 },
+    mazeDimensions: { length: 2, width: 2 },
     maze: [
       ["|", "---", "|", "---", "|"],
       ["|", "   ", " ", "   ", "|"],
@@ -173,7 +173,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        dims: null,
+        mazeDimensions: null,
         maze: null,
         playerPosition: null,
         finalPosition: null,
@@ -360,7 +360,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        dims: { length: 3, width: 3 },
+        mazeDimensions: { length: 3, width: 3 },
         level: 3,
         status: "won",
         lastRoundScore: 900,
@@ -391,7 +391,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        dims: { length: 3, width: 3 },
+        mazeDimensions: { length: 3, width: 3 },
         level: 1,
         status: "won",
         lastRoundScore: 900,
@@ -430,7 +430,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        dims: null,
+        mazeDimensions: null,
         maze: null,
         playerPosition: null,
         finalPosition: null,
@@ -476,7 +476,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        dims: null,
+        mazeDimensions: null,
         maze: null,
         playerPosition: null,
         finalPosition: null,

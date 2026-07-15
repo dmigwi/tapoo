@@ -29,6 +29,8 @@ import {
 } from "./storage"
 import { isSpaceFound, isWallWeight, nextWallWeight, reweightMaze } from "./traversal"
 import type {
+  AgentRequestBestComparison,
+  AgentRequestPreviousComparison,
   CellCoordinate,
   Elements,
   GameRuntime,
@@ -42,18 +44,19 @@ import type {
   RenderGridPoint,
   State,
   TraversalHistoryEntry,
+  WinSummaryBestComparison,
+  WinSummaryPreviousComparison,
 } from "./types"
 
 const { maze, messages, runtime, scoring, timing } = CONFIG
 
 type PersistenceScope = "round" | "state"
-type ScoreResolutionMode = "resolved" | "displayed"
 
 const state: State = {
   controlMode: "interactive",
   level: 1,
-  dims: null,
   maze: null,
+  mazeDimensions: null,
   playerPosition: null,
   traversalHistory: [],
   finalPosition: null,
@@ -119,35 +122,30 @@ function calculateScoreAfterDecay(totalCells: number, scoreDecayUnits: number): 
 
 // currentRoundTotalCells reports the current maze area used by both timing and score logic.
 function currentRoundTotalCells(): number | null {
-  if (!state.dims) {
+  if (!state.mazeDimensions) {
     return null
   }
 
-  return state.dims.length * state.dims.width
+  return state.mazeDimensions.length * state.mazeDimensions.width
 }
 
-// calculateRoundScore resolves scores for committed state changes and display-only refreshes.
-function calculateRoundScore(
-  totalCells: number,
-  mode: ScoreResolutionMode = "resolved",
-): number {
-  if (mode === "displayed" && state.controlMode === "agent-api") {
-    return state.score
-  }
+// calculateRoundScore resolves authoritative score updates for gameplay state changes.
+function calculateRoundScore(totalCells: number): number {
+  if (state.controlMode === "interactive") {
+    // Interactive scoring must come from elapsed clock time; without a clock, preserve score.
+    if (!state.clock) {
+      return state.score
+    }
 
-  if (state.controlMode === "interactive" && state.clock) {
     return calculateElapsedScore(
       totalCells,
       state.clock.elapsed(),
-      activeCoreDecayIntervalPerCellMs(),
+      timing.interactiveCoreDecayIntervalPerCellMs,
     )
   }
 
   return calculateScoreAfterDecay(totalCells, state.scoreDecayUnits)
 }
-
-type WinSummaryPreviousComparison = "none" | "faster" | "slower" | "matched"
-type WinSummaryBestComparison = "new-record" | "matched-best" | "behind-best"
 
 // formatWinSummaryDuration renders elapsed deltas with compact time units.
 function formatWinSummaryDuration(durationMs: number): string {
@@ -333,9 +331,6 @@ function buildWinSummary(
 
   return replaceWinSummaryDelta(template, previous.delta, best.delta)
 }
-
-type AgentRequestPreviousComparison = "none" | "fewer" | "more" | "matched"
-type AgentRequestBestComparison = "new-record" | "matched-best" | "behind-best"
 
 // compareAgentRequestsPrevious compares the current solved round against the previous solved request count.
 function compareAgentRequestsPrevious(
@@ -537,18 +532,10 @@ function isTraversalHistoryEntry(value: unknown): value is TraversalHistoryEntry
 }
 
 // restoreClock reconstructs a live clock from persisted remaining time.
-function restoreClock(
-  totalCells: number,
-  remainingMs: number,
-  controlMode = state.controlMode,
-): GameClock {
+function restoreClock(totalCells: number, remainingMs: number): GameClock {
   // Round timing is derived from the shared per-cell cadence so score decay, persisted remaining
   // time, and any agent polling policy all reconstruct the same allowance after a reload.
-  const totalDurationMs = totalCells * (
-    controlMode === "agent-api"
-      ? timing.agentApiCoreDecayIntervalPerCellMs
-      : timing.interactiveCoreDecayIntervalPerCellMs
-  )
+  const totalDurationMs = totalCells * activeCoreDecayIntervalPerCellMs()
   const clampedRemainingMs = Math.max(0, Math.min(totalDurationMs, remainingMs))
   const clock = new GameClock(totalDurationMs)
   clock.startedAt = performance.now() - (totalDurationMs - clampedRemainingMs)
@@ -573,7 +560,7 @@ function isTraversableGridPoint(data: string[][], position: RenderGridPoint): bo
 function applyTooSmallState(level: number): void {
   state.status = "too-small"
   state.level = level
-  state.dims = null
+  state.mazeDimensions = null
   state.maze = null
   state.playerPosition = null
   state.traversalHistory = []
@@ -593,15 +580,15 @@ function isValidPersistedRound(snapshot: PersistedRound): boolean {
   if (
     snapshot.level < 1 ||
     !isWallWeight(snapshot.wallWeight) ||
-    snapshot.dims.length <= 0 ||
-    snapshot.dims.width <= 0
+    snapshot.mazeDimensions.length <= 0 ||
+    snapshot.mazeDimensions.width <= 0
   ) {
     return false
   }
 
   // The stored maze grid must match the dimensions used to generate it.
-  const expectedRows = maze.cellSpan * snapshot.dims.width + 1
-  const expectedColumns = snapshot.dims.length * 2 + 1
+  const expectedRows = maze.cellSpan * snapshot.mazeDimensions.width + 1
+  const expectedColumns = snapshot.mazeDimensions.length * 2 + 1
   if (snapshot.maze.length !== expectedRows) {
     return false
   }
@@ -674,7 +661,7 @@ function isValidPersistedRound(snapshot: PersistedRound): boolean {
 // persistedRoundFitsViewport checks whether a saved round still fits the viewport.
 function persistedRoundFitsViewport(snapshot: PersistedRound): boolean {
   return viewportFitStatus(
-    snapshot.dims,
+    snapshot.mazeDimensions,
     runtimeElements ? getTerminalSize(runtimeElements) : null,
   ) === "fits"
 }
@@ -799,11 +786,7 @@ function scheduleRoundPersistence(): void {
 
 // restorePersistedRound rebuilds a saved round or falls back when it is invalid.
 function restorePersistedRound(snapshot: PersistedRound | null): boolean {
-  if (!runtimeElements) {
-    return false
-  }
-
-  if (!snapshot) {
+  if (!runtimeElements || !snapshot) {
     return false
   }
 
@@ -822,7 +805,10 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
 
   state.wallWeight = snapshot.wallWeight
   state.level = snapshot.level
-  state.dims = { length: snapshot.dims.length, width: snapshot.dims.width }
+  state.mazeDimensions = {
+    length: snapshot.mazeDimensions.length,
+    width: snapshot.mazeDimensions.width,
+  }
   state.maze = snapshot.maze.map((row) => [...row])
   state.playerPosition = {
     x: snapshot.playerPosition.x,
@@ -839,7 +825,7 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
   }
   state.score = snapshot.score
   state.lastRoundScore = snapshot.lastRoundScore
-  state.scoreDecayUnits = snapshot.scoreDecayUnits ?? snapshot.scorePenaltyUnits ?? 0
+  state.scoreDecayUnits = snapshot.scoreDecayUnits ?? 0
   state.agentRequestCount = snapshot.agentRequestCount ?? 0
   state.winSummary = snapshot.winSummary ?? ""
   state.canResume = false
@@ -851,7 +837,7 @@ function restorePersistedRound(snapshot: PersistedRound | null): boolean {
     return true
   }
 
-  const totalCells = snapshot.dims.length * snapshot.dims.width
+  const totalCells = snapshot.mazeDimensions.length * snapshot.mazeDimensions.width
   state.clock = restoreClock(totalCells, snapshot.remainingMs)
   state.clock.pause()
   if (isAwaitAgentStatus(snapshot.status)) {
@@ -874,7 +860,7 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
   const round = generateMaze(dimensions, state.wallWeight)
 
   state.level = dimensions.level
-  state.dims = { length: dimensions.length, width: dimensions.width }
+  state.mazeDimensions = { length: dimensions.length, width: dimensions.width }
   state.maze = round.maze
   state.playerPosition = {
     x: round.startPosition.x,
@@ -901,9 +887,7 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
   // The round clock uses the shared per-cell cadence to set both the starting score window and the
   // maximum amount of playable time for this maze size.
   state.clock = new GameClock(totalCells * activeCoreDecayIntervalPerCellMs())
-  state.score = state.controlMode === "agent-api"
-    ? calculateScoreAfterDecay(totalCells, 0)
-    : calculateElapsedScore(totalCells, 0, activeCoreDecayIntervalPerCellMs())
+  state.score = calculateMaxScore(totalCells)
   if (persist) {
     persistNow("state")
   }
@@ -1059,7 +1043,7 @@ function movePlayer(rowDelta: number, columnDelta: number, playerName: string): 
   if (
     !isRunningStatus(state.status) ||
     !state.maze ||
-    !state.dims ||
+    !state.mazeDimensions ||
     !state.playerPosition
   ) {
     return
@@ -1072,11 +1056,11 @@ function movePlayer(rowDelta: number, columnDelta: number, playerName: string): 
   const probeY = y + rowDelta
   const probeX = x + columnDelta
 
-  if (nextY <= 0 || nextY > state.dims.width * maze.cellSpan) {
+  if (nextY <= 0 || nextY > state.mazeDimensions.width * maze.cellSpan) {
     return
   }
 
-  if (nextX <= 0 || nextX > state.dims.length * maze.cellSpan) {
+  if (nextX <= 0 || nextX > state.mazeDimensions.length * maze.cellSpan) {
     return
   }
 
@@ -1140,7 +1124,10 @@ function refreshRunningRound(): void {
   }
 
   const previousScore = state.score
-  state.score = calculateRoundScore(totalCells, "displayed")
+  if (state.controlMode === "interactive") {
+    state.score = calculateRoundScore(totalCells)
+  }
+  // Agent-api score is left untouched here; commitAgentTurn owns request-based score decay.
 
   // Score depletion is the shared loss signal for both interactive and agent-api modes.
   if (state.score <= 0) {
@@ -1222,7 +1209,10 @@ function handleResize(): void {
     return
   }
 
-  const fitStatus = viewportFitStatus(state.dims, getTerminalSize(runtimeElements))
+  const fitStatus = viewportFitStatus(
+    state.mazeDimensions,
+    getTerminalSize(runtimeElements),
+  )
   if (!isTooSmallStatus(state.status) && isTooSmallStatus(fitStatus)) {
     if (fitStatus !== "too-small-all" && redrawRoundForViewport(state.level)) {
       return

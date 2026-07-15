@@ -66,7 +66,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: "interactive",
     level: 4,
-    dims: { length: 5, width: 5 },
+    mazeDimensions: { length: 5, width: 5 },
     maze: [
       ["|", "---", "|"],
       ["|", "   ", "|"],
@@ -205,9 +205,9 @@ describe("storage", () => {
     const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
 
     expect(snapshot.round).toEqual({
-      version: 3,
+      version: CONFIG.runtime.roundStorageVersion,
       level: 4,
-      dims: { length: 5, width: 5 },
+      mazeDimensions: { length: 5, width: 5 },
       maze: state.maze,
       startCell: { row: 0, col: 0 },
       traversalHistory: [visit(0, 0)],
@@ -298,7 +298,7 @@ describe("storage", () => {
     saveActiveRoundSnapshot(
       MODE,
       createState({
-        dims: null,
+        mazeDimensions: null,
         maze: null,
         playerPosition: null,
         finalPosition: null,

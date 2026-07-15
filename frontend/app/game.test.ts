@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { CONFIG } from "./config"
 import type {
   Elements,
   GameRuntime,
@@ -106,9 +107,9 @@ function createHorizontalRound(): RoundState {
 // createPersistedWonRound simulates a stored win that can proceed into the next level.
 function createPersistedWonRound(): PersistedRound {
   return {
-    version: 3,
+    version: CONFIG.runtime.roundStorageVersion,
     level: 3,
-    dims: { length: 1, width: 1 },
+    mazeDimensions: { length: 1, width: 1 },
     maze: [
       ["|", "---", "|"],
       ["|", "   ", "|"],
@@ -838,7 +839,7 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
     expect(state.level).toBe(1)
-    expect(state.dims).toEqual({ length: 1, width: 4 })
+    expect(state.mazeDimensions).toEqual({ length: 1, width: 4 })
     expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
     expect(harness.generateMaze).toHaveBeenCalledTimes(2)
     expect(harness.generateMaze).toHaveBeenLastCalledWith(
@@ -866,9 +867,9 @@ describe("bootstrapGame", () => {
 
   it("restores a persisted round in paused mode once the viewport fits again", async () => {
     const persistedRound: PersistedRound = {
-      version: 3,
+      version: CONFIG.runtime.roundStorageVersion,
       level: 1,
-      dims: { length: 2, width: 1 },
+      mazeDimensions: { length: 2, width: 1 },
       maze: createHorizontalRound().maze,
       playerPosition: { x: 1, y: 1 },
       startCell: { row: 0, col: 0 },
@@ -919,9 +920,9 @@ describe("bootstrapGame", () => {
 
   it("rejects malformed persisted traversal history and falls back to a fresh round", async () => {
     const invalidPersistedRound: PersistedRound = {
-      version: 3,
+      version: CONFIG.runtime.roundStorageVersion,
       level: 2,
-      dims: { length: 2, width: 1 },
+      mazeDimensions: { length: 2, width: 1 },
       maze: createHorizontalRound().maze,
       playerPosition: { x: 3, y: 1 },
       startCell: { row: 0, col: 0 },

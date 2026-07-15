@@ -28,9 +28,6 @@ export type RenderGridPoint = {
   y: number
 }
 
-// WallWeight selects one of the supported visual wall styles.
-export type WallWeight = 1 | 2 | 3
-
 // BaseDimensions captures a maze size without tying it to a specific level.
 export type BaseDimensions = {
   length: number
@@ -42,26 +39,8 @@ export type LevelDimensions = BaseDimensions & {
   level: number
 }
 
-// CellAddress records the render-grid coordinates around a logical maze cell.
-export type CellAddress = {
-  __bottomCenter: RenderGridPoint
-  __bottomLeft: RenderGridPoint
-  __bottomRight: RenderGridPoint
-  __middleCenter: RenderGridPoint
-  __middleLeft: RenderGridPoint
-  __middleRight: RenderGridPoint
-  __topCenter: RenderGridPoint
-  __topLeft: RenderGridPoint
-  __topRight: RenderGridPoint
-}
-
-// CellNeighbors stores the neighboring cell numbers around one logical cell.
-export type CellNeighbors = {
-  __bottom: number
-  __left: number
-  __right: number
-  __top: number
-}
+// WallWeight selects one of the supported visual wall styles.
+export type WallWeight = 1 | 2 | 3
 
 // MoveAction is the semantic movement vocabulary shared by all control modes.
 export type MoveAction = "MoveUp" | "MoveDown" | "MoveLeft" | "MoveRight"
@@ -91,6 +70,96 @@ export type MoveStatus =
   | "reached-target"
   | "response-timeout"
   | "malformed-response"
+
+// WinSummaryPreviousComparison describes how the current win compares to the last completed attempt.
+export type WinSummaryPreviousComparison = "none" | "faster" | "slower" | "matched"
+
+// WinSummaryBestComparison describes how the current win compares to the best stored win.
+export type WinSummaryBestComparison = "new-record" | "matched-best" | "behind-best"
+
+// AgentRequestPreviousComparison compares the current agent-api win request count to the last win.
+export type AgentRequestPreviousComparison = "none" | "fewer" | "more" | "matched"
+
+// AgentRequestBestComparison compares the current agent-api win request count to the best win.
+export type AgentRequestBestComparison = "new-record" | "matched-best" | "behind-best"
+
+// CellAddress records the render-grid coordinates around a logical maze cell.
+export type CellAddress = {
+  __bottomCenter: RenderGridPoint
+  __bottomLeft: RenderGridPoint
+  __bottomRight: RenderGridPoint
+  __middleCenter: RenderGridPoint
+  __middleLeft: RenderGridPoint
+  __middleRight: RenderGridPoint
+  __topCenter: RenderGridPoint
+  __topLeft: RenderGridPoint
+  __topRight: RenderGridPoint
+}
+
+// CellNeighbors stores the neighboring cell numbers around one logical cell.
+export type CellNeighbors = {
+  __bottom: number
+  __left: number
+  __right: number
+  __top: number
+}
+
+// NavigationProfile shapes corridor and turning behavior during maze generation.
+export type NavigationProfile = {
+  __softCorridorLimit: number
+  __hardCorridorLimit: number
+  __preferTurnPercent: number
+}
+
+// PathStep tracks one generation step and its corridor history.
+export type PathStep = {
+  __cellNo: number
+  __moveDirection: Direction
+  __corridorLength: number
+}
+
+// RoundState is the maze-generation result consumed by the game runtime.
+export type RoundState = {
+  maze: string[][]
+  startPosition: RenderGridPoint
+  finalPosition: RenderGridPoint
+}
+
+// PersistedRound captures the active or finished round state restored across reloads.
+export type PersistedRound = {
+  version: number
+  level: number
+  mazeDimensions: BaseDimensions
+  maze: string[][]
+  startCell: CellCoordinate
+  traversalHistory: TraversalHistoryEntry[]
+  playerPosition: RenderGridPoint
+  finalPosition: RenderGridPoint
+  wallWeight: WallWeight
+  status: PersistedGameStatus
+  score: number
+  lastRoundScore: number
+  remainingMs: number
+  winSummary?: string
+  scoreDecayUnits?: number
+  agentRequestCount?: number
+}
+
+// PersistedPreferences stores the long-lived browser preferences between rounds.
+export type PersistedPreferences = {
+  level: number
+  wallWeight: WallWeight
+  lastAttemptRetention?: number | null
+  bestWinRetention?: number | null
+  lastWinRequestCount?: number | null
+  bestWinRequestCount?: number | null
+}
+
+// PersistedSnapshot bundles long-lived preferences with the short-lived round snapshot.
+export type PersistedSnapshot = {
+  preferences: PersistedPreferences
+  round: PersistedRound | null
+}
 
 // AgentExpectedResponseFormat documents the one supported prediction payload shape.
 export type AgentExpectedResponseFormat = {
@@ -158,63 +227,37 @@ export interface MazeActionControl {
   recordActionState: (actionState: MazeActionState) => void
 }
 
-// NavigationProfile shapes corridor and turning behavior during maze generation.
-export type NavigationProfile = {
-  __softCorridorLimit: number
-  __hardCorridorLimit: number
-  __preferTurnPercent: number
-}
-
-// PathStep tracks one generation step and its corridor history.
-export type PathStep = {
-  __cellNo: number
-  __moveDirection: Direction
-  __corridorLength: number
-}
-
-// PersistedRound captures the active or finished round state restored across reloads.
-export type PersistedRound = {
-  version: number
+// State is the browser runtime's single source of truth for one session.
+export type State = {
+  controlMode: MazeControlModeName
   level: number
-  dims: BaseDimensions
-  maze: string[][]
-  startCell: CellCoordinate
+  status: GameStatus
+  canResume: boolean
+
+  maze: string[][] | null
+  mazeDimensions: BaseDimensions | null
+  playerPosition: RenderGridPoint | null
+  finalPosition: RenderGridPoint | null
   traversalHistory: TraversalHistoryEntry[]
-  playerPosition: RenderGridPoint
-  finalPosition: RenderGridPoint
   wallWeight: WallWeight
-  status: PersistedGameStatus
+
   score: number
   lastRoundScore: number
-  remainingMs: number
-  winSummary?: string
-  scoreDecayUnits?: number
-  // scorePenaltyUnits keeps older browser snapshots restorable after the score-decay rename.
-  scorePenaltyUnits?: number
-  agentRequestCount?: number
+  lastAttemptRetention: number | null
+  bestWinRetention: number | null
+  lastWinRequestCount: number | null
+  bestWinRequestCount: number | null
+  winSummary: string
+  scoreDecayUnits: number
+  agentRequestCount: number
+
+  clock: GameClock | null
 }
 
-// PersistedPreferences stores the long-lived browser preferences between rounds.
-export type PersistedPreferences = {
-  level: number
-  wallWeight: WallWeight
-  lastAttemptRetention?: number | null
-  bestWinRetention?: number | null
-  lastWinRequestCount?: number | null
-  bestWinRequestCount?: number | null
-}
-
-// PersistedSnapshot bundles long-lived preferences with the short-lived round snapshot.
-export type PersistedSnapshot = {
-  preferences: PersistedPreferences
-  round: PersistedRound | null
-}
-
-// RoundState is the maze-generation result consumed by the game runtime.
-export type RoundState = {
-  maze: string[][]
-  startPosition: RenderGridPoint
-  finalPosition: RenderGridPoint
+// GameRuntime exposes the active mode plus a direct dispatch hook for tests and integrations.
+export type GameRuntime = {
+  mode: MazeControlModeName
+  dispatch: MazeActionDispatch
 }
 
 // ScreenLine is the renderer's normalized line model before HTML generation.
@@ -233,36 +276,6 @@ export type Elements = {
   controls: HTMLButtonElement[]
   touchControls: HTMLElement
   touchButtons: HTMLButtonElement[]
-}
-
-// State is the browser runtime's single source of truth for one session.
-export type State = {
-  controlMode: MazeControlModeName
-  level: number
-  dims: BaseDimensions | null
-  maze: string[][] | null
-  playerPosition: RenderGridPoint | null
-  traversalHistory: TraversalHistoryEntry[]
-  finalPosition: RenderGridPoint | null
-  status: GameStatus
-  score: number
-  lastRoundScore: number
-  lastAttemptRetention: number | null
-  bestWinRetention: number | null
-  lastWinRequestCount: number | null
-  bestWinRequestCount: number | null
-  winSummary: string
-  canResume: boolean
-  wallWeight: WallWeight
-  scoreDecayUnits: number
-  agentRequestCount: number
-  clock: GameClock | null
-}
-
-// GameRuntime exposes the active mode plus a direct dispatch hook for tests and integrations.
-export type GameRuntime = {
-  mode: MazeControlModeName
-  dispatch: MazeActionDispatch
 }
 
 // AppConfig gathers translatable copy and shared runtime constants.
@@ -407,6 +420,7 @@ export type AppConfig = {
   }
   runtime: {
     roundStorageVersion: number
+    agentConfigsStorageSuffix: string
     missingElementErrorTemplate: string
     agentApiMistakePenaltyMoves: number
     interactivePlayerName: string

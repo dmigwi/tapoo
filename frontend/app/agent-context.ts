@@ -27,7 +27,14 @@ const VALID_PREDICTION_FORMAT = {
 
 // agentPrompt keeps request guidance compact while naming the active agent for history lookup.
 function agentPrompt(playerName: string): string {
-  return `Your name is ${playerName}. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.`
+  return [
+    `Your name is ${playerName}.`,
+    "Use traversalHistory entries matching your playerName to review your past moves in order,",
+    "then use the provided context to predict the next valid moves.",
+    "Valid moves advance you until the first invalid move stops replay.",
+    "Every submitted prediction counts toward score decay until the destination is reached.",
+    "Locate the randomized path between the current position and destination with the highest score retention.",
+  ].join("\n")
 }
 
 // MOVE_DELTAS mirrors runtime movement so feedback can validate moves before dispatching them.
@@ -52,18 +59,17 @@ function traversalHistoryIncludes(
   cell: CellCoordinate,
 ): boolean {
   return traversalHistory.some(
-    (visitedCell) =>
-      visitedCell.row === cell.row && visitedCell.col === cell.col,
+    (visitedCell) => visitedCell.row === cell.row && visitedCell.col === cell.col,
   )
 }
 
 // recommendedAvgPredictionLimit derives the advisory prediction length from the active navigation profile.
 function recommendedAvgPredictionLimit(state: State): number {
-  if (!state.dims) {
+  if (!state.mazeDimensions) {
     return 0
   }
 
-  const profile = getNavigationProfile(state.dims)
+  const profile = getNavigationProfile(state.mazeDimensions)
   return profile.__softCorridorLimit + profile.__hardCorridorLimit
 }
 
@@ -155,10 +161,8 @@ function buildReplayState(
   status: MoveStatus,
   visitedBefore?: boolean,
 ): MazeActionState {
-  const lastValidMoveIndex =
-    status === "applied" || status === "reached-target" ? 0 : null
-  const visitedBeforeState =
-    visitedBefore === undefined ? {} : { visitedBefore }
+  const lastValidMoveIndex = status === "applied" || status === "reached-target" ? 0 : null
+  const visitedBeforeState = visitedBefore === undefined ? {} : { visitedBefore }
 
   return buildMazeActionState(state, playerName, {
     lastMoveStatus: status,
@@ -179,7 +183,7 @@ function buildMoveCommandState(
   if (
     !isRunningStatus(state.status) ||
     !state.maze ||
-    !state.dims ||
+    !state.mazeDimensions ||
     !state.playerPosition
   ) {
     return buildReplayState(state, playerName, move, "invalid-move")
@@ -194,11 +198,11 @@ function buildMoveCommandState(
   const probeX = x + columnDelta
   const nextCell = cellCoordinateFromGridPoint({ x: nextX, y: nextY })
 
-  if (nextY <= 0 || nextY > state.dims.width * maze.cellSpan) {
+  if (nextY <= 0 || nextY > state.mazeDimensions.width * maze.cellSpan) {
     return buildReplayState(state, playerName, move, "invalid-move")
   }
 
-  if (nextX <= 0 || nextX > state.dims.length * maze.cellSpan) {
+  if (nextX <= 0 || nextX > state.mazeDimensions.length * maze.cellSpan) {
     return buildReplayState(state, playerName, move, "invalid-move")
   }
 

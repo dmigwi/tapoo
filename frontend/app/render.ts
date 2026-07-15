@@ -230,12 +230,14 @@ function renderTextLine(value: string, className = "screen-text"): string {
 
 // scorePercent converts the last-round score into a compact retention percentage.
 function scorePercent(state: State): number {
-  if (!state.dims) {
+  if (!state.mazeDimensions) {
     return 0
   }
 
   const maxScore =
-    state.dims.length * state.dims.width * scoring.budgetMultiplier
+    state.mazeDimensions.length *
+    state.mazeDimensions.width *
+    scoring.budgetMultiplier
   if (maxScore <= 0) {
     return 0
   }

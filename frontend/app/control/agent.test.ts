@@ -11,6 +11,14 @@ import type {
 } from "../types"
 
 const agentMovePollIntervalMs = CONFIG.timing.agentApiCoreDecayIntervalPerCellMs
+const expectedAgentPrompt = [
+  "Your name is Blue.",
+  "Use traversalHistory entries matching your playerName to review your past moves in order,",
+  "then use the provided context to predict the next valid moves.",
+  "Valid moves advance you until the first invalid move stops replay.",
+  "Every submitted prediction counts toward score decay until the destination is reached.",
+  "Locate the randomized path between the current position and destination with the highest score retention.",
+].join("\n")
 
 function enabledAgentConfigs(): AgentApiConfig[] {
   return [
@@ -68,8 +76,7 @@ function createActionState(
     status: "running",
     allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
     recommendedAvgPredictionLimit: 18,
-    prompt:
-      "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
+    prompt: expectedAgentPrompt,
     expectedResponseFormat: {
       validPredictionFormat: {
         moves: ["MoveRight", "MoveDown"],
@@ -174,8 +181,7 @@ describe("agent control mode", () => {
       traversalHistory: [visit(0, 0)],
       allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
-      prompt:
-        "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
+      prompt: expectedAgentPrompt,
       expectedResponseFormat: {
         validPredictionFormat: {
           moves: ["MoveRight", "MoveDown"],

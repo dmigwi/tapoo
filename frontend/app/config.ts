@@ -182,7 +182,8 @@ export const CONFIG: AppConfig = {
   },
   // Runtime settings back persistence validation and agent-mode bootstrapping.
   runtime: {
-    roundStorageVersion: 3,
+    roundStorageVersion: 4,
+    agentConfigsStorageSuffix: "agentConfigs",
     missingElementErrorTemplate: "missing required element: {id}",
     agentApiMistakePenaltyMoves: 5,
     interactivePlayerName: "Self",

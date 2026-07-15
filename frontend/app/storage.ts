@@ -16,8 +16,6 @@ import type {
 
 const { runtime, timing } = CONFIG
 
-const agentConfigsStorageSuffix = "agentConfigs"
-
 // storageKey namespaces browser persistence per control mode so interactive and agent-api do not collide.
 function storageKey(
   modeName: MazeControlModeName,
@@ -73,9 +71,7 @@ function encodeStoredPayload(value: unknown): string {
 function decodeStoredPayload<T>(encodedPayload: string): T | null {
   const payloadBytes = encodedPayload.startsWith(STORE_ENCODING_PREFIX)
     ? (() => {
-        const encodedCipherText = encodedPayload.slice(
-          STORE_ENCODING_PREFIX.length,
-        )
+        const encodedCipherText = encodedPayload.slice(STORE_ENCODING_PREFIX.length)
         const cipherText = fromBase64(encodedCipherText)
         if (!cipherText) {
           return null
@@ -112,14 +108,10 @@ function isAgentApiConfig(value: unknown): value is AgentApiConfig {
   }
 
   return (
-    typeof value.id === "string" &&
-    value.id.length > 0 &&
-    typeof value.playerName === "string" &&
-    value.playerName.length > 0 &&
-    typeof value.model === "string" &&
-    value.model.length > 0 &&
-    typeof value.endpoint === "string" &&
-    value.endpoint.length > 0 &&
+    typeof value.id === "string" && value.id.length > 0 &&
+    typeof value.playerName === "string" && value.playerName.length > 0 &&
+    typeof value.model === "string" && value.model.length > 0 &&
+    typeof value.endpoint === "string" && value.endpoint.length > 0 &&
     typeof value.enabled === "boolean"
   )
 }
@@ -148,7 +140,7 @@ function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
 // buildRoundSnapshot extracts the restorable round state from the live runtime.
 function buildRoundSnapshot(state: State): PersistedRound | null {
   if (
-    !state.dims ||
+    !state.mazeDimensions ||
     !state.maze ||
     !state.playerPosition ||
     state.traversalHistory.length === 0 ||
@@ -158,7 +150,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     return null
   }
 
-  const totalCells = state.dims.length * state.dims.width
+  const totalCells = state.mazeDimensions.length * state.mazeDimensions.width
   const decayIntervalPerCellMs = state.controlMode === "agent-api"
     ? timing.agentApiCoreDecayIntervalPerCellMs
     : timing.interactiveCoreDecayIntervalPerCellMs
@@ -169,7 +161,10 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
   return {
     version: runtime.roundStorageVersion,
     level: state.level,
-    dims: { length: state.dims.length, width: state.dims.width },
+    mazeDimensions: {
+      length: state.mazeDimensions.length,
+      width: state.mazeDimensions.width,
+    },
     maze: state.maze.map((row) => [...row]),
     startCell: {
       row: state.traversalHistory[0].row,
@@ -203,7 +198,7 @@ export function loadPersistedAgentConfigs(
 ): AgentApiConfig[] {
   try {
     const storedConfigs = window.localStorage.getItem(
-      storageKey(modeName, agentConfigsStorageSuffix),
+      storageKey(modeName, runtime.agentConfigsStorageSuffix),
     )
     if (!storedConfigs) {
       return []
@@ -224,7 +219,7 @@ export function savePersistedAgentConfigs(
 ): void {
   try {
     window.localStorage.setItem(
-      storageKey(modeName, agentConfigsStorageSuffix),
+      storageKey(modeName, runtime.agentConfigsStorageSuffix),
       encodeStoredPayload(normalizeAgentApiConfigs(configs)),
     )
   } catch {
@@ -235,7 +230,9 @@ export function savePersistedAgentConfigs(
 // clearPersistedAgentConfigs removes agent setup without touching game progress.
 export function clearPersistedAgentConfigs(modeName: MazeControlModeName): void {
   try {
-    window.localStorage.removeItem(storageKey(modeName, agentConfigsStorageSuffix))
+    window.localStorage.removeItem(
+      storageKey(modeName, runtime.agentConfigsStorageSuffix),
+    )
   } catch {
     // Ignore storage failures so clearing remains best-effort only.
   }

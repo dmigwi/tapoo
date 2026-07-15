@@ -47,11 +47,11 @@ function mergeReplayResult(
 }
 
 export type AgentMovePoller = {
+  stopPolling: () => void
+  shouldPollAgent: () => boolean
   scheduleNextAgentTurn: () => void
   setAttached: (attached: boolean) => void
   setLastActionState: (actionState: MazeActionState | null) => void
-  stopPolling: () => void
-  shouldPollAgent: () => boolean
 }
 
 type HandleAgentTurnLoopOptions = {

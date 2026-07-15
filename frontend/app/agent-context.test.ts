@@ -7,12 +7,21 @@ function visit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Blue", row, col }
 }
 
+const expectedAgentPrompt = [
+  "Your name is Blue.",
+  "Use traversalHistory entries matching your playerName to review your past moves in order,",
+  "then use the provided context to predict the next valid moves.",
+  "Valid moves advance you until the first invalid move stops replay.",
+  "Every submitted prediction counts toward score decay until the destination is reached.",
+  "Locate the randomized path between the current position and destination with the highest score retention.",
+].join("\n")
+
 // createState builds a compact agent-facing runtime state for movement feedback tests.
 function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: "agent-api",
     level: 4,
-    dims: { length: 2, width: 1 },
+    mazeDimensions: { length: 2, width: 1 },
     maze: [
       ["|", "---", "|", "---", "|"],
       ["|", "   ", " ", "   ", "|"],
@@ -93,8 +102,7 @@ describe("cmd feedback", () => {
       status: "paused",
       allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
-      prompt:
-        "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
+      prompt: expectedAgentPrompt,
       expectedResponseFormat: {
         validPredictionFormat: {
           moves: ["MoveRight", "MoveDown"],
@@ -135,8 +143,7 @@ describe("cmd feedback", () => {
       status: "running",
       allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
-      prompt:
-        "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
+      prompt: expectedAgentPrompt,
       expectedResponseFormat: {
         validPredictionFormat: {
           moves: ["MoveRight", "MoveDown"],
@@ -178,8 +185,7 @@ describe("cmd feedback", () => {
       status: "won",
       allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
-      prompt:
-        "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
+      prompt: expectedAgentPrompt,
       expectedResponseFormat: {
         validPredictionFormat: {
           moves: ["MoveRight", "MoveDown"],
@@ -223,8 +229,7 @@ describe("cmd feedback", () => {
       status: "running",
       allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
-      prompt:
-        "Your name is Blue. Use traversalHistory entries matching your playerName to review your past moves in order, then use the provided context to predict the next valid moves. Valid moves advance you until the first invalid move stops replay. Every submitted prediction counts toward score decay until the destination is reached. Locate the randomized path between the current position and destination with the highest score retention.",
+      prompt: expectedAgentPrompt,
       expectedResponseFormat: {
         validPredictionFormat: {
           moves: ["MoveRight", "MoveDown"],
