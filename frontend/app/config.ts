@@ -180,6 +180,10 @@ export const CONFIG: AppConfig = {
   },
   // Runtime settings back persistence validation and agent-mode bootstrapping.
   runtime: {
+    controlModes: {
+      agentApi: "agent-api",
+      interactive: "interactive",
+    },
     roundStorageVersion: 4,
     agentConfigsStorageSuffix: "agentConfigs",
     missingElementErrorTemplate: "missing required element: {id}",

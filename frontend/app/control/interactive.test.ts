@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
+import { CONFIG } from "../config"
 import { createInteractiveMode } from "./interactive"
 import type { MazeActionState } from "../types"
 
@@ -74,7 +75,7 @@ describe("interactive control mode", () => {
 
     const mode = createInteractiveMode(elements)
 
-    expect(mode.name).toBe("interactive")
+    expect(mode.name).toBe(CONFIG.runtime.controlModes.interactive)
     expect(mode.readLastActionState()).toBeNull()
 
     mode.bindActionDispatch(dispatch, vi.fn(() => createActionState()), vi.fn(() => createActionState()))

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { CONFIG } from "./config"
 import {
   cellCoordinateFromGridPoint,
   currentTotalCells,
@@ -22,7 +23,7 @@ function visit(row: number, col: number): TraversalHistoryEntry {
 
 function createState(overrides: Partial<State> = {}): State {
   return {
-    controlMode: "interactive",
+    controlMode: CONFIG.runtime.controlModes.interactive,
     level: 1,
     maze: [
       ["|", "---", "-", "---", "|"],

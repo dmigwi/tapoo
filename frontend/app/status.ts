@@ -1,9 +1,12 @@
+import { CONFIG } from "./config"
 import type {
   BaseDimensions,
   GameStatus,
   MazeControlModeName,
   PersistedGameStatus,
 } from "./types"
+
+const { controlModes } = CONFIG.runtime
 
 // ViewportFitStatus classifies whether the maze fits or which viewport axis blocks it.
 export type ViewportFitStatus =
@@ -18,14 +21,14 @@ export type TooSmallStatus = "too-small" | Exclude<ViewportFitStatus, "fits">
 export function isAgentApiMode(
   modeName: MazeControlModeName,
 ): modeName is "agent-api" {
-  return modeName === "agent-api"
+  return modeName === controlModes.agentApi
 }
 
 // isInteractiveMode identifies the human-controlled browser mode.
 export function isInteractiveMode(
   modeName: MazeControlModeName,
 ): modeName is "interactive" {
-  return modeName === "interactive"
+  return modeName === controlModes.interactive
 }
 
 // viewportFitStatus classifies which axis blocks the current maze from fitting.

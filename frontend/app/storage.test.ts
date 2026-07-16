@@ -2,20 +2,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CONFIG, STORE_ENCODING_PREFIX } from "./config"
 import {
-  clearPersistedAgentConfigs,
-  clearPersistedSnapshot,
-  clearPersistedRound,
-  disableAgentForNetworkError,
-  loadPersistedAgentConfigs,
-  loadPersistedSnapshot,
-  savePersistedAgentConfigs,
-  saveGameProgress,
-  saveActiveRoundSnapshot,
+  clearPersistedAgentApiConfigs,
+  clearPersistedAgentApiSnapshot,
+  clearPersistedInteractiveRound,
+  clearPersistedInteractiveSnapshot,
+  disableAgentApiConfigForNetworkError,
+  loadPersistedAgentApiConfigs,
+  loadPersistedAgentApiSnapshot,
+  loadPersistedInteractiveSnapshot,
+  saveAgentApiGameProgress,
+  savePersistedAgentApiConfigs,
+  saveActiveInteractiveRoundSnapshot,
+  saveInteractiveGameProgress,
 } from "./storage"
 import type { State, TraversalHistoryEntry } from "./types"
 
-const MODE = "interactive"
-const AGENT_MODE = "agent-api"
+const MODE = CONFIG.runtime.controlModes.interactive
+const AGENT_MODE = CONFIG.runtime.controlModes.agentApi
 
 function visit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Blue", row, col }
@@ -65,7 +68,7 @@ function createMemoryStorage(): Storage {
 // createState builds a restorable runtime state for storage-oriented scenarios.
 function createState(overrides: Partial<State> = {}): State {
   return {
-    controlMode: "interactive",
+    controlMode: CONFIG.runtime.controlModes.interactive,
     level: 4,
     mazeDimensions: { length: 5, width: 5 },
     maze: [
@@ -111,7 +114,7 @@ describe("storage", () => {
   })
 
   it("saves and reloads obfuscated frontend preferences", () => {
-    saveGameProgress(MODE, {
+    saveInteractiveGameProgress({
       level: 8,
       wallWeight: 3,
       lastAttemptRetention: 710000,
@@ -136,7 +139,7 @@ describe("storage", () => {
     expect(storedLevel).not.toBe("8")
     expect(storedWeight).not.toBe("3")
 
-    const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
+    const snapshot = loadPersistedInteractiveSnapshot(1, 1, isWallWeight)
 
     expect(snapshot.preferences).toEqual({
       level: 8,
@@ -149,7 +152,7 @@ describe("storage", () => {
   })
 
   it("saves and reloads configured agent api details separately from game progress", () => {
-    savePersistedAgentConfigs(AGENT_MODE, [
+    savePersistedAgentApiConfigs([
       {
         id: "agent-a",
         playerName: "Agent A",
@@ -174,7 +177,7 @@ describe("storage", () => {
 
     expect(storedConfigs).toContain(STORE_ENCODING_PREFIX)
     expect(storedConfigs).not.toContain("/api/agents/a/move")
-    expect(loadPersistedAgentConfigs(AGENT_MODE)).toEqual([
+    expect(loadPersistedAgentApiConfigs()).toEqual([
       {
         id: "agent-a",
         playerName: "Agent A",
@@ -193,16 +196,43 @@ describe("storage", () => {
       },
     ])
 
-    clearPersistedSnapshot(AGENT_MODE)
-    expect(loadPersistedAgentConfigs(AGENT_MODE)).toHaveLength(2)
+    clearPersistedAgentApiSnapshot()
+    expect(loadPersistedAgentApiConfigs()).toHaveLength(2)
 
-    clearPersistedAgentConfigs(AGENT_MODE)
-    expect(loadPersistedAgentConfigs(AGENT_MODE)).toEqual([])
+    clearPersistedAgentApiConfigs()
+    expect(loadPersistedAgentApiConfigs()).toEqual([])
+  })
+
+  it("saves and reloads agent api progress in the agent storage namespace", () => {
+    saveAgentApiGameProgress({
+      level: 6,
+      wallWeight: 2,
+      lastAttemptRetention: 640000,
+      bestWinRetention: 760000,
+      lastWinRequestCount: 8,
+      bestWinRequestCount: 5,
+    })
+
+    expect(window.localStorage.getItem(agentStorageKey("level"))).toContain(
+      STORE_ENCODING_PREFIX,
+    )
+    expect(window.localStorage.getItem(storageKey("level"))).toBeNull()
+
+    const snapshot = loadPersistedAgentApiSnapshot(1, 1, isWallWeight)
+
+    expect(snapshot.preferences).toEqual({
+      level: 6,
+      wallWeight: 2,
+      lastAttemptRetention: 640000,
+      bestWinRetention: 760000,
+      lastWinRequestCount: 8,
+      bestWinRequestCount: 5,
+    })
   })
 
   it("disables one network-failed agent without touching the others", () => {
     vi.spyOn(Date, "now").mockReturnValue(1_725_000_000_001)
-    savePersistedAgentConfigs(AGENT_MODE, [
+    savePersistedAgentApiConfigs([
       {
         id: "agent-a",
         playerName: "Agent A",
@@ -219,7 +249,7 @@ describe("storage", () => {
       },
     ])
 
-    const nextConfigs = disableAgentForNetworkError(AGENT_MODE, {
+    const nextConfigs = disableAgentApiConfigForNetworkError({
       id: "agent-b",
       playerName: "Agent B",
       model: "gemma4",
@@ -245,7 +275,7 @@ describe("storage", () => {
         lastErrorAt: 1_725_000_000_001,
       },
     ])
-    expect(loadPersistedAgentConfigs(AGENT_MODE)).toEqual(nextConfigs)
+    expect(loadPersistedAgentApiConfigs()).toEqual(nextConfigs)
   })
 
   it("saves and reloads the active round state", () => {
@@ -254,9 +284,9 @@ describe("storage", () => {
       finalPosition: { x: 1, y: 1 },
     })
 
-    saveActiveRoundSnapshot(MODE, state)
+    saveActiveInteractiveRoundSnapshot(state)
 
-    const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
+    const snapshot = loadPersistedInteractiveSnapshot(1, 1, isWallWeight)
 
     expect(snapshot.round).toEqual({
       version: CONFIG.runtime.roundStorageVersion,
@@ -283,7 +313,7 @@ describe("storage", () => {
     window.localStorage.setItem(storageKey("wallWeight"), "not-base64")
     window.sessionStorage.setItem(storageKey("round"), "not-base64")
 
-    const snapshot = loadPersistedSnapshot(MODE, 2, 1, isWallWeight)
+    const snapshot = loadPersistedInteractiveSnapshot(2, 1, isWallWeight)
 
     expect(snapshot.preferences).toEqual({
       level: 2,
@@ -301,7 +331,7 @@ describe("storage", () => {
     const originalStorageVersion = CONFIG.runtime.roundStorageVersion
 
     try {
-      saveGameProgress(MODE, {
+      saveInteractiveGameProgress({
         level: 8,
         wallWeight: 3,
         lastAttemptRetention: 710000,
@@ -309,8 +339,7 @@ describe("storage", () => {
         lastWinRequestCount: 6,
         bestWinRequestCount: 4,
       })
-      saveActiveRoundSnapshot(
-        MODE,
+      saveActiveInteractiveRoundSnapshot(
         createState({
           playerPosition: { x: 1, y: 1 },
           finalPosition: { x: 1, y: 1 },
@@ -319,7 +348,7 @@ describe("storage", () => {
       expect(window.sessionStorage.getItem(storageKey("round"))).not.toBeNull()
 
       CONFIG.runtime.roundStorageVersion = originalStorageVersion + 1
-      const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
+      const snapshot = loadPersistedInteractiveSnapshot(1, 1, isWallWeight)
 
       expect(snapshot.preferences).toEqual({
         level: 1,
@@ -346,11 +375,10 @@ describe("storage", () => {
       finalPosition: { x: 1, y: 1 },
     })
 
-    saveActiveRoundSnapshot(MODE, persistedState)
+    saveActiveInteractiveRoundSnapshot(persistedState)
     expect(window.sessionStorage.getItem(storageKey("round"))).not.toBeNull()
 
-    saveActiveRoundSnapshot(
-      MODE,
+    saveActiveInteractiveRoundSnapshot(
       createState({
         mazeDimensions: null,
         maze: null,
@@ -364,21 +392,20 @@ describe("storage", () => {
   })
 
   it("clears the persisted round on demand", () => {
-    saveActiveRoundSnapshot(
-      MODE,
+    saveActiveInteractiveRoundSnapshot(
       createState({
         playerPosition: { x: 1, y: 1 },
         finalPosition: { x: 1, y: 1 },
       }),
     )
 
-    clearPersistedRound(MODE)
+    clearPersistedInteractiveRound()
 
     expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })
 
   it("clears persisted preferences and the active round on demand", () => {
-    saveGameProgress(MODE, {
+    saveInteractiveGameProgress({
       level: 8,
       wallWeight: 3,
       lastAttemptRetention: 710000,
@@ -386,15 +413,14 @@ describe("storage", () => {
       lastWinRequestCount: null,
       bestWinRequestCount: null,
     })
-    saveActiveRoundSnapshot(
-      MODE,
+    saveActiveInteractiveRoundSnapshot(
       createState({
         playerPosition: { x: 1, y: 1 },
         finalPosition: { x: 1, y: 1 },
       }),
     )
 
-    clearPersistedSnapshot(MODE)
+    clearPersistedInteractiveSnapshot()
 
     expect(window.localStorage.getItem(storageKey("level"))).toBeNull()
     expect(window.localStorage.getItem(storageKey("wallWeight"))).toBeNull()

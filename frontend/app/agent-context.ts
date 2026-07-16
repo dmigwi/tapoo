@@ -1,4 +1,3 @@
-import { CONFIG } from "./config"
 import { getNavigationProfile } from "./maze"
 import { isWonStatus } from "./status"
 import {
@@ -13,8 +12,6 @@ import type {
   MoveAction,
   State,
 } from "./types"
-
-const { runtime } = CONFIG
 
 // ALLOWED_MOVE_ACTIONS enumerates the only traversal commands the agent may return.
 const ALLOWED_MOVE_ACTIONS: MoveAction[] = ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"]
@@ -56,7 +53,7 @@ function normalizeSubmittedMoves(moves: MoveAction[]): string[] {
 // buildMazeActionState snapshots the live maze state together with the latest agent replay result.
 export function buildMazeActionState(
   state: State,
-  playerName = runtime.interactivePlayerName,
+  playerName: string,
   overrides: Partial<MazeActionState> = {},
 ): MazeActionState {
   return {

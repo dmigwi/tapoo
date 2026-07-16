@@ -63,15 +63,16 @@ type HandleAgentTurnLoopOptions = {
     dispatch: MazeActionDispatch,
     playerName: string,
   ) => MazeActionState
+  disableAgentAfterNetworkError: (agent: AgentApiConfig) => void
   readAgentConfigs: () => AgentApiConfig[]
   onActionState: (actionState: MazeActionState) => void
-  onAgentNetworkError: (agent: AgentApiConfig) => MazeActionState
   readActionState: () => MazeActionState
 }
 
 // handleAgentTurnLoop owns the HTTP polling cycle used by the agent-api control mode.
 export function handleAgentTurnLoop({
-  commitAgentTurn, dispatch, dispatchAgentAction, elements, onActionState, onAgentNetworkError, readActionState, readAgentConfigs,
+  commitAgentTurn, disableAgentAfterNetworkError, dispatch, dispatchAgentAction,
+  elements, onActionState, readActionState, readAgentConfigs,
 }: HandleAgentTurnLoopOptions): AgentMovePoller {
   let attached = false
   let scheduledTurn: number | null = null
@@ -133,12 +134,21 @@ export function handleAgentTurnLoop({
   // shouldPollAgent only keeps the replay loop alive while the live round is actively running.
   const shouldPollAgent = (): boolean => attached && isRunningStatus(readActionState().status)
 
-  // recordAgentNetworkError delegates transport-failure handling to the control mode.
+  // recordAgentNetworkError disables failed agents and records the no-score-decay network state.
   const recordAgentNetworkError = (agent: AgentApiConfig | null): void => {
     if (!agent) {
       return
     }
-    lastActionState = onAgentNetworkError(agent)
+
+    disableAgentAfterNetworkError(agent)
+    const nextState = mergeMazeActionState(activeActionState(), {
+      playerName: agent.playerName,
+      lastMoveStatus: "network-error",
+      decayedMovesCount: 0,
+    })
+    lastActionState = nextState
+    onActionState(nextState)
+
     if (!hasEnabledAgents()) {
       awaitAgent()
     }
@@ -202,6 +212,7 @@ export function handleAgentTurnLoop({
       })
 
       if (!response.ok) {
+        // Network-class failures disable this agent without spending score decay.
         recordAgentNetworkError(selectedAgent)
         return
       }

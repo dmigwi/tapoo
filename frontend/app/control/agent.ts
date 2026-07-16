@@ -6,7 +6,6 @@ import type {
   MazeActionDispatch,
   MazeActionState,
 } from "../types"
-import { mergeMazeActionState } from "../agent-context"
 import {
   handleAgentTurnLoop,
 } from "./agent-api"
@@ -17,8 +16,8 @@ import {
   sessionActionFromKeyboardEvent,
 } from "./session-actions"
 import {
-  disableAgentForNetworkError,
-  loadPersistedAgentConfigs,
+  disableAgentApiConfigForNetworkError,
+  loadPersistedAgentApiConfigs,
 } from "../storage"
 import { CONFIG } from "../config"
 
@@ -32,9 +31,9 @@ type AgentButtonBinding = {
 // createAgentMode builds the agent-api MazeActionControl while transport wiring is still pending.
 export function createAgentMode(
   elements: Elements,
-  readAgentConfigs: () => AgentApiConfig[] = () => loadPersistedAgentConfigs("agent-api"),
+  readAgentConfigs: () => AgentApiConfig[] = loadPersistedAgentApiConfigs,
   disableAgentAfterNetworkError: (agent: AgentApiConfig) => void = (agent) => {
-    disableAgentForNetworkError("agent-api", agent)
+    disableAgentApiConfigForNetworkError(agent)
   },
 ): MazeActionControl {
   let attached = false
@@ -71,7 +70,7 @@ export function createAgentMode(
   return {
     // This MazeActionControl exposes the agent-api mode name, binds local session actions, and stores feedback for agents.
     // name lets the runtime identify which MazeActionControl implementation is active.
-    name: "agent-api",
+    name: runtime.controlModes.agentApi,
     // bindActionDispatch starts the HTTP-driven move loop while keeping session controls local.
     bindActionDispatch(
       dispatch: MazeActionDispatch,
@@ -100,25 +99,13 @@ export function createAgentMode(
         return actionState
       }
 
-      // handleAgentNetworkError centralizes transport-failure persistence and the state shown to agents.
-      const handleAgentNetworkError = (agent: AgentApiConfig): MazeActionState => {
-        disableAgentAfterNetworkError(agent)
-        const nextState = mergeMazeActionState(lastActionState ?? readActionState(), {
-          playerName: agent.playerName,
-          lastMoveStatus: "network-error",
-          decayedMovesCount: 0,
-        })
-        recordLastActionState(nextState)
-        return nextState
-      }
-
       agentMovePoller = handleAgentTurnLoop({
         commitAgentTurn,
+        disableAgentAfterNetworkError,
         dispatch,
         dispatchAgentAction,
         elements,
         onActionState: recordLastActionState,
-        onAgentNetworkError: handleAgentNetworkError,
         readAgentConfigs,
         readActionState,
       })

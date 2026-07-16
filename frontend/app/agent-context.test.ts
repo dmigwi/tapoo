@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
+import { CONFIG } from "./config"
 import { executeActionWithFeedback } from "./agent-context"
 import type { MazeAction, MoveAction, State, TraversalHistoryEntry } from "./types"
 
@@ -19,7 +20,7 @@ const expectedAgentPrompt = [
 // createState builds a compact agent-facing runtime state for movement feedback tests.
 function createState(overrides: Partial<State> = {}): State {
   return {
-    controlMode: "agent-api",
+    controlMode: CONFIG.runtime.controlModes.agentApi,
     level: 4,
     mazeDimensions: { length: 2, width: 1 },
     maze: [

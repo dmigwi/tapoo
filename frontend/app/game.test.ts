@@ -7,6 +7,7 @@ import type {
   Elements,
   GameRuntime,
   MazeActionControl,
+  MazeControlModeName,
   PersistedPreferences,
   PersistedRound,
   RoundState,
@@ -256,7 +257,7 @@ type DimensionsResult = {
 } | null
 
 type GameHarness = {
-  clearPersistedAgentConfigs: ReturnType<typeof vi.fn>
+  clearPersistedAgentApiConfigs: ReturnType<typeof vi.fn>
   clearPersistedSnapshot: ReturnType<typeof vi.fn>
   clearPersistedRound: ReturnType<typeof vi.fn>
   elements: Elements
@@ -282,7 +283,7 @@ async function bootstrapHarness({
   ],
   reweightedMaze,
   round = createRound(),
-  mode = "interactive",
+  mode = CONFIG.runtime.controlModes.interactive,
   terminalSizes = [{ length: 20, width: 20 }],
 }: {
   agentConfigs?: AgentApiConfig[]
@@ -294,14 +295,14 @@ async function bootstrapHarness({
   }>
   reweightedMaze?: string[][]
   round?: RoundState
-  mode?: "interactive" | "agent-api"
+  mode?: MazeControlModeName
   terminalSizes?: Array<{ length: number; width: number }>
 } = {}): Promise<GameHarness> {
   const elements = createElements()
   const render = vi.fn<(elements: Elements, state: State) => void>()
   const saveGameProgress = vi.fn()
   const saveActiveRoundSnapshot = vi.fn()
-  const clearPersistedAgentConfigs = vi.fn()
+  const clearPersistedAgentApiConfigs = vi.fn()
   const clearPersistedSnapshot = vi.fn()
   const clearPersistedRound = vi.fn()
   const generateMaze = vi.fn(() => round)
@@ -375,11 +376,11 @@ async function bootstrapHarness({
   vi.doMock("./traversal", () => createTraversalMock({ isSpaceFound, reweightMaze }))
   vi.doMock("./render", () => ({ render }))
   vi.doMock("./storage", () => ({
-    clearPersistedAgentConfigs,
+    clearPersistedAgentApiConfigs,
     clearPersistedSnapshot,
     clearPersistedRound,
-    disableAgentForNetworkError: vi.fn(),
-    loadPersistedAgentConfigs: vi.fn(() => agentConfigs),
+    disableAgentApiConfigForNetworkError: vi.fn(),
+    loadPersistedAgentApiConfigs: vi.fn(() => agentConfigs),
     loadPersistedSnapshot,
     saveGameProgress,
     saveActiveRoundSnapshot,
@@ -405,7 +406,7 @@ async function bootstrapHarness({
   const runtime = bootstrapGame(controlMode, elements)
 
   return {
-    clearPersistedAgentConfigs,
+    clearPersistedAgentApiConfigs,
     clearPersistedSnapshot,
     clearPersistedRound,
     elements,
@@ -467,8 +468,8 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      disableAgentForNetworkError: vi.fn(),
-      loadPersistedAgentConfigs: vi.fn(() => []),
+      disableAgentApiConfigForNetworkError: vi.fn(),
+      loadPersistedAgentApiConfigs: vi.fn(() => []),
       loadPersistedSnapshot,
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
@@ -481,7 +482,7 @@ describe("bootstrapGame", () => {
     bootstrapGame(createInteractiveMode(elements), elements)
 
     expect(loadPersistedSnapshot).toHaveBeenCalledWith(
-      "interactive",
+      CONFIG.runtime.controlModes.interactive,
       1,
       1,
       expect.any(Function),
@@ -534,8 +535,8 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      disableAgentForNetworkError: vi.fn(),
-      loadPersistedAgentConfigs: vi.fn(() => []),
+      disableAgentApiConfigForNetworkError: vi.fn(),
+      loadPersistedAgentApiConfigs: vi.fn(() => []),
       loadPersistedSnapshot: vi.fn(() => ({
         preferences: { level: 1, wallWeight: 1 },
         round: null,
@@ -586,8 +587,8 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      disableAgentForNetworkError: vi.fn(),
-      loadPersistedAgentConfigs: vi.fn(() => []),
+      disableAgentApiConfigForNetworkError: vi.fn(),
+      loadPersistedAgentApiConfigs: vi.fn(() => []),
       loadPersistedSnapshot,
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
@@ -643,8 +644,8 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      disableAgentForNetworkError: vi.fn(),
-      loadPersistedAgentConfigs: vi.fn(() => []),
+      disableAgentApiConfigForNetworkError: vi.fn(),
+      loadPersistedAgentApiConfigs: vi.fn(() => []),
       loadPersistedSnapshot: vi.fn(() => ({
         preferences: { level: 1, wallWeight: 1 },
         round: null,
@@ -711,7 +712,7 @@ describe("bootstrapGame", () => {
     const harness = await bootstrapHarness({
       agentConfigs: [enabledAgentConfig()],
       dimensionsResults: [{ level: 1, length: 2, width: 1 }],
-      mode: "agent-api",
+      mode: CONFIG.runtime.controlModes.agentApi,
       round: createHorizontalRound(),
     })
 
@@ -724,11 +725,11 @@ describe("bootstrapGame", () => {
     harness.elements.controls[0].click()
 
     expect(harness.clearPersistedSnapshot).toHaveBeenCalledTimes(1)
-    expect(harness.clearPersistedAgentConfigs).not.toHaveBeenCalled()
+    expect(harness.clearPersistedAgentApiConfigs).not.toHaveBeenCalled()
     expect(harness.mode.readLastActionState()).toBeNull()
 
     const state = latestRenderedState(harness.render)
-    expect(state.controlMode).toBe("agent-api")
+    expect(state.controlMode).toBe(CONFIG.runtime.controlModes.agentApi)
     expect(state.level).toBe(1)
     expect(state.status).toBe("running")
     expect(state.scoreDecayUnits).toBe(0)
@@ -738,11 +739,11 @@ describe("bootstrapGame", () => {
 
   it("moves agent-api games into await-agent immediately when no agents are enabled", async () => {
     const harness = await bootstrapHarness({
-      mode: "agent-api",
+      mode: CONFIG.runtime.controlModes.agentApi,
     })
 
     const state = latestRenderedState(harness.render)
-    expect(state.controlMode).toBe("agent-api")
+    expect(state.controlMode).toBe(CONFIG.runtime.controlModes.agentApi)
     expect(state.status).toBe("await-agent")
     expect(state.canResume).toBe(false)
   })
@@ -1142,7 +1143,7 @@ describe("bootstrapGame", () => {
         { level: 1, length: 2, width: 1 },
         { level: 2, length: 2, width: 1 },
       ],
-      mode: "agent-api",
+      mode: CONFIG.runtime.controlModes.agentApi,
       round: createHorizontalRound(),
     })
 
@@ -1156,7 +1157,7 @@ describe("bootstrapGame", () => {
     let state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
     expect(state.playerPosition).toEqual({ x: 1, y: 1 })
-    expect(state.controlMode).toBe("agent-api")
+    expect(state.controlMode).toBe(CONFIG.runtime.controlModes.agentApi)
     expect(harness.mode.readLastActionState()).toBeNull()
 
     const actionState = harness.runtime.dispatch(
@@ -1196,7 +1197,7 @@ describe("bootstrapGame", () => {
   it("keeps pause, proceed, and wall cycling human-driven in agent-api mode", async () => {
     const harness = await bootstrapHarness({
       agentConfigs: [enabledAgentConfig()],
-      mode: "agent-api",
+      mode: CONFIG.runtime.controlModes.agentApi,
     })
 
     window.dispatchEvent(

@@ -66,7 +66,7 @@ function createElements(): Elements {
 // createState builds a representative runtime state for render scenarios.
 function createState(overrides: Partial<State> = {}): State {
   return {
-    controlMode: "interactive",
+    controlMode: CONFIG.runtime.controlModes.interactive,
     level: 1,
     mazeDimensions: { length: 2, width: 2 },
     maze: [
@@ -220,7 +220,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        controlMode: "agent-api",
+        controlMode: CONFIG.runtime.controlModes.agentApi,
       }),
     )
 

@@ -68,14 +68,10 @@ function enabledAgentConfigs(): AgentApiConfig[] {
   ]
 }
 
-function createNetworkErrorHandler() {
-  return vi.fn((agent: AgentApiConfig) =>
-    createActionState({
-      playerName: agent.playerName,
-      lastMoveStatus: "network-error",
-      decayedMovesCount: 0,
-    }),
-  )
+function createDisableAgentAfterNetworkError() {
+  return vi.fn((agent: AgentApiConfig) => {
+    agent.enabled = false
+  })
 }
 
 describe("agent api turn loop", () => {
@@ -105,7 +101,7 @@ describe("agent api turn loop", () => {
       ),
       commitAgentTurn: vi.fn(() => createActionState()),
       onActionState: vi.fn(),
-      onAgentNetworkError: createNetworkErrorHandler(),
+      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       readAgentConfigs: enabledAgentConfigs,
       readActionState: () => actionState,
     })
@@ -139,7 +135,7 @@ describe("agent api turn loop", () => {
       dispatchAgentAction: vi.fn(),
       commitAgentTurn: vi.fn(() => createActionState()),
       onActionState: vi.fn(),
-      onAgentNetworkError: createNetworkErrorHandler(),
+      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       readAgentConfigs: () => [],
       readActionState: () => createActionState(),
     })
@@ -159,14 +155,7 @@ describe("agent api turn loop", () => {
 
     const agentConfigs = enabledAgentConfigs()
     const dispatch = vi.fn() as MazeActionDispatch
-    const onAgentNetworkError = vi.fn((agent: AgentApiConfig) => {
-      agent.enabled = false
-      return createActionState({
-        playerName: agent.playerName,
-        lastMoveStatus: "network-error",
-        decayedMovesCount: 0,
-      })
-    })
+    const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
 
     const poller = handleAgentTurnLoop({
       elements: { body: document.createElement("div") },
@@ -174,7 +163,7 @@ describe("agent api turn loop", () => {
       dispatch,
       dispatchAgentAction: vi.fn(),
       onActionState: vi.fn(),
-      onAgentNetworkError,
+      disableAgentAfterNetworkError,
       readAgentConfigs: () => agentConfigs,
       readActionState: () => createActionState(),
     })
@@ -183,7 +172,7 @@ describe("agent api turn loop", () => {
     poller.scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
-    expect(onAgentNetworkError).toHaveBeenCalledWith(agentConfigs[0])
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
   })
 
@@ -231,7 +220,7 @@ describe("agent api turn loop", () => {
       dispatch,
       dispatchAgentAction,
       onActionState,
-      onAgentNetworkError: createNetworkErrorHandler(),
+      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       readAgentConfigs: enabledAgentConfigs,
       readActionState: () => createActionState(),
     })
@@ -322,7 +311,7 @@ describe("agent api turn loop", () => {
       dispatch,
       dispatchAgentAction,
       onActionState,
-      onAgentNetworkError: createNetworkErrorHandler(),
+      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       readAgentConfigs: () => agentConfigs,
       readActionState: () => createActionState({ level: 2 }),
     })
@@ -433,7 +422,7 @@ describe("agent api turn loop", () => {
       dispatch: vi.fn() as MazeActionDispatch,
       dispatchAgentAction,
       onActionState,
-      onAgentNetworkError: createNetworkErrorHandler(),
+      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       readAgentConfigs: enabledAgentConfigs,
       readActionState: () => createActionState(),
     })
@@ -474,7 +463,7 @@ describe("agent api turn loop", () => {
       dispatch: vi.fn() as MazeActionDispatch,
       dispatchAgentAction,
       onActionState,
-      onAgentNetworkError: createNetworkErrorHandler(),
+      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       readAgentConfigs: enabledAgentConfigs,
       readActionState: () => createActionState(),
     })
@@ -509,16 +498,17 @@ describe("agent api turn loop", () => {
       createActionState({ decayedMovesCount }),
     )
     const onActionState = vi.fn()
-    const onAgentNetworkError = createNetworkErrorHandler()
+    const agentConfigs = enabledAgentConfigs()
+    const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
 
     const poller = handleAgentTurnLoop({
       elements: { body: document.createElement("div") },
       commitAgentTurn,
+      disableAgentAfterNetworkError,
       dispatch: vi.fn() as MazeActionDispatch,
       dispatchAgentAction: vi.fn(),
       onActionState,
-      onAgentNetworkError,
-      readAgentConfigs: enabledAgentConfigs,
+      readAgentConfigs: () => agentConfigs,
       readActionState: () => createActionState(),
     })
 
@@ -528,8 +518,14 @@ describe("agent api turn loop", () => {
     await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiResponseTimeoutMs)
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
-    expect(onAgentNetworkError).toHaveBeenCalledWith(enabledAgentConfigs()[0])
-    expect(onActionState).not.toHaveBeenCalled()
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
+    expect(onActionState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        decayedMovesCount: 0,
+        lastMoveStatus: "network-error",
+        playerName: "Blue",
+      }),
+    )
   })
 
   it("disables the agent after non-ok http responses without score decay", async () => {
@@ -545,16 +541,17 @@ describe("agent api turn loop", () => {
       createActionState({ decayedMovesCount }),
     )
     const onActionState = vi.fn()
-    const onAgentNetworkError = createNetworkErrorHandler()
+    const agentConfigs = enabledAgentConfigs()
+    const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
 
     const poller = handleAgentTurnLoop({
       elements: { body: document.createElement("div") },
       commitAgentTurn,
+      disableAgentAfterNetworkError,
       dispatch: vi.fn() as MazeActionDispatch,
       dispatchAgentAction: vi.fn(),
       onActionState,
-      onAgentNetworkError,
-      readAgentConfigs: enabledAgentConfigs,
+      readAgentConfigs: () => agentConfigs,
       readActionState: () => createActionState(),
     })
 
@@ -563,8 +560,14 @@ describe("agent api turn loop", () => {
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
-    expect(onAgentNetworkError).toHaveBeenCalledWith(enabledAgentConfigs()[0])
-    expect(onActionState).not.toHaveBeenCalled()
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
+    expect(onActionState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        decayedMovesCount: 0,
+        lastMoveStatus: "network-error",
+        playerName: "Blue",
+      }),
+    )
   })
 
   it("disables the agent after fetch failures without score decay", async () => {
@@ -577,16 +580,17 @@ describe("agent api turn loop", () => {
       createActionState({ decayedMovesCount }),
     )
     const onActionState = vi.fn()
-    const onAgentNetworkError = createNetworkErrorHandler()
+    const agentConfigs = enabledAgentConfigs()
+    const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
 
     const poller = handleAgentTurnLoop({
       elements: { body: document.createElement("div") },
       commitAgentTurn,
+      disableAgentAfterNetworkError,
       dispatch: vi.fn() as MazeActionDispatch,
       dispatchAgentAction: vi.fn(),
       onActionState,
-      onAgentNetworkError,
-      readAgentConfigs: enabledAgentConfigs,
+      readAgentConfigs: () => agentConfigs,
       readActionState: () => createActionState(),
     })
 
@@ -595,7 +599,13 @@ describe("agent api turn loop", () => {
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
-    expect(onAgentNetworkError).toHaveBeenCalledWith(enabledAgentConfigs()[0])
-    expect(onActionState).not.toHaveBeenCalled()
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
+    expect(onActionState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        decayedMovesCount: 0,
+        lastMoveStatus: "network-error",
+        playerName: "Blue",
+      }),
+    )
   })
 })

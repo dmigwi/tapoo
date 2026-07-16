@@ -421,6 +421,10 @@ export type AppConfig = {
   }
   runtime: {
     roundStorageVersion: number
+    controlModes: {
+      interactive: MazeControlModeName
+      agentApi: MazeControlModeName
+    }
     agentConfigsStorageSuffix: string
     missingElementErrorTemplate: string
     agentApiMistakePenaltyMoves: number

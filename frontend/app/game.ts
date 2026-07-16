@@ -69,7 +69,7 @@ const { maze, messages, runtime, scoring, timing } = CONFIG
 type PersistenceScope = "round" | "state"
 
 const state: State = {
-  controlMode: "interactive",
+  controlMode: runtime.controlModes.interactive,
   level: 1,
   maze: null,
   mazeDimensions: null,
@@ -462,7 +462,7 @@ function positionsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean 
 
 // readActionState exposes the latest flattened agent-api payload so external callers can plan moves.
 function readActionState(): MazeActionState {
-  return buildMazeActionState(state)
+  return buildMazeActionState(state, runtime.interactivePlayerName)
 }
 
 // isCellCoordinate validates one persisted logical cell coordinate.
@@ -1085,19 +1085,16 @@ function refreshRunningRound(): void {
   }
 }
 
-// handleMove applies one semantic movement action for the named player.
-function handleMove(action: MoveAction, playerName = runtime.interactivePlayerName): void {
-  movePlayer(action, playerName)
-}
-
 // executeCommand runs one semantic control command without building feedback.
-function executeCommand(action: MazeAction): void {
+// playerName is required at this boundary even when a session command ignores it, because any
+// traversal command must be attributed to the control mode or agent that actually requested it.
+function executeCommand(action: MazeAction, playerName: string): void {
   switch (action.type) {
     case "MoveLeft":
     case "MoveRight":
     case "MoveUp":
     case "MoveDown":
-      handleMove(action.type)
+      movePlayer(action.type, playerName)
       return
     case "pause":
       pauseGame()
@@ -1125,15 +1122,17 @@ function dispatchControl(
   // Control modes translate their own input sources into semantic maze commands,
   // and the shared runtime resolves those commands here.
   if (!options.wantFeedback) {
-    executeCommand(action)
+    executeCommand(action, options.playerName)
     return null
   }
 
   // Feedback requests run through the agent-context path so moves can return structured state.
   const actionState = executeActionWithFeedback(action, {
-    executeCommand,
+    executeCommand: (nextAction) => {
+      executeCommand(nextAction, options.playerName)
+    },
     state,
-    handleMove,
+    handleMove: movePlayer,
     playerName: options.playerName,
   })
 

@@ -109,7 +109,7 @@ export function createInteractiveMode(
   return {
     // This MazeActionControl exposes the interactive mode name, binds browser inputs, and ignores stored feedback.
     // name lets the runtime identify which MazeActionControl implementation is active.
-    name: "interactive",
+    name: runtime.controlModes.interactive,
     // bindActionDispatch connects browser keyboard and button events to the shared action dispatcher.
     bindActionDispatch(dispatch, readActionState, commitAgentTurn) {
       void readActionState

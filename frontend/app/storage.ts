@@ -16,6 +16,20 @@ import type {
 } from "./types"
 
 const { runtime, timing } = CONFIG
+const { agentApi: agentApiModeName, interactive: interactiveModeName } =
+  runtime.controlModes
+
+type PersistableProgressState = Pick<
+  State,
+  | "level"
+  | "wallWeight"
+  | "lastAttemptRetention"
+  | "bestWinRetention"
+  | "lastWinRequestCount"
+  | "bestWinRequestCount"
+>
+
+// Shared storage helpers.
 
 // storageKey namespaces browser persistence per control mode so interactive and agent-api do not collide.
 function storageKey(
@@ -94,6 +108,8 @@ function decodeStoredPayload<T>(encodedPayload: string): T | null {
   }
 }
 
+// Agent API configuration persistence.
+
 // isAgentApiConfig validates one persisted HTTP agent configuration.
 function isAgentApiConfig(value: unknown): value is AgentApiConfig {
   if (
@@ -108,20 +124,22 @@ function isAgentApiConfig(value: unknown): value is AgentApiConfig {
     return false
   }
 
-  const disabledReason =  "disabledReason" in value ? value.disabledReason : undefined
+  const disabledReason = "disabledReason" in value ? value.disabledReason : undefined
   const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
 
   return (
-    typeof value.id === "string" && value.id.length > 0 &&
-    typeof value.playerName === "string" && value.playerName.length > 0 &&
-    typeof value.model === "string" && value.model.length > 0 &&
-    typeof value.endpoint === "string" && value.endpoint.length > 0 &&
+    typeof value.id === "string" &&
+    value.id.length > 0 &&
+    typeof value.playerName === "string" &&
+    value.playerName.length > 0 &&
+    typeof value.model === "string" &&
+    value.model.length > 0 &&
+    typeof value.endpoint === "string" &&
+    value.endpoint.length > 0 &&
     typeof value.enabled === "boolean" &&
     (disabledReason === undefined || disabledReason === "network-error") &&
-    (
-      lastErrorAt === undefined ||
-      (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt))
-    )
+    (lastErrorAt === undefined ||
+      (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt)))
   )
 }
 
@@ -146,68 +164,11 @@ function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
   return normalizedConfigs
 }
 
-// buildRoundSnapshot extracts the restorable round state from the live runtime.
-function buildRoundSnapshot(state: State): PersistedRound | null {
-  if (
-    !state.mazeDimensions ||
-    !state.maze ||
-    !state.playerPosition ||
-    state.traversalHistory.length === 0 ||
-    !state.finalPosition ||
-    !canPersistRoundStatus(state.status)
-  ) {
-    return null
-  }
-
-  const totalCells = currentTotalCells(state.mazeDimensions)
-  const decayIntervalPerCellMs = isAgentApiMode(state.controlMode)
-    ? timing.agentApiCoreDecayIntervalPerCellMs
-    : timing.interactiveCoreDecayIntervalPerCellMs
-  const remainingMs = state.clock
-    ? state.clock.remaining()
-    : totalCells * decayIntervalPerCellMs
-
-  return {
-    version: runtime.roundStorageVersion,
-    level: state.level,
-    mazeDimensions: {
-      length: state.mazeDimensions.length,
-      width: state.mazeDimensions.width,
-    },
-    maze: state.maze.map((row) => [...row]),
-    startCell: {
-      row: state.traversalHistory[0].row,
-      col: state.traversalHistory[0].col,
-    },
-    traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
-      playerName, row, col,
-    })),
-    playerPosition: {
-      x: state.playerPosition.x,
-      y: state.playerPosition.y,
-    },
-    finalPosition: {
-      x: state.finalPosition.x,
-      y: state.finalPosition.y,
-    },
-    wallWeight: state.wallWeight,
-    status: state.status,
-    score: state.score,
-    lastRoundScore: state.lastRoundScore,
-    remainingMs,
-    winSummary: state.winSummary,
-    scoreDecayUnits: state.scoreDecayUnits,
-    agentRequestCount: state.agentRequestCount,
-  }
-}
-
-// loadPersistedAgentConfigs restores the configurable HTTP agents for a control mode.
-export function loadPersistedAgentConfigs(
-  modeName: MazeControlModeName,
-): AgentApiConfig[] {
+// loadPersistedAgentApiConfigs restores the configurable HTTP agents for agent-api mode.
+export function loadPersistedAgentApiConfigs(): AgentApiConfig[] {
   try {
     const storedConfigs = window.localStorage.getItem(
-      storageKey(modeName, runtime.agentConfigsStorageSuffix),
+      storageKey(agentApiModeName, runtime.agentConfigsStorageSuffix),
     )
     if (!storedConfigs) {
       return []
@@ -221,14 +182,11 @@ export function loadPersistedAgentConfigs(
   }
 }
 
-// savePersistedAgentConfigs stores the configured HTTP agents separately from game progress.
-export function savePersistedAgentConfigs(
-  modeName: MazeControlModeName,
-  configs: AgentApiConfig[],
-): void {
+// savePersistedAgentApiConfigs stores configured HTTP agents separately from game progress.
+export function savePersistedAgentApiConfigs(configs: AgentApiConfig[]): void {
   try {
     window.localStorage.setItem(
-      storageKey(modeName, runtime.agentConfigsStorageSuffix),
+      storageKey(agentApiModeName, runtime.agentConfigsStorageSuffix),
       encodeStoredPayload(normalizeAgentApiConfigs(configs)),
     )
   } catch {
@@ -236,12 +194,11 @@ export function savePersistedAgentConfigs(
   }
 }
 
-// disableAgentForNetworkError marks one transport-failing agent ineligible for later turns.
-export function disableAgentForNetworkError(
-  modeName: MazeControlModeName,
+// disableAgentApiConfigForNetworkError marks one transport-failing agent ineligible for later turns.
+export function disableAgentApiConfigForNetworkError(
   failedAgent: AgentApiConfig,
 ): AgentApiConfig[] {
-  const nextConfigs = loadPersistedAgentConfigs(modeName).map((agent) => {
+  const nextConfigs = loadPersistedAgentApiConfigs().map((agent) => {
     if (agent.id !== failedAgent.id) {
       return agent
     }
@@ -256,20 +213,22 @@ export function disableAgentForNetworkError(
     return disabledAgent
   })
 
-  savePersistedAgentConfigs(modeName, nextConfigs)
+  savePersistedAgentApiConfigs(nextConfigs)
   return nextConfigs
 }
 
-// clearPersistedAgentConfigs removes agent setup without touching game progress.
-export function clearPersistedAgentConfigs(modeName: MazeControlModeName): void {
+// clearPersistedAgentApiConfigs removes agent setup without touching game progress.
+export function clearPersistedAgentApiConfigs(): void {
   try {
     window.localStorage.removeItem(
-      storageKey(modeName, runtime.agentConfigsStorageSuffix),
+      storageKey(agentApiModeName, runtime.agentConfigsStorageSuffix),
     )
   } catch {
     // Ignore storage failures so clearing remains best-effort only.
   }
 }
+
+// Game progress preference persistence.
 
 // savePreferences persists the long-lived browser preferences in local storage.
 function savePreferences(
@@ -390,6 +349,92 @@ function loadPreferences(
   }
 }
 
+// saveGameProgress writes long-lived localStorage progress from the live game state.
+export function saveGameProgress(
+  modeName: MazeControlModeName,
+  state: PersistableProgressState,
+): void {
+  savePreferences(modeName, {
+    level: state.level,
+    wallWeight: state.wallWeight,
+    lastAttemptRetention: state.lastAttemptRetention,
+    bestWinRetention: state.bestWinRetention,
+    lastWinRequestCount: state.lastWinRequestCount,
+    bestWinRequestCount: state.bestWinRequestCount,
+  })
+}
+
+// saveInteractiveGameProgress writes long-lived localStorage progress for interactive mode.
+export function saveInteractiveGameProgress(
+  state: PersistableProgressState,
+): void {
+  saveGameProgress(interactiveModeName, state)
+}
+
+// saveAgentApiGameProgress writes long-lived localStorage progress for agent-api mode.
+export function saveAgentApiGameProgress(state: PersistableProgressState): void {
+  saveGameProgress(agentApiModeName, state)
+}
+
+// Active round persistence.
+
+// buildRoundSnapshot extracts the restorable round state from the live runtime.
+function buildRoundSnapshot(state: State): PersistedRound | null {
+  if (
+    !state.mazeDimensions ||
+    !state.maze ||
+    !state.playerPosition ||
+    state.traversalHistory.length === 0 ||
+    !state.finalPosition ||
+    !canPersistRoundStatus(state.status)
+  ) {
+    return null
+  }
+
+  const totalCells = currentTotalCells(state.mazeDimensions)
+  const decayIntervalPerCellMs = isAgentApiMode(state.controlMode)
+    ? timing.agentApiCoreDecayIntervalPerCellMs
+    : timing.interactiveCoreDecayIntervalPerCellMs
+  const remainingMs = state.clock
+    ? state.clock.remaining()
+    : totalCells * decayIntervalPerCellMs
+
+  return {
+    version: runtime.roundStorageVersion,
+    level: state.level,
+    mazeDimensions: {
+      length: state.mazeDimensions.length,
+      width: state.mazeDimensions.width,
+    },
+    maze: state.maze.map((row) => [...row]),
+    startCell: {
+      row: state.traversalHistory[0].row,
+      col: state.traversalHistory[0].col,
+    },
+    traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
+      playerName,
+      row,
+      col,
+    })),
+    playerPosition: {
+      x: state.playerPosition.x,
+      y: state.playerPosition.y,
+    },
+    finalPosition: {
+      x: state.finalPosition.x,
+      y: state.finalPosition.y,
+    },
+    wallWeight: state.wallWeight,
+    status: state.status,
+    score: state.score,
+    lastRoundScore: state.lastRoundScore,
+    remainingMs,
+    winSummary: state.winSummary,
+    scoreDecayUnits: state.scoreDecayUnits,
+    agentRequestCount: state.agentRequestCount,
+  }
+}
+
 // saveRound persists the short-lived active round in session storage.
 function saveRound(
   modeName: MazeControlModeName,
@@ -438,6 +483,41 @@ function loadRound(modeName: MazeControlModeName): PersistedRound | null {
   return snapshot
 }
 
+// saveActiveRoundSnapshot writes the short-lived sessionStorage round snapshot.
+export function saveActiveRoundSnapshot(
+  modeName: MazeControlModeName,
+  state: State,
+): void {
+  saveRound(modeName, buildRoundSnapshot(state))
+}
+
+// saveActiveInteractiveRoundSnapshot writes the short-lived interactive round snapshot.
+export function saveActiveInteractiveRoundSnapshot(state: State): void {
+  saveActiveRoundSnapshot(interactiveModeName, state)
+}
+
+// saveActiveAgentApiRoundSnapshot writes the short-lived agent-api round snapshot.
+export function saveActiveAgentApiRoundSnapshot(state: State): void {
+  saveActiveRoundSnapshot(agentApiModeName, state)
+}
+
+// clearPersistedRound drops only the short-lived active round snapshot.
+export function clearPersistedRound(modeName: MazeControlModeName): void {
+  saveRound(modeName, null)
+}
+
+// clearPersistedInteractiveRound drops only the interactive active round snapshot.
+export function clearPersistedInteractiveRound(): void {
+  clearPersistedRound(interactiveModeName)
+}
+
+// clearPersistedAgentApiRound drops only the agent-api active round snapshot.
+export function clearPersistedAgentApiRound(): void {
+  clearPersistedRound(agentApiModeName)
+}
+
+// Combined progress and round persistence.
+
 // loadPersistedSnapshot restores both browser preferences and the active round.
 export function loadPersistedSnapshot(
   modeName: MazeControlModeName,
@@ -458,40 +538,32 @@ export function loadPersistedSnapshot(
   }
 }
 
-// saveGameProgress writes long-lived localStorage progress from the live game state.
-export function saveGameProgress(
-  modeName: MazeControlModeName,
-  state: Pick<
-    State,
-    | "level"
-    | "wallWeight"
-    | "lastAttemptRetention"
-    | "bestWinRetention"
-    | "lastWinRequestCount"
-    | "bestWinRequestCount"
-  >,
-): void {
-  savePreferences(modeName, {
-    level: state.level,
-    wallWeight: state.wallWeight,
-    lastAttemptRetention: state.lastAttemptRetention,
-    bestWinRetention: state.bestWinRetention,
-    lastWinRequestCount: state.lastWinRequestCount,
-    bestWinRequestCount: state.bestWinRequestCount,
-  })
+// loadPersistedInteractiveSnapshot restores the interactive-mode preferences and active round.
+export function loadPersistedInteractiveSnapshot(
+  defaultLevel: number,
+  defaultWeight: WallWeight,
+  isWallWeight: (value: number) => value is WallWeight,
+): PersistedSnapshot {
+  return loadPersistedSnapshot(
+    interactiveModeName,
+    defaultLevel,
+    defaultWeight,
+    isWallWeight,
+  )
 }
 
-// saveActiveRoundSnapshot writes the short-lived sessionStorage round snapshot.
-export function saveActiveRoundSnapshot(
-  modeName: MazeControlModeName,
-  state: State,
-): void {
-  saveRound(modeName, buildRoundSnapshot(state))
-}
-
-// clearPersistedRound drops only the short-lived active round snapshot.
-export function clearPersistedRound(modeName: MazeControlModeName): void {
-  saveRound(modeName, null)
+// loadPersistedAgentApiSnapshot restores the agent-api preferences and active round.
+export function loadPersistedAgentApiSnapshot(
+  defaultLevel: number,
+  defaultWeight: WallWeight,
+  isWallWeight: (value: number) => value is WallWeight,
+): PersistedSnapshot {
+  return loadPersistedSnapshot(
+    agentApiModeName,
+    defaultLevel,
+    defaultWeight,
+    isWallWeight,
+  )
 }
 
 // clearPersistedSnapshot clears both long-lived preferences and the active round.
@@ -508,4 +580,14 @@ export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   }
 
   clearPersistedRound(modeName)
+}
+
+// clearPersistedInteractiveSnapshot clears interactive preferences and the active round.
+export function clearPersistedInteractiveSnapshot(): void {
+  clearPersistedSnapshot(interactiveModeName)
+}
+
+// clearPersistedAgentApiSnapshot clears agent-api preferences and the active round.
+export function clearPersistedAgentApiSnapshot(): void {
+  clearPersistedSnapshot(agentApiModeName)
 }
