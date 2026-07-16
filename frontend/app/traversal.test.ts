@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   cellCoordinateFromGridPoint,
+  currentTotalCells,
   gridPointFromCellCoordinate,
   isMoveAction,
   isSpaceFound,
@@ -94,6 +95,13 @@ describe("traversal", () => {
     expect(cellCoordinateFromGridPoint({ x: 1, y: 1 })).toEqual({ row: 0, col: 0 })
     expect(cellCoordinateFromGridPoint({ x: 3, y: 1 })).toEqual({ row: 0, col: 1 })
     expect(gridPointFromCellCoordinate({ row: 2, col: 3 })).toEqual({ x: 7, y: 5 })
+  })
+
+  it("returns the total logical cells only for usable maze dimensions", () => {
+    expect(currentTotalCells({ length: 4, width: 3 })).toBe(12)
+    expect(currentTotalCells(null)).toBe(0)
+    expect(currentTotalCells({ length: 0, width: 3 })).toBe(0)
+    expect(currentTotalCells({ length: 4, width: -1 })).toBe(0)
   })
 
   it("tracks traversal history entries by logical cell identity", () => {

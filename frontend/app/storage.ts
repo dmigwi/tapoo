@@ -3,7 +3,8 @@ import {
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
 } from "./config"
-import { canPersistRoundStatus } from "./status"
+import { canPersistRoundStatus, isAgentApiMode } from "./status"
+import { currentTotalCells } from "./traversal"
 import type {
   AgentApiConfig,
   MazeControlModeName,
@@ -158,8 +159,8 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     return null
   }
 
-  const totalCells = state.mazeDimensions.length * state.mazeDimensions.width
-  const decayIntervalPerCellMs = state.controlMode === "agent-api"
+  const totalCells = currentTotalCells(state.mazeDimensions)
+  const decayIntervalPerCellMs = isAgentApiMode(state.controlMode)
     ? timing.agentApiCoreDecayIntervalPerCellMs
     : timing.interactiveCoreDecayIntervalPerCellMs
   const remainingMs = state.clock

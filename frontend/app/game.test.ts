@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CONFIG } from "./config"
+import { isAgentApiMode } from "./status"
 import type {
   AgentApiConfig,
   Elements,
@@ -144,6 +145,13 @@ function createTraversalMock({
 
   return {
     cellCoordinateFromGridPoint: vi.fn(cellCoordinateFromGridPoint),
+    currentTotalCells: vi.fn((mazeDimensions: { length: number; width: number } | null) => {
+      if (!mazeDimensions || mazeDimensions.length <= 0 || mazeDimensions.width <= 0) {
+        return 0
+      }
+
+      return mazeDimensions.length * mazeDimensions.width
+    }),
     gridPointFromCellCoordinate: vi.fn(gridPointFromCellCoordinate),
     isMoveAction: vi.fn((action: { type: string }) =>
       ["MoveLeft", "MoveRight", "MoveUp", "MoveDown"].includes(action.type),
@@ -393,7 +401,7 @@ async function bootstrapHarness({
   const { createInteractiveMode } = await import("./control/interactive")
   const { bootstrapGame } = await import("./game")
   const controlMode =
-    mode === "agent-api" ? createAgentMode(elements) : createInteractiveMode(elements)
+    isAgentApiMode(mode) ? createAgentMode(elements) : createInteractiveMode(elements)
   const runtime = bootstrapGame(controlMode, elements)
 
   return {
@@ -423,6 +431,7 @@ describe("bootstrapGame", () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    vi.useRealTimers()
     Reflect.deleteProperty(window, "visualViewport")
   })
 
@@ -725,6 +734,17 @@ describe("bootstrapGame", () => {
     expect(state.scoreDecayUnits).toBe(0)
     expect(state.agentRequestCount).toBe(0)
     expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
+  })
+
+  it("moves agent-api games into await-agent immediately when no agents are enabled", async () => {
+    const harness = await bootstrapHarness({
+      mode: "agent-api",
+    })
+
+    const state = latestRenderedState(harness.render)
+    expect(state.controlMode).toBe("agent-api")
+    expect(state.status).toBe("await-agent")
+    expect(state.canResume).toBe(false)
   })
 
   it("pauses and resumes a running round through interactive controls", async () => {
@@ -1117,7 +1137,11 @@ describe("bootstrapGame", () => {
 
   it("keeps traversal input out of local keyboard handling in agent-api mode", async () => {
     const harness = await bootstrapHarness({
-      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      agentConfigs: [enabledAgentConfig()],
+      dimensionsResults: [
+        { level: 1, length: 2, width: 1 },
+        { level: 2, length: 2, width: 1 },
+      ],
       mode: "agent-api",
       round: createHorizontalRound(),
     })
@@ -1153,6 +1177,20 @@ describe("bootstrapGame", () => {
       lastValidMoveIndex: 0,
     }))
     expect(harness.mode.readLastActionState()).toEqual(actionState)
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "p",
+        ctrlKey: true,
+        bubbles: true,
+      }),
+    )
+
+    state = latestRenderedState(harness.render)
+    expect(state.status).toBe("running")
+    expect(state.level).toBe(2)
+    expect(state.playerPosition).toEqual({ x: 1, y: 1 })
+    expect(harness.mode.readLastActionState()).toBeNull()
   })
 
   it("keeps pause, proceed, and wall cycling human-driven in agent-api mode", async () => {

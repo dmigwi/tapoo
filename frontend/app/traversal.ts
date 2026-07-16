@@ -1,6 +1,7 @@
 import { CONFIG, WALL_WEIGHTS } from "./config"
 import { isRunningStatus } from "./status"
 import type {
+  BaseDimensions,
   CellCoordinate,
   MazeAction,
   MoveAction,
@@ -17,6 +18,21 @@ export const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
   MoveRight: [0, 1],
   MoveUp: [-1, 0],
   MoveDown: [1, 0],
+}
+
+// currentTotalCells returns the logical maze area, or zero when dimensions are not usable.
+export function currentTotalCells(
+  mazeDimensions: BaseDimensions | null | undefined,
+): number {
+  if (
+    !mazeDimensions ||
+    mazeDimensions.width <= 0 ||
+    mazeDimensions.length <= 0
+  ) {
+    return 0
+  }
+
+  return mazeDimensions.length * mazeDimensions.width
 }
 
 export type ResolvedPlayerMove =

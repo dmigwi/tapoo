@@ -540,6 +540,58 @@ describe("agent control mode", () => {
     )
   })
 
+  it("clears stale action state from the next agent request context", async () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [],
+      touchControls: document.createElement("div"),
+    }
+    elements.app.focus = vi.fn()
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ moves: ["MoveRight"] }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const dispatch = vi.fn().mockReturnValue(createActionState({
+      currentCell: { row: 0, col: 1 },
+      lastMoveStatus: "applied",
+      submittedMoves: ["0:MoveRight"],
+      lastValidMoveIndex: 0,
+    }))
+    const readActionState = vi.fn(() => createActionState({ level: 1 }))
+    const commitAgentTurn = vi.fn(() => createActionState({ level: 1 }))
+    const mode = createTestAgentMode(elements)
+
+    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
+    mode.recordActionState(createActionState({
+      currentCell: { row: 9, col: 9 },
+      level: 99,
+      lastMoveStatus: "reached-target",
+      submittedMoves: ["0:MoveRight"],
+    }))
+    mode.clearActionState()
+
+    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+
+    const request = fetchMock.mock.calls[0][1] as RequestInit
+    if (typeof request.body !== "string") {
+      throw new Error("expected agent request body to be serialized json")
+    }
+
+    expect(JSON.parse(request.body)).toEqual(expect.objectContaining({
+      currentCell: { row: 0, col: 0 },
+      level: 1,
+      lastMoveStatus: null,
+      submittedMoves: [],
+    }))
+  })
+
   it("records a network-disabled agent without score decay", async () => {
     const elements = {
       app: document.createElement("div"),

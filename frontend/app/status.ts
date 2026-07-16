@@ -1,4 +1,9 @@
-import type { BaseDimensions, GameStatus, PersistedGameStatus } from "./types"
+import type {
+  BaseDimensions,
+  GameStatus,
+  MazeControlModeName,
+  PersistedGameStatus,
+} from "./types"
 
 // ViewportFitStatus classifies whether the maze fits or which viewport axis blocks it.
 export type ViewportFitStatus =
@@ -8,6 +13,20 @@ export type ViewportFitStatus =
   | "too-small-all"
 
 export type TooSmallStatus = "too-small" | Exclude<ViewportFitStatus, "fits">
+
+// isAgentApiMode identifies the browser mode where maze traversal comes from configured agents.
+export function isAgentApiMode(
+  modeName: MazeControlModeName,
+): modeName is "agent-api" {
+  return modeName === "agent-api"
+}
+
+// isInteractiveMode identifies the human-controlled browser mode.
+export function isInteractiveMode(
+  modeName: MazeControlModeName,
+): modeName is "interactive" {
+  return modeName === "interactive"
+}
 
 // viewportFitStatus classifies which axis blocks the current maze from fitting.
 export function viewportFitStatus(
