@@ -6,6 +6,7 @@ import {
   clearPersistedAgentApiSnapshot,
   clearPersistedInteractiveRound,
   clearPersistedInteractiveSnapshot,
+  clearStaleStorageVersions,
   disableAgentApiConfigForNetworkError,
   loadPersistedAgentApiConfigs,
   loadPersistedAgentApiSnapshot,
@@ -19,6 +20,7 @@ import type { State, TraversalHistoryEntry } from "./types"
 
 const MODE = CONFIG.runtime.controlModes.interactive
 const AGENT_MODE = CONFIG.runtime.controlModes.agentApi
+const { agentConfigs, gameSetup, winMetrics } = CONFIG.runtime.storage.suffixes
 
 function visit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Blue", row, col }
@@ -26,12 +28,21 @@ function visit(row: number, col: number): TraversalHistoryEntry {
 
 // storageKey mirrors the production per-mode browser storage naming.
 function storageKey(suffix: string): string {
-  return `tapoo.${MODE}.${suffix}`
+  return `tapoo.v${CONFIG.runtime.storage.version}.${MODE}.${suffix}`
 }
 
 // agentStorageKey mirrors the separate agent-api storage namespace.
 function agentStorageKey(suffix: string): string {
-  return `tapoo.${AGENT_MODE}.${suffix}`
+  return `tapoo.v${CONFIG.runtime.storage.version}.${AGENT_MODE}.${suffix}`
+}
+
+// versionedStorageKey builds explicit namespaces for storage-version cleanup tests.
+function versionedStorageKey(
+  version: number,
+  mode: string,
+  suffix: string,
+): string {
+  return `tapoo.v${version}.${mode}.${suffix}`
 }
 
 // isWallWeight mirrors the production wall-weight guard for persistence tests.
@@ -123,21 +134,13 @@ describe("storage", () => {
       bestWinRequestCount: null,
     })
 
-    const storedLevel = window.localStorage.getItem(storageKey("level"))
-    const storedWeight = window.localStorage.getItem(storageKey("wallWeight"))
-    const storedLastAttemptRetention = window.localStorage.getItem(
-      storageKey("lastAttemptRetention"),
-    )
-    const storedBestWinRetention = window.localStorage.getItem(
-      storageKey("bestWinRetention"),
-    )
+    const storedGameSetup = window.localStorage.getItem(storageKey(gameSetup))
+    const storedWinMetrics = window.localStorage.getItem(storageKey(winMetrics))
 
-    expect(storedLevel).toContain(STORE_ENCODING_PREFIX)
-    expect(storedWeight).toContain(STORE_ENCODING_PREFIX)
-    expect(storedLastAttemptRetention).toContain(STORE_ENCODING_PREFIX)
-    expect(storedBestWinRetention).toContain(STORE_ENCODING_PREFIX)
-    expect(storedLevel).not.toBe("8")
-    expect(storedWeight).not.toBe("3")
+    expect(storedGameSetup).toContain(STORE_ENCODING_PREFIX)
+    expect(storedWinMetrics).toContain(STORE_ENCODING_PREFIX)
+    expect(storedGameSetup).not.toContain("8")
+    expect(storedGameSetup).not.toContain("3")
 
     const snapshot = loadPersistedInteractiveSnapshot(1, 1, isWallWeight)
 
@@ -172,7 +175,7 @@ describe("storage", () => {
     ])
 
     const storedConfigs = window.localStorage.getItem(
-      agentStorageKey("agentConfigs"),
+      agentStorageKey(agentConfigs),
     )
 
     expect(storedConfigs).toContain(STORE_ENCODING_PREFIX)
@@ -213,10 +216,10 @@ describe("storage", () => {
       bestWinRequestCount: 5,
     })
 
-    expect(window.localStorage.getItem(agentStorageKey("level"))).toContain(
+    expect(window.localStorage.getItem(agentStorageKey(gameSetup))).toContain(
       STORE_ENCODING_PREFIX,
     )
-    expect(window.localStorage.getItem(storageKey("level"))).toBeNull()
+    expect(window.localStorage.getItem(storageKey(gameSetup))).toBeNull()
 
     const snapshot = loadPersistedAgentApiSnapshot(1, 1, isWallWeight)
 
@@ -289,7 +292,6 @@ describe("storage", () => {
     const snapshot = loadPersistedInteractiveSnapshot(1, 1, isWallWeight)
 
     expect(snapshot.round).toEqual({
-      version: CONFIG.runtime.roundStorageVersion,
       level: 4,
       mazeDimensions: { length: 5, width: 5 },
       maze: state.maze,
@@ -309,8 +311,8 @@ describe("storage", () => {
   })
 
   it("falls back to defaults and clears unreadable stored state", () => {
-    window.localStorage.setItem(storageKey("level"), "not-base64")
-    window.localStorage.setItem(storageKey("wallWeight"), "not-base64")
+    window.localStorage.setItem(storageKey(gameSetup), "not-base64")
+    window.localStorage.setItem(storageKey(winMetrics), "not-base64")
     window.sessionStorage.setItem(storageKey("round"), "not-base64")
 
     const snapshot = loadPersistedInteractiveSnapshot(2, 1, isWallWeight)
@@ -327,46 +329,36 @@ describe("storage", () => {
     expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })
 
-  it("falls back to defaults and clears stale active rounds after a storage version change", () => {
-    const originalStorageVersion = CONFIG.runtime.roundStorageVersion
+  it("clears stale browser storage versions without touching the current version", () => {
+    const currentVersion = CONFIG.runtime.storage.version
+    const staleVersion = currentVersion + 1
+    const staleGameSetupKey = versionedStorageKey(staleVersion, MODE, gameSetup)
+    const staleRoundKey = versionedStorageKey(staleVersion, MODE, "round")
 
-    try {
-      saveInteractiveGameProgress({
-        level: 8,
-        wallWeight: 3,
-        lastAttemptRetention: 710000,
-        bestWinRetention: 840000,
-        lastWinRequestCount: 6,
-        bestWinRequestCount: 4,
-      })
-      saveActiveInteractiveRoundSnapshot(
-        createState({
-          playerPosition: { x: 1, y: 1 },
-          finalPosition: { x: 1, y: 1 },
-        }),
-      )
-      expect(window.sessionStorage.getItem(storageKey("round"))).not.toBeNull()
+    window.localStorage.setItem(staleGameSetupKey, "old")
+    window.sessionStorage.setItem(staleRoundKey, "old")
+    saveInteractiveGameProgress({
+      level: 8,
+      wallWeight: 3,
+      lastAttemptRetention: 710000,
+      bestWinRetention: 840000,
+      lastWinRequestCount: 6,
+      bestWinRequestCount: 4,
+    })
+    saveActiveInteractiveRoundSnapshot(
+      createState({
+        playerPosition: { x: 1, y: 1 },
+        finalPosition: { x: 1, y: 1 },
+      }),
+    )
 
-      CONFIG.runtime.roundStorageVersion = originalStorageVersion + 1
-      const snapshot = loadPersistedInteractiveSnapshot(1, 1, isWallWeight)
+    clearStaleStorageVersions()
 
-      expect(snapshot.preferences).toEqual({
-        level: 1,
-        wallWeight: 1,
-        lastAttemptRetention: null,
-        bestWinRetention: null,
-        lastWinRequestCount: null,
-        bestWinRequestCount: null,
-      })
-      expect(snapshot.round).toBeNull()
-      expect(window.localStorage.getItem(storageKey("level"))).toBeNull()
-      expect(window.localStorage.getItem(storageKey("wallWeight"))).toBeNull()
-      expect(window.localStorage.getItem(storageKey("lastAttemptRetention"))).toBeNull()
-      expect(window.localStorage.getItem(storageKey("bestWinRetention"))).toBeNull()
-      expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
-    } finally {
-      CONFIG.runtime.roundStorageVersion = originalStorageVersion
-    }
+    expect(window.localStorage.getItem(staleGameSetupKey)).toBeNull()
+    expect(window.sessionStorage.getItem(staleRoundKey)).toBeNull()
+    expect(window.localStorage.getItem(storageKey(gameSetup))).not.toBeNull()
+    expect(window.localStorage.getItem(storageKey(winMetrics))).not.toBeNull()
+    expect(window.sessionStorage.getItem(storageKey("round"))).not.toBeNull()
   })
 
   it("removes the stored round when the current state cannot be persisted", () => {
@@ -422,10 +414,8 @@ describe("storage", () => {
 
     clearPersistedInteractiveSnapshot()
 
-    expect(window.localStorage.getItem(storageKey("level"))).toBeNull()
-    expect(window.localStorage.getItem(storageKey("wallWeight"))).toBeNull()
-    expect(window.localStorage.getItem(storageKey("lastAttemptRetention"))).toBeNull()
-    expect(window.localStorage.getItem(storageKey("bestWinRetention"))).toBeNull()
+    expect(window.localStorage.getItem(storageKey(gameSetup))).toBeNull()
+    expect(window.localStorage.getItem(storageKey(winMetrics))).toBeNull()
     expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })
 })

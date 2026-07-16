@@ -184,11 +184,17 @@ export const CONFIG: AppConfig = {
       agentApi: "agent-api",
       interactive: "interactive",
     },
-    roundStorageVersion: 4,
-    agentConfigsStorageSuffix: "agentConfigs",
-    missingElementErrorTemplate: "missing required element: {id}",
-    agentApiMistakePenaltyMoves: 5,
+    storage: {
+      version: 2,
+      suffixes: {
+        gameSetup: "gameSetup",
+        winMetrics: "winMetrics",
+        agentConfigs: "agentConfigs",
+      },
+    },
     interactivePlayerName: "Self",
+    agentApiMistakePenaltyMoves: 5,
+    missingElementErrorTemplate: "missing required element: {id}",
   },
 }
 
@@ -197,12 +203,7 @@ export const WALL_WEIGHTS = Object.keys(CONFIG.maze.walls)
   .map((weight) => Number(weight))
   .sort((left, right) => left - right) as WallWeight[]
 
-// These storage keys keep browser persistence stable across refreshes and upgrades.
-export const WALL_WEIGHT_STORAGE_KEY = "tapoo.wallWeight"
-export const LEVEL_STORAGE_KEY = "tapoo.level"
-export const LAST_ATTEMPT_RETENTION_STORAGE_KEY = "tapoo.lastAttemptRetention"
-export const BEST_WIN_RETENTION_STORAGE_KEY = "tapoo.bestWinRetention"
-export const ROUND_STORAGE_KEY = "tapoo.round"
-export const STORE_ENCODING_PREFIX = "tapoo:v2:"
+// STORE_ENCODING_PREFIX marks the storage schema version embedded in every encoded payload.
+export const STORE_ENCODING_PREFIX = `tapoo:v${CONFIG.runtime.storage.version}:`
 export const STORE_BLEND_KEY = ["tapoo:web/vault", "key|spa.persist"].join(`  
   `)

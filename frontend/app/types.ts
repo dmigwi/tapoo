@@ -127,7 +127,6 @@ export type RoundState = {
 
 // PersistedRound captures the active or finished round state restored across reloads.
 export type PersistedRound = {
-  version: number
   level: number
   mazeDimensions: BaseDimensions
   maze: string[][]
@@ -420,12 +419,18 @@ export type AppConfig = {
     terminalWidthScale: number
   }
   runtime: {
-    roundStorageVersion: number
     controlModes: {
       interactive: MazeControlModeName
       agentApi: MazeControlModeName
     }
-    agentConfigsStorageSuffix: string
+    storage: {
+      version: number
+      suffixes: {
+        agentConfigs: string
+        gameSetup: string
+        winMetrics: string
+      }
+    }
     missingElementErrorTemplate: string
     agentApiMistakePenaltyMoves: number
     interactivePlayerName: string

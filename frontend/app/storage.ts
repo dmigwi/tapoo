@@ -16,6 +16,7 @@ import type {
 } from "./types"
 
 const { runtime, timing } = CONFIG
+const storageConfig = runtime.storage
 const { agentApi: agentApiModeName, interactive: interactiveModeName } =
   runtime.controlModes
 
@@ -29,14 +30,52 @@ type PersistableProgressState = Pick<
   | "bestWinRequestCount"
 >
 
+type PersistedGameSetup = Pick<PersistedPreferences, "level" | "wallWeight">
+type PersistedWinMetrics = Required<
+  Pick<
+    PersistedPreferences,
+    | "lastAttemptRetention"
+    | "bestWinRetention"
+    | "lastWinRequestCount"
+    | "bestWinRequestCount"
+  >
+>
+
 // Shared storage helpers.
 
-// storageKey namespaces browser persistence per control mode so interactive and agent-api do not collide.
+// storageKey namespaces browser persistence by mode and schema version so stale payloads are ignored.
 function storageKey(
   modeName: MazeControlModeName,
   suffix: string,
 ): string {
-  return `tapoo.${modeName}.${suffix}`
+  return `tapoo.v${storageConfig.version}.${modeName}.${suffix}`
+}
+
+// removeStaleStorageEntries clears old versioned Tapoo keys without touching current-version data.
+function removeStaleStorageEntries(storage: Storage): void {
+  const currentPrefix = `tapoo.v${storageConfig.version}.`
+
+  for (let index = storage.length - 1; index >= 0; index -= 1) {
+    const key = storage.key(index)
+    if (key?.startsWith("tapoo.v") && !key.startsWith(currentPrefix)) {
+      storage.removeItem(key)
+    }
+  }
+}
+
+// clearStaleStorageVersions runs once during startup to discard obsolete browser storage versions.
+export function clearStaleStorageVersions(): void {
+  try {
+    removeStaleStorageEntries(window.localStorage)
+  } catch {
+    // Ignore storage failures so startup can continue without browser persistence.
+  }
+
+  try {
+    removeStaleStorageEntries(window.sessionStorage)
+  } catch {
+    // Ignore storage failures so startup can continue without browser persistence.
+  }
 }
 
 // toBase64 converts raw bytes into a storage-safe browser string.
@@ -168,7 +207,7 @@ function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
 export function loadPersistedAgentApiConfigs(): AgentApiConfig[] {
   try {
     const storedConfigs = window.localStorage.getItem(
-      storageKey(agentApiModeName, runtime.agentConfigsStorageSuffix),
+      storageKey(agentApiModeName, storageConfig.suffixes.agentConfigs),
     )
     if (!storedConfigs) {
       return []
@@ -186,7 +225,7 @@ export function loadPersistedAgentApiConfigs(): AgentApiConfig[] {
 export function savePersistedAgentApiConfigs(configs: AgentApiConfig[]): void {
   try {
     window.localStorage.setItem(
-      storageKey(agentApiModeName, runtime.agentConfigsStorageSuffix),
+      storageKey(agentApiModeName, storageConfig.suffixes.agentConfigs),
       encodeStoredPayload(normalizeAgentApiConfigs(configs)),
     )
   } catch {
@@ -221,7 +260,7 @@ export function disableAgentApiConfigForNetworkError(
 export function clearPersistedAgentApiConfigs(): void {
   try {
     window.localStorage.removeItem(
-      storageKey(agentApiModeName, runtime.agentConfigsStorageSuffix),
+      storageKey(agentApiModeName, storageConfig.suffixes.agentConfigs),
     )
   } catch {
     // Ignore storage failures so clearing remains best-effort only.
@@ -230,35 +269,63 @@ export function clearPersistedAgentApiConfigs(): void {
 
 // Game progress preference persistence.
 
+// validLevelPreference keeps invalid or stale setup data from escaping storage.
+function validLevelPreference(value: unknown, defaultLevel: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1
+    ? value
+    : defaultLevel
+}
+
+// validWallWeightPreference keeps wall weights inside the currently supported set.
+function validWallWeightPreference(
+  value: unknown,
+  defaultWeight: WallWeight,
+  isWallWeight: (value: number) => value is WallWeight,
+): WallWeight {
+  return typeof value === "number" && isWallWeight(value) ? value : defaultWeight
+}
+
+// validRetentionPreference restores normalized retention values stored in millionths.
+function validRetentionPreference(value: unknown): number | null {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 1_000_000
+    ? value
+    : null
+}
+
+// validRequestCountPreference restores positive agent request counters.
+function validRequestCountPreference(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1
+    ? value
+    : null
+}
+
 // savePreferences persists the long-lived browser preferences in local storage.
 function savePreferences(
   modeName: MazeControlModeName,
   preferences: PersistedPreferences,
 ): void {
+  const gameSetup: PersistedGameSetup = {
+    level: preferences.level,
+    wallWeight: preferences.wallWeight,
+  }
+  const winMetrics: PersistedWinMetrics = {
+    lastAttemptRetention: preferences.lastAttemptRetention ?? null,
+    bestWinRetention: preferences.bestWinRetention ?? null,
+    lastWinRequestCount: preferences.lastWinRequestCount ?? null,
+    bestWinRequestCount: preferences.bestWinRequestCount ?? null,
+  }
+
   try {
     window.localStorage.setItem(
-      storageKey(modeName, "wallWeight"),
-      encodeStoredPayload(preferences.wallWeight),
+      storageKey(modeName, storageConfig.suffixes.gameSetup),
+      encodeStoredPayload(gameSetup),
     )
     window.localStorage.setItem(
-      storageKey(modeName, "level"),
-      encodeStoredPayload(preferences.level),
-    )
-    window.localStorage.setItem(
-      storageKey(modeName, "lastAttemptRetention"),
-      encodeStoredPayload(preferences.lastAttemptRetention ?? null),
-    )
-    window.localStorage.setItem(
-      storageKey(modeName, "bestWinRetention"),
-      encodeStoredPayload(preferences.bestWinRetention ?? null),
-    )
-    window.localStorage.setItem(
-      storageKey(modeName, "lastWinRequestCount"),
-      encodeStoredPayload(preferences.lastWinRequestCount ?? null),
-    )
-    window.localStorage.setItem(
-      storageKey(modeName, "bestWinRequestCount"),
-      encodeStoredPayload(preferences.bestWinRequestCount ?? null),
+      storageKey(modeName, storageConfig.suffixes.winMetrics),
+      encodeStoredPayload(winMetrics),
     )
   } catch {
     // Ignore storage failures so durable browser preferences remain best-effort only.
@@ -273,69 +340,40 @@ function loadPreferences(
   isWallWeight: (value: number) => value is WallWeight,
 ): PersistedPreferences {
   try {
-    const storedLevel = window.localStorage.getItem(storageKey(modeName, "level"))
-    const storedWeight = window.localStorage.getItem(storageKey(modeName, "wallWeight"))
-    const storedLastAttemptRetention = window.localStorage.getItem(
-      storageKey(modeName, "lastAttemptRetention"),
+    const storedGameSetup = window.localStorage.getItem(
+      storageKey(modeName, storageConfig.suffixes.gameSetup),
     )
-    const storedBestWinRetention = window.localStorage.getItem(
-      storageKey(modeName, "bestWinRetention"),
+    const storedWinMetrics = window.localStorage.getItem(
+      storageKey(modeName, storageConfig.suffixes.winMetrics),
     )
-    const storedLastWinRequestCount = window.localStorage.getItem(
-      storageKey(modeName, "lastWinRequestCount"),
-    )
-    const storedBestWinRequestCount = window.localStorage.getItem(
-      storageKey(modeName, "bestWinRequestCount"),
-    )
-    const parsedLevel =
-      storedLevel === null ? null : decodeStoredPayload<number>(storedLevel)
-    const parsedWeight =
-      storedWeight === null ? null : decodeStoredPayload<number>(storedWeight)
-    const parsedLastAttemptRetention =
-      storedLastAttemptRetention === null
+    const parsedGameSetup =
+      storedGameSetup === null
         ? null
-        : decodeStoredPayload<number | null>(storedLastAttemptRetention)
-    const parsedBestWinRetention =
-      storedBestWinRetention === null
+        : decodeStoredPayload<Partial<PersistedGameSetup>>(storedGameSetup)
+    const parsedWinMetrics =
+      storedWinMetrics === null
         ? null
-        : decodeStoredPayload<number | null>(storedBestWinRetention)
-    const parsedLastWinRequestCount =
-      storedLastWinRequestCount === null
-        ? null
-        : decodeStoredPayload<number | null>(storedLastWinRequestCount)
-    const parsedBestWinRequestCount =
-      storedBestWinRequestCount === null
-        ? null
-        : decodeStoredPayload<number | null>(storedBestWinRequestCount)
+        : decodeStoredPayload<Partial<PersistedWinMetrics>>(storedWinMetrics)
 
     return {
-      level:
-        Number.isInteger(parsedLevel) && parsedLevel >= 1
-          ? parsedLevel
-          : defaultLevel,
-      wallWeight: isWallWeight(parsedWeight) ? parsedWeight : defaultWeight,
-      lastAttemptRetention:
-        Number.isFinite(parsedLastAttemptRetention) &&
-        parsedLastAttemptRetention >= 0 &&
-        parsedLastAttemptRetention <= 1_000_000
-          ? parsedLastAttemptRetention
-          : null,
-      bestWinRetention:
-        Number.isFinite(parsedBestWinRetention) &&
-        parsedBestWinRetention >= 0 &&
-        parsedBestWinRetention <= 1_000_000
-          ? parsedBestWinRetention
-          : null,
-      lastWinRequestCount:
-        Number.isInteger(parsedLastWinRequestCount) &&
-        parsedLastWinRequestCount >= 1
-          ? parsedLastWinRequestCount
-          : null,
-      bestWinRequestCount:
-        Number.isInteger(parsedBestWinRequestCount) &&
-        parsedBestWinRequestCount >= 1
-          ? parsedBestWinRequestCount
-          : null,
+      level: validLevelPreference(parsedGameSetup?.level, defaultLevel),
+      wallWeight: validWallWeightPreference(
+        parsedGameSetup?.wallWeight,
+        defaultWeight,
+        isWallWeight,
+      ),
+      lastAttemptRetention: validRetentionPreference(
+        parsedWinMetrics?.lastAttemptRetention,
+      ),
+      bestWinRetention: validRetentionPreference(
+        parsedWinMetrics?.bestWinRetention,
+      ),
+      lastWinRequestCount: validRequestCountPreference(
+        parsedWinMetrics?.lastWinRequestCount,
+      ),
+      bestWinRequestCount: validRequestCountPreference(
+        parsedWinMetrics?.bestWinRequestCount,
+      ),
     }
   } catch {
     return {
@@ -400,7 +438,6 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     : totalCells * decayIntervalPerCellMs
 
   return {
-    version: runtime.roundStorageVersion,
     level: state.level,
     mazeDimensions: {
       length: state.mazeDimensions.length,
@@ -472,11 +509,6 @@ function loadRound(modeName: MazeControlModeName): PersistedRound | null {
   const snapshot = decodeStoredPayload<PersistedRound>(rawSnapshot)
   if (!snapshot) {
     clearPersistedRound(modeName)
-    return null
-  }
-
-  if (snapshot.version !== runtime.roundStorageVersion) {
-    clearPersistedSnapshot(modeName)
     return null
   }
 
@@ -569,12 +601,12 @@ export function loadPersistedAgentApiSnapshot(
 // clearPersistedSnapshot clears both long-lived preferences and the active round.
 export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   try {
-    window.localStorage.removeItem(storageKey(modeName, "level"))
-    window.localStorage.removeItem(storageKey(modeName, "wallWeight"))
-    window.localStorage.removeItem(storageKey(modeName, "lastAttemptRetention"))
-    window.localStorage.removeItem(storageKey(modeName, "bestWinRetention"))
-    window.localStorage.removeItem(storageKey(modeName, "lastWinRequestCount"))
-    window.localStorage.removeItem(storageKey(modeName, "bestWinRequestCount"))
+    window.localStorage.removeItem(
+      storageKey(modeName, storageConfig.suffixes.gameSetup),
+    )
+    window.localStorage.removeItem(
+      storageKey(modeName, storageConfig.suffixes.winMetrics),
+    )
   } catch {
     // Ignore storage failures so reset remains best-effort only.
   }

@@ -216,7 +216,6 @@ function createTraversalMock({
 // createPersistedWonRound simulates a stored win that can proceed into the next level.
 function createPersistedWonRound(): PersistedRound {
   return {
-    version: CONFIG.runtime.roundStorageVersion,
     level: 3,
     mazeDimensions: { length: 1, width: 1 },
     maze: [
@@ -379,6 +378,7 @@ async function bootstrapHarness({
     clearPersistedAgentApiConfigs,
     clearPersistedSnapshot,
     clearPersistedRound,
+    clearStaleStorageVersions: vi.fn(),
     disableAgentApiConfigForNetworkError: vi.fn(),
     loadPersistedAgentApiConfigs: vi.fn(() => agentConfigs),
     loadPersistedSnapshot,
@@ -468,6 +468,7 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
+      clearStaleStorageVersions: vi.fn(),
       disableAgentApiConfigForNetworkError: vi.fn(),
       loadPersistedAgentApiConfigs: vi.fn(() => []),
       loadPersistedSnapshot,
@@ -535,6 +536,7 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
+      clearStaleStorageVersions: vi.fn(),
       disableAgentApiConfigForNetworkError: vi.fn(),
       loadPersistedAgentApiConfigs: vi.fn(() => []),
       loadPersistedSnapshot: vi.fn(() => ({
@@ -587,6 +589,7 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
+      clearStaleStorageVersions: vi.fn(),
       disableAgentApiConfigForNetworkError: vi.fn(),
       loadPersistedAgentApiConfigs: vi.fn(() => []),
       loadPersistedSnapshot,
@@ -644,6 +647,7 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
+      clearStaleStorageVersions: vi.fn(),
       disableAgentApiConfigForNetworkError: vi.fn(),
       loadPersistedAgentApiConfigs: vi.fn(() => []),
       loadPersistedSnapshot: vi.fn(() => ({
@@ -1004,7 +1008,6 @@ describe("bootstrapGame", () => {
 
   it("restores a persisted round in paused mode once the viewport fits again", async () => {
     const persistedRound: PersistedRound = {
-      version: CONFIG.runtime.roundStorageVersion,
       level: 1,
       mazeDimensions: { length: 2, width: 1 },
       maze: createHorizontalRound().maze,
@@ -1057,7 +1060,6 @@ describe("bootstrapGame", () => {
 
   it("rejects malformed persisted traversal history and falls back to a fresh round", async () => {
     const invalidPersistedRound: PersistedRound = {
-      version: CONFIG.runtime.roundStorageVersion,
       level: 2,
       mazeDimensions: { length: 2, width: 1 },
       maze: createHorizontalRound().maze,
