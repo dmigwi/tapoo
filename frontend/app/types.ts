@@ -309,8 +309,6 @@ export type AppConfig = {
     navigation: {
       default: string
       compact: string
-      touch: string
-      touchCompact: string
     }
     pauseMessage: string
     successMessage: string

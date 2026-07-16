@@ -52,9 +52,7 @@ export const CONFIG: AppConfig = {
     navigation: {
       default:
         "Use Arrow Keys to guide Blue (Player) to Red. Ctrl+B changes walls.",
-      compact: "Guide Blue (Player) to Red. Ctrl+B changes walls.",
-      touch: "Use touch controls to guide Blue (Player) to Red.",
-      touchCompact: "Guide Blue to Red with touch controls.",
+      compact: "Guide Blue (Player) to Red with touch controls.",
     },
     pauseMessage: "Game paused !!!",
     successMessage:
