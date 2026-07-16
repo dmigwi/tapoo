@@ -4,6 +4,8 @@ import type {
   WallWeight,
 } from "./types"
 
+declare const __TAPOO_BUILD_YEAR__: number
+
 // NAVIGATION_FRIENDLY_PROFILE defines the easiest corridor settings for small mazes.
 const NAVIGATION_FRIENDLY_PROFILE: NavigationProfile = {
   __softCorridorLimit: 8,
@@ -17,6 +19,24 @@ const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
   __hardCorridorLimit: 3,
   __preferTurnPercent: 55,
 }
+
+// VERSION_MAJOR is the semantic major version for the browser SPA runtime.
+const VERSION_MAJOR = 1
+
+// VERSION_MINOR is the semantic minor version for the browser SPA runtime.
+const VERSION_MINOR = 1
+
+// VERSION_PATCH is the semantic patch version for the browser SPA runtime.
+const VERSION_PATCH = 0
+
+// APP_VERSION is kept private because only the composed page copyright text is rendered.
+const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
+
+// BUILD_YEAR is injected by esbuild for production and falls back only for local test imports.
+const BUILD_YEAR =
+  typeof __TAPOO_BUILD_YEAR__ === "number"
+    ? __TAPOO_BUILD_YEAR__
+    : new Date().getFullYear()
 
 // CONFIG centralizes browser-facing copy together with generation and layout constants.
 export const CONFIG: AppConfig = {
@@ -197,6 +217,11 @@ export const CONFIG: AppConfig = {
     missingElementErrorTemplate: "missing required element: {id}",
   },
 }
+
+// PAGE_COPYRIGHT_TEXT is the fully composed footer text shared by static browser pages.
+export const PAGE_COPYRIGHT_TEXT = CONFIG.chrome.pageVersionTemplate
+  .replace("{version}", APP_VERSION)
+  .replace("{year}", String(BUILD_YEAR))
 
 // WALL_WEIGHTS keeps wall-style iteration ordered and type-safe for traversal helpers.
 export const WALL_WEIGHTS = Object.keys(CONFIG.maze.walls)
