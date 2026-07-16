@@ -227,6 +227,7 @@ export interface MazeActionControl {
   ) => void
   readLastActionState: () => MazeActionState | null
   recordActionState: (actionState: MazeActionState) => void
+  clearActionState: () => void
 }
 
 // State is the browser runtime's single source of truth for one session.

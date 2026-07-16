@@ -96,6 +96,14 @@ export function handleAgentTurnLoop({
     return selectedAgent
   }
 
+  // hasEnabledAgents checks whether polling can produce work before waiting for a timeout.
+  const hasEnabledAgents = (): boolean => readAgentConfigs().some((agent) => agent.enabled)
+
+  // awaitAgent immediately moves the game into its no-agent state without spending score.
+  const awaitAgent = (): void => {
+    dispatch({ type: "await-agent" }, { playerName: activeActionState().playerName })
+  }
+
   // clearScheduledTurn stops any queued request cycle.
   const clearScheduledTurn = (): void => {
     if (scheduledTurn === null) {
@@ -131,12 +139,20 @@ export function handleAgentTurnLoop({
       return
     }
     lastActionState = onAgentNetworkError(agent)
+    if (!hasEnabledAgents()) {
+      awaitAgent()
+    }
   }
 
   // scheduleNextAgentTurn waits for the derived agent-api poll interval before asking again.
   const scheduleNextAgentTurn = (): void => {
     clearScheduledTurn()
     if (!shouldPollAgent()) {
+      return
+    }
+
+    if (!hasEnabledAgents()) {
+      awaitAgent()
       return
     }
 
@@ -167,7 +183,7 @@ export function handleAgentTurnLoop({
       const currentActionState = activeActionState()
       selectedAgent = nextAgent()
       if (!selectedAgent) {
-        dispatch({ type: "await-agent" }, { playerName: activeActionState().playerName })
+        awaitAgent()
         return
       }
 

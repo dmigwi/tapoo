@@ -128,7 +128,7 @@ describe("agent api turn loop", () => {
     expect(elements.body.dataset.agentControl).toBe("active")
   })
 
-  it("moves the game into agent waiting state when no enabled agent exists", async () => {
+  it("moves the game into agent waiting state immediately when no enabled agent exists", () => {
     const fetchMock = vi.fn()
     vi.stubGlobal("fetch", fetchMock)
     const dispatch = vi.fn() as MazeActionDispatch
@@ -146,10 +146,45 @@ describe("agent api turn loop", () => {
 
     poller.setAttached(true)
     poller.scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("moves into agent waiting state after the final enabled agent has a network error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("network failed")),
+    )
+
+    const agentConfigs = enabledAgentConfigs()
+    const dispatch = vi.fn() as MazeActionDispatch
+    const onAgentNetworkError = vi.fn((agent: AgentApiConfig) => {
+      agent.enabled = false
+      return createActionState({
+        playerName: agent.playerName,
+        lastMoveStatus: "network-error",
+        decayedMovesCount: 0,
+      })
+    })
+
+    const poller = handleAgentTurnLoop({
+      elements: { body: document.createElement("div") },
+      commitAgentTurn: vi.fn(() => createActionState()),
+      dispatch,
+      dispatchAgentAction: vi.fn(),
+      onActionState: vi.fn(),
+      onAgentNetworkError,
+      readAgentConfigs: () => agentConfigs,
+      readActionState: () => createActionState(),
+    })
+
+    poller.setAttached(true)
+    poller.scheduleNextAgentTurn()
+    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+
+    expect(onAgentNetworkError).toHaveBeenCalledWith(agentConfigs[0])
+    expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
   })
 
   it("replays valid predictions and decays score by every submitted move", async () => {

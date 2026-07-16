@@ -11,6 +11,7 @@ describe("tapoo entrypoint", () => {
     const getGameElements = vi.fn(() => ({ app: {} }))
     const interactiveMode = {
       bindActionDispatch: vi.fn(),
+      clearActionState: vi.fn(),
       name: "interactive",
       readLastActionState: vi.fn(),
       recordActionState: vi.fn(),
@@ -38,6 +39,7 @@ describe("tapoo entrypoint", () => {
     const elements = { app: {} }
     const agentMode = {
       bindActionDispatch: vi.fn(),
+      clearActionState: vi.fn(),
       name: "agent-api",
       readLastActionState: vi.fn(),
       recordActionState: vi.fn(),

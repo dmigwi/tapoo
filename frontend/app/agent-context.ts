@@ -1,19 +1,20 @@
 import { CONFIG } from "./config"
 import { getNavigationProfile } from "./maze"
-import { isRunningStatus, isWonStatus } from "./status"
-import { isSpaceFound } from "./traversal"
+import { isWonStatus } from "./status"
+import {
+  cellCoordinateFromGridPoint,
+  isMoveAction,
+  resolvePlayerMove,
+} from "./traversal"
 import type {
-  CellCoordinate,
   MazeAction,
   MazeActionState,
   MoveStatus,
   MoveAction,
-  RenderGridPoint,
   State,
-  TraversalHistoryEntry,
 } from "./types"
 
-const { maze, runtime } = CONFIG
+const { runtime } = CONFIG
 
 // ALLOWED_MOVE_ACTIONS enumerates the only traversal commands the agent may return.
 const ALLOWED_MOVE_ACTIONS: MoveAction[] = ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"]
@@ -35,32 +36,6 @@ function agentPrompt(playerName: string): string {
     "Every submitted prediction counts toward score decay until the destination is reached.",
     "Locate the randomized path between the current position and destination with the highest score retention.",
   ].join("\n")
-}
-
-// MOVE_DELTAS mirrors runtime movement so feedback can validate moves before dispatching them.
-const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
-  MoveLeft: [0, -1],
-  MoveRight: [0, 1],
-  MoveUp: [-1, 0],
-  MoveDown: [1, 0],
-}
-
-// cellCoordinateFromGridPoint converts one rendered maze-grid point into a logical cell position.
-function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate {
-  return {
-    row: Math.floor((position.y - 1) / maze.cellSpan),
-    col: Math.floor((position.x - 1) / maze.cellSpan),
-  }
-}
-
-// traversalHistoryIncludes reports whether the chronological visit history already contains a cell.
-function traversalHistoryIncludes(
-  traversalHistory: TraversalHistoryEntry[],
-  cell: CellCoordinate,
-): boolean {
-  return traversalHistory.some(
-    (visitedCell) => visitedCell.row === cell.row && visitedCell.col === cell.col,
-  )
 }
 
 // recommendedAvgPredictionLimit derives the advisory prediction length from the active navigation profile.
@@ -146,13 +121,6 @@ type CommandFeedbackContext = {
   handleMove: (action: MoveAction, playerName?: string) => void
 }
 
-// isMoveAction reports whether one semantic command is a move that currently supports feedback.
-function isMoveAction(
-  action: MazeAction,
-): action is Extract<MazeAction, { type: MoveAction }> {
-  return action.type in MOVE_DELTAS
-}
-
 // buildReplayState records the result of one replay step using the shared agent payload shape.
 function buildReplayState(
   state: State,
@@ -172,54 +140,6 @@ function buildReplayState(
   })
 }
 
-// buildMoveCommandState validates one move and returns the normalized agent result.
-function buildMoveCommandState(
-  command: Extract<MazeAction, { type: MoveAction }>,
-  context: CommandFeedbackContext,
-): MazeActionState {
-  const { state, handleMove, playerName } = context
-  const move = command.type
-
-  if (
-    !isRunningStatus(state.status) ||
-    !state.maze ||
-    !state.mazeDimensions ||
-    !state.playerPosition
-  ) {
-    return buildReplayState(state, playerName, move, "invalid-move")
-  }
-
-  const [rowDelta, columnDelta] = MOVE_DELTAS[move]
-  const x = state.playerPosition.x
-  const y = state.playerPosition.y
-  const nextY = y + rowDelta * maze.moveStep
-  const nextX = x + columnDelta * maze.moveStep
-  const probeY = y + rowDelta
-  const probeX = x + columnDelta
-  const nextCell = cellCoordinateFromGridPoint({ x: nextX, y: nextY })
-
-  if (nextY <= 0 || nextY > state.mazeDimensions.width * maze.cellSpan) {
-    return buildReplayState(state, playerName, move, "invalid-move")
-  }
-
-  if (nextX <= 0 || nextX > state.mazeDimensions.length * maze.cellSpan) {
-    return buildReplayState(state, playerName, move, "invalid-move")
-  }
-
-  if (!isSpaceFound(state.maze[probeY][probeX])) {
-    return buildReplayState(state, playerName, move, "invalid-move")
-  }
-
-  const visitedBefore = traversalHistoryIncludes(state.traversalHistory, nextCell)
-  handleMove(move, playerName)
-
-  if (isWonStatus(state.status)) {
-    return buildReplayState(state, playerName, move, "reached-target", visitedBefore)
-  }
-
-  return buildReplayState(state, playerName, move, "applied", visitedBefore)
-}
-
 // executeActionWithFeedback classifies one requested command and returns feedback when supported.
 export function executeActionWithFeedback(
   action: MazeAction,
@@ -230,5 +150,21 @@ export function executeActionWithFeedback(
     return null
   }
 
-  return buildMoveCommandState(action, context)
+  const { state, handleMove, playerName } = context
+  const move = action.type
+  const moveEvaluation = resolvePlayerMove(state, move)
+  if (!moveEvaluation.canMove) {
+    return buildReplayState(state, playerName, move, "invalid-move")
+  }
+
+  handleMove(move, playerName)
+  const finalStatus: MoveStatus = isWonStatus(state.status) ? "reached-target" : "applied"
+
+  return buildReplayState(
+    state,
+    playerName,
+    move,
+    finalStatus,
+    moveEvaluation.visitedBefore,
+  )
 }

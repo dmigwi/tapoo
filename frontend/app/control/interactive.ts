@@ -91,6 +91,21 @@ export function createInteractiveMode(
     dispatch(action, { playerName: runtime.interactivePlayerName })
   }
 
+  // bindControlButtons attaches one shared button-handler path to top-menu and touch controls.
+  const bindControlButtons = (
+    buttons: HTMLButtonElement[],
+    dispatch: MazeActionDispatch,
+  ): void => {
+    buttons.forEach((button) => {
+      const onClick = (): void => {
+        handleButtonClick(button, dispatch)
+      }
+
+      buttonBindings.push({ button, onClick })
+      button.addEventListener("click", onClick)
+    })
+  }
+
   return {
     // This MazeActionControl exposes the interactive mode name, binds browser inputs, and ignores stored feedback.
     // name lets the runtime identify which MazeActionControl implementation is active.
@@ -102,23 +117,8 @@ export function createInteractiveMode(
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
 
-      elements.controls.forEach((button) => {
-        const onClick = (): void => {
-          handleButtonClick(button, dispatch)
-        }
-
-        buttonBindings.push({ button, onClick })
-        button.addEventListener("click", onClick)
-      })
-
-      elements.touchButtons.forEach((button) => {
-        const onClick = (): void => {
-          handleButtonClick(button, dispatch)
-        }
-
-        buttonBindings.push({ button, onClick })
-        button.addEventListener("click", onClick)
-      })
+      bindControlButtons(elements.controls, dispatch)
+      bindControlButtons(elements.touchButtons, dispatch)
 
       keydownHandler = (event: KeyboardEvent): void => {
         handleKeydown(event, dispatch)
@@ -137,5 +137,7 @@ export function createInteractiveMode(
       // Interactive controls already provide immediate visual feedback in the game view.
       void actionState
     },
+    // clearActionState is a no-op because interactive mode never stores action states.
+    clearActionState() {},
   }
 }

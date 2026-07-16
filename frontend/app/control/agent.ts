@@ -24,11 +24,15 @@ import { CONFIG } from "../config"
 
 const { runtime } = CONFIG
 
+type AgentButtonBinding = {
+  button: HTMLButtonElement
+  onClick: () => void
+}
+
 // createAgentMode builds the agent-api MazeActionControl while transport wiring is still pending.
 export function createAgentMode(
   elements: Elements,
-  readAgentConfigs: () => AgentApiConfig[] = () =>
-    loadPersistedAgentConfigs("agent-api"),
+  readAgentConfigs: () => AgentApiConfig[] = () => loadPersistedAgentConfigs("agent-api"),
   disableAgentAfterNetworkError: (agent: AgentApiConfig) => void = (agent) => {
     disableAgentForNetworkError("agent-api", agent)
   },
@@ -37,13 +41,8 @@ export function createAgentMode(
   let agentMovePoller: AgentMovePoller | null = null
   let lastActionState: MazeActionState | null = null
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null
-  const touchHandlers: Array<{
-    button: HTMLButtonElement
-    onClick: () => void
-  }> = []
-
-  // focusApp keeps local keyboard shortcuts anchored to the terminal root after button taps.
-  const focusApp = (): void => {
+  const buttonBindings: AgentButtonBinding[] = []
+  const focusCurrentApp = (): void => {
     elements.app.focus()
   }
 
@@ -51,15 +50,14 @@ export function createAgentMode(
   const releaseBindings = (): void => {
     releaseAllActionBindings({
       attached,
-      buttonBindings: touchHandlers,
+      buttonBindings,
       keydownHandler,
       onBeforeRelease: () => {
-        attached = false
         agentMovePoller?.setAttached(false)
         agentMovePoller?.stopPolling()
       },
       removeAppFocus: () => {
-        elements.app.removeEventListener("click", focusApp)
+        elements.app.removeEventListener("click", focusCurrentApp)
       },
       setAttached: (nextAttached) => {
         attached = nextAttached
@@ -68,21 +66,6 @@ export function createAgentMode(
         keydownHandler = nextKeydownHandler
       },
     })
-  }
-
-  // dispatchAgentAction keeps agent-owned traversal requests on the explicit feedback path.
-  const dispatchAgentAction = (
-    action: MazeAction,
-    dispatch: MazeActionDispatch,
-    playerName: string,
-  ): MazeActionState => {
-    const actionState = dispatch(action, { wantFeedback: true, playerName })
-    if (!actionState) {
-      throw new Error("agent move dispatch must return feedback")
-    }
-
-    lastActionState = actionState
-    return actionState
   }
 
   return {
@@ -97,6 +80,26 @@ export function createAgentMode(
     ) {
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
+
+      const recordLastActionState = (actionState: MazeActionState): void => {
+        lastActionState = actionState
+      }
+
+      // Agent-owned moves always ask for feedback so the next API request has fresh context.
+      const dispatchAgentAction = (
+        action: MazeAction,
+        nextDispatch: MazeActionDispatch,
+        playerName: string,
+      ): MazeActionState => {
+        const actionState = nextDispatch(action, { wantFeedback: true, playerName })
+        if (!actionState) {
+          throw new Error("agent move dispatch must return feedback")
+        }
+
+        recordLastActionState(actionState)
+        return actionState
+      }
+
       // handleAgentNetworkError centralizes transport-failure persistence and the state shown to agents.
       const handleAgentNetworkError = (agent: AgentApiConfig): MazeActionState => {
         disableAgentAfterNetworkError(agent)
@@ -105,8 +108,7 @@ export function createAgentMode(
           lastMoveStatus: "network-error",
           decayedMovesCount: 0,
         })
-
-        lastActionState = nextState
+        recordLastActionState(nextState)
         return nextState
       }
 
@@ -115,16 +117,13 @@ export function createAgentMode(
         dispatch,
         dispatchAgentAction,
         elements,
-        onActionState: (actionState) => {
-          lastActionState = actionState
-        },
+        onActionState: recordLastActionState,
         onAgentNetworkError: handleAgentNetworkError,
         readAgentConfigs,
         readActionState,
       })
 
-      // syncAgentMovePoller keeps the HTTP move loop active only while the maze is actually running.
-      const syncAgentMovePoller = (): void => {
+      const syncCurrentPoller = (): void => {
         if (!agentMovePoller) {
           return
         }
@@ -135,22 +134,27 @@ export function createAgentMode(
         }
       }
 
-      elements.touchButtons.forEach((button) => {
-        const onClick = (): void => {
-          const command = sessionActionFromButton(button.dataset)
-          if (!command) {
-            return
+      // Human-owned session controls stay on the no-feedback path in agent-api mode.
+      const bindSessionButtons = (buttons: HTMLButtonElement[]): void => {
+        buttons.forEach((button) => {
+          const onClick = (): void => {
+            const command = sessionActionFromButton(button.dataset)
+            if (!command) {
+              return
+            }
+
+            focusCurrentApp()
+            dispatch(command, { playerName: runtime.interactivePlayerName })
+            syncCurrentPoller()
           }
 
-          focusApp()
-          // Local human session actions stay on the lightweight path and do not ask for feedback.
-          dispatch(command, { playerName: runtime.interactivePlayerName })
-          syncAgentMovePoller()
-        }
+          buttonBindings.push({ button, onClick })
+          button.addEventListener("click", onClick)
+        })
+      }
 
-        touchHandlers.push({ button, onClick })
-        button.addEventListener("click", onClick)
-      })
+      bindSessionButtons(elements.controls)
+      bindSessionButtons(elements.touchButtons)
 
       keydownHandler = (event: KeyboardEvent): void => {
         const command = sessionActionFromKeyboardEvent(event)
@@ -159,17 +163,16 @@ export function createAgentMode(
         }
 
         event.preventDefault()
-        // Local human session actions stay on the lightweight path and do not ask for feedback.
         dispatch(command, { playerName: runtime.interactivePlayerName })
-        syncAgentMovePoller()
+        syncCurrentPoller()
       }
 
       window.addEventListener("keydown", keydownHandler, { passive: false })
-      elements.app.addEventListener("click", focusApp)
+      elements.app.addEventListener("click", focusCurrentApp)
       attached = true
       agentMovePoller.setAttached(true)
       agentMovePoller.setLastActionState(lastActionState)
-      syncAgentMovePoller()
+      syncCurrentPoller()
     },
     // readLastActionState exposes the latest stored response state for agent-side consumers.
     readLastActionState() {
@@ -179,6 +182,11 @@ export function createAgentMode(
     recordActionState(actionState: MazeActionState) {
       lastActionState = actionState
       agentMovePoller?.setLastActionState(actionState)
+    },
+    // clearActionState drops stale agent-facing context after full-session resets.
+    clearActionState() {
+      lastActionState = null
+      agentMovePoller?.setLastActionState(null)
     },
   }
 }

@@ -27,7 +27,18 @@ import {
   saveGameProgress,
   saveActiveRoundSnapshot,
 } from "./storage"
-import { isSpaceFound, isWallWeight, nextWallWeight, reweightMaze } from "./traversal"
+import {
+  cellCoordinateFromGridPoint,
+  gridPointFromCellCoordinate,
+  isSpaceFound,
+  isWallWeight,
+  mazeCellKey,
+  nextWallWeight,
+  resolvePlayerMove,
+  reweightMaze,
+  traversalHistoryEntry,
+  traversalHistoryIncludes,
+} from "./traversal"
 import type {
   AgentRequestBestComparison,
   AgentRequestPreviousComparison,
@@ -80,13 +91,6 @@ let lastBlinkVisible: boolean | null = null
 // activeControlMode keeps the currently mounted MazeActionControl so feedback and rebinding stay in sync.
 let activeControlMode: MazeActionControl | null = null
 let runtimeElements: Elements | null = null
-
-const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
-  MoveLeft: [0, -1],
-  MoveRight: [0, 1],
-  MoveUp: [-1, 0],
-  MoveDown: [1, 0],
-}
 
 // activeCoreDecayIntervalPerCellMs resolves the current mode's per-cell timing budget.
 function activeCoreDecayIntervalPerCellMs(): number {
@@ -453,48 +457,9 @@ function positionsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean 
   return left.x === right.x && left.y === right.y
 }
 
-// cellCoordinateFromGridPoint converts one rendered maze-grid point into a logical cell position.
-function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate {
-  return {
-    row: Math.floor((position.y - 1) / maze.cellSpan),
-    col: Math.floor((position.x - 1) / maze.cellSpan),
-  }
-}
-
 // readActionState exposes the latest flattened agent-api payload so external callers can plan moves.
 function readActionState(): MazeActionState {
   return buildMazeActionState(state)
-}
-
-// gridPointFromCellCoordinate expands a logical cell position back into rendered maze-grid space.
-function gridPointFromCellCoordinate(cell: CellCoordinate): RenderGridPoint {
-  return {
-    x: cell.col * maze.cellSpan + 1,
-    y: cell.row * maze.cellSpan + 1,
-  }
-}
-
-// mazeCellKey builds a stable string key for deduplicating logical maze cells.
-function mazeCellKey(cell: CellCoordinate): string {
-  return `${cell.row}:${cell.col}`
-}
-
-// traversalHistoryEntry records one logical-cell visit for the player who made the move.
-function traversalHistoryEntry(
-  cell: CellCoordinate,
-  playerName: string,
-): TraversalHistoryEntry {
-  return {
-    ...cell,
-    playerName,
-  }
-}
-
-// traversalHistoryIncludes reports whether the ordered visit history already contains a cell.
-function traversalHistoryIncludes(cell: CellCoordinate): boolean {
-  return state.traversalHistory.some(
-    (visitedCell) => mazeCellKey(visitedCell) === mazeCellKey(cell),
-  )
 }
 
 // isCellCoordinate validates one persisted logical cell coordinate.
@@ -934,6 +899,7 @@ function redrawRoundForViewport(level: number): boolean {
 function restartGame(): void {
   cancelScheduledRoundPersist()
   clearPersistedSnapshot(state.controlMode)
+  activeControlMode?.clearActionState()
   state.wallWeight = WALL_WEIGHTS[0]
   state.lastAttemptRetention = null
   state.bestWinRetention = null
@@ -1038,54 +1004,26 @@ function handleWinCheck(): boolean {
   return true
 }
 
-// movePlayer applies one move step and persists the updated round state.
-function movePlayer(rowDelta: number, columnDelta: number, playerName: string): void {
-  if (
-    !isRunningStatus(state.status) ||
-    !state.maze ||
-    !state.mazeDimensions ||
-    !state.playerPosition
-  ) {
+// movePlayer applies one validated move step and persists the updated round state.
+function movePlayer(action: MoveAction, playerName: string): void {
+  const moveEvaluation = resolvePlayerMove(state, action)
+  if (!moveEvaluation.canMove) {
     return
   }
 
-  const x = state.playerPosition.x
-  const y = state.playerPosition.y
-  const nextY = y + rowDelta * maze.moveStep
-  const nextX = x + columnDelta * maze.moveStep
-  const probeY = y + rowDelta
-  const probeX = x + columnDelta
-
-  if (nextY <= 0 || nextY > state.mazeDimensions.width * maze.cellSpan) {
-    return
-  }
-
-  if (nextX <= 0 || nextX > state.mazeDimensions.length * maze.cellSpan) {
-    return
-  }
-
-  if (!isSpaceFound(state.maze[probeY][probeX])) {
-    return
-  }
-
-  state.playerPosition.y = nextY
-  state.playerPosition.x = nextX
-  const nextCell = cellCoordinateFromGridPoint({ x: nextX, y: nextY })
-  if (!traversalHistoryIncludes(nextCell)) {
-    state.traversalHistory.push(traversalHistoryEntry(nextCell, playerName))
+  state.playerPosition = moveEvaluation.nextGridPoint
+  if (!traversalHistoryIncludes(state.traversalHistory, moveEvaluation.nextCell)) {
+    state.traversalHistory.push(
+      traversalHistoryEntry(moveEvaluation.nextCell, playerName),
+    )
   }
 
   const won = handleWinCheck()
-  finalizeAppliedMove(won)
-}
-
-// finalizeAppliedMove handles post-move side effects after the position and history are updated.
-function finalizeAppliedMove(won: boolean): void {
   if (state.controlMode === "agent-api") {
-    // Position, history, and win state are already updated by movePlayer.
-    // Agent-api must defer score decay, persistence, and rendering until commitAgentTurn
-    // processes the full prediction batch; committing per move would over-render and
-    // could double-spend score decay for one API response.
+    // Agent-api applies position, history, and win state immediately, but defers score
+    // decay, persistence, and rendering until commitAgentTurn processes the full
+    // prediction batch. Committing per move would over-render and double-spend score
+    // decay for one API response.
     return
   }
 
@@ -1143,10 +1081,9 @@ function refreshRunningRound(): void {
   }
 }
 
-// handleMove converts a semantic move into row and column deltas.
+// handleMove applies one semantic movement action for the named player.
 function handleMove(action: MoveAction, playerName = runtime.interactivePlayerName): void {
-  const [rowDelta, columnDelta] = MOVE_DELTAS[action]
-  movePlayer(rowDelta, columnDelta, playerName)
+  movePlayer(action, playerName)
 }
 
 // executeCommand runs one semantic control command without building feedback.
