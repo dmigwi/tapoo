@@ -47,32 +47,33 @@ function mergeReplayResult(
 }
 
 export type AgentMovePoller = {
-  stopPolling: () => void
-  shouldPollAgent: () => boolean
-  scheduleNextAgentTurn: () => void
-  setAttached: (attached: boolean) => void
-  setLastActionState: (actionState: MazeActionState | null) => void
+  __stopPolling: () => void
+  __shouldPollAgent: () => boolean
+  __scheduleNextAgentTurn: () => void
+  __setAttached: (attached: boolean) => void
+  __setLastActionState: (actionState: MazeActionState | null) => void
 }
 
 type HandleAgentTurnLoopOptions = {
-  elements: { body: HTMLElement }
-  commitAgentTurn: (decayedMovesCount: number) => MazeActionState
-  dispatch: MazeActionDispatch
-  dispatchAgentAction: (
+  __elements: { body: HTMLElement }
+  __commitAgentTurn: (decayedMovesCount: number) => MazeActionState
+  __dispatch: MazeActionDispatch
+  __dispatchAgentAction: (
     action: MazeAction,
     dispatch: MazeActionDispatch,
     playerName: string,
   ) => MazeActionState
-  disableAgentAfterNetworkError: (agent: AgentApiConfig) => void
-  readAgentConfigs: () => AgentApiConfig[]
-  onActionState: (actionState: MazeActionState) => void
-  readActionState: () => MazeActionState
+  __disableAgentAfterNetworkError: (agent: AgentApiConfig) => void
+  __readAgentConfigs: () => AgentApiConfig[]
+  __onActionState: (actionState: MazeActionState) => void
+  __readActionState: () => MazeActionState
 }
 
 // handleAgentTurnLoop owns the HTTP polling cycle used by the agent-api control mode.
 export function handleAgentTurnLoop({
-  commitAgentTurn, disableAgentAfterNetworkError, dispatch, dispatchAgentAction,
-  elements, onActionState, readActionState, readAgentConfigs,
+  __commitAgentTurn, __disableAgentAfterNetworkError, __dispatch,
+  __dispatchAgentAction, __elements, __onActionState, __readActionState,
+  __readAgentConfigs,
 }: HandleAgentTurnLoopOptions): AgentMovePoller {
   let attached = false
   let scheduledTurn: number | null = null
@@ -82,11 +83,11 @@ export function handleAgentTurnLoop({
   let agentCursor = 0
 
   // activeActionState returns the most recent replay state, or the live base state before any replay exists.
-  const activeActionState = (): MazeActionState => lastActionState ?? readActionState()
+  const activeActionState = (): MazeActionState => lastActionState ?? __readActionState()
 
   // nextAgent rotates through all enabled agents configured for the shared maze.
   const nextAgent = (): AgentApiConfig | null => {
-    const enabledAgents = readAgentConfigs().filter((agent) => agent.enabled)
+    const enabledAgents = __readAgentConfigs().filter((agent) => agent.enabled)
 
     if (enabledAgents.length === 0) {
       return null
@@ -98,11 +99,11 @@ export function handleAgentTurnLoop({
   }
 
   // hasEnabledAgents checks whether polling can produce work before waiting for a timeout.
-  const hasEnabledAgents = (): boolean => readAgentConfigs().some((agent) => agent.enabled)
+  const hasEnabledAgents = (): boolean => __readAgentConfigs().some((agent) => agent.enabled)
 
   // awaitAgent immediately moves the game into its no-agent state without spending score.
   const awaitAgent = (): void => {
-    dispatch({ type: "await-agent" }, { playerName: activeActionState().playerName })
+    __dispatch({ type: "await-agent" }, { playerName: activeActionState().playerName })
   }
 
   // clearScheduledTurn stops any queued request cycle.
@@ -132,7 +133,7 @@ export function handleAgentTurnLoop({
   }
 
   // shouldPollAgent only keeps the replay loop alive while the live round is actively running.
-  const shouldPollAgent = (): boolean => attached && isRunningStatus(readActionState().status)
+  const shouldPollAgent = (): boolean => attached && isRunningStatus(__readActionState().status)
 
   // recordAgentNetworkError disables failed agents and records the no-score-decay network state.
   const recordAgentNetworkError = (agent: AgentApiConfig | null): void => {
@@ -140,14 +141,14 @@ export function handleAgentTurnLoop({
       return
     }
 
-    disableAgentAfterNetworkError(agent)
+    __disableAgentAfterNetworkError(agent)
     const nextState = mergeMazeActionState(activeActionState(), {
       playerName: agent.playerName,
       lastMoveStatus: "network-error",
       decayedMovesCount: 0,
     })
     lastActionState = nextState
-    onActionState(nextState)
+    __onActionState(nextState)
 
     if (!hasEnabledAgents()) {
       awaitAgent()
@@ -223,14 +224,14 @@ export function handleAgentTurnLoop({
         // Malformed payloads spend the fixed mistake decay without replaying any move.
         const decayedMovesCount = runtime.agentApiMistakePenaltyMoves
         const nextState = mergeMazeActionState(
-          commitAgentTurn(decayedMovesCount),
+          __commitAgentTurn(decayedMovesCount),
           {
             playerName: selectedAgent.playerName,
             lastMoveStatus: "malformed-response",
           },
         )
         lastActionState = nextState
-        onActionState(nextState)
+        __onActionState(nextState)
         return
       }
 
@@ -238,9 +239,9 @@ export function handleAgentTurnLoop({
       let appliedMoveCount = 0
 
       for (const move of submittedMoves) {
-        const replayState = dispatchAgentAction(
+        const replayState = __dispatchAgentAction(
           { type: move },
-          dispatch,
+          __dispatch,
           selectedAgent.playerName,
         )
         lastReplayState = replayState
@@ -268,7 +269,7 @@ export function handleAgentTurnLoop({
       const decayedMovesCount = submittedMoves.length
 
       // Every successfully parsed prediction batch decays by its full submitted move count.
-      const committedState = commitAgentTurn(decayedMovesCount)
+      const committedState = __commitAgentTurn(decayedMovesCount)
 
       const nextState = mergeReplayResult(committedState, {
         playerName: selectedAgent.playerName,
@@ -282,7 +283,7 @@ export function handleAgentTurnLoop({
       })
 
       lastActionState = nextState
-      onActionState(nextState)
+      __onActionState(nextState)
     } catch (error) {
       if (!(error instanceof DOMException) || error.name !== "AbortError") {
         recordAgentNetworkError(selectedAgent)
@@ -304,15 +305,15 @@ export function handleAgentTurnLoop({
   }
 
   return {
-    scheduleNextAgentTurn,
-    setAttached(nextAttached) {
+    __scheduleNextAgentTurn: scheduleNextAgentTurn,
+    __setAttached(nextAttached) {
       attached = nextAttached
-      elements.body.dataset.agentControl = nextAttached ? "active" : "idle"
+      __elements.body.dataset.agentControl = nextAttached ? "active" : "idle"
     },
-    setLastActionState(actionState) {
+    __setLastActionState(actionState) {
       lastActionState = actionState
     },
-    stopPolling,
-    shouldPollAgent,
+    __stopPolling: stopPolling,
+    __shouldPollAgent: shouldPollAgent,
   }
 }

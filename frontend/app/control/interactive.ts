@@ -29,8 +29,8 @@ export function createInteractiveMode(
   let attached = false
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null
   const buttonBindings: Array<{
-    button: HTMLButtonElement
-    onClick: () => void
+    __button: HTMLButtonElement
+    __onClick: () => void
   }> = []
 
   // focusApp keeps keyboard input anchored to the terminal root after button taps.
@@ -41,16 +41,16 @@ export function createInteractiveMode(
   // releaseBindings removes any listeners registered by the last active dispatch binding.
   const releaseBindings = (): void => {
     releaseAllActionBindings({
-      attached,
-      buttonBindings,
-      keydownHandler,
-      removeAppFocus: () => {
+      __attached: attached,
+      __buttonBindings: buttonBindings,
+      __keydownHandler: keydownHandler,
+      __removeAppFocus: () => {
         elements.app.removeEventListener("click", focusApp)
       },
-      setAttached: (nextAttached) => {
+      __setAttached: (nextAttached) => {
         attached = nextAttached
       },
-      setKeydownHandler: (nextKeydownHandler) => {
+      __setKeydownHandler: (nextKeydownHandler) => {
         keydownHandler = nextKeydownHandler
       },
     })
@@ -101,7 +101,7 @@ export function createInteractiveMode(
         handleButtonClick(button, dispatch)
       }
 
-      buttonBindings.push({ button, onClick })
+      buttonBindings.push({ __button: button, __onClick: onClick })
       button.addEventListener("click", onClick)
     })
   }

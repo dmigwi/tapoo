@@ -4,48 +4,48 @@ import type { MazeAction, SessionAction } from "../types"
 export type SessionMazeAction = Extract<MazeAction, { type: SessionAction }>
 
 type ButtonBinding = {
-  button: HTMLButtonElement
-  onClick: () => void
+  __button: HTMLButtonElement
+  __onClick: () => void
 }
 
 type ReleaseActionBindingsOptions = {
-  attached: boolean
-  buttonBindings: ButtonBinding[]
-  keydownHandler: ((event: KeyboardEvent) => void) | null
-  onAfterRelease?: () => void
-  onBeforeRelease?: () => void
-  removeAppFocus: () => void
-  setAttached: (attached: boolean) => void
-  setKeydownHandler: (handler: ((event: KeyboardEvent) => void) | null) => void
+  __attached: boolean
+  __buttonBindings: ButtonBinding[]
+  __keydownHandler: ((event: KeyboardEvent) => void) | null
+  __onAfterRelease?: () => void
+  __onBeforeRelease?: () => void
+  __removeAppFocus: () => void
+  __setAttached: (attached: boolean) => void
+  __setKeydownHandler: (handler: ((event: KeyboardEvent) => void) | null) => void
 }
 
 // releaseAllActionBindings clears every listener owned by the active control mode.
 export function releaseAllActionBindings({
-  attached,
-  buttonBindings,
-  keydownHandler,
-  onAfterRelease,
-  onBeforeRelease,
-  removeAppFocus,
-  setAttached,
-  setKeydownHandler,
+  __attached,
+  __buttonBindings,
+  __keydownHandler,
+  __onAfterRelease,
+  __onBeforeRelease,
+  __removeAppFocus,
+  __setAttached,
+  __setKeydownHandler,
 }: ReleaseActionBindingsOptions): void {
-  if (!attached) {
+  if (!__attached) {
     return
   }
 
-  onBeforeRelease?.()
-  buttonBindings.forEach(({ button, onClick }) => {
-    button.removeEventListener("click", onClick)
+  __onBeforeRelease?.()
+  __buttonBindings.forEach(({ __button, __onClick }) => {
+    __button.removeEventListener("click", __onClick)
   })
-  buttonBindings.length = 0
-  if (keydownHandler) {
-    window.removeEventListener("keydown", keydownHandler)
-    setKeydownHandler(null)
+  __buttonBindings.length = 0
+  if (__keydownHandler) {
+    window.removeEventListener("keydown", __keydownHandler)
+    __setKeydownHandler(null)
   }
-  removeAppFocus()
-  setAttached(false)
-  onAfterRelease?.()
+  __removeAppFocus()
+  __setAttached(false)
+  __onAfterRelease?.()
 }
 
 // sessionActionFromKeyboardEvent translates shared keyboard shortcuts into session actions.

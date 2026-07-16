@@ -94,30 +94,30 @@ describe("agent api turn loop", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     const poller = handleAgentTurnLoop({
-      elements,
-      dispatch: vi.fn() as MazeActionDispatch,
-      dispatchAgentAction: vi.fn(() =>
+      __elements: elements,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi.fn(() =>
         createActionState({ lastMoveStatus: "applied" }),
       ),
-      commitAgentTurn: vi.fn(() => createActionState()),
-      onActionState: vi.fn(),
-      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
-      readAgentConfigs: enabledAgentConfigs,
-      readActionState: () => actionState,
+      __commitAgentTurn: vi.fn(() => createActionState()),
+      __onActionState: vi.fn(),
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readActionState: () => actionState,
     })
 
-    poller.scheduleNextAgentTurn()
+    poller.__scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
     expect(fetchMock).not.toHaveBeenCalled()
 
-    poller.setAttached(true)
+    poller.__setAttached(true)
     actionState = createActionState({ status: "paused" })
-    poller.scheduleNextAgentTurn()
+    poller.__scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
     expect(fetchMock).not.toHaveBeenCalled()
 
     actionState = createActionState({ status: "running" })
-    poller.scheduleNextAgentTurn()
+    poller.__scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -130,18 +130,18 @@ describe("agent api turn loop", () => {
     const dispatch = vi.fn() as MazeActionDispatch
 
     const poller = handleAgentTurnLoop({
-      elements: { body: document.createElement("div") },
-      dispatch,
-      dispatchAgentAction: vi.fn(),
-      commitAgentTurn: vi.fn(() => createActionState()),
-      onActionState: vi.fn(),
-      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
-      readAgentConfigs: () => [],
-      readActionState: () => createActionState(),
+      __elements: { body: document.createElement("div") },
+      __dispatch: dispatch,
+      __dispatchAgentAction: vi.fn(),
+      __commitAgentTurn: vi.fn(() => createActionState()),
+      __onActionState: vi.fn(),
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: () => [],
+      __readActionState: () => createActionState(),
     })
 
-    poller.setAttached(true)
-    poller.scheduleNextAgentTurn()
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn()
 
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
     expect(fetchMock).not.toHaveBeenCalled()
@@ -158,18 +158,18 @@ describe("agent api turn loop", () => {
     const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
 
     const poller = handleAgentTurnLoop({
-      elements: { body: document.createElement("div") },
-      commitAgentTurn: vi.fn(() => createActionState()),
-      dispatch,
-      dispatchAgentAction: vi.fn(),
-      onActionState: vi.fn(),
-      disableAgentAfterNetworkError,
-      readAgentConfigs: () => agentConfigs,
-      readActionState: () => createActionState(),
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: vi.fn(() => createActionState()),
+      __dispatch: dispatch,
+      __dispatchAgentAction: vi.fn(),
+      __onActionState: vi.fn(),
+      __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
+      __readAgentConfigs: () => agentConfigs,
+      __readActionState: () => createActionState(),
     })
 
-    poller.setAttached(true)
-    poller.scheduleNextAgentTurn()
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
@@ -215,18 +215,18 @@ describe("agent api turn loop", () => {
     const onActionState = vi.fn()
 
     const poller = handleAgentTurnLoop({
-      elements: { body: document.createElement("div") },
-      commitAgentTurn,
-      dispatch,
-      dispatchAgentAction,
-      onActionState,
-      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
-      readAgentConfigs: enabledAgentConfigs,
-      readActionState: () => createActionState(),
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: dispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionState: onActionState,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readActionState: () => createActionState(),
     })
 
-    poller.setAttached(true)
-    poller.scheduleNextAgentTurn()
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
@@ -306,18 +306,18 @@ describe("agent api turn loop", () => {
     const onActionState = vi.fn()
 
     const poller = handleAgentTurnLoop({
-      elements: { body: document.createElement("div") },
-      commitAgentTurn: vi.fn(() => createActionState()),
-      dispatch,
-      dispatchAgentAction,
-      onActionState,
-      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
-      readAgentConfigs: () => agentConfigs,
-      readActionState: () => createActionState({ level: 2 }),
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: vi.fn(() => createActionState()),
+      __dispatch: dispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionState: onActionState,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: () => agentConfigs,
+      __readActionState: () => createActionState({ level: 2 }),
     })
 
-    poller.setAttached(true)
-    poller.scheduleNextAgentTurn()
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
@@ -410,8 +410,8 @@ describe("agent api turn loop", () => {
     const onActionState = vi.fn()
 
     const poller = handleAgentTurnLoop({
-      elements: { body: document.createElement("div") },
-      commitAgentTurn: vi.fn((decayedMovesCount: number) =>
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: vi.fn((decayedMovesCount: number) =>
         createActionState({
           currentCell: { row: 0, col: 1 },
           destinationCell: { row: 0, col: 1 },
@@ -419,16 +419,16 @@ describe("agent api turn loop", () => {
           status: "won",
         }),
       ),
-      dispatch: vi.fn() as MazeActionDispatch,
-      dispatchAgentAction,
-      onActionState,
-      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
-      readAgentConfigs: enabledAgentConfigs,
-      readActionState: () => createActionState(),
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionState: onActionState,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readActionState: () => createActionState(),
     })
 
-    poller.setAttached(true)
-    poller.scheduleNextAgentTurn()
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(dispatchAgentAction).toHaveBeenCalledTimes(1)
@@ -458,18 +458,18 @@ describe("agent api turn loop", () => {
     const onActionState = vi.fn()
 
     const poller = handleAgentTurnLoop({
-      elements: { body: document.createElement("div") },
-      commitAgentTurn,
-      dispatch: vi.fn() as MazeActionDispatch,
-      dispatchAgentAction,
-      onActionState,
-      disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
-      readAgentConfigs: enabledAgentConfigs,
-      readActionState: () => createActionState(),
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionState: onActionState,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readActionState: () => createActionState(),
     })
 
-    poller.setAttached(true)
-    poller.scheduleNextAgentTurn()
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(dispatchAgentAction).not.toHaveBeenCalled()
@@ -502,18 +502,18 @@ describe("agent api turn loop", () => {
     const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
 
     const poller = handleAgentTurnLoop({
-      elements: { body: document.createElement("div") },
-      commitAgentTurn,
-      disableAgentAfterNetworkError,
-      dispatch: vi.fn() as MazeActionDispatch,
-      dispatchAgentAction: vi.fn(),
-      onActionState,
-      readAgentConfigs: () => agentConfigs,
-      readActionState: () => createActionState(),
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi.fn(),
+      __onActionState: onActionState,
+      __readAgentConfigs: () => agentConfigs,
+      __readActionState: () => createActionState(),
     })
 
-    poller.setAttached(true)
-    poller.scheduleNextAgentTurn()
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
     await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiResponseTimeoutMs)
 
@@ -545,18 +545,18 @@ describe("agent api turn loop", () => {
     const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
 
     const poller = handleAgentTurnLoop({
-      elements: { body: document.createElement("div") },
-      commitAgentTurn,
-      disableAgentAfterNetworkError,
-      dispatch: vi.fn() as MazeActionDispatch,
-      dispatchAgentAction: vi.fn(),
-      onActionState,
-      readAgentConfigs: () => agentConfigs,
-      readActionState: () => createActionState(),
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi.fn(),
+      __onActionState: onActionState,
+      __readAgentConfigs: () => agentConfigs,
+      __readActionState: () => createActionState(),
     })
 
-    poller.setAttached(true)
-    poller.scheduleNextAgentTurn()
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
@@ -584,18 +584,18 @@ describe("agent api turn loop", () => {
     const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
 
     const poller = handleAgentTurnLoop({
-      elements: { body: document.createElement("div") },
-      commitAgentTurn,
-      disableAgentAfterNetworkError,
-      dispatch: vi.fn() as MazeActionDispatch,
-      dispatchAgentAction: vi.fn(),
-      onActionState,
-      readAgentConfigs: () => agentConfigs,
-      readActionState: () => createActionState(),
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi.fn(),
+      __onActionState: onActionState,
+      __readAgentConfigs: () => agentConfigs,
+      __readActionState: () => createActionState(),
     })
 
-    poller.setAttached(true)
-    poller.scheduleNextAgentTurn()
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn()
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
 
     expect(commitAgentTurn).not.toHaveBeenCalled()

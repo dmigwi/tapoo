@@ -24,8 +24,8 @@ import { CONFIG } from "../config"
 const { runtime } = CONFIG
 
 type AgentButtonBinding = {
-  button: HTMLButtonElement
-  onClick: () => void
+  __button: HTMLButtonElement
+  __onClick: () => void
 }
 
 // createAgentMode builds the agent-api MazeActionControl while transport wiring is still pending.
@@ -48,20 +48,20 @@ export function createAgentMode(
   // releaseBindings removes any listeners registered by the last active dispatch binding.
   const releaseBindings = (): void => {
     releaseAllActionBindings({
-      attached,
-      buttonBindings,
-      keydownHandler,
-      onBeforeRelease: () => {
-        agentMovePoller?.setAttached(false)
-        agentMovePoller?.stopPolling()
+      __attached: attached,
+      __buttonBindings: buttonBindings,
+      __keydownHandler: keydownHandler,
+      __onBeforeRelease: () => {
+        agentMovePoller?.__setAttached(false)
+        agentMovePoller?.__stopPolling()
       },
-      removeAppFocus: () => {
+      __removeAppFocus: () => {
         elements.app.removeEventListener("click", focusCurrentApp)
       },
-      setAttached: (nextAttached) => {
+      __setAttached: (nextAttached) => {
         attached = nextAttached
       },
-      setKeydownHandler: (nextKeydownHandler) => {
+      __setKeydownHandler: (nextKeydownHandler) => {
         keydownHandler = nextKeydownHandler
       },
     })
@@ -100,14 +100,14 @@ export function createAgentMode(
       }
 
       agentMovePoller = handleAgentTurnLoop({
-        commitAgentTurn,
-        disableAgentAfterNetworkError,
-        dispatch,
-        dispatchAgentAction,
-        elements,
-        onActionState: recordLastActionState,
-        readAgentConfigs,
-        readActionState,
+        __commitAgentTurn: commitAgentTurn,
+        __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
+        __dispatch: dispatch,
+        __dispatchAgentAction: dispatchAgentAction,
+        __elements: elements,
+        __onActionState: recordLastActionState,
+        __readAgentConfigs: readAgentConfigs,
+        __readActionState: readActionState,
       })
 
       const syncCurrentPoller = (): void => {
@@ -115,9 +115,9 @@ export function createAgentMode(
           return
         }
 
-        agentMovePoller.stopPolling()
-        if (agentMovePoller.shouldPollAgent()) {
-          agentMovePoller.scheduleNextAgentTurn()
+        agentMovePoller.__stopPolling()
+        if (agentMovePoller.__shouldPollAgent()) {
+          agentMovePoller.__scheduleNextAgentTurn()
         }
       }
 
@@ -135,7 +135,7 @@ export function createAgentMode(
             syncCurrentPoller()
           }
 
-          buttonBindings.push({ button, onClick })
+          buttonBindings.push({ __button: button, __onClick: onClick })
           button.addEventListener("click", onClick)
         })
       }
@@ -157,8 +157,8 @@ export function createAgentMode(
       window.addEventListener("keydown", keydownHandler, { passive: false })
       elements.app.addEventListener("click", focusCurrentApp)
       attached = true
-      agentMovePoller.setAttached(true)
-      agentMovePoller.setLastActionState(lastActionState)
+      agentMovePoller.__setAttached(true)
+      agentMovePoller.__setLastActionState(lastActionState)
       syncCurrentPoller()
     },
     // readLastActionState exposes the latest stored response state for agent-side consumers.
@@ -168,12 +168,12 @@ export function createAgentMode(
     // recordActionState keeps the last response state available for the agent-api control flow.
     recordActionState(actionState: MazeActionState) {
       lastActionState = actionState
-      agentMovePoller?.setLastActionState(actionState)
+      agentMovePoller?.__setLastActionState(actionState)
     },
     // clearActionState drops stale agent-facing context after full-session resets.
     clearActionState() {
       lastActionState = null
-      agentMovePoller?.setLastActionState(null)
+      agentMovePoller?.__setLastActionState(null)
     },
   }
 }
