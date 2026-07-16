@@ -107,12 +107,20 @@ function isAgentApiConfig(value: unknown): value is AgentApiConfig {
     return false
   }
 
+  const disabledReason =  "disabledReason" in value ? value.disabledReason : undefined
+  const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
+
   return (
     typeof value.id === "string" && value.id.length > 0 &&
     typeof value.playerName === "string" && value.playerName.length > 0 &&
     typeof value.model === "string" && value.model.length > 0 &&
     typeof value.endpoint === "string" && value.endpoint.length > 0 &&
-    typeof value.enabled === "boolean"
+    typeof value.enabled === "boolean" &&
+    (disabledReason === undefined || disabledReason === "network-error") &&
+    (
+      lastErrorAt === undefined ||
+      (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt))
+    )
   )
 }
 
@@ -225,6 +233,30 @@ export function savePersistedAgentConfigs(
   } catch {
     // Ignore storage failures so agent configuration remains best-effort only.
   }
+}
+
+// disableAgentForNetworkError marks one transport-failing agent ineligible for later turns.
+export function disableAgentForNetworkError(
+  modeName: MazeControlModeName,
+  failedAgent: AgentApiConfig,
+): AgentApiConfig[] {
+  const nextConfigs = loadPersistedAgentConfigs(modeName).map((agent) => {
+    if (agent.id !== failedAgent.id) {
+      return agent
+    }
+
+    const disabledAgent: AgentApiConfig = {
+      ...agent,
+      enabled: false,
+      disabledReason: "network-error",
+      lastErrorAt: Date.now(),
+    }
+
+    return disabledAgent
+  })
+
+  savePersistedAgentConfigs(modeName, nextConfigs)
+  return nextConfigs
 }
 
 // clearPersistedAgentConfigs removes agent setup without touching game progress.

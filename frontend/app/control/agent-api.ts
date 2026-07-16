@@ -65,12 +65,13 @@ type HandleAgentTurnLoopOptions = {
   ) => MazeActionState
   readAgentConfigs: () => AgentApiConfig[]
   onActionState: (actionState: MazeActionState) => void
+  onAgentNetworkError: (agent: AgentApiConfig) => MazeActionState
   readActionState: () => MazeActionState
 }
 
 // handleAgentTurnLoop owns the HTTP polling cycle used by the agent-api control mode.
 export function handleAgentTurnLoop({
-  commitAgentTurn, dispatch, dispatchAgentAction, elements, onActionState, readActionState, readAgentConfigs,
+  commitAgentTurn, dispatch, dispatchAgentAction, elements, onActionState, onAgentNetworkError, readActionState, readAgentConfigs,
 }: HandleAgentTurnLoopOptions): AgentMovePoller {
   let attached = false
   let scheduledTurn: number | null = null
@@ -123,6 +124,14 @@ export function handleAgentTurnLoop({
 
   // shouldPollAgent only keeps the replay loop alive while the live round is actively running.
   const shouldPollAgent = (): boolean => attached && isRunningStatus(readActionState().status)
+
+  // recordAgentNetworkError delegates transport-failure handling to the control mode.
+  const recordAgentNetworkError = (agent: AgentApiConfig | null): void => {
+    if (!agent) {
+      return
+    }
+    lastActionState = onAgentNetworkError(agent)
+  }
 
   // scheduleNextAgentTurn waits for the derived agent-api poll interval before asking again.
   const scheduleNextAgentTurn = (): void => {
@@ -177,6 +186,7 @@ export function handleAgentTurnLoop({
       })
 
       if (!response.ok) {
+        recordAgentNetworkError(selectedAgent)
         return
       }
 
@@ -248,6 +258,7 @@ export function handleAgentTurnLoop({
       onActionState(nextState)
     } catch (error) {
       if (!(error instanceof DOMException) || error.name !== "AbortError") {
+        recordAgentNetworkError(selectedAgent)
         return
       }
 
@@ -255,17 +266,8 @@ export function handleAgentTurnLoop({
         return
       }
 
-      // Timed-out requests are treated like other agent mistakes and pay the fixed mistake decay.
-      const decayedMovesCount = runtime.agentApiMistakePenaltyMoves
-      const nextState = mergeMazeActionState(
-        commitAgentTurn(decayedMovesCount),
-        {
-          playerName: selectedAgent?.playerName ?? activeActionState().playerName,
-          lastMoveStatus: "response-timeout",
-        },
-      )
-      lastActionState = nextState
-      onActionState(nextState)
+      // Timeouts are transport failures, so only the failing agent is disabled.
+      recordAgentNetworkError(selectedAgent)
     } finally {
       abortActiveRequest()
       if (shouldPollAgent()) {

@@ -540,6 +540,45 @@ describe("agent control mode", () => {
     )
   })
 
+  it("records a network-disabled agent without score decay", async () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [createButton({ action: "pause" })],
+      touchControls: document.createElement("div"),
+    }
+    elements.app.focus = vi.fn()
+
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("network failed")))
+
+    const disableAgentAfterNetworkError = vi.fn()
+    const mode = createAgentMode(
+      elements,
+      enabledAgentConfigs,
+      disableAgentAfterNetworkError,
+    )
+
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState()),
+      vi.fn(() => createActionState()),
+    )
+    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(
+      enabledAgentConfigs()[0],
+    )
+    expect(mode.readLastActionState()).toEqual(
+      expect.objectContaining({
+        lastMoveStatus: "network-error",
+        decayedMovesCount: 0,
+      }),
+    )
+  })
+
   it("rebinds local controls without keeping stale listeners alive", () => {
     const elements = {
       app: document.createElement("div"),

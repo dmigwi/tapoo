@@ -6,6 +6,7 @@ import type {
   MazeActionDispatch,
   MazeActionState,
 } from "../types"
+import { mergeMazeActionState } from "../agent-context"
 import {
   handleAgentTurnLoop,
 } from "./agent-api"
@@ -15,7 +16,10 @@ import {
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
 } from "./session-actions"
-import { loadPersistedAgentConfigs } from "../storage"
+import {
+  disableAgentForNetworkError,
+  loadPersistedAgentConfigs,
+} from "../storage"
 import { CONFIG } from "../config"
 
 const { runtime } = CONFIG
@@ -25,6 +29,9 @@ export function createAgentMode(
   elements: Elements,
   readAgentConfigs: () => AgentApiConfig[] = () =>
     loadPersistedAgentConfigs("agent-api"),
+  disableAgentAfterNetworkError: (agent: AgentApiConfig) => void = (agent) => {
+    disableAgentForNetworkError("agent-api", agent)
+  },
 ): MazeActionControl {
   let attached = false
   let agentMovePoller: AgentMovePoller | null = null
@@ -90,6 +97,19 @@ export function createAgentMode(
     ) {
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
+      // handleAgentNetworkError centralizes transport-failure persistence and the state shown to agents.
+      const handleAgentNetworkError = (agent: AgentApiConfig): MazeActionState => {
+        disableAgentAfterNetworkError(agent)
+        const nextState = mergeMazeActionState(lastActionState ?? readActionState(), {
+          playerName: agent.playerName,
+          lastMoveStatus: "network-error",
+          decayedMovesCount: 0,
+        })
+
+        lastActionState = nextState
+        return nextState
+      }
+
       agentMovePoller = handleAgentTurnLoop({
         commitAgentTurn,
         dispatch,
@@ -98,6 +118,7 @@ export function createAgentMode(
         onActionState: (actionState) => {
           lastActionState = actionState
         },
+        onAgentNetworkError: handleAgentNetworkError,
         readAgentConfigs,
         readActionState,
       })

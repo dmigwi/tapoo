@@ -68,6 +68,16 @@ function enabledAgentConfigs(): AgentApiConfig[] {
   ]
 }
 
+function createNetworkErrorHandler() {
+  return vi.fn((agent: AgentApiConfig) =>
+    createActionState({
+      playerName: agent.playerName,
+      lastMoveStatus: "network-error",
+      decayedMovesCount: 0,
+    }),
+  )
+}
+
 describe("agent api turn loop", () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -95,6 +105,7 @@ describe("agent api turn loop", () => {
       ),
       commitAgentTurn: vi.fn(() => createActionState()),
       onActionState: vi.fn(),
+      onAgentNetworkError: createNetworkErrorHandler(),
       readAgentConfigs: enabledAgentConfigs,
       readActionState: () => actionState,
     })
@@ -128,6 +139,7 @@ describe("agent api turn loop", () => {
       dispatchAgentAction: vi.fn(),
       commitAgentTurn: vi.fn(() => createActionState()),
       onActionState: vi.fn(),
+      onAgentNetworkError: createNetworkErrorHandler(),
       readAgentConfigs: () => [],
       readActionState: () => createActionState(),
     })
@@ -184,6 +196,7 @@ describe("agent api turn loop", () => {
       dispatch,
       dispatchAgentAction,
       onActionState,
+      onAgentNetworkError: createNetworkErrorHandler(),
       readAgentConfigs: enabledAgentConfigs,
       readActionState: () => createActionState(),
     })
@@ -274,6 +287,7 @@ describe("agent api turn loop", () => {
       dispatch,
       dispatchAgentAction,
       onActionState,
+      onAgentNetworkError: createNetworkErrorHandler(),
       readAgentConfigs: () => agentConfigs,
       readActionState: () => createActionState({ level: 2 }),
     })
@@ -384,6 +398,7 @@ describe("agent api turn loop", () => {
       dispatch: vi.fn() as MazeActionDispatch,
       dispatchAgentAction,
       onActionState,
+      onAgentNetworkError: createNetworkErrorHandler(),
       readAgentConfigs: enabledAgentConfigs,
       readActionState: () => createActionState(),
     })
@@ -424,6 +439,7 @@ describe("agent api turn loop", () => {
       dispatch: vi.fn() as MazeActionDispatch,
       dispatchAgentAction,
       onActionState,
+      onAgentNetworkError: createNetworkErrorHandler(),
       readAgentConfigs: enabledAgentConfigs,
       readActionState: () => createActionState(),
     })
@@ -444,7 +460,7 @@ describe("agent api turn loop", () => {
     )
   })
 
-  it("records response timeouts with the fixed mistake decay", async () => {
+  it("disables the agent after response timeouts without score decay", async () => {
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
       return new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => {
@@ -458,6 +474,7 @@ describe("agent api turn loop", () => {
       createActionState({ decayedMovesCount }),
     )
     const onActionState = vi.fn()
+    const onAgentNetworkError = createNetworkErrorHandler()
 
     const poller = handleAgentTurnLoop({
       elements: { body: document.createElement("div") },
@@ -465,6 +482,7 @@ describe("agent api turn loop", () => {
       dispatch: vi.fn() as MazeActionDispatch,
       dispatchAgentAction: vi.fn(),
       onActionState,
+      onAgentNetworkError,
       readAgentConfigs: enabledAgentConfigs,
       readActionState: () => createActionState(),
     })
@@ -474,14 +492,75 @@ describe("agent api turn loop", () => {
     await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
     await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiResponseTimeoutMs)
 
-    expect(commitAgentTurn).toHaveBeenCalledWith(
-      CONFIG.runtime.agentApiMistakePenaltyMoves,
-    )
-    expect(onActionState).toHaveBeenCalledWith(
-      expect.objectContaining({
-        lastMoveStatus: "response-timeout",
-        decayedMovesCount: CONFIG.runtime.agentApiMistakePenaltyMoves,
+    expect(commitAgentTurn).not.toHaveBeenCalled()
+    expect(onAgentNetworkError).toHaveBeenCalledWith(enabledAgentConfigs()[0])
+    expect(onActionState).not.toHaveBeenCalled()
+  })
+
+  it("disables the agent after non-ok http responses without score decay", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: vi.fn(),
       }),
     )
+
+    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
+      createActionState({ decayedMovesCount }),
+    )
+    const onActionState = vi.fn()
+    const onAgentNetworkError = createNetworkErrorHandler()
+
+    const poller = handleAgentTurnLoop({
+      elements: { body: document.createElement("div") },
+      commitAgentTurn,
+      dispatch: vi.fn() as MazeActionDispatch,
+      dispatchAgentAction: vi.fn(),
+      onActionState,
+      onAgentNetworkError,
+      readAgentConfigs: enabledAgentConfigs,
+      readActionState: () => createActionState(),
+    })
+
+    poller.setAttached(true)
+    poller.scheduleNextAgentTurn()
+    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+
+    expect(commitAgentTurn).not.toHaveBeenCalled()
+    expect(onAgentNetworkError).toHaveBeenCalledWith(enabledAgentConfigs()[0])
+    expect(onActionState).not.toHaveBeenCalled()
+  })
+
+  it("disables the agent after fetch failures without score decay", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("network failed")),
+    )
+
+    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
+      createActionState({ decayedMovesCount }),
+    )
+    const onActionState = vi.fn()
+    const onAgentNetworkError = createNetworkErrorHandler()
+
+    const poller = handleAgentTurnLoop({
+      elements: { body: document.createElement("div") },
+      commitAgentTurn,
+      dispatch: vi.fn() as MazeActionDispatch,
+      dispatchAgentAction: vi.fn(),
+      onActionState,
+      onAgentNetworkError,
+      readAgentConfigs: enabledAgentConfigs,
+      readActionState: () => createActionState(),
+    })
+
+    poller.setAttached(true)
+    poller.scheduleNextAgentTurn()
+    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+
+    expect(commitAgentTurn).not.toHaveBeenCalled()
+    expect(onAgentNetworkError).toHaveBeenCalledWith(enabledAgentConfigs()[0])
+    expect(onActionState).not.toHaveBeenCalled()
   })
 })

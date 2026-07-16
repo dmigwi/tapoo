@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CONFIG, STORE_ENCODING_PREFIX } from "./config"
 import {
   clearPersistedAgentConfigs,
   clearPersistedSnapshot,
   clearPersistedRound,
+  disableAgentForNetworkError,
   loadPersistedAgentConfigs,
   loadPersistedSnapshot,
   savePersistedAgentConfigs,
@@ -95,6 +96,7 @@ function createState(overrides: Partial<State> = {}): State {
 // These tests keep browser persistence resilient to corrupt and partial storage payloads.
 describe("storage", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     Object.defineProperty(window, "localStorage", {
       configurable: true,
       value: createMemoryStorage(),
@@ -161,6 +163,8 @@ describe("storage", () => {
         model: "gemma4",
         endpoint: "/api/agents/b/move",
         enabled: false,
+        disabledReason: "network-error",
+        lastErrorAt: 1_725_000_000_000,
       },
     ])
 
@@ -184,6 +188,8 @@ describe("storage", () => {
         model: "gemma4",
         endpoint: "/api/agents/b/move",
         enabled: false,
+        disabledReason: "network-error",
+        lastErrorAt: 1_725_000_000_000,
       },
     ])
 
@@ -192,6 +198,54 @@ describe("storage", () => {
 
     clearPersistedAgentConfigs(AGENT_MODE)
     expect(loadPersistedAgentConfigs(AGENT_MODE)).toEqual([])
+  })
+
+  it("disables one network-failed agent without touching the others", () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_725_000_000_001)
+    savePersistedAgentConfigs(AGENT_MODE, [
+      {
+        id: "agent-a",
+        playerName: "Agent A",
+        model: "llama3.2",
+        endpoint: "/api/agents/a/move",
+        enabled: true,
+      },
+      {
+        id: "agent-b",
+        playerName: "Agent B",
+        model: "gemma4",
+        endpoint: "/api/agents/b/move",
+        enabled: true,
+      },
+    ])
+
+    const nextConfigs = disableAgentForNetworkError(AGENT_MODE, {
+      id: "agent-b",
+      playerName: "Agent B",
+      model: "gemma4",
+      endpoint: "/api/agents/b/move",
+      enabled: true,
+    })
+
+    expect(nextConfigs).toEqual([
+      {
+        id: "agent-a",
+        playerName: "Agent A",
+        model: "llama3.2",
+        endpoint: "/api/agents/a/move",
+        enabled: true,
+      },
+      {
+        id: "agent-b",
+        playerName: "Agent B",
+        model: "gemma4",
+        endpoint: "/api/agents/b/move",
+        enabled: false,
+        disabledReason: "network-error",
+        lastErrorAt: 1_725_000_000_001,
+      },
+    ])
+    expect(loadPersistedAgentConfigs(AGENT_MODE)).toEqual(nextConfigs)
   })
 
   it("saves and reloads the active round state", () => {

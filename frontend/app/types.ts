@@ -67,8 +67,8 @@ export type MazeAction =
 export type MoveStatus =
   | "applied"
   | "invalid-move"
+  | "network-error"
   | "reached-target"
-  | "response-timeout"
   | "malformed-response"
 
 // WinSummaryPreviousComparison describes how the current win compares to the last completed attempt.
@@ -175,6 +175,8 @@ export type AgentApiConfig = {
   model: string
   endpoint: string
   enabled: boolean
+  disabledReason?: "network-error"
+  lastErrorAt?: number
 }
 
 // MazeActionState is the flattened agent-api payload that combines live maze context with replay results.
