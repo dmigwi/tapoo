@@ -18,9 +18,11 @@ function normalizeScreenText(value: string | null): string {
 
 // createButton reproduces the control-button dataset contract expected by the renderer.
 function createButton({
+  agentConfigToggle,
   action,
   move,
 }: {
+  agentConfigToggle?: boolean
   action?: string
   move?: string
 }): HTMLButtonElement {
@@ -35,6 +37,10 @@ function createButton({
     button.dataset.touchControl = "true"
   }
 
+  if (agentConfigToggle) {
+    button.dataset.agentConfigToggle = "true"
+  }
+
   return button
 }
 
@@ -42,6 +48,9 @@ function createButton({
 function createElements(): Elements {
   const screen = document.createElement("div")
   const touchControls = document.createElement("div")
+  const agentConfigForm = document.createElement("form")
+  agentConfigForm.hidden = true
+  const controls = [createButton({ agentConfigToggle: true })]
   const touchButtons = [
     createButton({ action: "walls" }),
     createButton({ move: "MoveUp" }),
@@ -58,9 +67,10 @@ function createElements(): Elements {
     body: document.createElement("div"),
     screen,
     measure: document.createElement("div"),
-    controls: [],
+    controls,
     touchControls,
     touchButtons,
+    agentConfigForm,
   }
 }
 
@@ -237,6 +247,7 @@ describe("render", () => {
     expect(
       elements.touchControls.classList.contains("touch-controls--single-action"),
     ).toBe(true)
+    expect(elements.agentConfigForm?.hidden).toBe(true)
   })
 
   it("shows walls, proceed, and reset progress while agent-api waits for configuration", () => {
@@ -255,10 +266,32 @@ describe("render", () => {
       .map((button) => button.dataset.action ?? button.dataset.move)
 
     expect(visibleLabels).toEqual(["walls", "proceed", "restart"])
+    expect(elements.agentConfigForm?.hidden).toBe(true)
+    expect(elements.controls[0]?.disabled).toBe(false)
     expect(elements.touchControls.hidden).toBe(false)
     expect(
       elements.touchControls.classList.contains("touch-controls--action-row"),
     ).toBe(true)
+  })
+
+  it("hides an open agent configuration form when agent-api play starts", () => {
+    const elements = createElements()
+    elements.agentConfigForm.hidden = false
+    elements.body.classList.add("terminal-body--agent-form-active")
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        status: "running",
+      }),
+    )
+
+    expect(elements.agentConfigForm.hidden).toBe(true)
+    expect(elements.controls[0]?.disabled).toBe(true)
+    expect(
+      elements.body.classList.contains("terminal-body--agent-form-active"),
+    ).toBe(false)
   })
 
   it("skips drawing the destination while a running round blink phase is off", () => {

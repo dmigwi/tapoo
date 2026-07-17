@@ -38,13 +38,22 @@ export function getGameElements(): Elements | null {
     measure: mustElement<HTMLElement>("terminal-measure"),
     controls: Array.from(
       document.querySelectorAll<HTMLButtonElement>(
-        "[data-action]:not([data-touch-control])",
+        "button[data-action]:not([data-touch-control]), button[data-agent-config-toggle]:not([data-touch-control])",
       ),
     ),
     touchControls: mustElement<HTMLElement>("touch-controls"),
     touchButtons: Array.from(
       document.querySelectorAll<HTMLButtonElement>("[data-touch-control]"),
     ),
+    agentConfigForm: mustElement<HTMLFormElement>("agent-config-form"),
+    agentConfigPlayerName: mustElement<HTMLInputElement>(
+      "agent-config-player-name",
+    ),
+    agentConfigModel: mustElement<HTMLInputElement>("agent-config-model"),
+    agentConfigEndpoint: mustElement<HTMLInputElement>("agent-config-endpoint"),
+    agentConfigEnabled: mustElement<HTMLInputElement>("agent-config-enabled"),
+    agentConfigClose: mustElement<HTMLButtonElement>("agent-config-close"),
+    agentConfigStatus: mustElement<HTMLElement>("agent-config-status"),
   }
 }
 

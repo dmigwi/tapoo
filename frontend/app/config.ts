@@ -163,6 +163,22 @@ export const CONFIG: AppConfig = {
       resetProgressLabel: "Reset Progress",
     },
   },
+  // Agent configuration copy is only used by the agent-api overlay form.
+  agentConfig: {
+    title: "New Agent",
+    newAgentLabel: "New Agent",
+    enabledLabel: "Enabled",
+    playerNameLabel: "Player Name",
+    playerNamePlaceholder: "Blue",
+    modelLabel: "Model",
+    modelPlaceholder: "llama3.2",
+    endpointLabel: "Endpoint",
+    submitLabel: "Add Agent",
+    endpointPlaceholder: "https://example.com/api/agent/move",
+    addedMessage: "Agent added successfully.",
+    invalidMessage: "Fill in Player Name, Model and Endpoint.",
+    duplicatePlayerNameMessage: "This player name is already configured.",
+  },
   // Maze glyphs and geometry shared by generation, traversal, and rendering.
   maze: {
     playerMarker: "▓",

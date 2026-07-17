@@ -279,6 +279,13 @@ export type Elements = {
   controls: HTMLButtonElement[]
   touchControls: HTMLElement
   touchButtons: HTMLButtonElement[]
+  agentConfigForm?: HTMLFormElement
+  agentConfigPlayerName?: HTMLInputElement
+  agentConfigModel?: HTMLInputElement
+  agentConfigEndpoint?: HTMLInputElement
+  agentConfigEnabled?: HTMLInputElement
+  agentConfigClose?: HTMLButtonElement
+  agentConfigStatus?: HTMLElement
 }
 
 // AppConfig gathers translatable copy and shared runtime constants.
@@ -390,6 +397,21 @@ export type AppConfig = {
       proceedLabel: string
       resetProgressLabel: string
     }
+  }
+  agentConfig: {
+    title: string
+    newAgentLabel: string
+    enabledLabel: string
+    playerNameLabel: string
+    playerNamePlaceholder: string
+    duplicatePlayerNameMessage: string
+    modelLabel: string
+    modelPlaceholder: string
+    endpointLabel: string
+    endpointPlaceholder: string
+    submitLabel: string
+    addedMessage: string
+    invalidMessage: string
   }
   maze: {
     playerMarker: string

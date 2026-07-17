@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createAgentMode } from "./agent"
 import { CONFIG } from "../config"
+import { loadPersistedAgentApiConfigs } from "../storage"
 import type {
   AgentApiConfig,
+  Elements,
   MazeAction,
   MazeActionDispatchOptions,
   MazeActionState,
@@ -41,9 +43,11 @@ function visit(row: number, col: number): TraversalHistoryEntry {
 }
 
 function createButton({
+  agentConfigToggle,
   action,
   move,
 }: {
+  agentConfigToggle?: boolean
   action?: string
   move?: string
 }): HTMLButtonElement {
@@ -57,7 +61,74 @@ function createButton({
     button.dataset.move = move
   }
 
+  if (agentConfigToggle) {
+    button.dataset.agentConfigToggle = "true"
+  }
+
   return button
+}
+
+function createAgentFormElements(): Elements {
+  const agentConfigForm = document.createElement("form")
+  const agentConfigPlayerName = document.createElement("input")
+  const agentConfigModel = document.createElement("input")
+  const agentConfigEndpoint = document.createElement("input")
+  const agentConfigEnabled = document.createElement("input")
+  const agentConfigClose = document.createElement("button")
+  const agentConfigStatus = document.createElement("p")
+
+  agentConfigForm.hidden = true
+  agentConfigForm.noValidate = true
+  agentConfigEnabled.type = "checkbox"
+  agentConfigEnabled.checked = true
+  agentConfigForm.append(
+    agentConfigPlayerName,
+    agentConfigModel,
+    agentConfigEndpoint,
+    agentConfigEnabled,
+    agentConfigClose,
+    agentConfigStatus,
+  )
+  const app = document.createElement("div")
+  app.append(agentConfigForm)
+
+  return {
+    app,
+    body: document.createElement("div"),
+    controls: [createButton({ agentConfigToggle: true })],
+    measure: document.createElement("div"),
+    screen: document.createElement("div"),
+    touchButtons: [],
+    touchControls: document.createElement("div"),
+    agentConfigForm,
+    agentConfigPlayerName,
+    agentConfigModel,
+    agentConfigEndpoint,
+    agentConfigEnabled,
+    agentConfigClose,
+    agentConfigStatus,
+  }
+}
+
+function createMemoryStorage(): Storage {
+  const entries = new Map<string, string>()
+
+  return {
+    get length() {
+      return entries.size
+    },
+    clear: vi.fn(() => {
+      entries.clear()
+    }),
+    getItem: vi.fn((key: string) => entries.get(key) ?? null),
+    key: vi.fn((index: number) => Array.from(entries.keys())[index] ?? null),
+    removeItem: vi.fn((key: string) => {
+      entries.delete(key)
+    }),
+    setItem: vi.fn((key: string, value: string) => {
+      entries.set(key, value)
+    }),
+  }
 }
 
 function createActionState(
@@ -94,10 +165,13 @@ function createActionState(
 
 describe("agent control mode", () => {
   beforeEach(() => {
+    vi.stubGlobal("localStorage", createMemoryStorage())
+    window.localStorage.clear()
     vi.useFakeTimers()
   })
 
   afterEach(() => {
+    window.localStorage.clear()
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
@@ -628,6 +702,288 @@ describe("agent control mode", () => {
         decayedMovesCount: 0,
       }),
     )
+  })
+
+  it("opens the agent configuration form from the top menu", () => {
+    const elements = createAgentFormElements()
+    const focus = vi.fn()
+    elements.app.focus = focus
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    elements.controls[0]?.click()
+
+    expect(elements.agentConfigForm?.hidden).toBe(false)
+    expect(
+      elements.body.classList.contains("terminal-body--agent-form-active"),
+    ).toBe(true)
+    expect(focus).toHaveBeenCalled()
+  })
+
+  it("keeps focus inside the agent configuration form while it is open", () => {
+    const elements = createAgentFormElements()
+    const focus = vi.fn()
+    elements.app.focus = focus
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    elements.controls[0]?.click()
+    focus.mockClear()
+    elements.agentConfigPlayerName.click()
+
+    expect(elements.agentConfigForm?.hidden).toBe(false)
+    expect(focus).not.toHaveBeenCalled()
+  })
+
+  it("ignores a disabled agent configuration button", () => {
+    const elements = createAgentFormElements()
+    elements.controls[0].disabled = true
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    elements.controls[0]?.click()
+
+    expect(elements.agentConfigForm?.hidden).toBe(true)
+  })
+
+  it("does not open the agent configuration form while agents are running", () => {
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "running" })),
+      vi.fn(() => createActionState()),
+    )
+
+    elements.controls[0]?.click()
+
+    expect(elements.agentConfigForm?.hidden).toBe(true)
+    expect(
+      elements.body.classList.contains("terminal-body--agent-form-active"),
+    ).toBe(false)
+  })
+
+  it("closes and resets the agent configuration form from the close button", () => {
+    const elements = createAgentFormElements()
+    elements.agentConfigPlayerName.value = "Draft"
+    elements.agentConfigStatus.textContent = "Working"
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    elements.controls[0]?.click()
+    elements.agentConfigClose.click()
+
+    expect(elements.agentConfigForm?.hidden).toBe(true)
+    expect(elements.agentConfigPlayerName.value).toBe("")
+    expect(elements.agentConfigEnabled.checked).toBe(true)
+    expect(elements.agentConfigStatus.textContent).toBe("")
+    expect(
+      elements.body.classList.contains("terminal-body--agent-form-active"),
+    ).toBe(false)
+  })
+
+  it("closes the agent configuration form when the dimmed outer area is clicked", () => {
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    elements.controls[0]?.click()
+    elements.body.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+
+    expect(elements.agentConfigForm?.hidden).toBe(true)
+    expect(
+      elements.body.classList.contains("terminal-body--agent-form-active"),
+    ).toBe(false)
+  })
+
+  it("persists a newly configured agent from the top-menu form", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    elements.agentConfigPlayerName.value = "Scout"
+    elements.agentConfigModel.value = "gemma4"
+    elements.agentConfigEndpoint.value = "/agents/scout/move"
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(loadPersistedAgentApiConfigs()).toEqual([
+      expect.objectContaining({
+        playerName: "Scout",
+        model: "gemma4",
+        endpoint: "/agents/scout/move",
+        enabled: true,
+      }),
+    ])
+    expect(elements.agentConfigStatus?.textContent).toBe(
+      CONFIG.agentConfig.addedMessage,
+    )
+  })
+
+  it("shows required-field errors at the bottom of the agent form", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    elements.agentConfigPlayerName.value = "Scout"
+    elements.agentConfigModel.value = ""
+    elements.agentConfigEndpoint.value = "/agents/scout/move"
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(loadPersistedAgentApiConfigs()).toEqual([])
+    expect(elements.agentConfigStatus?.textContent).toBe(
+      CONFIG.agentConfig.invalidMessage,
+    )
+    expect(
+      elements.agentConfigStatus?.classList.contains(
+        "agent-config-form__status--error",
+      ),
+    ).toBe(true)
+  })
+
+  it("shows required-field errors when every agent input is empty", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(loadPersistedAgentApiConfigs()).toEqual([])
+    expect(elements.agentConfigStatus?.textContent).toBe(
+      CONFIG.agentConfig.invalidMessage,
+    )
+    expect(
+      elements.agentConfigStatus?.classList.contains(
+        "agent-config-form__status--error",
+      ),
+    ).toBe(true)
+  })
+
+  it("shows a player-name error when the configured player already exists", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [
+      {
+        id: "scout-agent",
+        playerName: "Scout",
+        model: "llama3.2",
+        endpoint: "/agents/scout/move",
+        enabled: true,
+      },
+    ])
+    elements.agentConfigPlayerName.value = " scout "
+    elements.agentConfigModel.value = "gemma4"
+    elements.agentConfigEndpoint.value = "/agents/scout-copy/move"
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(loadPersistedAgentApiConfigs()).toEqual([])
+    expect(elements.agentConfigStatus?.textContent).toBe(
+      CONFIG.agentConfig.duplicatePlayerNameMessage,
+    )
+    expect(
+      elements.agentConfigStatus?.classList.contains(
+        "agent-config-form__status--error",
+      ),
+    ).toBe(true)
+  })
+
+  it("persists a disabled agent when the form toggle is off", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    elements.agentConfigPlayerName.value = "Observer"
+    elements.agentConfigModel.value = "llama3.2"
+    elements.agentConfigEndpoint.value = "/agents/observer/move"
+    elements.agentConfigEnabled.checked = false
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(loadPersistedAgentApiConfigs()).toEqual([
+      expect.objectContaining({
+        playerName: "Observer",
+        enabled: false,
+      }),
+    ])
+    expect(elements.agentConfigEnabled.checked).toBe(true)
   })
 
   it("rebinds local controls without keeping stale listeners alive", () => {

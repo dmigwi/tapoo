@@ -8,6 +8,13 @@ function setupTerminalDom(): void {
     <div id="terminal-screen"></div>
     <div id="terminal-measure"></div>
     <div id="touch-controls"></div>
+    <form id="agent-config-form"></form>
+    <input id="agent-config-player-name" />
+    <input id="agent-config-model" />
+    <input id="agent-config-endpoint" />
+    <input id="agent-config-enabled" />
+    <button id="agent-config-close"></button>
+    <p id="agent-config-status"></p>
   `
 }
 

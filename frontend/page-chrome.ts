@@ -85,6 +85,16 @@ function applyPageText(): void {
   applyDocumentTitle()
   applyConfigAttribute("[data-config-text]", "textContent")
   applyConfigAttribute("meta[data-config-key]", "content")
+  document
+    .querySelectorAll<HTMLInputElement>("[data-config-placeholder]")
+    .forEach((input) => {
+      const configKey = input.dataset.configPlaceholder
+      if (!configKey) {
+        return
+      }
+
+      input.placeholder = configText(configKey)
+    })
 }
 
 // initTopMenus keeps shared top-bar menus expanded on wide screens and collapsible on compact ones.

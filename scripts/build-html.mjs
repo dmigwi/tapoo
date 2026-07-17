@@ -91,7 +91,7 @@ await Promise.all([
     output: "agents.html",
     pageContent: "terminal-section.html",
     pageLabelConfigKey: "pages.agents.pageLabel",
-    primaryMenuItem: "nav-game-link.html",
+    primaryMenuItem: "nav-agent-config-controls.html",
     scriptTags: gameScriptTags,
     titleConfigKey: "pages.agents.documentTitle",
     titleText: escapeHtml("Tapoo Maze Runner | AI Agents"),

@@ -427,7 +427,32 @@ function updateTouchControls(elements: Elements, state: State): void {
   )
 }
 
-// render turns the current state into HTML and syncs the touch-control visibility.
+// updateTopMenuControls disables page-level actions that are unavailable in the current game state.
+function updateTopMenuControls(elements: Elements, state: State): void {
+  const disableAgentConfig = isAgentApiMode(state.controlMode) && isRunningStatus(state.status)
+
+  elements.controls.forEach((button) => {
+    if (button.dataset.agentConfigToggle === "true") {
+      button.disabled = disableAgentConfig
+    }
+  })
+}
+
+// updateAgentConfigForm keeps the agent setup overlay available only outside active agent play.
+function updateAgentConfigForm(elements: Elements, state: State): void {
+  if (!elements.agentConfigForm) {
+    return
+  }
+
+  if (isAgentApiMode(state.controlMode) && !isRunningStatus(state.status)) {
+    return
+  }
+
+  elements.agentConfigForm.hidden = true
+  elements.body.classList.remove("terminal-body--agent-form-active")
+}
+
+// render turns the current state into HTML and syncs the floating controls.
 export function render(elements: Elements, state: State): void {
   const screenLines = buildScreenLines(elements, state)
   elements.screen.innerHTML = screenLines
@@ -441,4 +466,6 @@ export function render(elements: Elements, state: State): void {
     .join("")
 
   updateTouchControls(elements, state)
+  updateTopMenuControls(elements, state)
+  updateAgentConfigForm(elements, state)
 }
