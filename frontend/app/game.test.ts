@@ -559,7 +559,7 @@ describe("bootstrapGame", () => {
     )
   })
 
-  it("proceeds to the next level after a restored win when Ctrl+P is pressed", async () => {
+  it("proceeds to the next level after a restored win when Enter is pressed", async () => {
     const elements = createElements()
     const render = vi.fn<(elements: Elements, state: State) => void>()
     const loadPersistedSnapshot = vi.fn(() => ({
@@ -604,8 +604,7 @@ describe("bootstrapGame", () => {
     bootstrapGame(createInteractiveMode(elements), elements)
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
-        key: "p",
-        ctrlKey: true,
+        key: "Enter",
         bubbles: true,
       }),
     )
@@ -767,8 +766,7 @@ describe("bootstrapGame", () => {
 
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
-        key: "p",
-        ctrlKey: true,
+        key: "Enter",
         bubbles: true,
       }),
     )
@@ -1183,8 +1181,7 @@ describe("bootstrapGame", () => {
 
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
-        key: "p",
-        ctrlKey: true,
+        key: "Enter",
         bubbles: true,
       }),
     )

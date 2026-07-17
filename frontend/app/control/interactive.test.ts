@@ -128,7 +128,7 @@ describe("interactive control mode", () => {
     elements.controls[0].click()
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
-        key: "Escape",
+        key: "x",
         bubbles: true,
       }),
     )

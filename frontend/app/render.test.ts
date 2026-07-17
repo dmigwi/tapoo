@@ -184,7 +184,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.compact)
+    expect(text).toContain(messages.navigation.touch)
     expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
   })
@@ -196,7 +196,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.default)
+    expect(text).toContain(messages.navigation.keyboard)
     expect(text).toContain("Level: 1")
     expect(text).toContain("Scores: 900")
     expect(elements.screen.innerHTML).toContain('class="maze-cell player"')
@@ -300,7 +300,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain(messages.pauseMessage)
-    expect(text).toContain(messages.proceedMessage)
+    expect(text).toContain(messages.proceed.keyboard)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -373,8 +373,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.touchProceedMessage)
-    expect(text).not.toContain(messages.proceedMessage)
+    expect(text).toContain(messages.proceed.touch)
+    expect(text).not.toContain(messages.proceed.keyboard)
   })
 
   it("shows walls plus proceed touch controls after a win", () => {
@@ -394,7 +394,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain(messages.successMessage)
-    expect(text).toContain(messages.proceedMessage)
+    expect(text).toContain(messages.proceed.keyboard)
     expect(text).toContain("Final Level 3 Scores:  900 (100% retention)")
     expect(text).toContain("1.20s faster than previous (new record)")
 
@@ -443,7 +443,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain(messages.failedMessage)
-    expect(text).toContain(messages.proceedMessage)
+    expect(text).toContain(messages.proceed.keyboard)
     expect(text).not.toContain("Final Level 3 Scores:")
   })
 
@@ -509,7 +509,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.compact)
+    expect(text).toContain(messages.navigation.touch)
     expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
     expect(elements.touchControls.hidden).toBe(false)
@@ -557,8 +557,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.compact)
-    expect(text).not.toContain(messages.navigation.default)
+    expect(text).toContain(messages.navigation.touch)
+    expect(text).not.toContain(messages.navigation.keyboard)
   })
 
   it("keeps the full keyboard navigation on medium-width screens", () => {
@@ -579,7 +579,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.default)
-    expect(text).not.toContain(messages.navigation.compact)
+    expect(text).toContain(messages.navigation.keyboard)
+    expect(text).not.toContain(messages.navigation.touch)
   })
 })

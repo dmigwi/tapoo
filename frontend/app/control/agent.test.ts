@@ -445,8 +445,7 @@ describe("agent control mode", () => {
     )
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
-        key: "p",
-        ctrlKey: true,
+        key: "Enter",
         bubbles: true,
       }),
     )

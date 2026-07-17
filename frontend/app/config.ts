@@ -66,11 +66,11 @@ export const CONFIG: AppConfig = {
   },
   // Runtime text shown inside the terminal view and overlay states.
   messages: {
-    // Navigation hints swap between full and compact wording by viewport size.
+    // Navigation hints are view-specific so keyboard bindings never leak into compact touch views.
     navigation: {
-      default:
-        "Use Arrow Keys to guide Blue (Player) to Red. Ctrl+B changes walls.",
-      compact: "Guide Blue (Player) to Red with touch controls.",
+      keyboard:
+        "Use Arrow Keys to guide Blue to Red. Ctrl+B walls, Space/Esc pauses, Enter proceeds.",
+      touch: "Use touch buttons to guide Blue to Red.",
     },
     pauseMessage: "Game paused !!!",
     successMessage:
@@ -79,15 +79,19 @@ export const CONFIG: AppConfig = {
     failedMessage:
       "Game over! Ooops!!!, You failed to locate the target on time.",
     failedCompactMessage: "Game over! You lost.",
-    proceedMessage: "Press Enter or Ctrl+P to Proceed",
-    touchProceedMessage: "Use the buttons below.",
+    proceed: {
+      keyboard: "Press Enter to Proceed. Ctrl+Alt+R resets progress.",
+      touch: "Use the buttons below.",
+    },
     agentAwaitMessage: "No enabled agent API is configured.",
     agentAwaitActionMessage: "Configure an agent. ",
     tooSmallMessage: "Level {level} needs more screen room!",
     tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
-    statusTemplate:
-      "Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
-    touchStatusTemplate: "Level: {level}   Scores: {score}",
+    runningStatus: {
+      keyboard:
+        "Press Space/Esc to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
+      touch: "Level: {level}   Scores: {score}",
+    },
     highScoreTemplate:
       "Final Level {level} Scores:  {score} ({percent}% retention)",
     // Win-summary variants are selected from game.ts after comparing retention metrics.

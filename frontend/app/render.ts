@@ -49,8 +49,8 @@ function replaceAt(line: string, index: number, char: string): string {
 // statusText selects the running-status footer copy for the current display size.
 function statusText(elements: Elements, state: State): string {
   const template = isCompactDisplay(elements)
-    ? messages.touchStatusTemplate
-    : messages.statusTemplate
+    ? messages.runningStatus.touch
+    : messages.runningStatus.keyboard
 
   return template
     .replace("{level}", String(state.level))
@@ -110,14 +110,14 @@ function isCompactDisplay(elements: Elements): boolean {
 // navigationText picks the verbose or compact navigation hint for the viewport.
 function navigationText(elements: Elements): string {
   const compact = isCompactDisplay(elements)
-  return compact ? messages.navigation.compact : messages.navigation.default
+  return compact ? messages.navigation.touch : messages.navigation.keyboard
 }
 
-// proceedText picks the interactive or touch proceed hint for the viewport.
+// proceedText picks the keyboard or touch proceed hint for the viewport.
 function proceedText(elements: Elements): string {
   return isCompactDisplay(elements)
-    ? messages.touchProceedMessage
-    : messages.proceedMessage
+    ? messages.proceed.touch
+    : messages.proceed.keyboard
 }
 
 // centeredTextRow creates one centered text line for the rendered screen model.

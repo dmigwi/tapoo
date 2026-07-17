@@ -305,22 +305,26 @@ export type AppConfig = {
   }
   messages: {
     navigation: {
-      default: string
-      compact: string
+      keyboard: string
+      touch: string
     }
     pauseMessage: string
     successMessage: string
     successCompactMessage: string
     failedMessage: string
     failedCompactMessage: string
-    proceedMessage: string
-    touchProceedMessage: string
+    proceed: {
+      keyboard: string
+      touch: string
+    }
     agentAwaitMessage: string
     agentAwaitActionMessage: string
     tooSmallMessage: string
     tooSmallActionMessage: string
-    statusTemplate: string
-    touchStatusTemplate: string
+    runningStatus: {
+      keyboard: string
+      touch: string
+    }
     highScoreTemplate: string
     winSummary: {
       noPrevious: {

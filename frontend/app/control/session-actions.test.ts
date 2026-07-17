@@ -14,10 +14,17 @@ function createButton(action: string): HTMLButtonElement {
 
 // These tests lock down the shared session actions used by both browser modes.
 describe("shared session actions", () => {
-  it("translates keyboard shortcuts into pause, proceed, and wall actions", () => {
+  it("translates keyboard shortcuts into pause, proceed, wall, and restart actions", () => {
     expect(
       sessionActionFromKeyboardEvent({
         key: " ",
+        ctrlKey: false,
+        metaKey: false,
+      }),
+    ).toEqual({ type: "pause" })
+    expect(
+      sessionActionFromKeyboardEvent({
+        key: "Escape",
         ctrlKey: false,
         metaKey: false,
       }),
@@ -35,7 +42,7 @@ describe("shared session actions", () => {
         ctrlKey: true,
         metaKey: false,
       }),
-    ).toEqual({ type: "proceed" })
+    ).toBeNull()
     expect(
       sessionActionFromKeyboardEvent({
         key: "b",
@@ -43,6 +50,22 @@ describe("shared session actions", () => {
         metaKey: false,
       }),
     ).toEqual({ type: "cycle-walls" })
+    expect(
+      sessionActionFromKeyboardEvent({
+        key: "r",
+        ctrlKey: true,
+        metaKey: false,
+        altKey: true,
+      }),
+    ).toEqual({ type: "restart" })
+    expect(
+      sessionActionFromKeyboardEvent({
+        key: "r",
+        ctrlKey: true,
+        metaKey: false,
+        altKey: false,
+      }),
+    ).toBeNull()
     expect(
       sessionActionFromKeyboardEvent({
         key: "ArrowRight",

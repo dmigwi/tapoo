@@ -48,13 +48,14 @@ Tapoo increases maze area as levels rise. Progress continues until the current t
 
 - `Arrow keys`: move the player
 - `Ctrl+B`: cycle maze wall weight
-- `Space`: pause the current run
-- `Ctrl+P`: proceed after pause, win, or failure
-- `Esc` or `Ctrl+C`: quit
+- `Space` or `Esc`: pause the current run
+- `Enter`: proceed after pause, win, or failure
+- `Ctrl+C`: quit
 
 ### Browser controls
 
 - Keyboard controls mirror the terminal controls
+- `Ctrl+Alt+R`: reset browser progress
 - On touch devices, on-screen controls are shown automatically
 
 </details>

@@ -75,14 +75,14 @@ const (
 	// UI strings are centralized so the display code can focus on placement rather than content.
 	introFormat      = "   You are playing the Maze runner, hide and seek game (Tapoo %s).      "
 	website          = " Visit https://www.linkedin.com/in/migwi-ndungu/ to contact the developer.  "
-	playerNavigation = " Use Arrow Keys to guide Blue (Player) to Red. Ctrl+B changes walls. "
-	statusMsg        = "   Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: %d   Scores: %d   "
+	playerNavigation = " Use Arrow Keys to guide Blue to Red. Ctrl+B walls, Space/Esc pauses, Enter proceeds. "
+	statusMsg        = "   Press Space/Esc to Pause.   Press Ctrl+B to Change Walls.   Level: %d   Scores: %d   "
 
 	space              = "                                                                         "
 	pauseMsg           = "                             Game Paused !!!                             "
 	gameOverSucceed    = "   Game Over! Congratulations, You won by locating the target on time.   "
 	gameOverFailed     = "      Game Over! Ooops!!!, You failed to locate the target on time.      "
-	gameOverNavigation = "        Press ESC or Ctrl+C to quit.     Press Ctrl+P to Proceed         "
+	gameOverNavigation = "              Press Ctrl+C to quit.     Press Enter to Proceed           "
 	tooSmallMazeFormat = "   level %d needs more screen room; enlarge the window to keep playing   "
 
 	highScores               = "               Final Level %d Scores:  %d (%d%% retention)               "
