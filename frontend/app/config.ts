@@ -75,9 +75,16 @@ export const CONFIG: AppConfig = {
   messages: {
     // Navigation hints are view-specific so keyboard bindings never leak into compact touch views.
     navigation: {
-      keyboard:
-        "Use Arrow Keys to guide Blue to Red. Ctrl+B walls, Space/Esc pauses, Enter proceeds.",
-      touch: "Use touch buttons to guide Blue to Red.",
+      interactive: {
+        keyboard:
+          "Use Arrow Keys to guide Blue to Red. Ctrl+B walls, Space/Esc pauses, Enter proceeds.",
+        touch: "Use touch buttons to guide Blue to Red.",
+      },
+      agentApi: {
+        keyboard:
+          "Agent APIs guide Blue to Red. Ctrl+B walls, Space/Esc pauses, Enter proceeds.",
+        touch: "Agent APIs guide Blue to Red. Use touch buttons for session controls.",
+      },
     },
     pauseMessage: "Game paused !!!",
     successMessage:

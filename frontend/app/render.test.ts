@@ -184,7 +184,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.touch)
+    expect(text).toContain(messages.navigation.interactive.touch)
     expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
   })
@@ -196,7 +196,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.keyboard)
+    expect(text).toContain(messages.navigation.interactive.keyboard)
     expect(text).toContain("Level: 1")
     expect(text).toContain("Scores: 900")
     expect(elements.screen.innerHTML).toContain('class="maze-cell player"')
@@ -228,8 +228,11 @@ describe("render", () => {
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
+    const text = normalizeScreenText(elements.screen.textContent)
 
     expect(visibleLabels).toEqual(["pause"])
+    expect(text).toContain(messages.navigation.agentApi.keyboard)
+    expect(text).not.toContain(messages.navigation.interactive.keyboard)
     expect(elements.touchControls.hidden).toBe(false)
     expect(
       elements.touchControls.classList.contains("touch-controls--single-action"),
@@ -509,7 +512,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.touch)
+    expect(text).toContain(messages.navigation.interactive.touch)
     expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
     expect(elements.touchControls.hidden).toBe(false)
@@ -557,8 +560,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.touch)
-    expect(text).not.toContain(messages.navigation.keyboard)
+    expect(text).toContain(messages.navigation.interactive.touch)
+    expect(text).not.toContain(messages.navigation.interactive.keyboard)
   })
 
   it("keeps the full keyboard navigation on medium-width screens", () => {
@@ -579,7 +582,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.keyboard)
-    expect(text).not.toContain(messages.navigation.touch)
+    expect(text).toContain(messages.navigation.interactive.keyboard)
+    expect(text).not.toContain(messages.navigation.interactive.touch)
   })
 })

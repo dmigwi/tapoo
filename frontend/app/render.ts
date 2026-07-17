@@ -107,10 +107,14 @@ function isCompactDisplay(elements: Elements): boolean {
   return availableWidth || availableHeight || compactWidth || compactHeight
 }
 
-// navigationText picks the verbose or compact navigation hint for the viewport.
-function navigationText(elements: Elements): string {
+// navigationText picks the control-mode and viewport-specific navigation hint.
+function navigationText(elements: Elements, state: State): string {
   const compact = isCompactDisplay(elements)
-  return compact ? messages.navigation.touch : messages.navigation.keyboard
+  const navigation = isAgentApiMode(state.controlMode)
+    ? messages.navigation.agentApi
+    : messages.navigation.interactive
+
+  return compact ? navigation.touch : navigation.keyboard
 }
 
 // proceedText picks the keyboard or touch proceed hint for the viewport.
@@ -351,7 +355,7 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
     0,
   )
   const lines: ScreenLine[] = [
-    centeredTextRow(navigationText(elements)),
+    centeredTextRow(navigationText(elements, state)),
     emptyTextRow(),
   ]
 

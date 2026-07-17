@@ -311,8 +311,14 @@ export type AppConfig = {
   }
   messages: {
     navigation: {
-      keyboard: string
-      touch: string
+      interactive: {
+        keyboard: string
+        touch: string
+      }
+      agentApi: {
+        keyboard: string
+        touch: string
+      }
     }
     pauseMessage: string
     successMessage: string
