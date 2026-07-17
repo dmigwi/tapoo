@@ -28,8 +28,8 @@ try {
   if (elements) {
     const mode = pageControlMode(elements)
     bootstrapGame(mode, elements)
+    showTerminalApp()
   }
 } catch (error) {
-  showTerminalApp()
   showPlaceholderArt(error)
 }

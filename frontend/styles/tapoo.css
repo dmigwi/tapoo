@@ -36,9 +36,9 @@
 @font-face {
   font-family: "Tapoo PT Mono";
   src:
+    url("../fonts/PTMono.woff2") format("woff2"),
     local("PT Mono"),
-    local("PTMono"),
-    url("../fonts/PTMono.woff2") format("woff2");
+    local("PTMono");
   font-style: normal;
   font-weight: 400;
   font-display: swap;
