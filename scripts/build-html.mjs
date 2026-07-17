@@ -48,8 +48,20 @@ const layout = await readTemplate("_main-template.html")
 const sharedPartials = {
   contactLink: indentHtml(await readTemplate("contact-link.html"), "            "),
   placeholderArt: indentHtml(await readTemplate("placeholder-art.html"), "      "),
+  privacyLink: indentHtml(await readTemplate("nav-privacy-link.html"), "            "),
   topMenuSummary: indentHtml(await readTemplate("top-menu-summary.html"), "          "),
 }
+const gameScriptTags = indentHtml(
+  [
+    '<script defer src="./js/page-chrome.min.js"></script>',
+    '<script defer src="./js/tapoo.min.js"></script>',
+  ].join("\n"),
+  "    ",
+)
+const staticPageScriptTags = indentHtml(
+  '<script defer src="./js/page-chrome.min.js"></script>',
+  "    ",
+)
 
 await mkdir(publicDirectory, { recursive: true })
 
@@ -65,6 +77,7 @@ await Promise.all([
     pageContent: "terminal-section.html",
     pageLabelConfigKey: "pages.game.pageLabel",
     primaryMenuItem: "nav-agents-link.html",
+    scriptTags: gameScriptTags,
     titleConfigKey: "pages.game.documentTitle",
     titleText: escapeHtml("Tapoo Maze Runner | Game"),
   }),
@@ -79,7 +92,26 @@ await Promise.all([
     pageContent: "terminal-section.html",
     pageLabelConfigKey: "pages.agents.pageLabel",
     primaryMenuItem: "nav-game-link.html",
+    scriptTags: gameScriptTags,
     titleConfigKey: "pages.agents.documentTitle",
     titleText: escapeHtml("Tapoo Maze Runner | AI Agents"),
+  }),
+  buildPage(layout, {
+    ...sharedPartials,
+    placeholderArt: "",
+  }, {
+    bodyAttributes: "",
+    canonicalUrl: "https://dmigwi.github.io/tapoo/privacy.html",
+    descriptionConfigKey: "pages.privacy.description",
+    descriptionText: escapeHtml(
+      "Privacy details for Tapoo browser storage and optional AI Agent API gameplay context.",
+    ),
+    output: "privacy.html",
+    pageContent: "privacy-section.html",
+    pageLabelConfigKey: "pages.privacy.pageLabel",
+    primaryMenuItem: "nav-game-link.html",
+    scriptTags: staticPageScriptTags,
+    titleConfigKey: "pages.privacy.documentTitle",
+    titleText: escapeHtml("Tapoo Maze Runner | Privacy"),
   }),
 ])

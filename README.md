@@ -112,7 +112,9 @@ The SPA stores gameplay state in browser storage:
 - `localStorage` for durable preferences such as level and wall weight
 - `sessionStorage` for the active round snapshot
 
-Privacy note: browser storage stays on the current device unless the user clears it or resets progress. When AI Agent play is configured, gameplay context such as the current cell, destination cell, and traversal history may be sent to the configured agent API endpoint.
+Privacy note: browser storage stays on the current device unless the user clears it, resets progress, or removes configured agent data. Browser storage is lightly obfuscated to discourage casual tampering, but it should not be treated as strong encryption for personal data. When AI Agent play is configured, gameplay context such as player name, current cell, destination cell, submitted moves, score, level, and traversal history may be sent to the configured agent API endpoint.
+
+The deployed browser pages include a short privacy notice at `privacy.html`.
 
 </details>
 

@@ -288,6 +288,7 @@ export type AppConfig = {
     appSubtitle: string
     pageVersionTemplate: string
     contactLabel: string
+    privacyLabel: string
   }
   pages: {
     game: {
@@ -301,6 +302,11 @@ export type AppConfig = {
       description: string
       pageLabel: string
       backToGameLabel: string
+    }
+    privacy: {
+      documentTitle: string
+      description: string
+      pageLabel: string
     }
   }
   messages: {

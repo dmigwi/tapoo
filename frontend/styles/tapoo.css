@@ -87,7 +87,8 @@ body {
 }
 
 .terminal-app,
-.placeholder-page {
+.placeholder-page,
+.privacy-page {
   grid-row: 2;
   grid-column: 1;
 }
@@ -384,7 +385,8 @@ body {
 }
 
 .page-stage--terminal,
-.page-stage--placeholder {
+.page-stage--placeholder,
+.page-stage--privacy {
   display: flex;
   justify-content: center;
 }
@@ -395,6 +397,73 @@ body {
 
 .page-stage--placeholder {
   align-items: center;
+}
+
+.page-stage--privacy {
+  align-items: flex-start;
+  overflow: auto;
+  padding:
+    24px
+    calc(var(--safe-right) + 18px)
+    28px
+    calc(var(--safe-left) + 18px);
+}
+
+.privacy-page {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.privacy-panel {
+  width: min(100%, 860px);
+  padding: 24px;
+  border: 1px solid rgba(72, 198, 62, 0.18);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(13, 19, 13, 0.92) 0%, rgba(5, 8, 5, 0.98) 100%);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.34),
+    inset 0 0 28px rgba(72, 198, 62, 0.035);
+}
+
+.privacy-eyebrow {
+  margin: 0 0 8px;
+  color: var(--text-faint);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.privacy-panel h1,
+.privacy-panel h2,
+.privacy-panel p {
+  max-width: none;
+}
+
+.privacy-panel h1 {
+  margin: 0 0 18px;
+  color: var(--text);
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.privacy-panel h2 {
+  margin: 34px 0 10px;
+  color: var(--walls);
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.privacy-panel p {
+  margin: 0 0 12px;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.privacy-panel code {
+  color: var(--status);
+  font: inherit;
 }
 
 .placeholder-art {

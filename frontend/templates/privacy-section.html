@@ -1,0 +1,58 @@
+<section class="privacy-page" aria-labelledby="privacy-title">
+  <div class="page-stage page-stage--privacy">
+    <article class="privacy-panel">
+      <p class="privacy-eyebrow">Privacy Notice</p>
+      <h1 id="privacy-title">Tapoo Browser Privacy</h1>
+      <p>
+        In the current Tapoo game version highlighted at the bottom of this page, normal
+        gameplay state stays on your device. Gameplay data is not sent to a remote service
+        by Tapoo unless you configure AI Agent mode to request predictions from an agent
+        API endpoint.
+      </p>
+
+      <h2>Browser Storage</h2>
+      <p>
+        Tapoo uses <code>localStorage</code> to keep durable game preferences such as
+        level, wall weight, score-retention metrics, and optional AI Agent configuration.
+        It uses <code>sessionStorage</code> for the active round snapshot so a refresh can
+        restore the current maze session.
+      </p>
+      <p>
+        This data stays on the current device unless you clear it through browser settings
+        or use Tapoo controls such as Reset Progress. Stored values are lightly obfuscated
+        to reduce casual tampering, but this is not strong encryption for personal data.
+      </p>
+
+      <h2>AI Agent Mode</h2>
+      <p>
+        AI Agent mode can send gameplay context to agent API endpoints that you configure.
+        That context may include the current cell, destination cell, player name, model name,
+        allowed moves, submitted moves, score, level, and traversal history.
+      </p>
+      <p>
+        Only configure endpoints you trust. External endpoints may receive network metadata
+        such as your IP address and may process gameplay context under their own policies.
+      </p>
+
+      <h2>Hosting</h2>
+      <p>
+        If you use the GitHub Pages deployment, GitHub may process routine hosting metadata
+        such as request logs, IP address, browser details, and timestamps under GitHub's own
+        terms and privacy practices.
+      </p>
+
+      <h2>Your Controls</h2>
+      <p>
+        You can reset game progress from the game controls and clear stored site data from
+        your browser settings. If AI Agent configuration is added, remove endpoints you no
+        longer trust before using that mode.
+      </p>
+
+      <h2>Project Status</h2>
+      <p>
+        This notice explains the current browser data flows. It is not a legal certification
+        that Tapoo satisfies every GDPR obligation in every deployment context.
+      </p>
+    </article>
+  </div>
+</section>

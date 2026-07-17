@@ -46,6 +46,7 @@ export const CONFIG: AppConfig = {
     appSubtitle: "maze runner (hide & seek)",
     pageVersionTemplate: "v{version} © {year} Tapoo",
     contactLabel: "Contact",
+    privacyLabel: "Privacy",
   },
   // Per-page labels and metadata consumed by static page chrome.
   pages: {
@@ -62,6 +63,12 @@ export const CONFIG: AppConfig = {
         "Tapoo maze runner played by an HTTP-driven agent with human session controls.",
       pageLabel: "AI Agents",
       backToGameLabel: "Back To Game",
+    },
+    privacy: {
+      documentTitle: "Tapoo Maze Runner | Privacy",
+      description:
+        "Privacy details for Tapoo browser storage and optional AI Agent API gameplay context.",
+      pageLabel: "Privacy",
     },
   },
   // Runtime text shown inside the terminal view and overlay states.
