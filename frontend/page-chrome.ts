@@ -1,4 +1,5 @@
 import { CONFIG, PAGE_COPYRIGHT_TEXT } from "./app/config"
+import { showPlaceholderArt } from "./app/fallback-policy"
 
 const { viewport } = CONFIG
 const compactChromeClass = "page-chrome--compact"
@@ -178,6 +179,10 @@ function initTopMenus(): void {
   syncMenuMode()
 }
 
-applyPageText()
-applyPageVersion()
-initTopMenus()
+try {
+  applyPageText()
+  applyPageVersion()
+  initTopMenus()
+} catch (error) {
+  showPlaceholderArt(error)
+}

@@ -1,13 +1,14 @@
 import { CONFIG } from "./config"
 import type { BaseDimensions, Elements } from "./types"
 
-const { runtime, viewport } = CONFIG
+const { viewport } = CONFIG
+const missingRequiredElementTemplate = "missing required element: {id}"
 
 // mustElement fetches a required terminal node and fails fast when it is missing.
 function mustElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id)
   if (!(element instanceof HTMLElement)) {
-    throw new Error(runtime.missingElementErrorTemplate.replace("{id}", id))
+    throw new Error(missingRequiredElementTemplate.replace("{id}", id))
   }
 
   return element as T

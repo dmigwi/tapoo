@@ -55,7 +55,6 @@ export const CONFIG: AppConfig = {
         "Tapoo maze runner hide and seek game rendered as a browser-based terminal experience.",
       pageLabel: "Game",
       aiAgentsLabel: "AI Agents",
-      resetProgressLabel: "Reset Progress",
     },
     agents: {
       documentTitle: "Tapoo Maze Runner | AI Agents",
@@ -63,7 +62,6 @@ export const CONFIG: AppConfig = {
         "Tapoo maze runner played by an HTTP-driven agent with human session controls.",
       pageLabel: "AI Agents",
       backToGameLabel: "Back To Game",
-      resetProgressLabel: "Reset Progress",
     },
   },
   // Runtime text shown inside the terminal view and overlay states.
@@ -144,6 +142,7 @@ export const CONFIG: AppConfig = {
       wallsLabel: "Walls",
       pauseLabel: "Pause",
       proceedLabel: "Proceed",
+      resetProgressLabel: "Reset Progress",
     },
   },
   // Maze glyphs and geometry shared by generation, traversal, and rendering.
@@ -214,7 +213,6 @@ export const CONFIG: AppConfig = {
     },
     interactivePlayerName: "Self",
     agentApiMistakePenaltyMoves: 5,
-    missingElementErrorTemplate: "missing required element: {id}",
   },
 }
 

@@ -62,7 +62,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
       id: "blue-agent",
       playerName: "Blue",
       model: "llama3.2",
-      endpoint: "/api/agent/move",
+      endpoint: "/configured-agents/blue/move",
       enabled: true,
     },
   ]

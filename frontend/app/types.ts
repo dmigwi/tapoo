@@ -260,6 +260,7 @@ export type State = {
 export type GameRuntime = {
   mode: MazeControlModeName
   dispatch: MazeActionDispatch
+  persistSnapshot: () => void
 }
 
 // ScreenLine is the renderer's normalized line model before HTML generation.
@@ -294,14 +295,12 @@ export type AppConfig = {
       description: string
       pageLabel: string
       aiAgentsLabel: string
-      resetProgressLabel: string
     }
     agents: {
       documentTitle: string
       description: string
       pageLabel: string
       backToGameLabel: string
-      resetProgressLabel: string
     }
   }
   messages: {
@@ -373,6 +372,7 @@ export type AppConfig = {
       wallsLabel: string
       pauseLabel: string
       proceedLabel: string
+      resetProgressLabel: string
     }
   }
   maze: {
@@ -431,7 +431,6 @@ export type AppConfig = {
         winMetrics: string
       }
     }
-    missingElementErrorTemplate: string
     agentApiMistakePenaltyMoves: number
     interactivePlayerName: string
   }

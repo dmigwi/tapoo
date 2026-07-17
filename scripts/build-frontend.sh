@@ -4,6 +4,8 @@ set -eu
 
 BUILD_YEAR=$(date +%Y)
 
+node ./scripts/build-html.mjs
+
 if [ ! -x "./node_modules/.bin/esbuild" ]; then
   echo "esbuild not found. Install it with: pnpm add -D esbuild" >&2
   exit 1

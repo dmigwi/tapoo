@@ -136,5 +136,9 @@ export function canProceedStatus(status: GameStatus): boolean {
 
 // canShowWallsStatus marks states where wall reweighting remains safe to expose.
 export function canShowWallsStatus(status: GameStatus): boolean {
-  return isPausedStatus(status) || isFinishedStatus(status)
+  return (
+    isAwaitAgentStatus(status) || 
+    isPausedStatus(status) || 
+    isFinishedStatus(status)
+  )
 }

@@ -1,0 +1,121 @@
+<section id="terminal-app" class="terminal-app" tabindex="0" aria-hidden="true" aria-label="Tapoo browser terminal">
+  <div class="page-stage page-stage--terminal">
+    <div class="terminal-frame">
+      <div id="terminal-body" class="terminal-body">
+        <pre id="terminal-screen" aria-live="polite"></pre>
+        <span id="terminal-measure" class="terminal-measure">MMMMMMMMMM</span>
+        <div id="touch-controls" class="touch-controls" hidden aria-label="Touch game controls">
+          <button
+            class="touch-controls__button touch-controls__button--walls"
+            type="button"
+            data-touch-control="true"
+            data-action="walls"
+            data-config-text
+            data-config-key="controls.touch.wallsLabel"
+          >
+          </button>
+          <button
+            class="touch-controls__button touch-controls__button--up"
+            type="button"
+            data-touch-control="true"
+            data-move="MoveUp"
+            aria-label="Move up"
+          >
+            <svg class="touch-controls__arrow-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                d="M12 18V6M12 6 6.5 11.5M12 6l5.5 5.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="3.2"
+              />
+            </svg>
+          </button>
+          <button
+            class="touch-controls__button touch-controls__button--left"
+            type="button"
+            data-touch-control="true"
+            data-move="MoveLeft"
+            aria-label="Move left"
+          >
+            <svg class="touch-controls__arrow-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                d="M18 12H6M6 12l5.5-5.5M6 12l5.5 5.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="3.2"
+              />
+            </svg>
+          </button>
+          <button
+            class="touch-controls__button touch-controls__button--right"
+            type="button"
+            data-touch-control="true"
+            data-move="MoveRight"
+            aria-label="Move right"
+          >
+            <svg class="touch-controls__arrow-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                d="M6 12h12M18 12l-5.5-5.5M18 12l-5.5 5.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="3.2"
+              />
+            </svg>
+          </button>
+          <button
+            class="touch-controls__button touch-controls__button--pause"
+            type="button"
+            data-touch-control="true"
+            data-action="pause"
+            data-config-text
+            data-config-key="controls.touch.pauseLabel"
+          >
+          </button>
+          <button
+            class="touch-controls__button touch-controls__button--down"
+            type="button"
+            data-touch-control="true"
+            data-move="MoveDown"
+            aria-label="Move down"
+          >
+            <svg class="touch-controls__arrow-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                d="M12 6v12M12 18l-5.5-5.5M12 18l5.5-5.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="3.2"
+              />
+            </svg>
+          </button>
+          <button
+            class="touch-controls__button touch-controls__button--proceed"
+            type="button"
+            data-touch-control="true"
+            data-action="proceed"
+            data-config-text
+            data-config-key="controls.touch.proceedLabel"
+          >
+          </button>
+          <button
+            class="touch-controls__button touch-controls__button--restart"
+            type="button"
+            data-touch-control="true"
+            data-action="restart"
+            aria-label="Caution reset progress"
+          >
+            <span class="touch-controls__warning" aria-hidden="true">⚠</span>
+            <span data-config-text data-config-key="controls.touch.resetProgressLabel"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

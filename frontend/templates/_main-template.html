@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title data-config-key="{{titleConfigKey}}"></title>
+    <meta
+      name="description"
+      data-config-key="{{descriptionConfigKey}}"
+      content=""
+    />
+    <link rel="icon" type="image/svg+xml" href="./images/favicon.svg" />
+    <link rel="stylesheet" href="./css/tapoo.min.css" />
+  </head>
+  <body {{bodyAttributes}}>
+    <main class="app-shell">
+      <header class="top-bar" aria-label="Application controls">
+        <div class="top-bar__brand">
+          <strong class="top-bar__title" data-config-text data-config-key="chrome.appName"></strong>
+          <span class="top-bar__subtitle" data-config-text data-config-key="chrome.appSubtitle"></span>
+          <span class="top-bar__page-tag" aria-current="page" data-config-text data-config-key="{{pageLabelConfigKey}}"></span>
+        </div>
+        <details class="top-menu">
+          {{topMenuSummary}}
+          <div class="top-menu__panel" role="menu" aria-label="More actions">
+            {{primaryMenuItem}}
+            {{contactLink}}
+          </div>
+        </details>
+      </header>
+
+      {{pageContent}}
+      {{placeholderArt}}
+
+      <footer class="page-footer" aria-label="Copyright">
+        <small class="page-footer__copy" data-page-version></small>
+      </footer>
+    </main>
+
+    <script src="./js/page-chrome.min.js"></script>
+    <script src="./js/tapoo.min.js"></script>
+  </body>
+</html>

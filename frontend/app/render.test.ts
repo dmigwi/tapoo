@@ -50,6 +50,7 @@ function createElements(): Elements {
     createButton({ move: "MoveRight" }),
     createButton({ move: "MoveDown" }),
     createButton({ action: "pause" }),
+    createButton({ action: "restart" }),
   ]
 
   return {
@@ -235,6 +236,28 @@ describe("render", () => {
     ).toBe(true)
   })
 
+  it("shows walls, proceed, and reset progress while agent-api waits for configuration", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        status: "await-agent",
+      }),
+    )
+
+    const visibleLabels = elements.touchButtons
+      .filter((button) => !button.hidden)
+      .map((button) => button.dataset.action ?? button.dataset.move)
+
+    expect(visibleLabels).toEqual(["walls", "proceed", "restart"])
+    expect(elements.touchControls.hidden).toBe(false)
+    expect(
+      elements.touchControls.classList.contains("touch-controls--action-row"),
+    ).toBe(true)
+  })
+
   it("skips drawing the destination while a running round blink phase is off", () => {
     const elements = createElements()
     const clock = new GameClock(10_000)
@@ -263,7 +286,7 @@ describe("render", () => {
     expect(elements.screen.innerHTML).toContain('class="maze-cell target"')
   })
 
-  it("shows paused overlay messaging and walls plus proceed touch controls", () => {
+  it("shows paused overlay messaging and walls, proceed, plus reset touch controls", () => {
     const elements = createElements()
 
     render(
@@ -283,9 +306,9 @@ describe("render", () => {
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual(["walls", "proceed"])
+    expect(visibleLabels).toEqual(["walls", "proceed", "restart"])
     expect(
-      elements.touchControls.classList.contains("touch-controls--action-pair"),
+      elements.touchControls.classList.contains("touch-controls--action-row"),
     ).toBe(true)
     expect(
       elements.touchControls.classList.contains(
@@ -379,9 +402,9 @@ describe("render", () => {
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual(["walls", "proceed"])
+    expect(visibleLabels).toEqual(["walls", "proceed", "restart"])
     expect(
-      elements.touchControls.classList.contains("touch-controls--action-pair"),
+      elements.touchControls.classList.contains("touch-controls--action-row"),
     ).toBe(true)
   })
 
@@ -424,7 +447,7 @@ describe("render", () => {
     expect(text).not.toContain("Final Level 3 Scores:")
   })
 
-  it("shows the too-small message without proceed touch controls", () => {
+  it("shows the too-small message with reset progress as the only touch control", () => {
     const elements = createElements()
 
     render(
@@ -447,16 +470,16 @@ describe("render", () => {
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual([])
+    expect(visibleLabels).toEqual(["restart"])
     expect(
-      elements.touchControls.classList.contains("touch-controls--action-pair"),
-    ).toBe(false)
+      elements.touchControls.classList.contains("touch-controls--action-row"),
+    ).toBe(true)
     expect(
       elements.touchControls.classList.contains(
         "touch-controls--single-action",
       ),
-    ).toBe(false)
-    expect(elements.touchControls.hidden).toBe(true)
+    ).toBe(true)
+    expect(elements.touchControls.hidden).toBe(false)
   })
 
   it("shows compact navigation and too-small messaging on narrow screens", () => {
@@ -489,7 +512,7 @@ describe("render", () => {
     expect(text).toContain(messages.navigation.compact)
     expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
-    expect(elements.touchControls.hidden).toBe(true)
+    expect(elements.touchControls.hidden).toBe(false)
   })
 
   it("shows compact navigation on a 412px wide phone viewport", () => {

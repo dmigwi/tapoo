@@ -26,7 +26,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
       id: "blue-agent",
       playerName: "Blue",
       model: "llama3.2",
-      endpoint: "/api/agent/move",
+      endpoint: "/configured-agents/blue/move",
       enabled: true,
     },
   ]
@@ -154,7 +154,7 @@ describe("agent control mode", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/agent/move",
+      "/configured-agents/blue/move",
       expect.objectContaining({
         method: "POST",
         headers: {

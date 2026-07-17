@@ -1209,5 +1209,8 @@ export function bootstrapGame(
   return {
     mode: controlMode.name,
     dispatch: dispatchControl,
+    persistSnapshot: () => {
+      persistNow("state")
+    },
   }
 }

@@ -48,6 +48,11 @@
   box-sizing: border-box;
 }
 
+/* Keep hidden authoritative even when component classes define their own display mode. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
@@ -81,7 +86,15 @@ body {
   overflow: hidden;
 }
 
+.terminal-app,
+.placeholder-page {
+  grid-row: 2;
+  grid-column: 1;
+}
+
 .page-footer {
+  grid-row: 3;
+  grid-column: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -348,6 +361,11 @@ body {
   isolation: isolate;
 }
 
+.terminal-app[aria-hidden="true"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .placeholder-page::before {
   content: "";
   position: absolute;
@@ -605,12 +623,18 @@ body {
 
 .touch-controls--single-action {
   grid-template-columns: max-content;
-  grid-template-areas: "control-proceed";
+  grid-template-areas: none;
 }
 
-.touch-controls--action-pair {
-  grid-template-columns: repeat(2, max-content);
-  grid-template-areas: "control-walls control-proceed";
+.touch-controls--action-row {
+  grid-template-columns: repeat(3, max-content);
+  grid-template-areas: none;
+  grid-auto-flow: column;
+}
+
+.touch-controls--action-row .touch-controls__button,
+.touch-controls--single-action .touch-controls__button {
+  grid-area: auto;
 }
 
 .touch-controls__button {
@@ -682,6 +706,19 @@ body {
 .touch-controls__button--proceed {
   grid-area: control-proceed;
   min-width: var(--touch-action-button-min-width);
+}
+
+.touch-controls__button--restart {
+  grid-area: control-restart;
+  min-width: var(--touch-action-button-min-width);
+}
+
+.touch-controls__warning {
+  color: var(--status);
+  display: inline-block;
+  flex-shrink: 0;
+  margin-right: 0.42rem;
+  line-height: 1;
 }
 
 .touch-controls__button:focus-visible,

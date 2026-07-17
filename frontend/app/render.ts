@@ -379,6 +379,12 @@ function updateTouchControls(elements: Elements, state: State): void {
     isInteractiveMode(state.controlMode) && isRunningStatus(state.status)
   const showPause = isRunningStatus(state.status)
   const showWalls = canShowWallsStatus(state.status)
+  const showRestart =
+    isAwaitAgentStatus(state.status) ||
+    isPausedStatus(state.status) ||
+    isWonStatus(state.status) ||
+    isLostStatus(state.status) ||
+    isTooSmallStatus(state.status)
   let visibleButtons = 0
 
   elements.touchButtons.forEach((button) => {
@@ -392,7 +398,9 @@ function updateTouchControls(elements: Elements, state: State): void {
           ? !showWalls
           : action === "proceed"
             ? !canProceed
-            : false
+            : action === "restart"
+              ? !showRestart
+              : false
 
     button.hidden = hidden
     button.disabled = false
@@ -404,9 +412,9 @@ function updateTouchControls(elements: Elements, state: State): void {
 
   elements.touchControls.hidden = visibleButtons === 0
 
-  const actionOnly = !showMoveControls && visibleButtons > 1
+  const actionOnly = !showMoveControls && visibleButtons > 0
   elements.touchControls.classList.toggle(
-    "touch-controls--action-pair",
+    "touch-controls--action-row",
     actionOnly,
   )
   elements.touchControls.classList.toggle(
