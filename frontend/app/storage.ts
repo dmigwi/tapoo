@@ -1,15 +1,13 @@
 import {
-  BEST_WIN_RETENTION_STORAGE_KEY,
-  LEVEL_STORAGE_KEY,
-  LAST_ATTEMPT_RETENTION_STORAGE_KEY,
-  ROUND_STORAGE_KEY,
-  ROUND_STORAGE_VERSION,
+  CONFIG,
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
-  WALL_WEIGHT_STORAGE_KEY,
 } from "./config"
-import { canPersistRoundStatus } from "./status"
+import { canPersistRoundStatus, isAgentApiMode } from "./status"
+import { currentTotalCells } from "./traversal"
 import type {
+  AgentApiConfig,
+  MazeControlModeName,
   PersistedPreferences,
   PersistedRound,
   PersistedSnapshot,
@@ -17,6 +15,70 @@ import type {
   WallWeight,
 } from "./types"
 
+const { runtime, timing } = CONFIG
+const storageConfig = runtime.storage
+const { agentApi: agentApiModeName, interactive: interactiveModeName } =
+  runtime.controlModes
+
+type PersistableProgressState = Pick<
+  State,
+  | "level"
+  | "wallWeight"
+  | "lastAttemptRetention"
+  | "bestWinRetention"
+  | "lastWinRequestCount"
+  | "bestWinRequestCount"
+>
+
+type PersistedGameSetup = Pick<PersistedPreferences, "level" | "wallWeight">
+type PersistedWinMetrics = Required<
+  Pick<
+    PersistedPreferences,
+    | "lastAttemptRetention"
+    | "bestWinRetention"
+    | "lastWinRequestCount"
+    | "bestWinRequestCount"
+  >
+>
+
+// Shared storage helpers.
+
+// storageKey namespaces browser persistence by mode and schema version so stale payloads are ignored.
+function storageKey(
+  modeName: MazeControlModeName,
+  suffix: string,
+): string {
+  return `tapoo.v${storageConfig.version}.${modeName}.${suffix}`
+}
+
+// removeStaleStorageEntries clears old versioned Tapoo keys without touching current-version data.
+function removeStaleStorageEntries(storage: Storage): void {
+  const currentPrefix = `tapoo.v${storageConfig.version}.`
+
+  for (let index = storage.length - 1; index >= 0; index -= 1) {
+    const key = storage.key(index)
+    if (key?.startsWith("tapoo.v") && !key.startsWith(currentPrefix)) {
+      storage.removeItem(key)
+    }
+  }
+}
+
+// clearStaleStorageVersions runs once during startup to discard obsolete browser storage versions.
+export function clearStaleStorageVersions(): void {
+  try {
+    removeStaleStorageEntries(window.localStorage)
+  } catch {
+    // Ignore storage failures so startup can continue without browser persistence.
+  }
+
+  try {
+    removeStaleStorageEntries(window.sessionStorage)
+  } catch {
+    // Ignore storage failures so startup can continue without browser persistence.
+  }
+}
+
+// toBase64 converts raw bytes into a storage-safe browser string.
 function toBase64(payloadBytes: Uint8Array): string {
   let binaryPayload = ""
 
@@ -27,6 +89,7 @@ function toBase64(payloadBytes: Uint8Array): string {
   return window.btoa(binaryPayload)
 }
 
+// fromBase64 decodes stored browser payloads back into raw bytes.
 function fromBase64(encodedPayload: string): Uint8Array | null {
   try {
     const binaryPayload = window.atob(encodedPayload)
@@ -38,6 +101,7 @@ function fromBase64(encodedPayload: string): Uint8Array | null {
   }
 }
 
+// xorStoredPayload applies the lightweight reversible obfuscation used for browser storage.
 function xorStoredPayload(payloadBytes: Uint8Array): Uint8Array {
   const passphraseBytes = new TextEncoder().encode(STORE_BLEND_KEY)
   const encodedBytes = new Uint8Array(payloadBytes.length)
@@ -50,18 +114,18 @@ function xorStoredPayload(payloadBytes: Uint8Array): Uint8Array {
   return encodedBytes
 }
 
+// encodeStoredPayload serializes and obfuscates values before persistence.
 function encodeStoredPayload(value: unknown): string {
   const jsonPayload = JSON.stringify(value)
   const payloadBytes = new TextEncoder().encode(jsonPayload)
   return `${STORE_ENCODING_PREFIX}${toBase64(xorStoredPayload(payloadBytes))}`
 }
 
+// decodeStoredPayload reverses the browser storage encoding back into JSON.
 function decodeStoredPayload<T>(encodedPayload: string): T | null {
   const payloadBytes = encodedPayload.startsWith(STORE_ENCODING_PREFIX)
     ? (() => {
-        const encodedCipherText = encodedPayload.slice(
-          STORE_ENCODING_PREFIX.length,
-        )
+        const encodedCipherText = encodedPayload.slice(STORE_ENCODING_PREFIX.length)
         const cipherText = fromBase64(encodedCipherText)
         if (!cipherText) {
           return null
@@ -83,104 +147,233 @@ function decodeStoredPayload<T>(encodedPayload: string): T | null {
   }
 }
 
-function buildRoundSnapshot(state: State): PersistedRound | null {
+// Agent API configuration persistence.
+
+// isAgentApiConfig validates one persisted HTTP agent configuration.
+function isAgentApiConfig(value: unknown): value is AgentApiConfig {
   if (
-    !state.dims ||
-    !state.maze ||
-    !state.playerPosition ||
-    !state.finalPosition ||
-    !canPersistRoundStatus(state.status)
+    typeof value !== "object" ||
+    value === null ||
+    !("id" in value) ||
+    !("playerName" in value) ||
+    !("model" in value) ||
+    !("endpoint" in value) ||
+    !("enabled" in value)
   ) {
-    return null
+    return false
   }
 
-  const totalCells = state.dims.length * state.dims.width
-  const remainingMs = state.clock ? state.clock.remaining() : totalCells * 1000
+  const disabledReason = "disabledReason" in value ? value.disabledReason : undefined
+  const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
 
-  return {
-    version: ROUND_STORAGE_VERSION,
-    level: state.level,
-    dims: { length: state.dims.length, width: state.dims.width },
-    maze: state.maze.map((row) => [...row]),
-    playerPosition: [state.playerPosition[0], state.playerPosition[1]],
-    finalPosition: [state.finalPosition[0], state.finalPosition[1]],
-    wallWeight: state.wallWeight,
-    status: state.status,
-    score: state.score,
-    lastRoundScore: state.lastRoundScore,
-    remainingMs,
-    winSummary: state.winSummary,
+  return (
+    typeof value.id === "string" &&
+    value.id.length > 0 &&
+    typeof value.playerName === "string" &&
+    value.playerName.length > 0 &&
+    typeof value.model === "string" &&
+    value.model.length > 0 &&
+    typeof value.endpoint === "string" &&
+    value.endpoint.length > 0 &&
+    typeof value.enabled === "boolean" &&
+    (disabledReason === undefined || disabledReason === "network-error") &&
+    (lastErrorAt === undefined ||
+      (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt)))
+  )
+}
+
+// normalizeAgentApiConfigs keeps only valid configs and de-duplicates by stable id.
+function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
+  if (!Array.isArray(configs)) {
+    return []
+  }
+
+  const seenIds = new Set<string>()
+  const normalizedConfigs: AgentApiConfig[] = []
+
+  for (const config of configs) {
+    if (!isAgentApiConfig(config) || seenIds.has(config.id)) {
+      continue
+    }
+
+    seenIds.add(config.id)
+    normalizedConfigs.push({ ...config })
+  }
+
+  return normalizedConfigs
+}
+
+// loadPersistedAgentApiConfigs restores the configurable HTTP agents for agent-api mode.
+export function loadPersistedAgentApiConfigs(): AgentApiConfig[] {
+  try {
+    const storedConfigs = window.localStorage.getItem(
+      storageKey(agentApiModeName, storageConfig.suffixes.agentConfigs),
+    )
+    if (!storedConfigs) {
+      return []
+    }
+
+    return normalizeAgentApiConfigs(
+      decodeStoredPayload<unknown>(storedConfigs),
+    )
+  } catch {
+    return []
   }
 }
 
-function savePreferences(preferences: PersistedPreferences): void {
+// savePersistedAgentApiConfigs stores configured HTTP agents separately from game progress.
+export function savePersistedAgentApiConfigs(configs: AgentApiConfig[]): void {
   try {
     window.localStorage.setItem(
-      WALL_WEIGHT_STORAGE_KEY,
-      encodeStoredPayload(preferences.wallWeight),
+      storageKey(agentApiModeName, storageConfig.suffixes.agentConfigs),
+      encodeStoredPayload(normalizeAgentApiConfigs(configs)),
+    )
+  } catch {
+    // Ignore storage failures so agent configuration remains best-effort only.
+  }
+}
+
+// disableAgentApiConfigForNetworkError marks one transport-failing agent ineligible for later turns.
+export function disableAgentApiConfigForNetworkError(
+  failedAgent: AgentApiConfig,
+): AgentApiConfig[] {
+  const nextConfigs = loadPersistedAgentApiConfigs().map((agent) => {
+    if (agent.id !== failedAgent.id) {
+      return agent
+    }
+
+    const disabledAgent: AgentApiConfig = {
+      ...agent,
+      enabled: false,
+      disabledReason: "network-error",
+      lastErrorAt: Date.now(),
+    }
+
+    return disabledAgent
+  })
+
+  savePersistedAgentApiConfigs(nextConfigs)
+  return nextConfigs
+}
+
+// clearPersistedAgentApiConfigs removes agent setup without touching game progress.
+export function clearPersistedAgentApiConfigs(): void {
+  try {
+    window.localStorage.removeItem(
+      storageKey(agentApiModeName, storageConfig.suffixes.agentConfigs),
+    )
+  } catch {
+    // Ignore storage failures so clearing remains best-effort only.
+  }
+}
+
+// Game progress preference persistence.
+
+// validLevelPreference keeps invalid or stale setup data from escaping storage.
+function validLevelPreference(value: unknown, defaultLevel: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1
+    ? value
+    : defaultLevel
+}
+
+// validWallWeightPreference keeps wall weights inside the currently supported set.
+function validWallWeightPreference(
+  value: unknown,
+  defaultWeight: WallWeight,
+  isWallWeight: (value: number) => value is WallWeight,
+): WallWeight {
+  return typeof value === "number" && isWallWeight(value) ? value : defaultWeight
+}
+
+// validRetentionPreference restores normalized retention values stored in millionths.
+function validRetentionPreference(value: unknown): number | null {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 1_000_000
+    ? value
+    : null
+}
+
+// validRequestCountPreference restores positive agent request counters.
+function validRequestCountPreference(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1
+    ? value
+    : null
+}
+
+// savePreferences persists the long-lived browser preferences in local storage.
+function savePreferences(
+  modeName: MazeControlModeName,
+  preferences: PersistedPreferences,
+): void {
+  const gameSetup: PersistedGameSetup = {
+    level: preferences.level,
+    wallWeight: preferences.wallWeight,
+  }
+  const winMetrics: PersistedWinMetrics = {
+    lastAttemptRetention: preferences.lastAttemptRetention ?? null,
+    bestWinRetention: preferences.bestWinRetention ?? null,
+    lastWinRequestCount: preferences.lastWinRequestCount ?? null,
+    bestWinRequestCount: preferences.bestWinRequestCount ?? null,
+  }
+
+  try {
+    window.localStorage.setItem(
+      storageKey(modeName, storageConfig.suffixes.gameSetup),
+      encodeStoredPayload(gameSetup),
     )
     window.localStorage.setItem(
-      LEVEL_STORAGE_KEY,
-      encodeStoredPayload(preferences.level),
-    )
-    window.localStorage.setItem(
-      LAST_ATTEMPT_RETENTION_STORAGE_KEY,
-      encodeStoredPayload(preferences.lastAttemptRetention ?? null),
-    )
-    window.localStorage.setItem(
-      BEST_WIN_RETENTION_STORAGE_KEY,
-      encodeStoredPayload(preferences.bestWinRetention ?? null),
+      storageKey(modeName, storageConfig.suffixes.winMetrics),
+      encodeStoredPayload(winMetrics),
     )
   } catch {
     // Ignore storage failures so durable browser preferences remain best-effort only.
   }
 }
 
+// loadPreferences restores browser preferences while validating their value ranges.
 function loadPreferences(
+  modeName: MazeControlModeName,
   defaultLevel: number,
   defaultWeight: WallWeight,
   isWallWeight: (value: number) => value is WallWeight,
 ): PersistedPreferences {
   try {
-    const storedLevel = window.localStorage.getItem(LEVEL_STORAGE_KEY)
-    const storedWeight = window.localStorage.getItem(WALL_WEIGHT_STORAGE_KEY)
-    const storedLastAttemptRetention = window.localStorage.getItem(
-      LAST_ATTEMPT_RETENTION_STORAGE_KEY,
+    const storedGameSetup = window.localStorage.getItem(
+      storageKey(modeName, storageConfig.suffixes.gameSetup),
     )
-    const storedBestWinRetention = window.localStorage.getItem(
-      BEST_WIN_RETENTION_STORAGE_KEY,
+    const storedWinMetrics = window.localStorage.getItem(
+      storageKey(modeName, storageConfig.suffixes.winMetrics),
     )
-    const parsedLevel =
-      storedLevel === null ? null : decodeStoredPayload<number>(storedLevel)
-    const parsedWeight =
-      storedWeight === null ? null : decodeStoredPayload<number>(storedWeight)
-    const parsedLastAttemptRetention =
-      storedLastAttemptRetention === null
+    const parsedGameSetup =
+      storedGameSetup === null
         ? null
-        : decodeStoredPayload<number | null>(storedLastAttemptRetention)
-    const parsedBestWinRetention =
-      storedBestWinRetention === null
+        : decodeStoredPayload<Partial<PersistedGameSetup>>(storedGameSetup)
+    const parsedWinMetrics =
+      storedWinMetrics === null
         ? null
-        : decodeStoredPayload<number | null>(storedBestWinRetention)
+        : decodeStoredPayload<Partial<PersistedWinMetrics>>(storedWinMetrics)
 
     return {
-      level:
-        Number.isInteger(parsedLevel) && parsedLevel >= 1
-          ? parsedLevel
-          : defaultLevel,
-      wallWeight: isWallWeight(parsedWeight) ? parsedWeight : defaultWeight,
-      lastAttemptRetention:
-        Number.isFinite(parsedLastAttemptRetention) &&
-        parsedLastAttemptRetention >= 0 &&
-        parsedLastAttemptRetention <= 1_000_000
-          ? parsedLastAttemptRetention
-          : null,
-      bestWinRetention:
-        Number.isFinite(parsedBestWinRetention) &&
-        parsedBestWinRetention >= 0 &&
-        parsedBestWinRetention <= 1_000_000
-          ? parsedBestWinRetention
-          : null,
+      level: validLevelPreference(parsedGameSetup?.level, defaultLevel),
+      wallWeight: validWallWeightPreference(
+        parsedGameSetup?.wallWeight,
+        defaultWeight,
+        isWallWeight,
+      ),
+      lastAttemptRetention: validRetentionPreference(
+        parsedWinMetrics?.lastAttemptRetention,
+      ),
+      bestWinRetention: validRetentionPreference(
+        parsedWinMetrics?.bestWinRetention,
+      ),
+      lastWinRequestCount: validRequestCountPreference(
+        parsedWinMetrics?.lastWinRequestCount,
+      ),
+      bestWinRequestCount: validRequestCountPreference(
+        parsedWinMetrics?.bestWinRequestCount,
+      ),
     }
   } catch {
     return {
@@ -188,28 +381,123 @@ function loadPreferences(
       wallWeight: defaultWeight,
       lastAttemptRetention: null,
       bestWinRetention: null,
+      lastWinRequestCount: null,
+      bestWinRequestCount: null,
     }
   }
 }
 
-function saveRound(round: PersistedRound | null): void {
+// saveGameProgress writes long-lived localStorage progress from the live game state.
+export function saveGameProgress(
+  modeName: MazeControlModeName,
+  state: PersistableProgressState,
+): void {
+  savePreferences(modeName, {
+    level: state.level,
+    wallWeight: state.wallWeight,
+    lastAttemptRetention: state.lastAttemptRetention,
+    bestWinRetention: state.bestWinRetention,
+    lastWinRequestCount: state.lastWinRequestCount,
+    bestWinRequestCount: state.bestWinRequestCount,
+  })
+}
+
+// saveInteractiveGameProgress writes long-lived localStorage progress for interactive mode.
+export function saveInteractiveGameProgress(
+  state: PersistableProgressState,
+): void {
+  saveGameProgress(interactiveModeName, state)
+}
+
+// saveAgentApiGameProgress writes long-lived localStorage progress for agent-api mode.
+export function saveAgentApiGameProgress(state: PersistableProgressState): void {
+  saveGameProgress(agentApiModeName, state)
+}
+
+// Active round persistence.
+
+// buildRoundSnapshot extracts the restorable round state from the live runtime.
+function buildRoundSnapshot(state: State): PersistedRound | null {
+  if (
+    !state.mazeDimensions ||
+    !state.maze ||
+    !state.playerPosition ||
+    state.traversalHistory.length === 0 ||
+    !state.finalPosition ||
+    !canPersistRoundStatus(state.status)
+  ) {
+    return null
+  }
+
+  const totalCells = currentTotalCells(state.mazeDimensions)
+  const decayIntervalPerCellMs = isAgentApiMode(state.controlMode)
+    ? timing.agentApiCoreDecayIntervalPerCellMs
+    : timing.interactiveCoreDecayIntervalPerCellMs
+  const remainingMs = state.clock
+    ? state.clock.remaining()
+    : totalCells * decayIntervalPerCellMs
+
+  return {
+    level: state.level,
+    mazeDimensions: {
+      length: state.mazeDimensions.length,
+      width: state.mazeDimensions.width,
+    },
+    maze: state.maze.map((row) => [...row]),
+    startCell: {
+      row: state.traversalHistory[0].row,
+      col: state.traversalHistory[0].col,
+    },
+    traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
+      playerName,
+      row,
+      col,
+    })),
+    playerPosition: {
+      x: state.playerPosition.x,
+      y: state.playerPosition.y,
+    },
+    finalPosition: {
+      x: state.finalPosition.x,
+      y: state.finalPosition.y,
+    },
+    wallWeight: state.wallWeight,
+    status: state.status,
+    score: state.score,
+    lastRoundScore: state.lastRoundScore,
+    remainingMs,
+    winSummary: state.winSummary,
+    scoreDecayUnits: state.scoreDecayUnits,
+    agentRequestCount: state.agentRequestCount,
+  }
+}
+
+// saveRound persists the short-lived active round in session storage.
+function saveRound(
+  modeName: MazeControlModeName,
+  round: PersistedRound | null,
+): void {
   try {
     if (!round) {
-      window.sessionStorage.removeItem(ROUND_STORAGE_KEY)
+      window.sessionStorage.removeItem(storageKey(modeName, "round"))
       return
     }
 
-    window.sessionStorage.setItem(ROUND_STORAGE_KEY, encodeStoredPayload(round))
+    window.sessionStorage.setItem(
+      storageKey(modeName, "round"),
+      encodeStoredPayload(round),
+    )
   } catch {
     // Ignore storage failures so the active game can continue even without session persistence.
   }
 }
 
-function loadRound(): PersistedRound | null {
+// loadRound restores the current round snapshot and clears corrupt or stale payloads.
+function loadRound(modeName: MazeControlModeName): PersistedRound | null {
   let rawSnapshot: string | null
 
   try {
-    rawSnapshot = window.sessionStorage.getItem(ROUND_STORAGE_KEY)
+    rawSnapshot = window.sessionStorage.getItem(storageKey(modeName, "round"))
   } catch {
     return null
   }
@@ -220,54 +508,118 @@ function loadRound(): PersistedRound | null {
 
   const snapshot = decodeStoredPayload<PersistedRound>(rawSnapshot)
   if (!snapshot) {
-    clearPersistedRound()
+    clearPersistedRound(modeName)
+    return null
   }
 
   return snapshot
 }
 
+// saveActiveRoundSnapshot writes the short-lived sessionStorage round snapshot.
+export function saveActiveRoundSnapshot(
+  modeName: MazeControlModeName,
+  state: State,
+): void {
+  saveRound(modeName, buildRoundSnapshot(state))
+}
+
+// saveActiveInteractiveRoundSnapshot writes the short-lived interactive round snapshot.
+export function saveActiveInteractiveRoundSnapshot(state: State): void {
+  saveActiveRoundSnapshot(interactiveModeName, state)
+}
+
+// saveActiveAgentApiRoundSnapshot writes the short-lived agent-api round snapshot.
+export function saveActiveAgentApiRoundSnapshot(state: State): void {
+  saveActiveRoundSnapshot(agentApiModeName, state)
+}
+
+// clearPersistedRound drops only the short-lived active round snapshot.
+export function clearPersistedRound(modeName: MazeControlModeName): void {
+  saveRound(modeName, null)
+}
+
+// clearPersistedInteractiveRound drops only the interactive active round snapshot.
+export function clearPersistedInteractiveRound(): void {
+  clearPersistedRound(interactiveModeName)
+}
+
+// clearPersistedAgentApiRound drops only the agent-api active round snapshot.
+export function clearPersistedAgentApiRound(): void {
+  clearPersistedRound(agentApiModeName)
+}
+
+// Combined progress and round persistence.
+
+// loadPersistedSnapshot restores both browser preferences and the active round.
 export function loadPersistedSnapshot(
+  modeName: MazeControlModeName,
   defaultLevel: number,
   defaultWeight: WallWeight,
   isWallWeight: (value: number) => value is WallWeight,
 ): PersistedSnapshot {
+  const round = loadRound(modeName)
+
   return {
-    preferences: loadPreferences(defaultLevel, defaultWeight, isWallWeight),
-    round: loadRound(),
+    preferences: loadPreferences(
+      modeName,
+      defaultLevel,
+      defaultWeight,
+      isWallWeight,
+    ),
+    round,
   }
 }
 
-export function savePersistedPreferences(
-  state: Pick<
-    State,
-    "level" | "wallWeight" | "lastAttemptRetention" | "bestWinRetention"
-  >,
-): void {
-  savePreferences({
-    level: state.level,
-    wallWeight: state.wallWeight,
-    lastAttemptRetention: state.lastAttemptRetention,
-    bestWinRetention: state.bestWinRetention,
-  })
+// loadPersistedInteractiveSnapshot restores the interactive-mode preferences and active round.
+export function loadPersistedInteractiveSnapshot(
+  defaultLevel: number,
+  defaultWeight: WallWeight,
+  isWallWeight: (value: number) => value is WallWeight,
+): PersistedSnapshot {
+  return loadPersistedSnapshot(
+    interactiveModeName,
+    defaultLevel,
+    defaultWeight,
+    isWallWeight,
+  )
 }
 
-export function savePersistedRoundState(state: State): void {
-  saveRound(buildRoundSnapshot(state))
+// loadPersistedAgentApiSnapshot restores the agent-api preferences and active round.
+export function loadPersistedAgentApiSnapshot(
+  defaultLevel: number,
+  defaultWeight: WallWeight,
+  isWallWeight: (value: number) => value is WallWeight,
+): PersistedSnapshot {
+  return loadPersistedSnapshot(
+    agentApiModeName,
+    defaultLevel,
+    defaultWeight,
+    isWallWeight,
+  )
 }
 
-export function clearPersistedRound(): void {
-  saveRound(null)
-}
-
-export function clearPersistedSnapshot(): void {
+// clearPersistedSnapshot clears both long-lived preferences and the active round.
+export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   try {
-    window.localStorage.removeItem(LEVEL_STORAGE_KEY)
-    window.localStorage.removeItem(WALL_WEIGHT_STORAGE_KEY)
-    window.localStorage.removeItem(LAST_ATTEMPT_RETENTION_STORAGE_KEY)
-    window.localStorage.removeItem(BEST_WIN_RETENTION_STORAGE_KEY)
+    window.localStorage.removeItem(
+      storageKey(modeName, storageConfig.suffixes.gameSetup),
+    )
+    window.localStorage.removeItem(
+      storageKey(modeName, storageConfig.suffixes.winMetrics),
+    )
   } catch {
     // Ignore storage failures so reset remains best-effort only.
   }
 
-  clearPersistedRound()
+  clearPersistedRound(modeName)
+}
+
+// clearPersistedInteractiveSnapshot clears interactive preferences and the active round.
+export function clearPersistedInteractiveSnapshot(): void {
+  clearPersistedSnapshot(interactiveModeName)
+}
+
+// clearPersistedAgentApiSnapshot clears agent-api preferences and the active round.
+export function clearPersistedAgentApiSnapshot(): void {
+  clearPersistedSnapshot(agentApiModeName)
 }

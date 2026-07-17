@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+// setupTerminalDom recreates the minimal browser terminal shell used by DOM tests.
 function setupTerminalDom(): void {
   document.body.innerHTML = `
     <div id="terminal-app"></div>
@@ -10,6 +11,7 @@ function setupTerminalDom(): void {
   `
 }
 
+// These tests lock down DOM discovery and viewport-based terminal measurements.
 describe("dom", () => {
   beforeEach(() => {
     vi.resetModules()
@@ -35,7 +37,11 @@ describe("dom", () => {
       })),
     )
 
-    const { elements, getTerminalSize } = await import("./dom")
+    const { getGameElements, getTerminalSize } = await import("./dom")
+    const elements = getGameElements()
+    if (!elements) {
+      throw new Error("expected terminal elements")
+    }
 
     elements.body.getBoundingClientRect = vi.fn(() => ({
       width: 960,
@@ -64,7 +70,7 @@ describe("dom", () => {
       fontSize: "16px",
     } as CSSStyleDeclaration)
 
-    expect(getTerminalSize()).toEqual({ length: 22, width: 11 })
+    expect(getTerminalSize(elements)).toEqual({ length: 22, width: 11 })
   })
 
   it("ignores the floating touch controls when measuring the terminal", async () => {
@@ -82,7 +88,11 @@ describe("dom", () => {
       })),
     )
 
-    const { elements, getTerminalSize } = await import("./dom")
+    const { getGameElements, getTerminalSize } = await import("./dom")
+    const elements = getGameElements()
+    if (!elements) {
+      throw new Error("expected terminal elements")
+    }
 
     const touchControlsRect = vi.fn(() => ({
       width: 2_000,
@@ -124,7 +134,15 @@ describe("dom", () => {
       fontSize: "16px",
     } as CSSStyleDeclaration)
 
-    expect(getTerminalSize()).toEqual({ length: 22, width: 11 })
+    expect(getTerminalSize(elements)).toEqual({ length: 22, width: 11 })
     expect(touchControlsRect).not.toHaveBeenCalled()
+  })
+
+  it("returns null when the page does not include a terminal game host", async () => {
+    document.body.innerHTML = `<main></main>`
+
+    const { getGameElements } = await import("./dom")
+
+    expect(getGameElements()).toBeNull()
   })
 })

@@ -15,23 +15,14 @@ fi
   --outfile=./public/css/tapoo.min.css
 
 ./node_modules/.bin/esbuild \
-  ./frontend/page-meta.ts \
+  ./frontend/page-chrome.ts \
   --bundle \
   --minify \
   --mangle-props=^__ \
   --platform=browser \
   --target=es2022 \
   --define:__TAPOO_BUILD_YEAR__=${BUILD_YEAR} \
-  --outfile=./public/js/page-meta.min.js
-
-./node_modules/.bin/esbuild \
-  ./frontend/top-menu.ts \
-  --bundle \
-  --minify \
-  --mangle-props=^__ \
-  --platform=browser \
-  --target=es2022 \
-  --outfile=./public/js/top-menu.min.js
+  --outfile=./public/js/page-chrome.min.js
 
 ./node_modules/.bin/esbuild \
   ./frontend/tapoo.ts \

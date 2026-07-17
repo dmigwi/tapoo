@@ -187,6 +187,12 @@ func TestGetMazeDimensionsFits(t *testing.T) {
 			want:  maze.Dimensions{Length: 10, Width: 8},
 		},
 		{
+			name:  "prefers balanced dimensions before viewport aspect ratio",
+			level: 2,
+			size:  maze.Dimensions{Length: 30, Width: 10},
+			want:  maze.Dimensions{Length: 10, Width: 8},
+		},
+		{
 			name:  "prefers balanced fit when aspect score ties",
 			level: 2,
 			size:  maze.Dimensions{Length: 15, Width: 10},

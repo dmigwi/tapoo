@@ -3,12 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { GameClock } from "./clock"
 import { CONFIG } from "./config"
 import { render } from "./render"
-import type { Elements, State } from "./types"
+import type { Elements, State, TraversalHistoryEntry } from "./types"
 
+const { messages } = CONFIG
+
+function visit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: "Blue", row, col }
+}
+
+// normalizeScreenText keeps DOM assertions readable by collapsing non-breaking spaces.
 function normalizeScreenText(value: string | null): string {
   return (value ?? "").replaceAll("\u00a0", " ")
 }
 
+// createButton reproduces the control-button dataset contract expected by the renderer.
 function createButton({
   action,
   move,
@@ -30,6 +38,7 @@ function createButton({
   return button
 }
 
+// createElements assembles the DOM shell consumed by the renderer during tests.
 function createElements(): Elements {
   const screen = document.createElement("div")
   const touchControls = document.createElement("div")
@@ -54,10 +63,12 @@ function createElements(): Elements {
   }
 }
 
+// createState builds a representative runtime state for render scenarios.
 function createState(overrides: Partial<State> = {}): State {
   return {
+    controlMode: CONFIG.runtime.controlModes.interactive,
     level: 1,
-    dims: { length: 2, width: 2 },
+    mazeDimensions: { length: 2, width: 2 },
     maze: [
       ["|", "---", "|", "---", "|"],
       ["|", "   ", " ", "   ", "|"],
@@ -65,21 +76,27 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "   ", "|", "   ", "|"],
       ["|", "---", "|", "---", "|"],
     ],
-    playerPosition: [1, 1],
-    finalPosition: [1, 2],
+    playerPosition: { x: 1, y: 1 },
+    traversalHistory: [visit(0, 0)],
+    finalPosition: { x: 2, y: 1 },
     status: "running",
     score: 900,
     lastRoundScore: 0,
     lastAttemptRetention: null,
     bestWinRetention: null,
+    lastWinRequestCount: null,
+    bestWinRequestCount: null,
     winSummary: "",
     canResume: false,
     wallWeight: 1,
+    scoreDecayUnits: 0,
+    agentRequestCount: 0,
     clock: null,
     ...overrides,
   }
 }
 
+// These tests keep browser terminal output and touch-control visibility consistent.
 describe("render", () => {
   beforeEach(() => {
     vi.stubGlobal(
@@ -156,7 +173,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        dims: null,
+        mazeDimensions: null,
         maze: null,
         playerPosition: null,
         finalPosition: null,
@@ -166,9 +183,9 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.navigationCompact)
+    expect(text).toContain(messages.navigation.compact)
     expect(text).toContain("Level 1 needs more screen room!")
-    expect(text).toContain(CONFIG.tooSmallActionMessage)
+    expect(text).toContain(messages.tooSmallActionMessage)
   })
 
   it("renders the maze, markers, and running status line", () => {
@@ -178,7 +195,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.navigation)
+    expect(text).toContain(messages.navigation.default)
     expect(text).toContain("Level: 1")
     expect(text).toContain("Scores: 900")
     expect(elements.screen.innerHTML).toContain('class="maze-cell player"')
@@ -195,6 +212,27 @@ describe("render", () => {
       "MoveDown",
       "pause",
     ])
+  })
+
+  it("shows only local action touch controls when the agent-api mode is active", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+      }),
+    )
+
+    const visibleLabels = elements.touchButtons
+      .filter((button) => !button.hidden)
+      .map((button) => button.dataset.action ?? button.dataset.move)
+
+    expect(visibleLabels).toEqual(["pause"])
+    expect(elements.touchControls.hidden).toBe(false)
+    expect(
+      elements.touchControls.classList.contains("touch-controls--single-action"),
+    ).toBe(true)
   })
 
   it("skips drawing the destination while a running round blink phase is off", () => {
@@ -238,8 +276,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.pauseMessage)
-    expect(text).toContain(CONFIG.proceedMessage)
+    expect(text).toContain(messages.pauseMessage)
+    expect(text).toContain(messages.proceedMessage)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -312,8 +350,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.touchProceedMessage)
-    expect(text).not.toContain(CONFIG.proceedMessage)
+    expect(text).toContain(messages.touchProceedMessage)
+    expect(text).not.toContain(messages.proceedMessage)
   })
 
   it("shows walls plus proceed touch controls after a win", () => {
@@ -322,7 +360,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        dims: { length: 3, width: 3 },
+        mazeDimensions: { length: 3, width: 3 },
         level: 3,
         status: "won",
         lastRoundScore: 900,
@@ -332,8 +370,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.successMessage)
-    expect(text).toContain(CONFIG.proceedMessage)
+    expect(text).toContain(messages.successMessage)
+    expect(text).toContain(messages.proceedMessage)
     expect(text).toContain("Final Level 3 Scores:  900 (100% retention)")
     expect(text).toContain("1.20s faster than previous (new record)")
 
@@ -353,7 +391,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        dims: { length: 3, width: 3 },
+        mazeDimensions: { length: 3, width: 3 },
         level: 1,
         status: "won",
         lastRoundScore: 900,
@@ -381,8 +419,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.failedMessage)
-    expect(text).toContain(CONFIG.proceedMessage)
+    expect(text).toContain(messages.failedMessage)
+    expect(text).toContain(messages.proceedMessage)
     expect(text).not.toContain("Final Level 3 Scores:")
   })
 
@@ -392,7 +430,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        dims: null,
+        mazeDimensions: null,
         maze: null,
         playerPosition: null,
         finalPosition: null,
@@ -403,7 +441,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain("Level 1 needs more screen room!")
-    expect(text).toContain(CONFIG.tooSmallActionMessage)
+    expect(text).toContain(messages.tooSmallActionMessage)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -438,7 +476,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        dims: null,
+        mazeDimensions: null,
         maze: null,
         playerPosition: null,
         finalPosition: null,
@@ -448,9 +486,9 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.navigationCompact)
+    expect(text).toContain(messages.navigation.compact)
     expect(text).toContain("Level 1 needs more screen room!")
-    expect(text).toContain(CONFIG.tooSmallActionMessage)
+    expect(text).toContain(messages.tooSmallActionMessage)
     expect(elements.touchControls.hidden).toBe(true)
   })
 
@@ -496,8 +534,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.navigationCompact)
-    expect(text).not.toContain(CONFIG.navigation)
+    expect(text).toContain(messages.navigation.compact)
+    expect(text).not.toContain(messages.navigation.default)
   })
 
   it("keeps the full keyboard navigation on medium-width screens", () => {
@@ -518,7 +556,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(CONFIG.navigation)
-    expect(text).not.toContain(CONFIG.navigationCompact)
+    expect(text).toContain(messages.navigation.default)
+    expect(text).not.toContain(messages.navigation.compact)
   })
 })
