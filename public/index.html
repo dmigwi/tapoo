@@ -6,13 +6,27 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <title data-config-key="pages.game.documentTitle"></title>
+    <meta name="theme-color" content="#0d130d" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'none'"
+    />
+    <title data-config-key="pages.game.documentTitle">Tapoo Maze Runner | Game</title>
     <meta
       name="description"
       data-config-key="pages.game.description"
-      content=""
+      content="Tapoo maze runner hide and seek game rendered as a browser-based terminal experience."
     />
+    <link rel="canonical" href="https://dmigwi.github.io/tapoo/" />
     <link rel="icon" type="image/svg+xml" href="./images/favicon.svg" />
+    <link
+      rel="preload"
+      href="./fonts/PTMono.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <link rel="stylesheet" href="./css/tapoo.min.css" />
   </head>
   <body data-tapoo-control-mode="interactive">
@@ -205,7 +219,7 @@
       </footer>
     </main>
 
-    <script src="./js/page-chrome.min.js"></script>
-    <script src="./js/tapoo.min.js"></script>
+    <script defer src="./js/page-chrome.min.js"></script>
+    <script defer src="./js/tapoo.min.js"></script>
   </body>
 </html>

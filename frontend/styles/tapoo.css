@@ -38,7 +38,7 @@
   src:
     local("PT Mono"),
     local("PTMono"),
-    url("../fonts/PTMono.ttc");
+    url("../fonts/PTMono.woff2") format("woff2");
   font-style: normal;
   font-weight: 400;
   font-display: swap;

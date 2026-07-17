@@ -21,6 +21,14 @@ function render(template, values) {
   })
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+}
+
 function indentHtml(html, indent) {
   return html.trimEnd().replaceAll("\n", `\n${indent}`)
 }
@@ -48,20 +56,30 @@ await mkdir(publicDirectory, { recursive: true })
 await Promise.all([
   buildPage(layout, sharedPartials, {
     bodyAttributes: 'data-tapoo-control-mode="interactive"',
+    canonicalUrl: "https://dmigwi.github.io/tapoo/",
     descriptionConfigKey: "pages.game.description",
+    descriptionText: escapeHtml(
+      "Tapoo maze runner hide and seek game rendered as a browser-based terminal experience.",
+    ),
     output: "index.html",
     pageContent: "terminal-section.html",
     pageLabelConfigKey: "pages.game.pageLabel",
     primaryMenuItem: "nav-agents-link.html",
     titleConfigKey: "pages.game.documentTitle",
+    titleText: escapeHtml("Tapoo Maze Runner | Game"),
   }),
   buildPage(layout, sharedPartials, {
     bodyAttributes: 'data-tapoo-control-mode="agent-api"',
+    canonicalUrl: "https://dmigwi.github.io/tapoo/agents.html",
     descriptionConfigKey: "pages.agents.description",
+    descriptionText: escapeHtml(
+      "Tapoo maze runner played by an HTTP-driven agent with human session controls.",
+    ),
     output: "agents.html",
     pageContent: "terminal-section.html",
     pageLabelConfigKey: "pages.agents.pageLabel",
     primaryMenuItem: "nav-game-link.html",
     titleConfigKey: "pages.agents.documentTitle",
+    titleText: escapeHtml("Tapoo Maze Runner | AI Agents"),
   }),
 ])

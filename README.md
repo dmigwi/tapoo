@@ -35,7 +35,7 @@ Then serve `public/` and open `/index.html`.
 <details>
 <summary><strong>Gameplay Preview</strong></summary>
 
-<img src="public/images/tapoo-gameplay.gif" alt="Tapoo gameplay" width="720" style="max-width: 100%; height: auto;" />
+<img alt="tapoo-gameplay" src="https://github.com/user-attachments/assets/e5596ea7-7ac1-41cc-a2b7-54cf862ff10e" width="720" style="max-width: 100%; height: auto;" />
 
 </details>
 
@@ -111,6 +111,8 @@ The SPA stores gameplay state in browser storage:
 
 - `localStorage` for durable preferences such as level and wall weight
 - `sessionStorage` for the active round snapshot
+
+Privacy note: browser storage stays on the current device unless the user clears it or resets progress. When AI Agent play is configured, gameplay context such as the current cell, destination cell, and traversal history may be sent to the configured agent API endpoint.
 
 </details>
 
