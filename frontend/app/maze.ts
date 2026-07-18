@@ -38,6 +38,11 @@ function generateMazeArea(level: number): number {
   return level * generation.diff + generation.seed
 }
 
+type MazeAreaResolution = {
+  area: number
+  candidates: BaseDimensions[]
+}
+
 // appendFittingDimensions records factor pairs that still fit the viewport.
 function appendFittingDimensions(
   candidates: BaseDimensions[],
@@ -141,22 +146,57 @@ function chooseBestMazeDimensions(
   return best
 }
 
+// resolveMazeArea keeps isolated bad factor pairs playable without borrowing the next level.
+function resolveMazeArea(
+  level: number,
+  terminalSize: BaseDimensions,
+): MazeAreaResolution | null {
+  // Each visible level owns the area band from its raw target up to the next level's target.
+  const area = generateMazeArea(level)
+  const areaLimit = generateMazeArea(level + 1)
+  const terminalArea = terminalSize.width * terminalSize.length
+  if (area > terminalArea) {
+    return null
+  }
+
+  const exactCandidates = fittingDimensionsForArea(area, terminalSize)
+  if (exactCandidates.length > 0) {
+    return { area, candidates: exactCandidates }
+  }
+
+  // We only get here after the current exact target missed.
+  // If the next exact target also misses, stop early to preserve UI room for controls and seats.
+  const nextExactCandidates = fittingDimensionsForArea(areaLimit, terminalSize)
+  if (nextExactCandidates.length === 0) {
+    return null
+  }
+
+  // Repair isolated bad factors inside this level's band without consuming the next level's area.
+  for (
+    let candidateArea = area + 1;
+    candidateArea < areaLimit && candidateArea <= terminalArea;
+    candidateArea += 1
+  ) {
+    const candidates = fittingDimensionsForArea(candidateArea, terminalSize)
+    if (candidates.length > 0) {
+      return { area: candidateArea, candidates }
+    }
+  }
+
+  return null
+}
+
 // getMazeDimensions finds the best playable dimensions for a level and viewport.
 export function getMazeDimensions(
   level: number,
   terminalSize: BaseDimensions,
 ): LevelDimensions | null {
-  const area = generateMazeArea(level)
-  if (area > terminalSize.width * terminalSize.length) {
+  const resolution = resolveMazeArea(level, terminalSize)
+  if (resolution === null) {
     return null
   }
 
-  const candidates = fittingDimensionsForArea(area, terminalSize)
-  if (candidates.length === 0) {
-    return null
-  }
-
-  const selected = chooseBestMazeDimensions(candidates, terminalSize)
+  const selected = chooseBestMazeDimensions(resolution.candidates, terminalSize)
   return { ...selected, level }
 }
 

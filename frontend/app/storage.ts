@@ -3,6 +3,7 @@ import {
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
 } from "./config"
+import { isAgentSeatId } from "./agent-seats"
 import { canPersistRoundStatus, isAgentApiMode } from "./status"
 import { currentTotalCells } from "./traversal"
 import type {
@@ -15,7 +16,7 @@ import type {
   WallWeight,
 } from "./types"
 
-const { runtime, timing } = CONFIG
+const { agentConfig, runtime, timing } = CONFIG
 const storageConfig = runtime.storage
 const { agentApi: agentApiModeName, interactive: interactiveModeName } =
   runtime.controlModes
@@ -149,6 +150,14 @@ function decodeStoredPayload<T>(encodedPayload: string): T | null {
 
 // Agent API configuration persistence.
 
+// hasValidAgentPlayerName enforces the compact label range used by the roster.
+function hasValidAgentPlayerName(playerName: string): boolean {
+  return (
+    playerName.length >= agentConfig.playerNameMinLength &&
+    playerName.length <= agentConfig.playerNameMaxLength
+  )
+}
+
 // isAgentApiConfig validates one persisted HTTP agent configuration.
 function isAgentApiConfig(value: unknown): value is AgentApiConfig {
   if (
@@ -167,14 +176,12 @@ function isAgentApiConfig(value: unknown): value is AgentApiConfig {
   const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
 
   return (
-    typeof value.id === "string" &&
-    value.id.length > 0 &&
+    typeof value.id === "number" &&
+    Number.isInteger(value.id) && value.id >= 1 &&
     typeof value.playerName === "string" &&
-    value.playerName.length > 0 &&
-    typeof value.model === "string" &&
-    value.model.length > 0 &&
-    typeof value.endpoint === "string" &&
-    value.endpoint.length > 0 &&
+    hasValidAgentPlayerName(value.playerName.trim()) &&
+    typeof value.model === "string" && value.model.length > 0 &&
+    typeof value.endpoint === "string" && value.endpoint.length > 0 &&
     typeof value.enabled === "boolean" &&
     (disabledReason === undefined || disabledReason === "network-error") &&
     (lastErrorAt === undefined ||
@@ -182,25 +189,37 @@ function isAgentApiConfig(value: unknown): value is AgentApiConfig {
   )
 }
 
-// normalizeAgentApiConfigs keeps only valid configs and de-duplicates by stable id.
+// normalizeAgentApiConfigs keeps valid fixed-seat occupants without reassigning seat ids.
 function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
   if (!Array.isArray(configs)) {
     return []
   }
 
-  const seenIds = new Set<string>()
+  const seenIds = new Set<number>()
+  const seenPlayerNames = new Set<string>()
   const normalizedConfigs: AgentApiConfig[] = []
 
   for (const config of configs) {
-    if (!isAgentApiConfig(config) || seenIds.has(config.id)) {
+    if (
+      !isAgentApiConfig(config) ||
+      !isAgentSeatId(config.id) ||
+      seenIds.has(config.id)
+    ) {
+      continue
+    }
+
+    const playerName = config.playerName.trim()
+    const playerNameKey = playerName.toLowerCase()
+    if (seenPlayerNames.has(playerNameKey)) {
       continue
     }
 
     seenIds.add(config.id)
-    normalizedConfigs.push({ ...config })
+    seenPlayerNames.add(playerNameKey)
+    normalizedConfigs.push({ ...config, playerName })
   }
 
-  return normalizedConfigs
+  return normalizedConfigs.sort((left, right) => left.id - right.id)
 }
 
 // loadPersistedAgentApiConfigs restores the configurable HTTP agents for agent-api mode.
@@ -213,9 +232,14 @@ export function loadPersistedAgentApiConfigs(): AgentApiConfig[] {
       return []
     }
 
-    return normalizeAgentApiConfigs(
-      decodeStoredPayload<unknown>(storedConfigs),
-    )
+    const decodedConfigs = decodeStoredPayload<unknown>(storedConfigs)
+    const normalizedConfigs = normalizeAgentApiConfigs(decodedConfigs)
+
+    if (JSON.stringify(decodedConfigs) !== JSON.stringify(normalizedConfigs)) {
+      savePersistedAgentApiConfigs(normalizedConfigs)
+    }
+
+    return normalizedConfigs
   } catch {
     return []
   }

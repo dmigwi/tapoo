@@ -59,7 +59,7 @@ function createActionState(
 function enabledAgentConfigs(): AgentApiConfig[] {
   return [
     {
-      id: "blue-agent",
+      id: 1,
       playerName: "Blue",
       model: "llama3.2",
       endpoint: "/configured-agents/blue/move",
@@ -262,28 +262,28 @@ describe("agent api turn loop", () => {
   it("rotates through enabled agents configured for the shared maze", async () => {
     const agentConfigs: AgentApiConfig[] = [
       {
-        id: "agent-a",
+        id: 1,
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: "/api/agents/a/move",
         enabled: true,
       },
       {
-        id: "agent-b",
+        id: 2,
         playerName: "Agent B",
         model: "gemma4",
         endpoint: "/api/agents/b/move",
         enabled: true,
       },
       {
-        id: "agent-disabled",
+        id: 3,
         playerName: "Disabled Agent",
         model: "disabled-model",
         endpoint: "/api/agents/disabled/move",
         enabled: false,
       },
       {
-        id: "agent-c",
+        id: 4,
         playerName: "Agent C",
         model: "qwen3",
         endpoint: "/api/agents/c/move",
@@ -304,6 +304,7 @@ describe("agent api turn loop", () => {
       }),
     )
     const onActionState = vi.fn()
+    const onActiveAgentChange = vi.fn()
 
     const poller = handleAgentTurnLoop({
       __elements: { body: document.createElement("div") },
@@ -311,6 +312,7 @@ describe("agent api turn loop", () => {
       __dispatch: dispatch,
       __dispatchAgentAction: dispatchAgentAction,
       __onActionState: onActionState,
+      __onActiveAgentChange: onActiveAgentChange,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: () => agentConfigs,
       __readActionState: () => createActionState({ level: 2 }),
@@ -386,6 +388,9 @@ describe("agent api turn loop", () => {
     expect(onActionState).toHaveBeenLastCalledWith(
       expect.objectContaining({ playerName: "Agent C" }),
     )
+    expect(onActiveAgentChange).toHaveBeenNthCalledWith(1, agentConfigs[0])
+    expect(onActiveAgentChange).toHaveBeenNthCalledWith(2, agentConfigs[1])
+    expect(onActiveAgentChange).toHaveBeenNthCalledWith(3, agentConfigs[3])
   })
 
   it("stops replaying predictions after the destination is reached", async () => {

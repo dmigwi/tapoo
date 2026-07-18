@@ -10,6 +10,7 @@
   --target: #ff6b5f;
   --accent: #9ea6d7;
   --status: #f1d065;
+  --disabled: #8f947a;
   --glow: rgba(72, 198, 62, 0.2);
   --button-radius: 6px;
   --top-button-min-height: 54px;
@@ -379,7 +380,7 @@ body {
 }
 
 .page-stage {
-  width: min(100%, 1320px);
+  width: 100%;
   height: 100%;
   margin: 0 auto;
 }
@@ -418,7 +419,7 @@ body {
   width: min(100%, 860px);
   padding: 24px;
   border: 1px solid rgba(72, 198, 62, 0.18);
-  border-radius: 14px;
+  border-radius: 1px;
   background:
     linear-gradient(180deg, rgba(13, 19, 13, 0.92) 0%, rgba(5, 8, 5, 0.98) 100%);
   box-shadow:
@@ -529,7 +530,7 @@ body {
   min-width: 0;
   padding:
     10px
-    calc(var(--safe-right) + 18px)
+    calc(var(--safe-right) + 8px)
     calc(var(--safe-bottom) + 18px)
     calc(var(--safe-left) + 18px);
   overflow: hidden;
@@ -545,6 +546,7 @@ body {
   min-width: 0;
   min-height: 0;
   display: flex;
+  gap: 4px;
   justify-content: center;
   align-items: flex-start;
   overflow: hidden;
@@ -553,10 +555,13 @@ body {
 
 .terminal-body {
   position: relative;
+  flex: 1 1 auto;
   height: 100%;
   width: 100%;
   min-width: 0;
   min-height: 0;
+  outline: 1px dashed rgba(72, 198, 62, 0.28);
+  outline-offset: -1px;
   overflow: hidden;
   display: flex;
   justify-content: center;
@@ -690,6 +695,92 @@ body {
 .terminal-body--agent-form-active .touch-controls {
   opacity: 0.42;
   pointer-events: none;
+}
+
+.agent-seat-roster {
+  flex: 0 0 auto;
+  align-self: center;
+  display: grid;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.agent-seat-roster[hidden] {
+  display: none;
+}
+
+.agent-seat {
+  position: relative;
+  width: 28px;
+  height: 56px;
+  margin-block: 6px;
+  border: 1px solid rgba(72, 198, 62, 0.42);
+  border-radius: 1px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(72, 198, 62, 0.16) 0%,
+      rgba(72, 198, 62, 0.07) 100%
+    );
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  line-height: 1;
+  padding: 0;
+}
+
+.agent-seat--empty {
+  border-color: rgba(72, 198, 62, 0.18);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(72, 198, 62, 0.07) 0%,
+      rgba(72, 198, 62, 0.025) 100%
+    );
+  color: var(--text-dim);
+}
+
+.agent-seat--empty,
+.agent-seat--occupied:not(:disabled) {
+  cursor: pointer;
+}
+
+.agent-seat--empty:hover,
+.agent-seat--empty:focus-visible,
+.agent-seat--occupied:not(:disabled):hover,
+.agent-seat--occupied:not(:disabled):focus-visible {
+  border-color: rgba(72, 198, 62, 0.56);
+  background: rgba(72, 198, 62, 0.13);
+  outline: none;
+}
+
+.agent-seat--active {
+  border-color: var(--status);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(241, 208, 101, 0.18) 0%,
+      rgba(241, 208, 101, 0.07) 100%
+    );
+  box-shadow: 0 0 16px rgba(241, 208, 101, 0.22);
+  color: var(--status);
+}
+
+.agent-seat--disabled {
+  border-color: rgba(143, 148, 122, 0.32);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(143, 148, 122, 0.09) 0%,
+      rgba(143, 148, 122, 0.035) 100%
+    );
+  color: var(--disabled);
+}
+
+.agent-seat:disabled {
+  cursor: default;
 }
 
 @supports (backdrop-filter: blur(3px)) or (-webkit-backdrop-filter: blur(3px)) {
@@ -966,6 +1057,39 @@ body {
   box-shadow: 0 0 0 2px rgba(72, 198, 62, 0.16);
 }
 
+.agent-config-form__toggle--off {
+  color: var(--disabled);
+}
+
+.agent-config-form__toggle--off .agent-config-form__toggle-control {
+  border-color: rgba(143, 148, 122, 0.44);
+  background: rgba(143, 148, 122, 0.08);
+}
+
+.agent-config-form__toggle--off .agent-config-form__toggle-control::after {
+  background: var(--disabled);
+}
+
+.agent-config-form__toggle--disabled {
+  color: var(--disabled);
+}
+
+.agent-config-form__toggle--disabled .agent-config-form__toggle-control {
+  border-color: rgba(143, 148, 122, 0.42);
+  opacity: 0.62;
+}
+
+.agent-config-form__check {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--target);
+}
+
+.agent-config-form__check input {
+  accent-color: var(--target);
+}
+
 .agent-config-form__submit {
   min-height: 46px;
   border: 1px solid var(--top-bar-edge);
@@ -989,6 +1113,15 @@ body {
   outline: none;
 }
 
+.agent-config-form__submit--secondary {
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.agent-config-form__submit--danger {
+  border-color: rgba(208, 94, 79, 0.38);
+  color: var(--target);
+}
+
 .agent-config-form__status {
   display: block;
   min-height: 1.2em;
@@ -998,6 +1131,10 @@ body {
 
 .agent-config-form__status--error {
   color: var(--target);
+}
+
+.agent-delete-dialog .agent-config-form__actions {
+  justify-content: flex-end;
 }
 
 @media (max-width: 720px) {
@@ -1027,7 +1164,7 @@ body {
   .terminal-app {
     padding:
       8px
-      calc(var(--safe-right) + 10px)
+      calc(var(--safe-right) + 6px)
       calc(var(--safe-bottom) + 12px)
       calc(var(--safe-left) + 10px);
   }

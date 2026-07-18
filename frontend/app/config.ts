@@ -167,7 +167,11 @@ export const CONFIG: AppConfig = {
   agentConfig: {
     title: "New Agent",
     newAgentLabel: "New Agent",
-    enabledLabel: "Enabled",
+    agentEnabledLabel: "Agent enabled",
+    agentDisabledLabel: "Agent disabled",
+    maxSeats: 5,
+    playerNameMinLength: 3,
+    playerNameMaxLength: 8,
     playerNameLabel: "Player Name",
     playerNamePlaceholder: "Blue",
     modelLabel: "Model",
@@ -175,9 +179,12 @@ export const CONFIG: AppConfig = {
     endpointLabel: "Endpoint",
     submitLabel: "Add Agent",
     endpointPlaceholder: "https://example.com/api/agent/move",
-    addedMessage: "Agent added successfully.",
     invalidMessage: "Fill in Player Name, Model and Endpoint.",
     duplicatePlayerNameMessage: "This player name is already configured.",
+    playerNameLengthMessage: "Player Name must be 3-8 characters.",
+    editTitle: "Edit Agent",
+    deleteMessageTemplate: "Delete {agent} from seat {seat} now?",
+    updateConfirmLabel: "Apply Changes",
   },
   // Maze glyphs and geometry shared by generation, traversal, and rendering.
   maze: {

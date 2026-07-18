@@ -38,22 +38,29 @@ export function getGameElements(): Elements | null {
     measure: mustElement<HTMLElement>("terminal-measure"),
     controls: Array.from(
       document.querySelectorAll<HTMLButtonElement>(
-        "button[data-action]:not([data-touch-control]), button[data-agent-config-toggle]:not([data-touch-control])",
+        "button[data-action]:not([data-touch-control])",
       ),
     ),
     touchControls: mustElement<HTMLElement>("touch-controls"),
     touchButtons: Array.from(
       document.querySelectorAll<HTMLButtonElement>("[data-touch-control]"),
     ),
+    agentSeatRoster: mustElement<HTMLElement>("agent-seat-roster"),
     agentConfigForm: mustElement<HTMLFormElement>("agent-config-form"),
-    agentConfigPlayerName: mustElement<HTMLInputElement>(
-      "agent-config-player-name",
-    ),
+    agentConfigPlayerName: mustElement<HTMLInputElement>("agent-config-player-name"),
     agentConfigModel: mustElement<HTMLInputElement>("agent-config-model"),
     agentConfigEndpoint: mustElement<HTMLInputElement>("agent-config-endpoint"),
     agentConfigEnabled: mustElement<HTMLInputElement>("agent-config-enabled"),
+    agentConfigEnabledLabel: mustElement<HTMLElement>( "agent-config-enabled-label"),
     agentConfigClose: mustElement<HTMLButtonElement>("agent-config-close"),
     agentConfigStatus: mustElement<HTMLElement>("agent-config-status"),
+    agentDeleteDialog: mustElement<HTMLElement>("agent-delete-dialog"),
+    agentDeleteTarget: mustElement<HTMLElement>("agent-delete-target"),
+    agentDeleteEnabled: mustElement<HTMLInputElement>("agent-delete-enabled"),
+    agentDeleteEnabledLabel: mustElement<HTMLElement>("agent-delete-enabled-label"),
+    agentDeleteApply: mustElement<HTMLButtonElement>("agent-delete-apply"),
+    agentDeleteConfirm: mustElement<HTMLInputElement>("agent-delete-confirm"),
+    agentDeleteClose: mustElement<HTMLButtonElement>("agent-delete-close"),
   }
 }
 
@@ -66,16 +73,9 @@ export function getTerminalSize(elements: Elements): BaseDimensions {
   const measuredRowHeight = sampleRect.height
   const computedLineHeight = Number.parseFloat(screenStyle.lineHeight)
   const computedFontSize = Number.parseFloat(screenStyle.fontSize)
-  const terminalRowHeight =
-    measuredRowHeight || computedLineHeight || computedFontSize || 16
-  const terminalColumns = Math.max(
-    viewport.minTerminalColumns,
-    Math.floor(rect.width / charWidth),
-  )
-  const terminalRows = Math.max(
-    viewport.minTerminalRows,
-    Math.floor(rect.height / terminalRowHeight),
-  )
+  const terminalRowHeight = measuredRowHeight || computedLineHeight || computedFontSize || 16
+  const terminalColumns = Math.max(viewport.minTerminalColumns, Math.floor(rect.width / charWidth))
+  const terminalRows = Math.max(viewport.minTerminalRows, Math.floor(rect.height / terminalRowHeight))
 
   return {
     length: Math.floor(

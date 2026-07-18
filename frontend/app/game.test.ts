@@ -25,7 +25,7 @@ function selfVisit(row: number, col: number): TraversalHistoryEntry {
 
 function enabledAgentConfig(): AgentApiConfig {
   return {
-    id: "blue-agent",
+    id: 1,
     playerName: "Blue",
     model: "llama3.2",
     endpoint: "/configured-agents/blue/move",

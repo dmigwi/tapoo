@@ -6,6 +6,12 @@ import {
   getMazeDimensions,
 } from "./maze"
 
+// This modeled terminal room approximates a 14-inch MacBook-class browser viewport:
+// physical panel 3024x1964px, CSS viewport about 1512x982px after device scaling,
+// 10 measured PT Mono sample characters about 60 CSS px, and one text row about 11 CSS px.
+// After app insets are removed, the browser maze receives 61 columns by 39 rows of room.
+const macbookBrowserTerminalSize = { length: 61, width: 39 }
+
 // These tests keep maze sizing, navigation tuning, and deterministic carving stable.
 describe("maze", () => {
   afterEach(() => {
@@ -38,6 +44,29 @@ describe("maze", () => {
 
   it("returns no dimensions when the viewport cannot fit the maze area", () => {
     expect(getMazeDimensions(1, { length: 6, width: 10 })).toBeNull()
+  })
+
+  it("repairs isolated bad area factors without consuming the next level target", () => {
+    expect(getMazeDimensions(143, macbookBrowserTerminalSize)).toEqual({
+      level: 143,
+      length: 44,
+      width: 34,
+    })
+    expect(getMazeDimensions(144, macbookBrowserTerminalSize)).toEqual({
+      level: 144,
+      length: 50,
+      width: 30,
+    })
+  })
+
+  it("stops at two consecutive undrawable exact level targets", () => {
+    // This modeled room keeps the 14-inch browser UX from filling every last drawable cell.
+    expect(getMazeDimensions(150, macbookBrowserTerminalSize)).toEqual({
+      level: 150,
+      length: 40,
+      width: 39,
+    })
+    expect(getMazeDimensions(151, macbookBrowserTerminalSize)).toBeNull()
   })
 
   it("tightens the navigation profile as maze area grows", () => {

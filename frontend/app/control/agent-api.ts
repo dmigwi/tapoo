@@ -64,6 +64,7 @@ type HandleAgentTurnLoopOptions = {
     playerName: string,
   ) => MazeActionState
   __disableAgentAfterNetworkError: (agent: AgentApiConfig) => void
+  __onActiveAgentChange?: (agent: AgentApiConfig | null) => void
   __readAgentConfigs: () => AgentApiConfig[]
   __onActionState: (actionState: MazeActionState) => void
   __readActionState: () => MazeActionState
@@ -72,7 +73,8 @@ type HandleAgentTurnLoopOptions = {
 // handleAgentTurnLoop owns the HTTP polling cycle used by the agent-api control mode.
 export function handleAgentTurnLoop({
   __commitAgentTurn, __disableAgentAfterNetworkError, __dispatch,
-  __dispatchAgentAction, __elements, __onActionState, __readActionState,
+  __dispatchAgentAction, __elements, __onActionState, __onActiveAgentChange,
+  __readActionState,
   __readAgentConfigs,
 }: HandleAgentTurnLoopOptions): AgentMovePoller {
   let attached = false
@@ -103,6 +105,7 @@ export function handleAgentTurnLoop({
 
   // awaitAgent immediately moves the game into its no-agent state without spending score.
   const awaitAgent = (): void => {
+    __onActiveAgentChange?.(null)
     __dispatch({ type: "await-agent" }, { playerName: activeActionState().playerName })
   }
 
@@ -141,6 +144,7 @@ export function handleAgentTurnLoop({
       return
     }
 
+    __onActiveAgentChange?.(null)
     __disableAgentAfterNetworkError(agent)
     const nextState = mergeMazeActionState(activeActionState(), {
       playerName: agent.playerName,
@@ -197,6 +201,7 @@ export function handleAgentTurnLoop({
         awaitAgent()
         return
       }
+      __onActiveAgentChange?.(selectedAgent)
 
       const requestActionState = mergeMazeActionState(currentActionState, {
         model: selectedAgent.model,

@@ -169,13 +169,19 @@ export type AgentExpectedResponseFormat = {
 
 // AgentApiConfig stores one HTTP-controlled agent that can join the shared agent-api maze.
 export type AgentApiConfig = {
-  id: string
+  id: number
   playerName: string
   model: string
   endpoint: string
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number
+}
+
+// AgentSeat represents one fixed roster slot; null means the seat is empty.
+export type AgentSeat = {
+  id: number
+  agent: AgentApiConfig | null
 }
 
 // MazeActionState is the flattened agent-api payload that combines live maze context with replay results.
@@ -270,8 +276,8 @@ export type ScreenLine = {
   className: string
 }
 
-// Elements collects the DOM handles that power the browser terminal.
-export type Elements = {
+// TerminalElements are required on every playable page.
+export type TerminalElements = {
   app: HTMLElement
   body: HTMLElement
   screen: HTMLElement
@@ -279,14 +285,30 @@ export type Elements = {
   controls: HTMLButtonElement[]
   touchControls: HTMLElement
   touchButtons: HTMLButtonElement[]
+}
+
+// AgentElements are only used by the agent-api page overlays and seat roster.
+export type AgentElements = {
+  agentSeatRoster?: HTMLElement
   agentConfigForm?: HTMLFormElement
   agentConfigPlayerName?: HTMLInputElement
   agentConfigModel?: HTMLInputElement
   agentConfigEndpoint?: HTMLInputElement
   agentConfigEnabled?: HTMLInputElement
+  agentConfigEnabledLabel?: HTMLElement
   agentConfigClose?: HTMLButtonElement
   agentConfigStatus?: HTMLElement
+  agentDeleteDialog?: HTMLElement
+  agentDeleteTarget?: HTMLElement
+  agentDeleteEnabled?: HTMLInputElement
+  agentDeleteEnabledLabel?: HTMLElement
+  agentDeleteApply?: HTMLButtonElement
+  agentDeleteConfirm?: HTMLInputElement
+  agentDeleteClose?: HTMLButtonElement
 }
+
+// Elements combines shared terminal handles with optional agent-api controls.
+export type Elements = TerminalElements & AgentElements
 
 // AppConfig gathers translatable copy and shared runtime constants.
 export type AppConfig = {
@@ -401,17 +423,24 @@ export type AppConfig = {
   agentConfig: {
     title: string
     newAgentLabel: string
-    enabledLabel: string
+    agentEnabledLabel: string
+    agentDisabledLabel: string
+    maxSeats: number
+    playerNameMinLength: number
+    playerNameMaxLength: number
     playerNameLabel: string
     playerNamePlaceholder: string
     duplicatePlayerNameMessage: string
+    playerNameLengthMessage: string
     modelLabel: string
     modelPlaceholder: string
     endpointLabel: string
     endpointPlaceholder: string
     submitLabel: string
-    addedMessage: string
     invalidMessage: string
+    editTitle: string
+    deleteMessageTemplate: string
+    updateConfirmLabel: string
   }
   maze: {
     playerMarker: string

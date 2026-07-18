@@ -115,7 +115,6 @@
             <span data-config-text data-config-key="controls.touch.resetProgressLabel"></span>
           </button>
         </div>
-        
         <form
           id="agent-config-form"
           class="agent-config-form"
@@ -176,7 +175,7 @@
                 checked
               />
               <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
-              <span data-config-text data-config-key="agentConfig.enabledLabel"></span>
+              <span id="agent-config-enabled-label"></span>
             </label>
             <button
               class="agent-config-form__submit"
@@ -193,7 +192,58 @@
             aria-live="polite"
           ></span>
         </form>
+        <section
+          id="agent-delete-dialog"
+          class="agent-config-form agent-delete-dialog"
+          hidden
+          aria-label="Delete agent confirmation"
+        >
+          <div class="agent-config-form__header">
+            <strong data-config-text data-config-key="agentConfig.editTitle"></strong>
+            <button
+              id="agent-delete-close"
+              class="agent-config-form__close"
+              type="button"
+              aria-label="Close delete agent confirmation"
+            >
+              ×
+            </button>
+          </div>
+          <label class="agent-config-form__check">
+            <input
+              id="agent-delete-confirm"
+              name="deleteConfirm"
+              type="checkbox"
+            />
+            <span id="agent-delete-target"></span>
+          </label>
+          <label class="agent-config-form__toggle">
+            <input
+              id="agent-delete-enabled"
+              name="deleteEnabled"
+              type="checkbox"
+            />
+            <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
+            <span id="agent-delete-enabled-label"></span>
+          </label>
+          <div class="agent-config-form__actions">
+            <button
+              id="agent-delete-apply"
+              class="agent-config-form__submit"
+              type="button"
+              data-config-text
+              data-config-key="agentConfig.updateConfirmLabel"
+            >
+            </button>
+          </div>
+        </section>
       </div>
+      <div
+        id="agent-seat-roster"
+        class="agent-seat-roster"
+        hidden
+        aria-label="Agent seats"
+      ></div>
     </div>
   </div>
 </section>

@@ -440,7 +440,7 @@ function updateTopMenuControls(elements: Elements, state: State): void {
 
 // updateAgentConfigForm keeps the agent setup overlay available only outside active agent play.
 function updateAgentConfigForm(elements: Elements, state: State): void {
-  if (!elements.agentConfigForm) {
+  if (!elements.agentConfigForm && !elements.agentDeleteDialog) {
     return
   }
 
@@ -448,7 +448,12 @@ function updateAgentConfigForm(elements: Elements, state: State): void {
     return
   }
 
-  elements.agentConfigForm.hidden = true
+  if (elements.agentConfigForm) {
+    elements.agentConfigForm.hidden = true
+  }
+  if (elements.agentDeleteDialog) {
+    elements.agentDeleteDialog.hidden = true
+  }
   elements.body.classList.remove("terminal-body--agent-form-active")
 }
 

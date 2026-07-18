@@ -157,14 +157,14 @@ describe("storage", () => {
   it("saves and reloads configured agent api details separately from game progress", () => {
     savePersistedAgentApiConfigs([
       {
-        id: "agent-a",
+        id: 1,
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: "/api/agents/a/move",
         enabled: true,
       },
       {
-        id: "agent-b",
+        id: 2,
         playerName: "Agent B",
         model: "gemma4",
         endpoint: "/api/agents/b/move",
@@ -182,14 +182,14 @@ describe("storage", () => {
     expect(storedConfigs).not.toContain("/api/agents/a/move")
     expect(loadPersistedAgentApiConfigs()).toEqual([
       {
-        id: "agent-a",
+        id: 1,
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: "/api/agents/a/move",
         enabled: true,
       },
       {
-        id: "agent-b",
+        id: 2,
         playerName: "Agent B",
         model: "gemma4",
         endpoint: "/api/agents/b/move",
@@ -204,6 +204,88 @@ describe("storage", () => {
 
     clearPersistedAgentApiConfigs()
     expect(loadPersistedAgentApiConfigs()).toEqual([])
+  })
+
+  it("normalizes fixed agent seats without reassigning occupied slots", () => {
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Aone",
+        model: "llama3.2",
+        endpoint: "/api/agents/1/move",
+        enabled: true,
+      },
+      {
+        id: 2,
+        playerName: "Atwo",
+        model: "gemma4",
+        endpoint: "/api/agents/2/move",
+        enabled: false,
+      },
+      {
+        id: 3,
+        playerName: "Athr",
+        model: "qwen3",
+        endpoint: "/api/agents/3/move",
+        enabled: true,
+      },
+      {
+        id: 4,
+        playerName: "Afou",
+        model: "mistral",
+        endpoint: "/api/agents/4/move",
+        enabled: true,
+      },
+      {
+        id: 5,
+        playerName: "Afiv",
+        model: "deepseek",
+        endpoint: "/api/agents/5/move",
+        enabled: true,
+      },
+      {
+        id: 6,
+        playerName: "Asix",
+        model: "phi4",
+        endpoint: "/api/agents/6/move",
+        enabled: true,
+      },
+    ])
+
+    expect(loadPersistedAgentApiConfigs().map((agent) => agent.playerName)).toEqual([
+      "Aone",
+      "Atwo",
+      "Athr",
+      "Afou",
+      "Afiv",
+    ])
+    expect(loadPersistedAgentApiConfigs().map((agent) => agent.id)).toEqual([
+      1,
+      2,
+      3,
+      4,
+      5,
+    ])
+  })
+
+  it("normalizes oversized enabled agents by removing the highest excess seats", () => {
+    savePersistedAgentApiConfigs(
+      Array.from({ length: CONFIG.agentConfig.maxSeats + 1 }, (_, index) => ({
+        id: index + 1,
+        playerName: `A${index + 1}bot`,
+        model: "llama3.2",
+        endpoint: `/api/agents/${index + 1}/move`,
+        enabled: true,
+      })),
+    )
+
+    expect(loadPersistedAgentApiConfigs().map((agent) => agent.playerName)).toEqual([
+      "A1bot",
+      "A2bot",
+      "A3bot",
+      "A4bot",
+      "A5bot",
+    ])
   })
 
   it("saves and reloads agent api progress in the agent storage namespace", () => {
@@ -237,14 +319,14 @@ describe("storage", () => {
     vi.spyOn(Date, "now").mockReturnValue(1_725_000_000_001)
     savePersistedAgentApiConfigs([
       {
-        id: "agent-a",
+        id: 1,
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: "/api/agents/a/move",
         enabled: true,
       },
       {
-        id: "agent-b",
+        id: 2,
         playerName: "Agent B",
         model: "gemma4",
         endpoint: "/api/agents/b/move",
@@ -253,7 +335,7 @@ describe("storage", () => {
     ])
 
     const nextConfigs = disableAgentApiConfigForNetworkError({
-      id: "agent-b",
+      id: 2,
       playerName: "Agent B",
       model: "gemma4",
       endpoint: "/api/agents/b/move",
@@ -262,14 +344,14 @@ describe("storage", () => {
 
     expect(nextConfigs).toEqual([
       {
-        id: "agent-a",
+        id: 1,
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: "/api/agents/a/move",
         enabled: true,
       },
       {
-        id: "agent-b",
+        id: 2,
         playerName: "Agent B",
         model: "gemma4",
         endpoint: "/api/agents/b/move",
