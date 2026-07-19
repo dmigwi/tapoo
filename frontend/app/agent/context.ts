@@ -1,17 +1,17 @@
-import { getNavigationProfile } from "./maze"
-import { isWonStatus } from "./status"
+import { getNavigationProfile } from "../maze"
+import { isWonStatus } from "../status"
 import {
   cellCoordinateFromGridPoint,
   isMoveAction,
   resolvePlayerMove,
-} from "./traversal"
+} from "../traversal"
 import type {
   MazeAction,
   MazeActionState,
   MoveStatus,
   MoveAction,
   State,
-} from "./types"
+} from "../types"
 
 // ALLOWED_MOVE_ACTIONS enumerates the only traversal commands the agent may return.
 const ALLOWED_MOVE_ACTIONS: MoveAction[] = ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"]

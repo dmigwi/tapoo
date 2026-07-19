@@ -3,7 +3,7 @@ import {
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
 } from "./config"
-import { isAgentSeatId } from "./agent-seats"
+import { isAgentSeatId } from "./agent/seats"
 import { canPersistRoundStatus, isAgentApiMode } from "./status"
 import { currentTotalCells } from "./traversal"
 import type {

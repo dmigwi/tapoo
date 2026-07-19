@@ -36,6 +36,7 @@ function setupTerminalDom(): void {
     <div id="touch-controls"></div>
     <div id="agent-seat-roster"></div>
     <form id="agent-config-form"></form>
+    <strong id="agent-config-title"></strong>
     <input id="agent-config-player-name" />
     <input id="agent-config-model" />
     <input id="agent-config-endpoint" />
@@ -44,6 +45,7 @@ function setupTerminalDom(): void {
     <button id="agent-config-close"></button>
     <p id="agent-config-status"></p>
     <section id="agent-delete-dialog"></section>
+    <strong id="agent-delete-title"></strong>
     <p id="agent-delete-target"></p>
     <input id="agent-delete-enabled" />
     <span id="agent-delete-enabled-label"></span>
@@ -113,6 +115,47 @@ describe("dom", () => {
     } as CSSStyleDeclaration)
 
     expect(getTerminalSize(elements)).toEqual({ length: 22, width: 11 })
+  })
+
+  it("uses actual drawable room for very small terminal measurements", async () => {
+    const { getMazeDimensions } = await import("./maze")
+    const { getGameElements, getTerminalSize } = await import("./dom")
+    const elements = getGameElements()
+    if (!elements) {
+      throw new Error("expected terminal elements")
+    }
+
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 200,
+      height: 120,
+      top: 0,
+      right: 200,
+      bottom: 120,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+    elements.measure.getBoundingClientRect = vi.fn(() => ({
+      width: 100,
+      height: 20,
+      top: 0,
+      right: 100,
+      bottom: 20,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+    vi.spyOn(window, "getComputedStyle").mockReturnValue({
+      lineHeight: "20px",
+      fontSize: "16px",
+    } as CSSStyleDeclaration)
+
+    const terminalSize = getTerminalSize(elements)
+
+    expect(terminalSize).toEqual({ length: 3, width: 0 })
+    expect(getMazeDimensions(1, terminalSize)).toBeNull()
   })
 
   it("ignores the floating touch controls when measuring the terminal", async () => {

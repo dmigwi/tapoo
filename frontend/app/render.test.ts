@@ -262,11 +262,46 @@ describe("render", () => {
       .map((button) => button.dataset.action ?? button.dataset.move)
 
     expect(visibleLabels).toEqual(["walls", "proceed", "restart"])
+    expect(normalizeScreenText(elements.screen.textContent)).toContain(
+      messages.agentAwaitAction.keyboard,
+    )
     expect(elements.agentConfigForm?.hidden).toBe(true)
     expect(elements.touchControls.hidden).toBe(false)
     expect(
       elements.touchControls.classList.contains("touch-controls--action-row"),
     ).toBe(true)
+  })
+
+  it("uses compact right-side seat guidance while agent-api waits on small displays", () => {
+    const elements = createElements()
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 412,
+      bottom: 915,
+      width: 412,
+      height: 915,
+      toJSON: () => ({}),
+    })
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 412,
+    })
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        status: "await-agent",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(messages.agentAwaitAction.touch)
+    expect(text).not.toContain(messages.proceed.keyboard)
   })
 
   it("hides an open agent configuration form when agent-api play starts", () => {

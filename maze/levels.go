@@ -107,9 +107,17 @@ func GetMazeDimensions(level int, terminalSize Dimensions) (*Dimensions, error) 
 func GetTerminalSize(h, w int) Dimensions {
 	// The termbox canvas reserves header and margin space, so only part of the terminal is available to the maze.
 	return Dimensions{
-		Length: (h - terminalHeightInset) / terminalHeightScale,
-		Width:  (w - terminalWidthInset) / terminalWidthScale,
+		Length: nonNegative((h - terminalHeightInset) / terminalHeightScale),
+		Width:  nonNegative((w - terminalWidthInset) / terminalWidthScale),
 	}
+}
+
+func nonNegative(value int) int {
+	if value < 0 {
+		return 0
+	}
+
+	return value
 }
 
 func absInt(value int) int {

@@ -92,3 +92,16 @@ export function sessionActionFromButton(
       return null
   }
 }
+
+// isFormControlTarget identifies editable controls whose keystrokes should not become game shortcuts.
+export function isFormControlTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement &&
+      (target.isContentEditable === true ||
+        target.contentEditable === "true" ||
+        target.getAttribute("contenteditable") === "true"))
+  )
+}

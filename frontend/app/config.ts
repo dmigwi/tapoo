@@ -98,7 +98,12 @@ export const CONFIG: AppConfig = {
       touch: "Use the buttons below.",
     },
     agentAwaitMessage: "No enabled agent API is configured.",
-    agentAwaitActionMessage: "Configure an agent. ",
+    agentAwaitAction: {
+      keyboard:
+        "Use the agent seats dock on the right edge of the screen to add/manage an agent, then press Enter to proceed.",
+      touch:
+        "Use the screen-edge seats dock to add/manage an agent, then tap Proceed.",
+    },
     tooSmallMessage: "Level {level} needs more screen room!",
     tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
     runningStatus: {
@@ -173,17 +178,22 @@ export const CONFIG: AppConfig = {
     playerNameMinLength: 3,
     playerNameMaxLength: 8,
     playerNameLabel: "Player Name",
-    playerNamePlaceholder: "Blue",
+    playerNamePlaceholder: "kora",
     modelLabel: "Model",
     modelPlaceholder: "llama3.2",
     endpointLabel: "Endpoint",
     submitLabel: "Add Agent",
-    endpointPlaceholder: "https://example.com/api/agent/move",
+    endpointPlaceholder: "localhost:5000 or https://example.com/api/agent/move",
     invalidMessage: "Fill in Player Name, Model and Endpoint.",
+    invalidEndpointMessage:
+      "Endpoint must be an http:// or https:// URL, or host:port.",
     duplicatePlayerNameMessage: "This player name is already configured.",
     playerNameLengthMessage: "Player Name must be 3-8 characters.",
     editTitle: "Edit Agent",
-    deleteMessageTemplate: "Delete {agent} from seat {seat} now?",
+    addSeatLabelTemplate: "Add agent to seat {seat}",
+    manageSeatLabelTemplate: "Manage player {agent} in seat {seat}",
+    activeSeatLabelTemplate: "Player {agent} is playing in seat {seat}",
+    deleteMessageTemplate: "Delete now?",
     updateConfirmLabel: "Apply Changes",
   },
   // Maze glyphs and geometry shared by generation, traversal, and rendering.
@@ -230,8 +240,6 @@ export const CONFIG: AppConfig = {
   viewport: {
     compactWidth: 540,
     compactHeight: 520,
-    minTerminalRows: 20,
-    minTerminalColumns: 48,
     terminalHeightInset: 5,
     terminalHeightScale: 4,
     terminalWidthInset: 10,

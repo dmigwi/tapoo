@@ -68,6 +68,7 @@ function createButton({
 function createAgentFormElements(): Elements {
   const agentSeatRoster = document.createElement("div")
   const agentConfigForm = document.createElement("form")
+  const agentConfigTitle = document.createElement("strong")
   const agentConfigPlayerName = document.createElement("input")
   const agentConfigModel = document.createElement("input")
   const agentConfigEndpoint = document.createElement("input")
@@ -77,6 +78,7 @@ function createAgentFormElements(): Elements {
   const agentConfigClose = document.createElement("button")
   const agentConfigStatus = document.createElement("p")
   const agentDeleteDialog = document.createElement("section")
+  const agentDeleteTitle = document.createElement("strong")
   const agentDeleteTarget = document.createElement("p")
   const agentDeleteEnabledLabel = document.createElement("label")
   const agentDeleteEnabled = document.createElement("input")
@@ -98,6 +100,7 @@ function createAgentFormElements(): Elements {
   agentConfigEnabledText.id = "agent-config-enabled-label"
   agentConfigEnabledLabel.append(agentConfigEnabled, agentConfigEnabledText)
   agentConfigForm.append(
+    agentConfigTitle,
     agentConfigPlayerName,
     agentConfigModel,
     agentConfigEndpoint,
@@ -109,6 +112,7 @@ function createAgentFormElements(): Elements {
   agentDeleteEnabledText.id = "agent-delete-enabled-label"
   agentDeleteEnabledLabel.append(agentDeleteEnabled, agentDeleteEnabledText)
   agentDeleteDialog.append(
+    agentDeleteTitle,
     agentDeleteTarget,
     agentDeleteEnabledLabel,
     agentDeleteApply,
@@ -127,6 +131,7 @@ function createAgentFormElements(): Elements {
     touchControls: document.createElement("div"),
     agentSeatRoster,
     agentConfigForm,
+    agentConfigTitle,
     agentConfigPlayerName,
     agentConfigModel,
     agentConfigEndpoint,
@@ -135,6 +140,7 @@ function createAgentFormElements(): Elements {
     agentConfigClose,
     agentConfigStatus,
     agentDeleteDialog,
+    agentDeleteTitle,
     agentDeleteTarget,
     agentDeleteEnabled,
     agentDeleteEnabledLabel: agentDeleteEnabledText,
@@ -846,8 +852,10 @@ describe("agent control mode", () => {
       { playerName: "Self" },
     )
     expect(elements.agentDeleteDialog?.hidden).toBe(false)
-    expect(elements.agentDeleteTarget?.textContent).toContain("Red")
-    expect(elements.agentDeleteTarget?.textContent).toContain("02")
+    expect(elements.agentDeleteTitle?.textContent).toBe(
+      "Manage player Red in seat 02",
+    )
+    expect(elements.agentDeleteTarget?.textContent).toBe("Delete now?")
     expect(elements.agentDeleteConfirm?.checked).toBe(false)
 
     elements.agentDeleteConfirm.checked = true
@@ -1009,6 +1017,7 @@ describe("agent control mode", () => {
     clickAddSeat(elements, "2")
 
     expect(elements.agentConfigForm?.hidden).toBe(false)
+    expect(elements.agentConfigTitle?.textContent).toBe("Add agent to seat 02")
     expect(elements.agentConfigEnabledLabel?.textContent).toBe(
       CONFIG.agentConfig.agentEnabledLabel,
     )
@@ -1049,6 +1058,59 @@ describe("agent control mode", () => {
 
     expect(elements.agentConfigForm?.hidden).toBe(false)
     expect(focus).not.toHaveBeenCalled()
+  })
+
+  it("ignores session shortcuts while typing in the agent configuration form", () => {
+    const elements = createAgentFormElements()
+    const dispatch = vi.fn()
+    vi.stubGlobal("fetch", vi.fn())
+    document.body.append(elements.app)
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    clickAddSeat(elements, "2")
+    for (const event of [
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", { key: "b", ctrlKey: true, bubbles: true, cancelable: true }),
+    ]) {
+      elements.agentConfigPlayerName.dispatchEvent(event)
+    }
+
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(elements.agentConfigForm?.hidden).toBe(false)
+    elements.app.remove()
+  })
+
+  it("closes the active agent form with Escape without dispatching pause", () => {
+    const elements = createAgentFormElements()
+    const dispatch = vi.fn()
+    vi.stubGlobal("fetch", vi.fn())
+    document.body.append(elements.app)
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    clickAddSeat(elements, "2")
+    elements.agentConfigPlayerName.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    )
+
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(elements.agentConfigForm?.hidden).toBe(true)
+    expect(
+      elements.body.classList.contains("terminal-body--agent-form-active"),
+    ).toBe(false)
+    elements.app.remove()
   })
 
   it("pauses a running agent game before opening the add form", () => {
@@ -1127,7 +1189,7 @@ describe("agent control mode", () => {
     const readAgentConfigs = vi.fn(loadPersistedAgentApiConfigs)
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
-    elements.agentConfigEndpoint.value = "/agents/scout/move"
+    elements.agentConfigEndpoint.value = "localhost:5000"
     vi.stubGlobal("fetch", vi.fn())
 
     const mode = createAgentMode(elements, readAgentConfigs)
@@ -1147,7 +1209,7 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Scout",
         model: "gemma4",
-        endpoint: "/agents/scout/move",
+        endpoint: "http://localhost:5000/",
         enabled: true,
       }),
     ])
@@ -1164,7 +1226,7 @@ describe("agent control mode", () => {
     const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = ""
-    elements.agentConfigEndpoint.value = "/agents/scout/move"
+    elements.agentConfigEndpoint.value = "https://agents.example/scout/move"
     vi.stubGlobal("fetch", vi.fn())
 
     const mode = createAgentMode(elements, readAgentConfigs)
@@ -1218,12 +1280,43 @@ describe("agent control mode", () => {
     ).toBe(true)
   })
 
+  it("rejects agent endpoints that are not http or https URLs", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    elements.agentConfigPlayerName.value = "Scout"
+    elements.agentConfigModel.value = "gemma4"
+    elements.agentConfigEndpoint.value = "/agents/scout/move"
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createActionState({ status: "await-agent" })),
+      vi.fn(() => createActionState()),
+    )
+
+    clickAddSeat(elements, "1")
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(loadPersistedAgentApiConfigs()).toEqual([])
+    expect(elements.agentConfigStatus?.textContent).toBe(
+      CONFIG.agentConfig.invalidEndpointMessage,
+    )
+    expect(
+      elements.agentConfigStatus?.classList.contains(
+        "agent-config-form__status--error",
+      ),
+    ).toBe(true)
+  })
+
   it("shows player-name length errors outside the compact label range", () => {
     const elements = createAgentFormElements()
     const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
     elements.agentConfigPlayerName.value = "TooLongName"
     elements.agentConfigModel.value = "gemma4"
-    elements.agentConfigEndpoint.value = "/agents/long/move"
+    elements.agentConfigEndpoint.value = "https://agents.example/long/move"
     vi.stubGlobal("fetch", vi.fn())
 
     const mode = createAgentMode(elements, readAgentConfigs)
@@ -1256,13 +1349,13 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Scout",
         model: "llama3.2",
-        endpoint: "/agents/scout/move",
+        endpoint: "https://agents.example/scout/move",
         enabled: true,
       },
     ])
     elements.agentConfigPlayerName.value = " scout "
     elements.agentConfigModel.value = "gemma4"
-    elements.agentConfigEndpoint.value = "/agents/scout-copy/move"
+    elements.agentConfigEndpoint.value = "https://agents.example/scout-copy/move"
     vi.stubGlobal("fetch", vi.fn())
 
     const mode = createAgentMode(elements, readAgentConfigs)
@@ -1293,7 +1386,7 @@ describe("agent control mode", () => {
     const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
     elements.agentConfigPlayerName.value = "Observer"
     elements.agentConfigModel.value = "llama3.2"
-    elements.agentConfigEndpoint.value = "/agents/observer/move"
+    elements.agentConfigEndpoint.value = "https://agents.example/observer/move"
     elements.agentConfigEnabled.checked = false
     vi.stubGlobal("fetch", vi.fn())
 

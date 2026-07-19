@@ -3,7 +3,7 @@ import {
   CONFIG,
   WALL_WEIGHTS,
 } from "./config"
-import { buildMazeActionState, executeActionWithFeedback } from "./agent-context"
+import { buildMazeActionState, executeActionWithFeedback } from "./agent/context"
 import { getTerminalSize } from "./dom"
 import {
   generateMaze,
@@ -1127,7 +1127,7 @@ function dispatchControl(
     return null
   }
 
-  // Feedback requests run through the agent-context path so moves can return structured state.
+  // Feedback requests run through the agent context path so moves can return structured state.
   const actionState = executeActionWithFeedback(action, {
     executeCommand: (nextAction) => {
       executeCommand(nextAction, options.playerName)

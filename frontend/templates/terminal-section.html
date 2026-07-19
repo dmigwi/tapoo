@@ -123,7 +123,7 @@
           aria-label="New agent configuration"
         >
           <div class="agent-config-form__header">
-            <strong data-config-text data-config-key="agentConfig.title"></strong>
+            <strong id="agent-config-title" data-config-text data-config-key="agentConfig.title"></strong>
             <button
               id="agent-config-close"
               class="agent-config-form__close"
@@ -160,7 +160,7 @@
             <input
               id="agent-config-endpoint"
               name="endpoint"
-              type="text"
+              type="url"
               autocomplete="off"
               required
               data-config-placeholder="agentConfig.endpointPlaceholder"
@@ -196,15 +196,15 @@
           id="agent-delete-dialog"
           class="agent-config-form agent-delete-dialog"
           hidden
-          aria-label="Delete agent confirmation"
+          aria-label="Manage agent"
         >
           <div class="agent-config-form__header">
-            <strong data-config-text data-config-key="agentConfig.editTitle"></strong>
+            <strong id="agent-delete-title" data-config-text data-config-key="agentConfig.editTitle"></strong>
             <button
               id="agent-delete-close"
               class="agent-config-form__close"
               type="button"
-              aria-label="Close delete agent confirmation"
+              aria-label="Close agent management"
             >
               ×
             </button>

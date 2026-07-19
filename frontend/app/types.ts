@@ -291,6 +291,7 @@ export type TerminalElements = {
 export type AgentElements = {
   agentSeatRoster?: HTMLElement
   agentConfigForm?: HTMLFormElement
+  agentConfigTitle?: HTMLElement
   agentConfigPlayerName?: HTMLInputElement
   agentConfigModel?: HTMLInputElement
   agentConfigEndpoint?: HTMLInputElement
@@ -299,6 +300,7 @@ export type AgentElements = {
   agentConfigClose?: HTMLButtonElement
   agentConfigStatus?: HTMLElement
   agentDeleteDialog?: HTMLElement
+  agentDeleteTitle?: HTMLElement
   agentDeleteTarget?: HTMLElement
   agentDeleteEnabled?: HTMLInputElement
   agentDeleteEnabledLabel?: HTMLElement
@@ -359,7 +361,10 @@ export type AppConfig = {
       touch: string
     }
     agentAwaitMessage: string
-    agentAwaitActionMessage: string
+    agentAwaitAction: {
+      keyboard: string
+      touch: string
+    }
     tooSmallMessage: string
     tooSmallActionMessage: string
     runningStatus: {
@@ -438,7 +443,11 @@ export type AppConfig = {
     endpointPlaceholder: string
     submitLabel: string
     invalidMessage: string
+    invalidEndpointMessage: string
     editTitle: string
+    addSeatLabelTemplate: string
+    manageSeatLabelTemplate: string
+    activeSeatLabelTemplate: string
     deleteMessageTemplate: string
     updateConfirmLabel: string
   }
@@ -478,8 +487,6 @@ export type AppConfig = {
     compactWidth: number
     compactHeight: number
     terminalSampleWidth: number
-    minTerminalRows: number
-    minTerminalColumns: number
     terminalHeightInset: number
     terminalHeightScale: number
     terminalWidthInset: number

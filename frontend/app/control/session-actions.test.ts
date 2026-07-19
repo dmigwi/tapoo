@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  isFormControlTarget,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
 } from "./session-actions"
@@ -88,5 +89,18 @@ describe("shared session actions", () => {
     expect(sessionActionFromButton(createButton("restart").dataset)).toEqual({
       type: "restart",
     })
+  })
+
+  it("identifies editable targets that should keep their keyboard input", () => {
+    expect(isFormControlTarget(document.createElement("input"))).toBe(true)
+    expect(isFormControlTarget(document.createElement("textarea"))).toBe(true)
+    expect(isFormControlTarget(document.createElement("select"))).toBe(true)
+
+    const editable = document.createElement("div")
+    editable.contentEditable = "true"
+
+    expect(isFormControlTarget(editable)).toBe(true)
+    expect(isFormControlTarget(document.createElement("button"))).toBe(false)
+    expect(isFormControlTarget(null)).toBe(false)
   })
 })

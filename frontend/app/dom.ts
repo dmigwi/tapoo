@@ -47,6 +47,7 @@ export function getGameElements(): Elements | null {
     ),
     agentSeatRoster: mustElement<HTMLElement>("agent-seat-roster"),
     agentConfigForm: mustElement<HTMLFormElement>("agent-config-form"),
+    agentConfigTitle: mustElement<HTMLElement>("agent-config-title"),
     agentConfigPlayerName: mustElement<HTMLInputElement>("agent-config-player-name"),
     agentConfigModel: mustElement<HTMLInputElement>("agent-config-model"),
     agentConfigEndpoint: mustElement<HTMLInputElement>("agent-config-endpoint"),
@@ -55,6 +56,7 @@ export function getGameElements(): Elements | null {
     agentConfigClose: mustElement<HTMLButtonElement>("agent-config-close"),
     agentConfigStatus: mustElement<HTMLElement>("agent-config-status"),
     agentDeleteDialog: mustElement<HTMLElement>("agent-delete-dialog"),
+    agentDeleteTitle: mustElement<HTMLElement>("agent-delete-title"),
     agentDeleteTarget: mustElement<HTMLElement>("agent-delete-target"),
     agentDeleteEnabled: mustElement<HTMLInputElement>("agent-delete-enabled"),
     agentDeleteEnabledLabel: mustElement<HTMLElement>("agent-delete-enabled-label"),
@@ -74,16 +76,22 @@ export function getTerminalSize(elements: Elements): BaseDimensions {
   const computedLineHeight = Number.parseFloat(screenStyle.lineHeight)
   const computedFontSize = Number.parseFloat(screenStyle.fontSize)
   const terminalRowHeight = measuredRowHeight || computedLineHeight || computedFontSize || 16
-  const terminalColumns = Math.max(viewport.minTerminalColumns, Math.floor(rect.width / charWidth))
-  const terminalRows = Math.max(viewport.minTerminalRows, Math.floor(rect.height / terminalRowHeight))
+  const terminalColumns = Math.floor(rect.width / charWidth)
+  const terminalRows = Math.floor(rect.height / terminalRowHeight)
 
   return {
-    length: Math.floor(
-      (terminalColumns - viewport.terminalHeightInset) /
-        viewport.terminalHeightScale,
+    length: Math.max(
+      0,
+      Math.floor(
+        (terminalColumns - viewport.terminalHeightInset) /
+          viewport.terminalHeightScale,
+      ),
     ),
-    width: Math.floor(
-      (terminalRows - viewport.terminalWidthInset) / viewport.terminalWidthScale,
+    width: Math.max(
+      0,
+      Math.floor(
+        (terminalRows - viewport.terminalWidthInset) / viewport.terminalWidthScale,
+      ),
     ),
   }
 }

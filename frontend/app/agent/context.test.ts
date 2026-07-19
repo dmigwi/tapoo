@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { CONFIG } from "./config"
-import { executeActionWithFeedback } from "./agent-context"
-import type { MazeAction, MoveAction, State, TraversalHistoryEntry } from "./types"
+import { CONFIG } from "../config"
+import { executeActionWithFeedback } from "./context"
+import type { MazeAction, MoveAction, State, TraversalHistoryEntry } from "../types"
 
 function visit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Blue", row, col }

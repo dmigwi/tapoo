@@ -7,18 +7,21 @@ import type {
   MazeActionState,
 } from "../types"
 import {
+  agentConfigValidationError,
+  normalizeAgentEndpoint,
+} from "../agent/config"
+import {
   handleAgentTurnLoop,
 } from "./agent-api"
 import type { AgentMovePoller } from "./agent-api"
 import {
-  agentSeatDatasetValue,
-  agentSeatDeleteMessage,
+  agentSeatAddLabel,
   agentSeatIdFromDataset,
-  agentSeatLabel,
-  buildAgentSeats,
-  emptyAgentSeatLabel,
-} from "../agent-seats"
+  agentSeatManageLabel,
+  renderAgentSeatRoster,
+} from "../agent/seats"
 import {
+  isFormControlTarget,
   releaseAllActionBindings,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
@@ -210,41 +213,7 @@ export function createAgentMode(
       }
 
       const renderAgentRoster = (): void => {
-        if (!elements.agentSeatRoster) {
-          return
-        }
-
-        elements.agentSeatRoster.replaceChildren()
-        elements.agentSeatRoster.hidden = false
-        buildAgentSeats(readAgentConfigs()).forEach(({ id, agent }) => {
-          const seat = document.createElement("button")
-          seat.className = agent ? "agent-seat agent-seat--occupied" : "agent-seat agent-seat--empty"
-          seat.dataset.agentSeatId = agentSeatDatasetValue(id)
-          seat.type = "button"
-
-          if (!agent) {
-            seat.setAttribute("aria-label", `${agentConfig.newAgentLabel} ${id}`)
-            seat.dataset.agentSeatAdd = agentSeatDatasetValue(id)
-            seat.textContent = emptyAgentSeatLabel
-            elements.agentSeatRoster?.append(seat)
-            return
-          }
-
-          seat.classList.toggle("agent-seat--disabled", !agent.enabled)
-          seat.classList.toggle("agent-seat--active", agent.id === activeAgentId)
-          seat.title = agent.playerName
-          seat.setAttribute("aria-label", `Delete ${agent.playerName}`)
-
-          if (agent.id === activeAgentId) {
-            seat.disabled = true
-            seat.setAttribute("aria-label", `${agent.playerName} is playing`)
-          } else {
-            seat.dataset.agentSeatDelete = agentSeatDatasetValue(agent.id)
-          }
-
-          seat.textContent = agentSeatLabel(id)
-          elements.agentSeatRoster?.append(seat)
-        })
+        renderAgentSeatRoster(elements.agentSeatRoster, readAgentConfigs(), activeAgentId)
       }
 
       const clearAgentConfigStatus = (): void => {
@@ -309,6 +278,9 @@ export function createAgentMode(
 
         pauseIfRunning()
         selectedSeatId = seatId
+        if (elements.agentConfigTitle) {
+          elements.agentConfigTitle.textContent = agentSeatAddLabel(seatId)
+        }
         elements.agentConfigForm.hidden = false
         syncAgentConfigEnabledToggle()
         syncOverlayState()
@@ -343,8 +315,11 @@ export function createAgentMode(
 
         pauseIfRunning()
         deleteSeatId = seatId
+        if (elements.agentDeleteTitle) {
+          elements.agentDeleteTitle.textContent = agentSeatManageLabel(agent)
+        }
         if (elements.agentDeleteTarget) {
-          elements.agentDeleteTarget.textContent = agentSeatDeleteMessage(agent)
+          elements.agentDeleteTarget.textContent = agentConfig.deleteMessageTemplate
         }
         elements.agentDeleteDialog.hidden = false
         if (elements.agentDeleteEnabled) {
@@ -416,31 +391,26 @@ export function createAgentMode(
           const enabled = elements.agentConfigEnabled?.checked ?? false
           clearAgentConfigStatus()
 
-          if (!selectedSeatId || !playerName || !model || !endpoint) {
+          if (!selectedSeatId) {
             setAgentConfigError(agentConfig.invalidMessage)
             return
           }
 
-          if (
-            playerName.length < agentConfig.playerNameMinLength ||
-            playerName.length > agentConfig.playerNameMaxLength
-          ) {
-            setAgentConfigError(agentConfig.playerNameLengthMessage)
+          const existingAgents = readAgentConfigs()
+          const validationError = agentConfigValidationError({
+            endpoint,
+            existingAgents,
+            model,
+            playerName,
+          })
+          if (validationError) {
+            setAgentConfigError(validationError)
             return
           }
 
-          const existingAgents = readAgentConfigs()
           if (existingAgents.some((agent) => agent.id === selectedSeatId)) {
             closeAgentConfigForm()
             renderAgentRoster()
-            return
-          }
-
-          const existingPlayerName = existingAgents.some(
-            (agent) => agent.playerName.trim().toLowerCase() === playerName.toLowerCase(),
-          )
-          if (existingPlayerName) {
-            setAgentConfigError(agentConfig.duplicatePlayerNameMessage)
             return
           }
 
@@ -448,7 +418,7 @@ export function createAgentMode(
             id: selectedSeatId,
             playerName,
             model,
-            endpoint,
+            endpoint: normalizeAgentEndpoint(endpoint) ?? endpoint,
             enabled,
           }
 
@@ -521,6 +491,32 @@ export function createAgentMode(
         elements.agentDeleteApply.addEventListener("click", agentDeleteApplyHandler)
       }
 
+      const closeActiveAgentOverlay = (): boolean => {
+        if (isAgentConfigFormOpen()) {
+          closeAgentConfigForm()
+          return true
+        }
+
+        if (isAgentDeleteDialogOpen()) {
+          closeAgentDeleteDialog()
+          return true
+        }
+
+        return false
+      }
+
+      const handleFormControlKeydown = (event: KeyboardEvent): boolean => {
+        if (!isFormControlTarget(event.target)) {
+          return false
+        }
+
+        if (event.key === "Escape" && closeActiveAgentOverlay()) {
+          event.preventDefault()
+        }
+
+        return true
+      }
+
       // Human-owned session controls stay on the no-feedback path in agent-api mode.
       const bindSessionButtons = (buttons: HTMLButtonElement[]): void => {
         buttons.forEach((button) => {
@@ -547,6 +543,10 @@ export function createAgentMode(
       bindAgentDeleteDialog()
 
       keydownHandler = (event: KeyboardEvent): void => {
+        if (handleFormControlKeydown(event)) {
+          return
+        }
+
         const command = sessionActionFromKeyboardEvent(event)
         if (!command) {
           return

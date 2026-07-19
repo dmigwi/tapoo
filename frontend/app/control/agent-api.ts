@@ -1,5 +1,5 @@
 import { CONFIG } from "../config"
-import { mergeMazeActionState } from "../agent-context"
+import { mergeMazeActionState } from "../agent/context"
 import { isRunningStatus } from "../status"
 import type {
   AgentApiConfig,

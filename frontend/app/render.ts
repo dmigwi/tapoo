@@ -124,6 +124,13 @@ function proceedText(elements: Elements): string {
     : messages.proceed.keyboard
 }
 
+// agentAwaitActionText explains where to configure agents without showing unrelated reset guidance.
+function agentAwaitActionText(elements: Elements): string {
+  return isCompactDisplay(elements)
+    ? messages.agentAwaitAction.touch
+    : messages.agentAwaitAction.keyboard
+}
+
 // centeredTextRow creates one centered text line for the rendered screen model.
 function centeredTextRow(text: string, className = "screen-text"): ScreenLine {
   return {
@@ -262,9 +269,7 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
   if (isAwaitAgentStatus(state.status) && isAgentApiMode(state.controlMode)) {
     return [
       centeredTextRow(messages.agentAwaitMessage, "status"),
-      centeredTextRow(
-        `${messages.agentAwaitActionMessage} ${proceedText(elements)}`,
-      ),
+      centeredTextRow(agentAwaitActionText(elements)),
     ]
   }
 
