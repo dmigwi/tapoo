@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { CONFIG } from "./config"
 import {
   cellCoordinateFromGridPoint,
-  currentTotalCells,
+  createMazeDimensions,
   gridPointFromCellCoordinate,
   isMoveAction,
   isSpaceFound,
@@ -30,15 +30,15 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "   ", " ", "   ", "|"],
       ["|", "---", "-", "---", "|"],
     ],
-    mazeDimensions: { length: 2, width: 1 },
+    mazeDimensions: { length: 2, width: 1, area: 2 },
     playerPosition: { x: 1, y: 1 },
     traversalHistory: [visit(0, 0)],
     finalPosition: { x: 3, y: 1 },
     status: "running",
     score: 100,
     lastRoundScore: 0,
-    lastAttemptRetention: null,
-    bestWinRetention: null,
+    lastAttemptRetentionUnits: null,
+    bestWinRetentionUnits: null,
     lastWinRequestCount: null,
     bestWinRequestCount: null,
     winSummary: "",
@@ -98,11 +98,12 @@ describe("traversal", () => {
     expect(gridPointFromCellCoordinate({ row: 2, col: 3 })).toEqual({ x: 7, y: 5 })
   })
 
-  it("returns the total logical cells only for usable maze dimensions", () => {
-    expect(currentTotalCells({ length: 4, width: 3 })).toBe(12)
-    expect(currentTotalCells(null)).toBe(0)
-    expect(currentTotalCells({ length: 0, width: 3 })).toBe(0)
-    expect(currentTotalCells({ length: 4, width: -1 })).toBe(0)
+  it("creates maze dimensions with their logical cell area", () => {
+    expect(createMazeDimensions({ length: 4, width: 3 })).toEqual({
+      length: 4,
+      width: 3,
+      area: 12,
+    })
   })
 
   it("tracks traversal history entries by logical cell identity", () => {

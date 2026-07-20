@@ -10,19 +10,22 @@ function visit(row: number, col: number): TraversalHistoryEntry {
 
 const expectedAgentPrompt = [
   "Your name is Blue.",
-  "Use traversalHistory entries matching your playerName to review your past moves in order,",
-  "then use the provided context to predict the next valid moves.",
-  "Valid moves advance you until the first invalid move stops replay.",
-  "Every submitted prediction counts toward score decay until the destination is reached.",
-  "Locate the randomized path between the current position and destination with the highest score retention.",
-].join("\n")
+  `playerName ${CONFIG.runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
+  "Use currentCell as your current position and destinationCell as the target.",
+  "Use traversalHistory entries matching your playerName to review your past moves in order.",
+  "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
+  "Return only the expected JSON moves payload using allowedMoves.",
+  "Moves replay in order until the destination or the first invalid move.",
+  "Every submitted move counts toward score decay, including moves after the first invalid move.",
+  "Choose the moves most likely to reach the destination with the fewest submitted moves.",
+].join(" ")
 
 // createState builds a compact agent-facing runtime state for movement feedback tests.
 function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.agentApi,
     level: 4,
-    mazeDimensions: { length: 2, width: 1 },
+    mazeDimensions: { length: 2, width: 1, area: 2 },
     maze: [
       ["|", "---", "|", "---", "|"],
       ["|", "   ", " ", "   ", "|"],
@@ -34,8 +37,8 @@ function createState(overrides: Partial<State> = {}): State {
     status: "running",
     score: 700,
     lastRoundScore: 0,
-    lastAttemptRetention: null,
-    bestWinRetention: null,
+    lastAttemptRetentionUnits: null,
+    bestWinRetentionUnits: null,
     lastWinRequestCount: null,
     bestWinRequestCount: null,
     winSummary: "",

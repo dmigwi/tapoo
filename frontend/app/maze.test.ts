@@ -23,6 +23,7 @@ describe("maze", () => {
       level: 1,
       length: 7,
       width: 10,
+      area: 70,
     })
   })
 
@@ -31,6 +32,7 @@ describe("maze", () => {
       level: 2,
       length: 10,
       width: 8,
+      area: 80,
     })
   })
 
@@ -39,6 +41,7 @@ describe("maze", () => {
       level: 994,
       width: 100,
       length: 100,
+      area: 10000,
     })
   })
 
@@ -51,11 +54,13 @@ describe("maze", () => {
       level: 143,
       length: 44,
       width: 34,
+      area: 1496,
     })
     expect(getMazeDimensions(144, macbookBrowserTerminalSize)).toEqual({
       level: 144,
       length: 50,
       width: 30,
+      area: 1500,
     })
   })
 
@@ -65,6 +70,7 @@ describe("maze", () => {
       level: 150,
       length: 40,
       width: 39,
+      area: 1560,
     })
     expect(getMazeDimensions(151, macbookBrowserTerminalSize)).toBeNull()
   })

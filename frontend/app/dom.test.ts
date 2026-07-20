@@ -270,26 +270,31 @@ describe("dom", () => {
       level: 47,
       length: 53,
       width: 10,
+      area: 530,
     })
     expect(getMazeDimensions(53, terminalSize)).toEqual({
       level: 53,
       length: 59,
       width: 10,
+      area: 590,
     })
     expect(getMazeDimensions(55, terminalSize)).toEqual({
       level: 55,
       length: 61,
       width: 10,
+      area: 610,
     })
     expect(getMazeDimensions(109, terminalSize)).toEqual({
       level: 109,
       length: 46,
       width: 25,
+      area: 1150,
     })
     expect(highestContinuousDrawableLevel(getMazeDimensions, terminalSize, 500)).toEqual({
       level: 150,
       length: 40,
       width: 39,
+      area: 1560,
     })
     expect(getMazeDimensions(151, terminalSize)).toBeNull()
   })

@@ -18,12 +18,15 @@ import type {
 const agentMovePollIntervalMs = CONFIG.timing.agentApiCoreDecayIntervalPerCellMs
 const expectedAgentPrompt = [
   "Your name is Blue.",
-  "Use traversalHistory entries matching your playerName to review your past moves in order,",
-  "then use the provided context to predict the next valid moves.",
-  "Valid moves advance you until the first invalid move stops replay.",
-  "Every submitted prediction counts toward score decay until the destination is reached.",
-  "Locate the randomized path between the current position and destination with the highest score retention.",
-].join("\n")
+  `playerName ${CONFIG.runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
+  "Use currentCell as your current position and destinationCell as the target.",
+  "Use traversalHistory entries matching your playerName to review your past moves in order.",
+  "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
+  "Return only the expected JSON moves payload using allowedMoves.",
+  "Moves replay in order until the destination or the first invalid move.",
+  "Every submitted move counts toward score decay, including moves after the first invalid move.",
+  "Choose the moves most likely to reach the destination with the fewest submitted moves.",
+].join(" ")
 
 function enabledAgentConfigs(): AgentApiConfig[] {
   return [

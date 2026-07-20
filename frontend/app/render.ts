@@ -1,5 +1,9 @@
 import { CONFIG } from "./config"
 import {
+  calculateScoreRetentionUnits,
+  retentionUnitsToDisplayPercent,
+} from "./scoring"
+import {
   canProceedStatus,
   canShowWallsStatus,
   isAgentApiMode,
@@ -11,9 +15,9 @@ import {
   isTooSmallStatus,
   isWonStatus,
 } from "./status"
-import type { Elements, ScreenLine, State } from "./types"
+import type { DisplayMsg, Elements, ScreenLine, State } from "./types"
 
-const { maze, messages, scoring, viewport } = CONFIG
+const { maze, messages, viewport } = CONFIG
 
 // escapeHtml protects text rows before they are written as HTML.
 function escapeHtml(value: string): string {
@@ -48,9 +52,7 @@ function replaceAt(line: string, index: number, char: string): string {
 
 // statusText selects the running-status footer copy for the current display size.
 function statusText(elements: Elements, state: State): string {
-  const template = isCompactDisplay(elements)
-    ? messages.runningStatus.touch
-    : messages.runningStatus.keyboard
+  const template = displayText(elements, messages.runningStatus)
 
   return template
     .replace("{level}", String(state.level))
@@ -107,28 +109,18 @@ function isCompactDisplay(elements: Elements): boolean {
   return availableWidth || availableHeight || compactWidth || compactHeight
 }
 
+// displayText picks the wide or compact copy variant for the currently available display room.
+function displayText(elements: Elements, message: DisplayMsg): string {
+  return isCompactDisplay(elements) ? message.compact : message.wide
+}
+
 // navigationText picks the control-mode and viewport-specific navigation hint.
 function navigationText(elements: Elements, state: State): string {
-  const compact = isCompactDisplay(elements)
   const navigation = isAgentApiMode(state.controlMode)
     ? messages.navigation.agentApi
     : messages.navigation.interactive
 
-  return compact ? navigation.touch : navigation.keyboard
-}
-
-// proceedText picks the keyboard or touch proceed hint for the viewport.
-function proceedText(elements: Elements): string {
-  return isCompactDisplay(elements)
-    ? messages.proceed.touch
-    : messages.proceed.keyboard
-}
-
-// agentAwaitActionText explains where to configure agents without showing unrelated reset guidance.
-function agentAwaitActionText(elements: Elements): string {
-  return isCompactDisplay(elements)
-    ? messages.agentAwaitAction.touch
-    : messages.agentAwaitAction.keyboard
+  return displayText(elements, navigation)
 }
 
 // centeredTextRow creates one centered text line for the rendered screen model.
@@ -163,20 +155,6 @@ function tooSmallRows(state: State): ScreenLine[] {
     ),
     centeredTextRow(messages.tooSmallActionMessage),
   ]
-}
-
-// successText picks the win message sized for the current viewport.
-function successText(elements: Elements): string {
-  return isCompactDisplay(elements)
-    ? messages.successCompactMessage
-    : messages.successMessage
-}
-
-// failedText picks the loss message sized for the current viewport.
-function failedText(elements: Elements): string {
-  return isCompactDisplay(elements)
-    ? messages.failedCompactMessage
-    : messages.failedMessage
 }
 
 // shouldDrawDestination decides whether the blinking destination is visible this frame.
@@ -241,27 +219,18 @@ function renderTextLine(value: string, className = "screen-text"): string {
   return `<span class="${className}">${html}</span>`
 }
 
-// scorePercent converts the last-round score into a compact retention percentage.
+// scorePercent converts stored or fallback score retention units into the displayed percentage.
 function scorePercent(state: State): number {
+  if (state.lastAttemptRetentionUnits !== null) {
+    return retentionUnitsToDisplayPercent(state.lastAttemptRetentionUnits)
+  }
+
   if (!state.mazeDimensions) {
     return 0
   }
 
-  const maxScore =
-    state.mazeDimensions.length *
-    state.mazeDimensions.width *
-    scoring.budgetMultiplier
-  if (maxScore <= 0) {
-    return 0
-  }
-
-  return Math.max(
-    0,
-    Math.min(
-      scoring.percentScale,
-      Math.round((state.lastRoundScore * scoring.percentScale) / maxScore),
-    ),
-  )
+  const fallbackRetentionUnits = calculateScoreRetentionUnits(state.mazeDimensions.area, state.lastRoundScore)
+  return retentionUnitsToDisplayPercent(fallbackRetentionUnits)
 }
 
 // overlayRows builds the centered pause, win, loss, or too-small overlay lines.
@@ -269,14 +238,14 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
   if (isAwaitAgentStatus(state.status) && isAgentApiMode(state.controlMode)) {
     return [
       centeredTextRow(messages.agentAwaitMessage, "status"),
-      centeredTextRow(agentAwaitActionText(elements)),
+      centeredTextRow(displayText(elements, messages.agentAwaitAction)),
     ]
   }
 
   if (isPausedStatus(state.status)) {
     return [
       centeredTextRow(messages.pauseMessage, "status"),
-      centeredTextRow(proceedText(elements)),
+      centeredTextRow(displayText(elements, messages.proceed)),
     ]
   }
 
@@ -286,7 +255,7 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
       .replace("{score}", String(state.lastRoundScore))
       .replace("{percent}", String(scorePercent(state)))
     const rows = [
-      centeredTextRow(successText(elements), "status"),
+      centeredTextRow(displayText(elements, messages.success), "status"),
       centeredTextRow(scoresMsg, "accent"),
     ]
 
@@ -294,14 +263,14 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
       rows.push(centeredTextRow(state.winSummary, "accent"))
     }
 
-    rows.push(centeredTextRow(proceedText(elements)))
+    rows.push(centeredTextRow(displayText(elements, messages.proceed)))
     return rows
   }
 
   if (isLostStatus(state.status)) {
     return [
-      centeredTextRow(failedText(elements), "status"),
-      centeredTextRow(proceedText(elements)),
+      centeredTextRow(displayText(elements, messages.failed), "status"),
+      centeredTextRow(displayText(elements, messages.proceed)),
     ]
   }
 

@@ -28,14 +28,19 @@ export type RenderGridPoint = {
   y: number
 }
 
-// BaseDimensions captures a maze size without tying it to a specific level.
+// BaseDimensions captures raw length and width, including viewport or terminal room.
 export type BaseDimensions = {
   length: number
   width: number
 }
 
+// MazeDimensions captures a concrete maze shape and its logical cell area.
+export type MazeDimensions = BaseDimensions & {
+  area: number
+}
+
 // LevelDimensions couples a generated maze size back to its source level.
-export type LevelDimensions = BaseDimensions & {
+export type LevelDimensions = MazeDimensions & {
   level: number
 }
 
@@ -128,7 +133,7 @@ export type RoundState = {
 // PersistedRound captures the active or finished round state restored across reloads.
 export type PersistedRound = {
   level: number
-  mazeDimensions: BaseDimensions
+  mazeDimensions: MazeDimensions
   maze: string[][]
   startCell: CellCoordinate
   traversalHistory: TraversalHistoryEntry[]
@@ -144,15 +149,22 @@ export type PersistedRound = {
   agentRequestCount?: number
 }
 
-// PersistedPreferences stores the long-lived browser preferences between rounds.
-export type PersistedPreferences = {
+// PersistedGameSetup stores the progress fields usually loaded together before a round starts.
+export type PersistedGameSetup = {
   level: number
   wallWeight: WallWeight
-  lastAttemptRetention?: number | null
-  bestWinRetention?: number | null
-  lastWinRequestCount?: number | null
-  bestWinRequestCount?: number | null
 }
+
+// PersistedWinMetrics stores the completed-round metrics that survive level progression.
+export type PersistedWinMetrics = {
+  lastAttemptRetentionUnits: number | null
+  bestWinRetentionUnits: number | null
+  lastWinRequestCount: number | null
+  bestWinRequestCount: number | null
+}
+
+// PersistedPreferences combines setup with optional metrics because old/missing storage can lack either bucket.
+export type PersistedPreferences = PersistedGameSetup & Partial<PersistedWinMetrics>
 
 // PersistedSnapshot bundles long-lived preferences with the short-lived round snapshot.
 export type PersistedSnapshot = {
@@ -243,7 +255,7 @@ export type State = {
   canResume: boolean
 
   maze: string[][] | null
-  mazeDimensions: BaseDimensions | null
+  mazeDimensions: MazeDimensions | null
   playerPosition: RenderGridPoint | null
   finalPosition: RenderGridPoint | null
   traversalHistory: TraversalHistoryEntry[]
@@ -251,8 +263,8 @@ export type State = {
 
   score: number
   lastRoundScore: number
-  lastAttemptRetention: number | null
-  bestWinRetention: number | null
+  lastAttemptRetentionUnits: number | null
+  bestWinRetentionUnits: number | null
   lastWinRequestCount: number | null
   bestWinRequestCount: number | null
   winSummary: string
@@ -312,6 +324,19 @@ export type AgentElements = {
 // Elements combines shared terminal handles with optional agent-api controls.
 export type Elements = TerminalElements & AgentElements
 
+// DisplayMsg stores copy variants selected by viewport room, not by input hardware.
+export type DisplayMsg = {
+  wide: string
+  compact: string
+}
+
+// SummaryComparisonTemplates groups the best-record variants shared by win summaries.
+export type SummaryComparisonTemplates = {
+  newRecord: string
+  matchedBest: string
+  behindBest: string
+}
+
 // AppConfig gathers translatable copy and shared runtime constants.
 export type AppConfig = {
   chrome: {
@@ -342,79 +367,30 @@ export type AppConfig = {
   }
   messages: {
     navigation: {
-      interactive: {
-        keyboard: string
-        touch: string
-      }
-      agentApi: {
-        keyboard: string
-        touch: string
-      }
+      interactive: DisplayMsg
+      agentApi: DisplayMsg
     }
     pauseMessage: string
-    successMessage: string
-    successCompactMessage: string
-    failedMessage: string
-    failedCompactMessage: string
-    proceed: {
-      keyboard: string
-      touch: string
-    }
+    success: DisplayMsg
+    failed: DisplayMsg
+    proceed: DisplayMsg
     agentAwaitMessage: string
-    agentAwaitAction: {
-      keyboard: string
-      touch: string
-    }
+    agentAwaitAction: DisplayMsg
     tooSmallMessage: string
     tooSmallActionMessage: string
-    runningStatus: {
-      keyboard: string
-      touch: string
-    }
+    runningStatus: DisplayMsg
     highScoreTemplate: string
     winSummary: {
-      noPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      fasterPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      slowerPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      matchedPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
+      noPrevious: SummaryComparisonTemplates
+      fasterPrevious: SummaryComparisonTemplates
+      slowerPrevious: SummaryComparisonTemplates
+      matchedPrevious: SummaryComparisonTemplates
     }
     agentWinSummary: {
-      noPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      fewerPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      morePrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      matchedPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
+      noPrevious: SummaryComparisonTemplates
+      fewerPrevious: SummaryComparisonTemplates
+      morePrevious: SummaryComparisonTemplates
+      matchedPrevious: SummaryComparisonTemplates
     }
   }
   controls: {
@@ -459,7 +435,7 @@ export type AppConfig = {
     cellPathWidth: number
     moveStep: number
     leftPadding: number
-    minDimension: number
+    minMazeSideCells: number
   }
   generation: {
     seed: number
@@ -474,7 +450,7 @@ export type AppConfig = {
   scoring: {
     budgetMultiplier: number
     percentScale: number
-    retentionScale: number
+    retentionFullScaleUnits: number
   }
   timing: {
     refreshInterval: number

@@ -1,7 +1,9 @@
+import { CONFIG } from "../config"
 import { getNavigationProfile } from "../maze"
 import { isWonStatus } from "../status"
 import {
   cellCoordinateFromGridPoint,
+  cloneTraversalHistory,
   isMoveAction,
   resolvePlayerMove,
 } from "../traversal"
@@ -12,6 +14,8 @@ import type {
   MoveAction,
   State,
 } from "../types"
+
+const { runtime } = CONFIG
 
 // ALLOWED_MOVE_ACTIONS enumerates the only traversal commands the agent may return.
 const ALLOWED_MOVE_ACTIONS: MoveAction[] = ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"]
@@ -27,12 +31,15 @@ const VALID_PREDICTION_FORMAT = {
 function agentPrompt(playerName: string): string {
   return [
     `Your name is ${playerName}.`,
-    "Use traversalHistory entries matching your playerName to review your past moves in order,",
-    "then use the provided context to predict the next valid moves.",
-    "Valid moves advance you until the first invalid move stops replay.",
-    "Every submitted prediction counts toward score decay until the destination is reached.",
-    "Locate the randomized path between the current position and destination with the highest score retention.",
-  ].join("\n")
+    `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
+    "Use currentCell as your current position and destinationCell as the target.",
+    "Use traversalHistory entries matching your playerName to review your past moves in order.",
+    "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
+    "Return only the expected JSON moves payload using allowedMoves.",
+    "Moves replay in order until the destination or the first invalid move.",
+    "Every submitted move counts toward score decay, including moves after the first invalid move.",
+    "Choose the moves most likely to reach the destination with the fewest submitted moves.",
+  ].join(" ")
 }
 
 // recommendedAvgPredictionLimit derives the advisory prediction length from the active navigation profile.
@@ -66,9 +73,7 @@ export function buildMazeActionState(
     playerName,
     currentCell: state.playerPosition ? cellCoordinateFromGridPoint(state.playerPosition) : null,
     destinationCell: state.finalPosition ? cellCoordinateFromGridPoint(state.finalPosition) : null,
-    traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
-      playerName, row, col,
-    })),
+    traversalHistory: cloneTraversalHistory(state.traversalHistory),
     allowedMoves: [...ALLOWED_MOVE_ACTIONS],
     recommendedAvgPredictionLimit: recommendedAvgPredictionLimit(state),
     prompt: agentPrompt(playerName),
@@ -102,9 +107,7 @@ export function mergeMazeActionState(
         moves: [...actionState.expectedResponseFormat.validPredictionFormat.moves],
       },
     },
-    traversalHistory: actionState.traversalHistory.map(({ playerName, row, col }) => ({
-      playerName, row, col,
-    })),
+    traversalHistory: cloneTraversalHistory(actionState.traversalHistory),
     submittedMoves: [...actionState.submittedMoves],
     prompt: overrides.prompt ?? agentPrompt(playerName),
     ...overrides,

@@ -4,6 +4,7 @@ import type {
   BaseDimensions,
   CellCoordinate,
   MazeAction,
+  MazeDimensions,
   MoveAction,
   RenderGridPoint,
   State,
@@ -20,19 +21,54 @@ export const MOVE_DELTAS: Record<MoveAction, readonly [number, number]> = {
   MoveDown: [1, 0],
 }
 
-// currentTotalCells returns the logical maze area, or zero when dimensions are not usable.
-export function currentTotalCells(
-  mazeDimensions: BaseDimensions | null | undefined,
-): number {
-  if (
-    !mazeDimensions ||
-    mazeDimensions.width <= 0 ||
-    mazeDimensions.length <= 0
-  ) {
-    return 0
+// createMazeDimensions appends the logical cell area to a validated maze shape.
+export function createMazeDimensions(dimensions: BaseDimensions): MazeDimensions {
+  return {
+    length: dimensions.length,
+    width: dimensions.width,
+    area: dimensions.length * dimensions.width,
   }
+}
 
-  return mazeDimensions.length * mazeDimensions.width
+// cloneMazeDimensions copies maze measurements before they cross storage/runtime boundaries.
+export function cloneMazeDimensions(dimensions: MazeDimensions): MazeDimensions {
+  return createMazeDimensions(dimensions)
+}
+
+// cloneCellCoordinate copies one logical maze-cell coordinate.
+export function cloneCellCoordinate(cell: CellCoordinate): CellCoordinate {
+  return {
+    row: cell.row,
+    col: cell.col,
+  }
+}
+
+// cloneMazeRows copies the mutable rendered maze table one row at a time.
+export function cloneMazeRows(mazeRows: string[][]): string[][] {
+  return mazeRows.map((row) => [...row])
+}
+
+// cloneRenderGridPoint copies one rendered-grid coordinate.
+export function cloneRenderGridPoint(point: RenderGridPoint): RenderGridPoint {
+  return {
+    x: point.x,
+    y: point.y,
+  }
+}
+
+// cloneTraversalHistory preserves first-visit order while detaching callers from shared entries.
+export function cloneTraversalHistory(
+  history: TraversalHistoryEntry[],
+): TraversalHistoryEntry[] {
+  return history.map(({ playerName, row, col }) => ({ playerName, row, col }))
+}
+
+// startCellFromTraversalHistory derives the persisted start cell from the first chronological visit.
+export function startCellFromTraversalHistory(
+  history: TraversalHistoryEntry[],
+): CellCoordinate | null {
+  const [startCell] = history
+  return startCell ? cloneCellCoordinate(startCell) : null
 }
 
 export type ResolvedPlayerMove =

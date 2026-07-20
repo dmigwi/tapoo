@@ -75,7 +75,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.interactive,
     level: 1,
-    mazeDimensions: { length: 2, width: 2 },
+    mazeDimensions: { length: 2, width: 2, area: 4 },
     maze: [
       ["|", "---", "|", "---", "|"],
       ["|", "   ", " ", "   ", "|"],
@@ -89,8 +89,8 @@ function createState(overrides: Partial<State> = {}): State {
     status: "running",
     score: 900,
     lastRoundScore: 0,
-    lastAttemptRetention: null,
-    bestWinRetention: null,
+    lastAttemptRetentionUnits: null,
+    bestWinRetentionUnits: null,
     lastWinRequestCount: null,
     bestWinRequestCount: null,
     winSummary: "",
@@ -190,7 +190,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.interactive.touch)
+    expect(text).toContain(messages.navigation.interactive.compact)
     expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
   })
@@ -202,7 +202,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.interactive.keyboard)
+    expect(text).toContain(messages.navigation.interactive.wide)
     expect(text).toContain("Level: 1")
     expect(text).toContain("Scores: 900")
     expect(elements.screen.innerHTML).toContain('class="maze-cell player"')
@@ -237,8 +237,8 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(visibleLabels).toEqual(["pause"])
-    expect(text).toContain(messages.navigation.agentApi.keyboard)
-    expect(text).not.toContain(messages.navigation.interactive.keyboard)
+    expect(text).toContain(messages.navigation.agentApi.wide)
+    expect(text).not.toContain(messages.navigation.interactive.wide)
     expect(elements.touchControls.hidden).toBe(false)
     expect(
       elements.touchControls.classList.contains("touch-controls--single-action"),
@@ -263,7 +263,7 @@ describe("render", () => {
 
     expect(visibleLabels).toEqual(["walls", "proceed", "restart"])
     expect(normalizeScreenText(elements.screen.textContent)).toContain(
-      messages.agentAwaitAction.keyboard,
+      messages.agentAwaitAction.wide,
     )
     expect(elements.agentConfigForm?.hidden).toBe(true)
     expect(elements.touchControls.hidden).toBe(false)
@@ -300,8 +300,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.agentAwaitAction.touch)
-    expect(text).not.toContain(messages.proceed.keyboard)
+    expect(text).toContain(messages.agentAwaitAction.compact)
+    expect(text).not.toContain(messages.proceed.wide)
   })
 
   it("hides an open agent configuration form when agent-api play starts", () => {
@@ -367,7 +367,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain(messages.pauseMessage)
-    expect(text).toContain(messages.proceed.keyboard)
+    expect(text).toContain(messages.proceed.wide)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -440,8 +440,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.proceed.touch)
-    expect(text).not.toContain(messages.proceed.keyboard)
+    expect(text).toContain(messages.proceed.compact)
+    expect(text).not.toContain(messages.proceed.wide)
   })
 
   it("shows walls plus proceed touch controls after a win", () => {
@@ -450,18 +450,19 @@ describe("render", () => {
     render(
       elements,
       createState({
-        mazeDimensions: { length: 3, width: 3 },
+        mazeDimensions: { length: 3, width: 3, area: 9 },
         level: 3,
         status: "won",
         lastRoundScore: 900,
+        lastAttemptRetentionUnits: 1_000_000,
         winSummary: "1.20s faster than previous (new record)",
       }),
     )
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.successMessage)
-    expect(text).toContain(messages.proceed.keyboard)
+    expect(text).toContain(messages.success.wide)
+    expect(text).toContain(messages.proceed.wide)
     expect(text).toContain("Final Level 3 Scores:  900 (100% retention)")
     expect(text).toContain("1.20s faster than previous (new record)")
 
@@ -481,10 +482,11 @@ describe("render", () => {
     render(
       elements,
       createState({
-        mazeDimensions: { length: 3, width: 3 },
+        mazeDimensions: { length: 3, width: 3, area: 9 },
         level: 1,
         status: "won",
         lastRoundScore: 900,
+        lastAttemptRetentionUnits: 1_000_000,
         winSummary: "1.20s faster than previous (new record)",
       }),
     )
@@ -493,6 +495,24 @@ describe("render", () => {
 
     expect(text).toContain("Final Level 1 Scores:  900 (100% retention)")
     expect(text).toContain("1.20s faster than previous (new record)")
+  })
+
+  it("uses stored retention units for the final displayed percentage", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        mazeDimensions: { length: 3, width: 3, area: 9 },
+        status: "won",
+        lastRoundScore: 1,
+        lastAttemptRetentionUnits: 500_000,
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain("Final Level 1 Scores:  1 (50% retention)")
   })
 
   it("keeps the loss overlay free of the final score summary", () => {
@@ -509,8 +529,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.failedMessage)
-    expect(text).toContain(messages.proceed.keyboard)
+    expect(text).toContain(messages.failed.wide)
+    expect(text).toContain(messages.proceed.wide)
     expect(text).not.toContain("Final Level 3 Scores:")
   })
 
@@ -576,7 +596,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.interactive.touch)
+    expect(text).toContain(messages.navigation.interactive.compact)
     expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
     expect(elements.touchControls.hidden).toBe(false)
@@ -624,8 +644,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.interactive.touch)
-    expect(text).not.toContain(messages.navigation.interactive.keyboard)
+    expect(text).toContain(messages.navigation.interactive.compact)
+    expect(text).not.toContain(messages.navigation.interactive.wide)
   })
 
   it("keeps the full keyboard navigation on medium-width screens", () => {
@@ -646,7 +666,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.interactive.keyboard)
-    expect(text).not.toContain(messages.navigation.interactive.touch)
+    expect(text).toContain(messages.navigation.interactive.wide)
+    expect(text).not.toContain(messages.navigation.interactive.compact)
   })
 })

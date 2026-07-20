@@ -76,44 +76,48 @@ export const CONFIG: AppConfig = {
     // Navigation hints are view-specific so keyboard bindings never leak into compact touch views.
     navigation: {
       interactive: {
-        keyboard:
+        wide:
           "Use Arrow Keys to guide Blue to Red. Ctrl+B walls, Space/Esc pauses, Enter proceeds.",
-        touch: "Use touch buttons to guide Blue to Red.",
+        compact: "Use touch buttons to guide Blue to Red.",
       },
       agentApi: {
-        keyboard:
+        wide:
           "Agent APIs guide Blue to Red. Ctrl+B walls, Space/Esc pauses, Enter proceeds.",
-        touch: "Agent APIs guide Blue to Red. Use touch buttons for session controls.",
+        compact: "Agent APIs guide Blue to Red. Use touch buttons for session controls.",
       },
     },
     pauseMessage: "Game paused !!!",
-    successMessage:
-      "Game over! Congratulations, You won by locating the target on time.",
-    successCompactMessage: "Game over! You won.",
-    failedMessage:
-      "Game over! Ooops!!!, You failed to locate the target on time.",
-    failedCompactMessage: "Game over! You lost.",
+    success: {
+      wide:
+        "Game over! Congratulations, You won by locating the target on time.",
+      compact: "Game over! You won.",
+    },
+    failed: {
+      wide:
+        "Game over! Ooops!!!, You failed to locate the target on time.",
+      compact: "Game over! You lost.",
+    },
     proceed: {
-      keyboard: "Press Enter to Proceed. Ctrl+Alt+R resets progress.",
-      touch: "Use the buttons below.",
+      wide: "Press Enter to Proceed. Ctrl+Alt+R resets progress.",
+      compact: "Use the buttons below.",
     },
     agentAwaitMessage: "No enabled agent API is configured.",
     agentAwaitAction: {
-      keyboard:
+      wide:
         "Use the agent seats dock on the right edge of the screen to add/manage an agent, then press Enter to proceed.",
-      touch:
+      compact:
         "Use the screen-edge seats dock to add/manage an agent, then tap Proceed.",
     },
     tooSmallMessage: "Level {level} needs more screen room!",
     tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
     runningStatus: {
-      keyboard:
+      wide:
         "Press Space/Esc to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
-      touch: "Level: {level}   Scores: {score}",
+      compact: "Level: {level}   Scores: {score}",
     },
     highScoreTemplate:
       "Final Level {level} Scores:  {score} ({percent}% retention)",
-    // Win-summary variants are selected from game.ts after comparing retention metrics.
+    // Win-summary variants are selected from scoring.ts after comparing retention metrics.
     winSummary: {
       noPrevious: {
         newRecord: "New scores retention record",
@@ -209,7 +213,7 @@ export const CONFIG: AppConfig = {
     cellPathWidth: 3,
     moveStep: 2,
     leftPadding: 3,
-    minDimension: 5,
+    minMazeSideCells: 5,
   },
   // Maze-generation tuning controls level growth and navigation difficulty.
   generation: {
@@ -226,7 +230,7 @@ export const CONFIG: AppConfig = {
   scoring: {
     percentScale: 100,
     budgetMultiplier: 100,
-    retentionScale: 1_000_000,
+    retentionFullScaleUnits: 1_000_000, // Represents 100% scores retention without using floating-point percentages.
   },
   // Timing values drive refresh cadence, score decay, and the slower agent-api pacing.
   timing: {
