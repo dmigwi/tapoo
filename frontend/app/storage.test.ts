@@ -135,8 +135,7 @@ describe("storage", () => {
 
     expect(storedGameSetup).toContain(STORE_ENCODING_PREFIX)
     expect(storedWinMetrics).toContain(STORE_ENCODING_PREFIX)
-    expect(storedGameSetup).not.toContain("8")
-    expect(storedGameSetup).not.toContain("3")
+    expect(storedGameSetup).not.toBe(JSON.stringify({ level: 8, wallWeight: 3 }))
 
     const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
 

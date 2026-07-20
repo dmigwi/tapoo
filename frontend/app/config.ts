@@ -21,10 +21,10 @@ const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
 }
 
 // VERSION_MAJOR is the semantic major version for the browser SPA runtime.
-const VERSION_MAJOR = 1
+const VERSION_MAJOR = 2
 
 // VERSION_MINOR is the semantic minor version for the browser SPA runtime.
-const VERSION_MINOR = 1
+const VERSION_MINOR = 0
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
 const VERSION_PATCH = 0
@@ -257,7 +257,7 @@ export const CONFIG: AppConfig = {
       interactive: "interactive",
     },
     storage: {
-      version: 2,
+      version: 3,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",
