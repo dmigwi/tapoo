@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0d130d" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self' 'sha256-vvt4KWwuNr51XfE5m+hzeNEGhiOfZzG97ccfqGsPwvE='; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' https: http:; form-action 'none'"
+    />
+    <title data-config-key="{{titleConfigKey}}">{{titleText}}</title>
+    <meta
+      name="description"
+      data-config-key="{{descriptionConfigKey}}"
+      content="{{descriptionText}}"
+    />
+    <link rel="canonical" href="{{canonicalUrl}}" />
+    <link rel="icon" type="image/svg+xml" href="./images/favicon.svg" />
+    <link
+      rel="preload"
+      href="./fonts/PTMono.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="./css/tapoo.min.css" />
+  </head>
+  <body {{bodyAttributes}}>
+    <main class="app-shell">
+      <header class="top-bar" aria-label="Application controls">
+        <div class="top-bar__brand">
+          <strong class="top-bar__title" data-config-text data-config-key="chrome.appName"></strong>
+          <span class="top-bar__subtitle" data-config-text data-config-key="chrome.appSubtitle"></span>
+          <span class="top-bar__page-tag" aria-current="page" data-config-text data-config-key="{{pageLabelConfigKey}}"></span>
+        </div>
+        <details class="top-menu">
+          {{topMenuSummary}}
+          <div class="top-menu__panel" role="menu" aria-label="More actions">
+            {{primaryMenuItem}}
+            {{privacyLink}}
+            {{contactLink}}
+          </div>
+        </details>
+      </header>
+
+      {{pageContent}}
+      {{placeholderArt}}
+
+      <footer class="page-footer" aria-label="Copyright">
+        <small class="page-footer__copy" data-page-version></small>
+      </footer>
+    </main>
+
+    {{scriptTags}}
+  </body>
+</html>

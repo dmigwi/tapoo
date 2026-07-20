@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  isFormControlTarget,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
 } from "./session-actions"
@@ -14,10 +15,17 @@ function createButton(action: string): HTMLButtonElement {
 
 // These tests lock down the shared session actions used by both browser modes.
 describe("shared session actions", () => {
-  it("translates keyboard shortcuts into pause, proceed, and wall actions", () => {
+  it("translates keyboard shortcuts into pause, proceed, wall, and restart actions", () => {
     expect(
       sessionActionFromKeyboardEvent({
         key: " ",
+        ctrlKey: false,
+        metaKey: false,
+      }),
+    ).toEqual({ type: "pause" })
+    expect(
+      sessionActionFromKeyboardEvent({
+        key: "Escape",
         ctrlKey: false,
         metaKey: false,
       }),
@@ -35,7 +43,7 @@ describe("shared session actions", () => {
         ctrlKey: true,
         metaKey: false,
       }),
-    ).toEqual({ type: "proceed" })
+    ).toBeNull()
     expect(
       sessionActionFromKeyboardEvent({
         key: "b",
@@ -43,6 +51,22 @@ describe("shared session actions", () => {
         metaKey: false,
       }),
     ).toEqual({ type: "cycle-walls" })
+    expect(
+      sessionActionFromKeyboardEvent({
+        key: "r",
+        ctrlKey: true,
+        metaKey: false,
+        altKey: true,
+      }),
+    ).toEqual({ type: "restart" })
+    expect(
+      sessionActionFromKeyboardEvent({
+        key: "r",
+        ctrlKey: true,
+        metaKey: false,
+        altKey: false,
+      }),
+    ).toBeNull()
     expect(
       sessionActionFromKeyboardEvent({
         key: "ArrowRight",
@@ -65,5 +89,18 @@ describe("shared session actions", () => {
     expect(sessionActionFromButton(createButton("restart").dataset)).toEqual({
       type: "restart",
     })
+  })
+
+  it("identifies editable targets that should keep their keyboard input", () => {
+    expect(isFormControlTarget(document.createElement("input"))).toBe(true)
+    expect(isFormControlTarget(document.createElement("textarea"))).toBe(true)
+    expect(isFormControlTarget(document.createElement("select"))).toBe(true)
+
+    const editable = document.createElement("div")
+    editable.contentEditable = "true"
+
+    expect(isFormControlTarget(editable)).toBe(true)
+    expect(isFormControlTarget(document.createElement("button"))).toBe(false)
+    expect(isFormControlTarget(null)).toBe(false)
   })
 })

@@ -2,6 +2,7 @@ import { createAgentMode } from "./app/control/agent"
 import { createInteractiveMode } from "./app/control/interactive"
 import { CONFIG } from "./app/config"
 import { getGameElements } from "./app/dom"
+import { showPlaceholderArt, showTerminalApp } from "./app/fallback-policy"
 import { bootstrapGame } from "./app/game"
 import type { Elements, MazeActionControl } from "./app/types"
 
@@ -13,9 +14,22 @@ function pageControlMode(elements: Elements): MazeActionControl {
     : createInteractiveMode(elements)
 }
 
-const elements = getGameElements()
+window.addEventListener("error", (event) => {
+  showPlaceholderArt(event.error)
+})
 
-if (elements) {
-  const mode = pageControlMode(elements)
-  bootstrapGame(mode, elements)
+window.addEventListener("unhandledrejection", (event) => {
+  showPlaceholderArt(event.reason)
+})
+
+try {
+  const elements = getGameElements()
+
+  if (elements) {
+    const mode = pageControlMode(elements)
+    bootstrapGame(mode, elements)
+    showTerminalApp()
+  }
+} catch (error) {
+  showPlaceholderArt(error)
 }

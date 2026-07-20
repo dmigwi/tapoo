@@ -10,6 +10,7 @@
   --target: #ff6b5f;
   --accent: #9ea6d7;
   --status: #f1d065;
+  --disabled: #8f947a;
   --glow: rgba(72, 198, 62, 0.2);
   --button-radius: 6px;
   --top-button-min-height: 54px;
@@ -36,9 +37,9 @@
 @font-face {
   font-family: "Tapoo PT Mono";
   src:
+    url("../fonts/PTMono.woff2") format("woff2"),
     local("PT Mono"),
-    local("PTMono"),
-    url("../fonts/PTMono.ttc");
+    local("PTMono");
   font-style: normal;
   font-weight: 400;
   font-display: swap;
@@ -46,6 +47,11 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* Keep hidden authoritative even when component classes define their own display mode. */
+[hidden] {
+  display: none !important;
 }
 
 html,
@@ -81,7 +87,16 @@ body {
   overflow: hidden;
 }
 
+.terminal-app,
+.placeholder-page,
+.privacy-page {
+  grid-row: 2;
+  grid-column: 1;
+}
+
 .page-footer {
+  grid-row: 3;
+  grid-column: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -348,6 +363,11 @@ body {
   isolation: isolate;
 }
 
+.terminal-app[aria-hidden="true"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .placeholder-page::before {
   content: "";
   position: absolute;
@@ -360,13 +380,14 @@ body {
 }
 
 .page-stage {
-  width: min(100%, 1320px);
+  width: 100%;
   height: 100%;
   margin: 0 auto;
 }
 
 .page-stage--terminal,
-.page-stage--placeholder {
+.page-stage--placeholder,
+.page-stage--privacy {
   display: flex;
   justify-content: center;
 }
@@ -377,6 +398,73 @@ body {
 
 .page-stage--placeholder {
   align-items: center;
+}
+
+.page-stage--privacy {
+  align-items: flex-start;
+  overflow: auto;
+  padding:
+    24px
+    calc(var(--safe-right) + 18px)
+    28px
+    calc(var(--safe-left) + 18px);
+}
+
+.privacy-page {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.privacy-panel {
+  width: min(100%, 860px);
+  padding: 24px;
+  border: 1px solid rgba(72, 198, 62, 0.18);
+  border-radius: 1px;
+  background:
+    linear-gradient(180deg, rgba(13, 19, 13, 0.92) 0%, rgba(5, 8, 5, 0.98) 100%);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.34),
+    inset 0 0 28px rgba(72, 198, 62, 0.035);
+}
+
+.privacy-eyebrow {
+  margin: 0 0 8px;
+  color: var(--text-faint);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.privacy-panel h1,
+.privacy-panel h2,
+.privacy-panel p {
+  max-width: none;
+}
+
+.privacy-panel h1 {
+  margin: 0 0 18px;
+  color: var(--text);
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.privacy-panel h2 {
+  margin: 34px 0 10px;
+  color: var(--walls);
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.privacy-panel p {
+  margin: 0 0 12px;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.privacy-panel code {
+  color: var(--status);
+  font: inherit;
 }
 
 .placeholder-art {
@@ -442,7 +530,7 @@ body {
   min-width: 0;
   padding:
     10px
-    calc(var(--safe-right) + 18px)
+    calc(var(--safe-right) + 8px)
     calc(var(--safe-bottom) + 18px)
     calc(var(--safe-left) + 18px);
   overflow: hidden;
@@ -458,6 +546,7 @@ body {
   min-width: 0;
   min-height: 0;
   display: flex;
+  gap: 4px;
   justify-content: center;
   align-items: flex-start;
   overflow: hidden;
@@ -466,14 +555,26 @@ body {
 
 .terminal-body {
   position: relative;
+  flex: 1 1 auto;
   height: 100%;
   width: 100%;
   min-width: 0;
   min-height: 0;
+  outline: 1px dashed rgba(72, 198, 62, 0.28);
+  outline-offset: -1px;
   overflow: hidden;
   display: flex;
   justify-content: center;
   align-items: flex-start;
+}
+
+.terminal-body--agent-form-active::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.68);
+  pointer-events: auto;
 }
 
 #terminal-screen {
@@ -591,6 +692,105 @@ body {
   pointer-events: auto;
 }
 
+.terminal-body--agent-form-active .touch-controls {
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.agent-seat-roster {
+  flex: 0 0 auto;
+  align-self: center;
+  display: grid;
+  gap: 6px;
+  padding-inline-start: 4px;
+  border-inline-start: 1px solid rgba(72, 198, 62, 0.34);
+  pointer-events: auto;
+}
+
+.agent-seat-roster[hidden] {
+  display: none;
+}
+
+.agent-seat {
+  position: relative;
+  width: 28px;
+  height: 56px;
+  margin-block: 6px;
+  border: 2px solid rgba(72, 198, 62, 0.72);
+  border-radius: 1px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(72, 198, 62, 0.16) 0%,
+      rgba(72, 198, 62, 0.07) 100%
+    );
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  line-height: 1;
+  padding: 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(72, 198, 62, 0.12),
+    0 0 10px rgba(72, 198, 62, 0.08);
+}
+
+.agent-seat--empty {
+  border-color: rgba(72, 198, 62, 0.54);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(72, 198, 62, 0.07) 0%,
+      rgba(72, 198, 62, 0.025) 100%
+    );
+  color: var(--text-dim);
+}
+
+.agent-seat--empty,
+.agent-seat--occupied:not(:disabled) {
+  cursor: pointer;
+}
+
+.agent-seat--empty:hover,
+.agent-seat--empty:focus-visible,
+.agent-seat--occupied:not(:disabled):hover,
+.agent-seat--occupied:not(:disabled):focus-visible {
+  border-color: var(--text);
+  background: rgba(72, 198, 62, 0.13);
+  box-shadow:
+    inset 0 0 0 1px rgba(72, 198, 62, 0.18),
+    0 0 14px rgba(72, 198, 62, 0.18);
+  outline: none;
+}
+
+.agent-seat--active {
+  border-color: var(--status);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(241, 208, 101, 0.18) 0%,
+      rgba(241, 208, 101, 0.07) 100%
+    );
+  box-shadow: 0 0 16px rgba(241, 208, 101, 0.22);
+  color: var(--status);
+}
+
+.agent-seat--disabled {
+  border-color: rgba(143, 148, 122, 0.52);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(143, 148, 122, 0.09) 0%,
+      rgba(143, 148, 122, 0.035) 100%
+    );
+  color: var(--disabled);
+}
+
+.agent-seat:disabled {
+  cursor: default;
+}
+
 @supports (backdrop-filter: blur(3px)) or (-webkit-backdrop-filter: blur(3px)) {
   .touch-controls {
     background: rgba(0, 0, 0, 0.34);
@@ -605,12 +805,17 @@ body {
 
 .touch-controls--single-action {
   grid-template-columns: max-content;
-  grid-template-areas: "control-proceed";
+  grid-template-areas: none;
 }
 
-.touch-controls--action-pair {
-  grid-template-columns: repeat(2, max-content);
-  grid-template-areas: "control-walls control-proceed";
+.touch-controls--action-row {
+  grid-template-columns: repeat(3, max-content);
+  grid-template-areas: none;
+}
+
+.touch-controls--action-row .touch-controls__button,
+.touch-controls--single-action .touch-controls__button {
+  grid-area: auto;
 }
 
 .touch-controls__button {
@@ -684,6 +889,19 @@ body {
   min-width: var(--touch-action-button-min-width);
 }
 
+.touch-controls__button--restart {
+  grid-area: control-restart;
+  min-width: var(--touch-action-button-min-width);
+}
+
+.touch-controls__warning {
+  color: var(--status);
+  display: inline-block;
+  flex-shrink: 0;
+  margin-right: 0.42rem;
+  line-height: 1;
+}
+
 .touch-controls__button:focus-visible,
 .touch-controls__button:hover {
   border-color: rgba(72, 198, 62, 0.42);
@@ -695,6 +913,236 @@ body {
       rgba(72, 198, 62, 0.12) 100%
     );
   outline: none;
+}
+
+.agent-config-form {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  z-index: 4;
+  width: min(520px, calc(100% - 32px));
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(72, 198, 62, 0.18);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(13, 19, 13, 0.92) 0%, rgba(5, 8, 5, 0.98) 100%);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.34),
+    inset 0 0 28px rgba(72, 198, 62, 0.035);
+  color: var(--text);
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.agent-config-form[hidden] {
+  display: none;
+}
+
+.agent-config-form__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-config-form__header strong {
+  color: var(--status);
+  font-size: 1.08rem;
+}
+
+.agent-config-form__close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--top-bar-edge);
+  border-radius: var(--button-radius);
+  background: rgba(0, 0, 0, 0.36);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 1.22rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.agent-config-form__close:focus-visible,
+.agent-config-form__close:hover {
+  border-color: rgba(72, 198, 62, 0.52);
+  background: rgba(72, 198, 62, 0.1);
+  outline: none;
+}
+
+.agent-config-form__header span,
+.agent-config-form__status {
+  color: var(--text-faint);
+}
+
+.agent-config-form__field {
+  display: grid;
+  gap: 6px;
+}
+
+.agent-config-form__field input {
+  min-height: 46px;
+  border: 1px solid var(--top-bar-edge);
+  border-radius: var(--button-radius);
+  background: rgba(0, 0, 0, 0.54);
+  color: var(--text);
+  font: inherit;
+  padding: 0 12px;
+  outline: none;
+}
+
+.agent-config-form__field input:focus {
+  border-color: rgba(72, 198, 62, 0.52);
+  box-shadow: 0 0 0 2px rgba(72, 198, 62, 0.12);
+}
+
+.agent-config-form__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.agent-config-form__toggle {
+  --toggle-background: rgba(72, 198, 62, 0.18);
+  --toggle-border: var(--text);
+  --toggle-foreground: var(--text);
+  --toggle-knob: var(--text);
+
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--toggle-foreground);
+  cursor: pointer;
+  user-select: none;
+}
+
+.agent-config-form__toggle input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.agent-config-form__toggle-control {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border: 1px solid var(--toggle-border);
+  border-radius: 999px;
+  background: var(--toggle-background);
+  flex-shrink: 0;
+}
+
+.agent-config-form__toggle-control::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--toggle-knob);
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.agent-config-form__toggle input:checked + .agent-config-form__toggle-control {
+  border-color: var(--toggle-border);
+  background: var(--toggle-background);
+}
+
+.agent-config-form__toggle input:checked + .agent-config-form__toggle-control::after {
+  background: var(--toggle-knob);
+  transform: translateX(20px);
+}
+
+.agent-config-form__toggle input:focus-visible + .agent-config-form__toggle-control {
+  box-shadow: 0 0 0 2px rgba(72, 198, 62, 0.16);
+}
+
+.agent-config-form__toggle--off {
+  --toggle-foreground: var(--disabled);
+}
+
+.agent-config-form__toggle--disabled {
+  --toggle-background: rgba(143, 148, 122, 0.08);
+  --toggle-border: var(--disabled);
+  --toggle-foreground: var(--disabled);
+  --toggle-knob: var(--disabled);
+
+  cursor: not-allowed;
+}
+
+.agent-config-form__toggle--disabled .agent-config-form__toggle-control {
+  box-shadow: none;
+}
+
+.agent-config-form__check {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--target);
+}
+
+.agent-config-form__check input {
+  accent-color: var(--target);
+}
+
+.agent-config-form__submit {
+  min-height: 46px;
+  border: 1px solid var(--top-bar-edge);
+  border-radius: var(--button-radius);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(72, 198, 62, 0.18) 0%,
+      rgba(72, 198, 62, 0.08) 55%,
+      rgba(72, 198, 62, 0.12) 100%
+    );
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 14px;
+}
+
+.agent-config-form__submit:focus-visible,
+.agent-config-form__submit:hover {
+  border-color: rgba(72, 198, 62, 0.52);
+  outline: none;
+}
+
+.agent-config-form__submit--secondary {
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.agent-config-form__submit--danger {
+  border-color: rgba(208, 94, 79, 0.38);
+  color: var(--target);
+}
+
+.agent-config-form__status {
+  display: block;
+  min-height: 1.2em;
+  margin: 0;
+  color: var(--text-faint);
+}
+
+.agent-config-form__status--error {
+  color: var(--target);
+}
+
+.agent-delete-dialog .agent-config-form__actions {
+  justify-content: flex-end;
 }
 
 @media (max-width: 720px) {
@@ -724,7 +1172,7 @@ body {
   .terminal-app {
     padding:
       8px
-      calc(var(--safe-right) + 10px)
+      calc(var(--safe-right) + 6px)
       calc(var(--safe-bottom) + 12px)
       calc(var(--safe-left) + 10px);
   }

@@ -7,8 +7,8 @@ import type { Elements, State, TraversalHistoryEntry } from "./types"
 
 const { messages } = CONFIG
 
-function visit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Blue", row, col }
+function selfVisit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
 }
 
 // normalizeScreenText keeps DOM assertions readable by collapsing non-breaking spaces.
@@ -42,6 +42,10 @@ function createButton({
 function createElements(): Elements {
   const screen = document.createElement("div")
   const touchControls = document.createElement("div")
+  const agentConfigForm = document.createElement("form")
+  const agentDeleteDialog = document.createElement("section")
+  agentConfigForm.hidden = true
+  agentDeleteDialog.hidden = true
   const touchButtons = [
     createButton({ action: "walls" }),
     createButton({ move: "MoveUp" }),
@@ -50,6 +54,7 @@ function createElements(): Elements {
     createButton({ move: "MoveRight" }),
     createButton({ move: "MoveDown" }),
     createButton({ action: "pause" }),
+    createButton({ action: "restart" }),
   ]
 
   return {
@@ -60,6 +65,8 @@ function createElements(): Elements {
     controls: [],
     touchControls,
     touchButtons,
+    agentConfigForm,
+    agentDeleteDialog,
   }
 }
 
@@ -68,7 +75,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.interactive,
     level: 1,
-    mazeDimensions: { length: 2, width: 2 },
+    mazeDimensions: { length: 2, width: 2, area: 4 },
     maze: [
       ["|", "---", "|", "---", "|"],
       ["|", "   ", " ", "   ", "|"],
@@ -77,13 +84,13 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "|", "---", "|"],
     ],
     playerPosition: { x: 1, y: 1 },
-    traversalHistory: [visit(0, 0)],
+    traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 2, y: 1 },
     status: "running",
     score: 900,
     lastRoundScore: 0,
-    lastAttemptRetention: null,
-    bestWinRetention: null,
+    lastAttemptRetentionUnits: null,
+    bestWinRetentionUnits: null,
     lastWinRequestCount: null,
     bestWinRequestCount: null,
     winSummary: "",
@@ -183,7 +190,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.compact)
+    expect(text).toContain(messages.navigation.interactive.compact)
     expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
   })
@@ -195,7 +202,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.default)
+    expect(text).toContain(messages.navigation.interactive.wide)
     expect(text).toContain("Level: 1")
     expect(text).toContain("Scores: 900")
     expect(elements.screen.innerHTML).toContain('class="maze-cell player"')
@@ -227,12 +234,95 @@ describe("render", () => {
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
+    const text = normalizeScreenText(elements.screen.textContent)
 
     expect(visibleLabels).toEqual(["pause"])
+    expect(text).toContain(messages.navigation.agentApi.wide)
+    expect(text).not.toContain(messages.navigation.interactive.wide)
     expect(elements.touchControls.hidden).toBe(false)
     expect(
       elements.touchControls.classList.contains("touch-controls--single-action"),
     ).toBe(true)
+    expect(elements.agentConfigForm?.hidden).toBe(true)
+  })
+
+  it("shows walls, proceed, and reset progress while agent-api waits for configuration", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        status: "await-agent",
+      }),
+    )
+
+    const visibleLabels = elements.touchButtons
+      .filter((button) => !button.hidden)
+      .map((button) => button.dataset.action ?? button.dataset.move)
+
+    expect(visibleLabels).toEqual(["walls", "proceed", "restart"])
+    expect(normalizeScreenText(elements.screen.textContent)).toContain(
+      messages.agentAwaitAction.wide,
+    )
+    expect(elements.agentConfigForm?.hidden).toBe(true)
+    expect(elements.touchControls.hidden).toBe(false)
+    expect(
+      elements.touchControls.classList.contains("touch-controls--action-row"),
+    ).toBe(true)
+  })
+
+  it("uses compact right-side seat guidance while agent-api waits on small displays", () => {
+    const elements = createElements()
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 412,
+      bottom: 915,
+      width: 412,
+      height: 915,
+      toJSON: () => ({}),
+    })
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 412,
+    })
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        status: "await-agent",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(messages.agentAwaitAction.compact)
+    expect(text).not.toContain(messages.proceed.wide)
+  })
+
+  it("hides an open agent configuration form when agent-api play starts", () => {
+    const elements = createElements()
+    elements.agentConfigForm.hidden = false
+    elements.agentDeleteDialog.hidden = false
+    elements.body.classList.add("terminal-body--agent-form-active")
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        status: "running",
+      }),
+    )
+
+    expect(elements.agentConfigForm.hidden).toBe(true)
+    expect(elements.agentDeleteDialog?.hidden).toBe(true)
+    expect(
+      elements.body.classList.contains("terminal-body--agent-form-active"),
+    ).toBe(false)
   })
 
   it("skips drawing the destination while a running round blink phase is off", () => {
@@ -263,7 +353,7 @@ describe("render", () => {
     expect(elements.screen.innerHTML).toContain('class="maze-cell target"')
   })
 
-  it("shows paused overlay messaging and walls plus proceed touch controls", () => {
+  it("shows paused overlay messaging and walls, proceed, plus reset touch controls", () => {
     const elements = createElements()
 
     render(
@@ -277,15 +367,15 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain(messages.pauseMessage)
-    expect(text).toContain(messages.proceedMessage)
+    expect(text).toContain(messages.proceed.wide)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual(["walls", "proceed"])
+    expect(visibleLabels).toEqual(["walls", "proceed", "restart"])
     expect(
-      elements.touchControls.classList.contains("touch-controls--action-pair"),
+      elements.touchControls.classList.contains("touch-controls--action-row"),
     ).toBe(true)
     expect(
       elements.touchControls.classList.contains(
@@ -350,8 +440,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.touchProceedMessage)
-    expect(text).not.toContain(messages.proceedMessage)
+    expect(text).toContain(messages.proceed.compact)
+    expect(text).not.toContain(messages.proceed.wide)
   })
 
   it("shows walls plus proceed touch controls after a win", () => {
@@ -360,18 +450,19 @@ describe("render", () => {
     render(
       elements,
       createState({
-        mazeDimensions: { length: 3, width: 3 },
+        mazeDimensions: { length: 3, width: 3, area: 9 },
         level: 3,
         status: "won",
         lastRoundScore: 900,
+        lastAttemptRetentionUnits: 1_000_000,
         winSummary: "1.20s faster than previous (new record)",
       }),
     )
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.successMessage)
-    expect(text).toContain(messages.proceedMessage)
+    expect(text).toContain(messages.success.wide)
+    expect(text).toContain(messages.proceed.wide)
     expect(text).toContain("Final Level 3 Scores:  900 (100% retention)")
     expect(text).toContain("1.20s faster than previous (new record)")
 
@@ -379,9 +470,9 @@ describe("render", () => {
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual(["walls", "proceed"])
+    expect(visibleLabels).toEqual(["walls", "proceed", "restart"])
     expect(
-      elements.touchControls.classList.contains("touch-controls--action-pair"),
+      elements.touchControls.classList.contains("touch-controls--action-row"),
     ).toBe(true)
   })
 
@@ -391,10 +482,11 @@ describe("render", () => {
     render(
       elements,
       createState({
-        mazeDimensions: { length: 3, width: 3 },
+        mazeDimensions: { length: 3, width: 3, area: 9 },
         level: 1,
         status: "won",
         lastRoundScore: 900,
+        lastAttemptRetentionUnits: 1_000_000,
         winSummary: "1.20s faster than previous (new record)",
       }),
     )
@@ -403,6 +495,24 @@ describe("render", () => {
 
     expect(text).toContain("Final Level 1 Scores:  900 (100% retention)")
     expect(text).toContain("1.20s faster than previous (new record)")
+  })
+
+  it("uses stored retention units for the final displayed percentage", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        mazeDimensions: { length: 3, width: 3, area: 9 },
+        status: "won",
+        lastRoundScore: 1,
+        lastAttemptRetentionUnits: 500_000,
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain("Final Level 1 Scores:  1 (50% retention)")
   })
 
   it("keeps the loss overlay free of the final score summary", () => {
@@ -419,12 +529,12 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.failedMessage)
-    expect(text).toContain(messages.proceedMessage)
+    expect(text).toContain(messages.failed.wide)
+    expect(text).toContain(messages.proceed.wide)
     expect(text).not.toContain("Final Level 3 Scores:")
   })
 
-  it("shows the too-small message without proceed touch controls", () => {
+  it("shows the too-small message with reset progress as the only touch control", () => {
     const elements = createElements()
 
     render(
@@ -447,16 +557,16 @@ describe("render", () => {
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
-    expect(visibleLabels).toEqual([])
+    expect(visibleLabels).toEqual(["restart"])
     expect(
-      elements.touchControls.classList.contains("touch-controls--action-pair"),
-    ).toBe(false)
+      elements.touchControls.classList.contains("touch-controls--action-row"),
+    ).toBe(true)
     expect(
       elements.touchControls.classList.contains(
         "touch-controls--single-action",
       ),
-    ).toBe(false)
-    expect(elements.touchControls.hidden).toBe(true)
+    ).toBe(true)
+    expect(elements.touchControls.hidden).toBe(false)
   })
 
   it("shows compact navigation and too-small messaging on narrow screens", () => {
@@ -486,10 +596,10 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.compact)
+    expect(text).toContain(messages.navigation.interactive.compact)
     expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
-    expect(elements.touchControls.hidden).toBe(true)
+    expect(elements.touchControls.hidden).toBe(false)
   })
 
   it("shows compact navigation on a 412px wide phone viewport", () => {
@@ -534,8 +644,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.compact)
-    expect(text).not.toContain(messages.navigation.default)
+    expect(text).toContain(messages.navigation.interactive.compact)
+    expect(text).not.toContain(messages.navigation.interactive.wide)
   })
 
   it("keeps the full keyboard navigation on medium-width screens", () => {
@@ -556,7 +666,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.default)
-    expect(text).not.toContain(messages.navigation.compact)
+    expect(text).toContain(messages.navigation.interactive.wide)
+    expect(text).not.toContain(messages.navigation.interactive.compact)
   })
 })

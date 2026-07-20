@@ -28,14 +28,19 @@ export type RenderGridPoint = {
   y: number
 }
 
-// BaseDimensions captures a maze size without tying it to a specific level.
+// BaseDimensions captures raw length and width, including viewport or terminal room.
 export type BaseDimensions = {
   length: number
   width: number
 }
 
+// MazeDimensions captures a concrete maze shape and its logical cell area.
+export type MazeDimensions = BaseDimensions & {
+  area: number
+}
+
 // LevelDimensions couples a generated maze size back to its source level.
-export type LevelDimensions = BaseDimensions & {
+export type LevelDimensions = MazeDimensions & {
   level: number
 }
 
@@ -128,7 +133,7 @@ export type RoundState = {
 // PersistedRound captures the active or finished round state restored across reloads.
 export type PersistedRound = {
   level: number
-  mazeDimensions: BaseDimensions
+  mazeDimensions: MazeDimensions
   maze: string[][]
   startCell: CellCoordinate
   traversalHistory: TraversalHistoryEntry[]
@@ -144,15 +149,22 @@ export type PersistedRound = {
   agentRequestCount?: number
 }
 
-// PersistedPreferences stores the long-lived browser preferences between rounds.
-export type PersistedPreferences = {
+// PersistedGameSetup stores the progress fields usually loaded together before a round starts.
+export type PersistedGameSetup = {
   level: number
   wallWeight: WallWeight
-  lastAttemptRetention?: number | null
-  bestWinRetention?: number | null
-  lastWinRequestCount?: number | null
-  bestWinRequestCount?: number | null
 }
+
+// PersistedWinMetrics stores the completed-round metrics that survive level progression.
+export type PersistedWinMetrics = {
+  lastAttemptRetentionUnits: number | null
+  bestWinRetentionUnits: number | null
+  lastWinRequestCount: number | null
+  bestWinRequestCount: number | null
+}
+
+// PersistedPreferences combines setup with optional metrics because old/missing storage can lack either bucket.
+export type PersistedPreferences = PersistedGameSetup & Partial<PersistedWinMetrics>
 
 // PersistedSnapshot bundles long-lived preferences with the short-lived round snapshot.
 export type PersistedSnapshot = {
@@ -160,22 +172,51 @@ export type PersistedSnapshot = {
   round: PersistedRound | null
 }
 
-// AgentExpectedResponseFormat documents the one supported prediction payload shape.
-export type AgentExpectedResponseFormat = {
-  validPredictionFormat: {
-    moves: MoveAction[]
+// AgentExpectedResponseSchema documents the one supported prediction payload using JSON Schema.
+export type AgentExpectedResponseSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema"
+  type: "object"
+  additionalProperties: false
+  required: ["moves"]
+  properties: {
+    moves: {
+      type: "array"
+      minItems: 1
+      items: {
+        type: "string"
+        enum: MoveAction[]
+      }
+    }
+  }
+}
+
+// AgentSubmittedMovesSchema documents the replay records Tapoo returns after processing moves.
+export type AgentSubmittedMovesSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema"
+  type: "array"
+  description: string
+  items: {
+    type: "string"
+    pattern: string
+    examples: string[]
   }
 }
 
 // AgentApiConfig stores one HTTP-controlled agent that can join the shared agent-api maze.
 export type AgentApiConfig = {
-  id: string
+  id: number
   playerName: string
   model: string
   endpoint: string
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number
+}
+
+// AgentSeat represents one fixed roster slot; null means the seat is empty.
+export type AgentSeat = {
+  id: number
+  agent: AgentApiConfig | null
 }
 
 // MazeActionState is the flattened agent-api payload that combines live maze context with replay results.
@@ -186,27 +227,27 @@ export type MazeActionState = {
   model: string
   stream: false
   format: "json"
-  playerName: string
+  lastPlayerName?: string
   currentCell: CellCoordinate | null
   destinationCell: CellCoordinate | null
   traversalHistory: TraversalHistoryEntry[]
 
   prompt: string
-  allowedMoves: MoveAction[]
   recommendedAvgPredictionLimit: number
-  expectedResponseFormat: AgentExpectedResponseFormat
+  expectedResponseSchema: AgentExpectedResponseSchema
 
-  submittedMovesPattern: string
-  submittedMovesIndexBase: 0
-  submittedMoves: string[]
-  lastMoveStatus: MoveStatus | null
-  lastValidMoveIndex: number | null
+  lastSubmittedMovesIndexBase?: 0
+  lastSubmittedMovesSchema?: AgentSubmittedMovesSchema
+  lastSubmittedMoves?: string[]
+  lastMoveStatus?: MoveStatus
+  lastValidMoveIndex?: number | null
   visitedBefore?: boolean
-  decayedMovesCount: number
+  decayedMovesCount?: number
 }
 
 // MazeActionDispatchOptions lets each dispatched command opt into feedback when it needs it.
 export type MazeActionDispatchOptions = {
+  model?: string
   wantFeedback?: boolean
   playerName: string
 }
@@ -237,7 +278,7 @@ export type State = {
   canResume: boolean
 
   maze: string[][] | null
-  mazeDimensions: BaseDimensions | null
+  mazeDimensions: MazeDimensions | null
   playerPosition: RenderGridPoint | null
   finalPosition: RenderGridPoint | null
   traversalHistory: TraversalHistoryEntry[]
@@ -245,8 +286,8 @@ export type State = {
 
   score: number
   lastRoundScore: number
-  lastAttemptRetention: number | null
-  bestWinRetention: number | null
+  lastAttemptRetentionUnits: number | null
+  bestWinRetentionUnits: number | null
   lastWinRequestCount: number | null
   bestWinRequestCount: number | null
   winSummary: string
@@ -260,6 +301,7 @@ export type State = {
 export type GameRuntime = {
   mode: MazeControlModeName
   dispatch: MazeActionDispatch
+  persistSnapshot: () => void
 }
 
 // ScreenLine is the renderer's normalized line model before HTML generation.
@@ -269,8 +311,8 @@ export type ScreenLine = {
   className: string
 }
 
-// Elements collects the DOM handles that power the browser terminal.
-export type Elements = {
+// TerminalElements are required on every playable page.
+export type TerminalElements = {
   app: HTMLElement
   body: HTMLElement
   screen: HTMLElement
@@ -280,6 +322,44 @@ export type Elements = {
   touchButtons: HTMLButtonElement[]
 }
 
+// AgentElements are only used by the agent-api page overlays and seat roster.
+export type AgentElements = {
+  agentSeatRoster?: HTMLElement
+  agentConfigForm?: HTMLFormElement
+  agentConfigTitle?: HTMLElement
+  agentConfigPlayerName?: HTMLInputElement
+  agentConfigModel?: HTMLInputElement
+  agentConfigEndpoint?: HTMLInputElement
+  agentConfigEnabled?: HTMLInputElement
+  agentConfigEnabledLabel?: HTMLElement
+  agentConfigClose?: HTMLButtonElement
+  agentConfigStatus?: HTMLElement
+  agentDeleteDialog?: HTMLElement
+  agentDeleteTitle?: HTMLElement
+  agentDeleteTarget?: HTMLElement
+  agentDeleteEnabled?: HTMLInputElement
+  agentDeleteEnabledLabel?: HTMLElement
+  agentDeleteApply?: HTMLButtonElement
+  agentDeleteConfirm?: HTMLInputElement
+  agentDeleteClose?: HTMLButtonElement
+}
+
+// Elements combines shared terminal handles with optional agent-api controls.
+export type Elements = TerminalElements & AgentElements
+
+// DisplayMsg stores copy variants selected by viewport room, not by input hardware.
+export type DisplayMsg = {
+  wide: string
+  compact: string
+}
+
+// SummaryComparisonTemplates groups the best-record variants shared by win summaries.
+export type SummaryComparisonTemplates = {
+  newRecord: string
+  matchedBest: string
+  behindBest: string
+}
+
 // AppConfig gathers translatable copy and shared runtime constants.
 export type AppConfig = {
   chrome: {
@@ -287,6 +367,7 @@ export type AppConfig = {
     appSubtitle: string
     pageVersionTemplate: string
     contactLabel: string
+    privacyLabel: string
   }
   pages: {
     game: {
@@ -294,78 +375,45 @@ export type AppConfig = {
       description: string
       pageLabel: string
       aiAgentsLabel: string
-      resetProgressLabel: string
     }
     agents: {
       documentTitle: string
       description: string
       pageLabel: string
       backToGameLabel: string
-      resetProgressLabel: string
+    }
+    privacy: {
+      documentTitle: string
+      description: string
+      pageLabel: string
     }
   }
   messages: {
     navigation: {
-      default: string
-      compact: string
+      interactive: DisplayMsg
+      agentApi: DisplayMsg
     }
     pauseMessage: string
-    successMessage: string
-    successCompactMessage: string
-    failedMessage: string
-    failedCompactMessage: string
-    proceedMessage: string
-    touchProceedMessage: string
+    success: DisplayMsg
+    failed: DisplayMsg
+    proceed: DisplayMsg
     agentAwaitMessage: string
-    agentAwaitActionMessage: string
+    agentAwaitAction: DisplayMsg
     tooSmallMessage: string
     tooSmallActionMessage: string
-    statusTemplate: string
-    touchStatusTemplate: string
+    runningStatus: DisplayMsg
     highScoreTemplate: string
     winSummary: {
-      noPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      fasterPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      slowerPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      matchedPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
+      noPrevious: SummaryComparisonTemplates
+      fasterPrevious: SummaryComparisonTemplates
+      slowerPrevious: SummaryComparisonTemplates
+      matchedPrevious: SummaryComparisonTemplates
     }
     agentWinSummary: {
-      noPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      fewerPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      morePrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
-      matchedPrevious: {
-        newRecord: string
-        matchedBest: string
-        behindBest: string
-      }
+      noPrevious: SummaryComparisonTemplates
+      fewerPrevious: SummaryComparisonTemplates
+      morePrevious: SummaryComparisonTemplates
+      matchedPrevious: SummaryComparisonTemplates
     }
   }
   controls: {
@@ -373,7 +421,34 @@ export type AppConfig = {
       wallsLabel: string
       pauseLabel: string
       proceedLabel: string
+      resetProgressLabel: string
     }
+  }
+  agentConfig: {
+    title: string
+    newAgentLabel: string
+    agentEnabledLabel: string
+    agentDisabledLabel: string
+    maxSeats: number
+    playerNameMinLength: number
+    playerNameMaxLength: number
+    playerNameLabel: string
+    playerNamePlaceholder: string
+    duplicatePlayerNameMessage: string
+    playerNameLengthMessage: string
+    modelLabel: string
+    modelPlaceholder: string
+    endpointLabel: string
+    endpointPlaceholder: string
+    submitLabel: string
+    invalidMessage: string
+    invalidEndpointMessage: string
+    editTitle: string
+    addSeatLabelTemplate: string
+    manageSeatLabelTemplate: string
+    activeSeatLabelTemplate: string
+    deleteMessageTemplate: string
+    updateConfirmLabel: string
   }
   maze: {
     playerMarker: string
@@ -383,7 +458,7 @@ export type AppConfig = {
     cellPathWidth: number
     moveStep: number
     leftPadding: number
-    minDimension: number
+    minMazeSideCells: number
   }
   generation: {
     seed: number
@@ -398,7 +473,7 @@ export type AppConfig = {
   scoring: {
     budgetMultiplier: number
     percentScale: number
-    retentionScale: number
+    retentionFullScaleUnits: number
   }
   timing: {
     refreshInterval: number
@@ -411,8 +486,6 @@ export type AppConfig = {
     compactWidth: number
     compactHeight: number
     terminalSampleWidth: number
-    minTerminalRows: number
-    minTerminalColumns: number
     terminalHeightInset: number
     terminalHeightScale: number
     terminalWidthInset: number
@@ -431,7 +504,6 @@ export type AppConfig = {
         winMetrics: string
       }
     }
-    missingElementErrorTemplate: string
     agentApiMistakePenaltyMoves: number
     interactivePlayerName: string
   }

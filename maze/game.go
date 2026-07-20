@@ -113,15 +113,15 @@ func (config *Dimensions) PlayerMovement(data [][]string, rowDelta, columnDelta 
 // HandlePlayerMovement interprets keyboard input and updates the player position or returns a game status.
 func (config *Dimensions) HandlePlayerMovement(event termbox.Key, data [][]string) (int, bool) {
 	// Status-returning keys are separated from movement keys so callers can route game actions cleanly.
-	if event == termbox.KeyEsc || event == termbox.KeyCtrlC {
+	if event == termbox.KeyCtrlC {
 		return StatusQuit, true
 	}
 
-	if event == termbox.KeyCtrlP {
+	if event == termbox.KeyEnter {
 		return StatusProceed, true
 	}
 
-	if event == termbox.KeySpace {
+	if event == termbox.KeySpace || event == termbox.KeyEsc {
 		return StatusPause, true
 	}
 
@@ -613,7 +613,7 @@ func (state *gameState) handleStatus(
 		return false, updatedData, nil
 	}
 
-	// Ctrl+P serves two different flows:
+	// Enter serves two different flows:
 	// 1. Resume a manually paused game when no overlay transition is pending.
 	// 2. Load the next or current level after a win or fail overlay.
 	if returnedStatus == StatusProceed {

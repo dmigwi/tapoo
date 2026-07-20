@@ -25,10 +25,10 @@ function selfVisit(row: number, col: number): TraversalHistoryEntry {
 
 function enabledAgentConfig(): AgentApiConfig {
   return {
-    id: "blue-agent",
+    id: 1,
     playerName: "Blue",
     model: "llama3.2",
-    endpoint: "/api/agent/move",
+    endpoint: "/configured-agents/blue/move",
     enabled: true,
   }
 }
@@ -143,16 +143,29 @@ function createTraversalMock({
     traversalHistory.some(
       (visitedCell) => visitedCell.row === cell.row && visitedCell.col === cell.col,
     )
+  const cloneCellCoordinate = ({ row, col }: { row: number; col: number }) => ({
+    row,
+    col,
+  })
 
   return {
     cellCoordinateFromGridPoint: vi.fn(cellCoordinateFromGridPoint),
-    currentTotalCells: vi.fn((mazeDimensions: { length: number; width: number } | null) => {
-      if (!mazeDimensions || mazeDimensions.length <= 0 || mazeDimensions.width <= 0) {
-        return 0
-      }
-
-      return mazeDimensions.length * mazeDimensions.width
-    }),
+    createMazeDimensions: vi.fn(({ length, width }: { length: number; width: number }) => ({
+      length,
+      width,
+      area: length * width,
+    })),
+    cloneMazeDimensions: vi.fn(({ length, width }: { length: number; width: number }) => ({
+      length,
+      width,
+      area: length * width,
+    })),
+    cloneCellCoordinate: vi.fn(cloneCellCoordinate),
+    cloneMazeRows: vi.fn((mazeRows: string[][]) => mazeRows.map((row) => [...row])),
+    cloneRenderGridPoint: vi.fn(({ x, y }: { x: number; y: number }) => ({ x, y })),
+    cloneTraversalHistory: vi.fn((history: TraversalHistoryEntry[]) =>
+      history.map(({ playerName, row, col }) => ({ playerName, row, col })),
+    ),
     gridPointFromCellCoordinate: vi.fn(gridPointFromCellCoordinate),
     isMoveAction: vi.fn((action: { type: string }) =>
       ["MoveLeft", "MoveRight", "MoveUp", "MoveDown"].includes(action.type),
@@ -210,6 +223,10 @@ function createTraversalMock({
       playerName,
     })),
     traversalHistoryIncludes: vi.fn(traversalHistoryIncludes),
+    startCellFromTraversalHistory: vi.fn((history: TraversalHistoryEntry[]) => {
+      const [startCell] = history
+      return startCell ? cloneCellCoordinate(startCell) : null
+    }),
   }
 }
 
@@ -217,7 +234,7 @@ function createTraversalMock({
 function createPersistedWonRound(): PersistedRound {
   return {
     level: 3,
-    mazeDimensions: { length: 1, width: 1 },
+    mazeDimensions: { length: 1, width: 1, area: 1 },
     maze: [
       ["|", "---", "|"],
       ["|", "   ", "|"],
@@ -225,7 +242,7 @@ function createPersistedWonRound(): PersistedRound {
     ],
     playerPosition: { x: 1, y: 1 },
     startCell: { row: 0, col: 0 },
-    traversalHistory: [visit(0, 0)],
+    traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 1, y: 1 },
     wallWeight: 1,
     status: "won",
@@ -253,10 +270,10 @@ type DimensionsResult = {
   level: number
   length: number
   width: number
+  area?: number
 } | null
 
 type GameHarness = {
-  clearPersistedAgentApiConfigs: ReturnType<typeof vi.fn>
   clearPersistedSnapshot: ReturnType<typeof vi.fn>
   clearPersistedRound: ReturnType<typeof vi.fn>
   elements: Elements
@@ -301,7 +318,6 @@ async function bootstrapHarness({
   const render = vi.fn<(elements: Elements, state: State) => void>()
   const saveGameProgress = vi.fn()
   const saveActiveRoundSnapshot = vi.fn()
-  const clearPersistedAgentApiConfigs = vi.fn()
   const clearPersistedSnapshot = vi.fn()
   const clearPersistedRound = vi.fn()
   const generateMaze = vi.fn(() => round)
@@ -323,7 +339,7 @@ async function bootstrapHarness({
     const result =
       dimensionsResults[Math.min(dimensionsIndex, dimensionsResults.length - 1)]
     dimensionsIndex += 1
-    return result
+    return result ? { ...result, area: result.area ?? result.length * result.width } : null
   })
 
   vi.doMock("./clock", () => {
@@ -375,7 +391,6 @@ async function bootstrapHarness({
   vi.doMock("./traversal", () => createTraversalMock({ isSpaceFound, reweightMaze }))
   vi.doMock("./render", () => ({ render }))
   vi.doMock("./storage", () => ({
-    clearPersistedAgentApiConfigs,
     clearPersistedSnapshot,
     clearPersistedRound,
     clearStaleStorageVersions: vi.fn(),
@@ -406,7 +421,6 @@ async function bootstrapHarness({
   const runtime = bootstrapGame(controlMode, elements)
 
   return {
-    clearPersistedAgentApiConfigs,
     clearPersistedSnapshot,
     clearPersistedRound,
     elements,
@@ -559,7 +573,7 @@ describe("bootstrapGame", () => {
     )
   })
 
-  it("proceeds to the next level after a restored win when Ctrl+P is pressed", async () => {
+  it("proceeds to the next level after a restored win when Enter is pressed", async () => {
     const elements = createElements()
     const render = vi.fn<(elements: Elements, state: State) => void>()
     const loadPersistedSnapshot = vi.fn(() => ({
@@ -604,8 +618,7 @@ describe("bootstrapGame", () => {
     bootstrapGame(createInteractiveMode(elements), elements)
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
-        key: "p",
-        ctrlKey: true,
+        key: "Enter",
         bubbles: true,
       }),
     )
@@ -685,8 +698,8 @@ describe("bootstrapGame", () => {
           preferences: {
             level: 7,
             wallWeight: 3,
-            lastAttemptRetention: 710000,
-            bestWinRetention: 880000,
+            lastAttemptRetentionUnits: 710000,
+            bestWinRetentionUnits: 880000,
           },
           round: null,
         },
@@ -706,8 +719,8 @@ describe("bootstrapGame", () => {
     expect(state.level).toBe(1)
     expect(state.wallWeight).toBe(1)
     expect(state.status).toBe("running")
-    expect(state.lastAttemptRetention).toBeNull()
-    expect(state.bestWinRetention).toBeNull()
+    expect(state.lastAttemptRetentionUnits).toBeNull()
+    expect(state.bestWinRetentionUnits).toBeNull()
     expect(state.lastRoundScore).toBe(0)
     expect(state.winSummary).toBe("")
   })
@@ -722,14 +735,13 @@ describe("bootstrapGame", () => {
 
     const actionState = harness.runtime.dispatch(
       { type: "MoveRight" },
-      { wantFeedback: true, playerName: "Blue" },
+      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
     expect(harness.mode.readLastActionState()).toEqual(actionState)
 
     harness.elements.controls[0].click()
 
     expect(harness.clearPersistedSnapshot).toHaveBeenCalledTimes(1)
-    expect(harness.clearPersistedAgentApiConfigs).not.toHaveBeenCalled()
     expect(harness.mode.readLastActionState()).toBeNull()
 
     const state = latestRenderedState(harness.render)
@@ -767,8 +779,7 @@ describe("bootstrapGame", () => {
 
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
-        key: "p",
-        ctrlKey: true,
+        key: "Enter",
         bubbles: true,
       }),
     )
@@ -799,8 +810,8 @@ describe("bootstrapGame", () => {
     ])
     expect(state.status).toBe("won")
     expect(state.lastRoundScore).toBe(200)
-    expect(state.lastAttemptRetention).toBe(1_000_000)
-    expect(state.bestWinRetention).toBe(1_000_000)
+    expect(state.lastAttemptRetentionUnits).toBe(1_000_000)
+    expect(state.bestWinRetentionUnits).toBe(1_000_000)
     expect(state.winSummary).toBe("New scores retention record")
     expect(harness.saveActiveRoundSnapshot).toHaveBeenCalled()
   })
@@ -814,8 +825,8 @@ describe("bootstrapGame", () => {
           preferences: {
             level: 1,
             wallWeight: 1,
-            lastAttemptRetention: 0,
-            bestWinRetention: 1_000_000,
+            lastAttemptRetentionUnits: 0,
+            bestWinRetentionUnits: 1_000_000,
           },
           round: null,
         },
@@ -841,8 +852,8 @@ describe("bootstrapGame", () => {
 
     const state = latestRenderedState(harness.render)
     expect(state.status).toBe("won")
-    expect(state.lastAttemptRetention).toBe(600000)
-    expect(state.bestWinRetention).toBe(1_000_000)
+    expect(state.lastAttemptRetentionUnits).toBe(600000)
+    expect(state.bestWinRetentionUnits).toBe(1_000_000)
     expect(state.winSummary).toBe(
       "1.20s faster than previous (0.80s behind best)",
     )
@@ -900,7 +911,7 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.status).toBe("lost")
     expect(state.lastRoundScore).toBe(0)
-    expect(state.lastAttemptRetention).toBe(0)
+    expect(state.lastAttemptRetentionUnits).toBe(0)
     expect(state.winSummary).toBe("")
     expect(harness.saveActiveRoundSnapshot).toHaveBeenCalled()
   })
@@ -980,11 +991,11 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
     expect(state.level).toBe(1)
-    expect(state.mazeDimensions).toEqual({ length: 1, width: 4 })
+    expect(state.mazeDimensions).toEqual({ length: 1, width: 4, area: 4 })
     expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
     expect(harness.generateMaze).toHaveBeenCalledTimes(2)
     expect(harness.generateMaze).toHaveBeenLastCalledWith(
-      { level: 1, length: 1, width: 4 },
+      { level: 1, length: 1, width: 4, area: 4 },
       1,
     )
   })
@@ -1009,11 +1020,11 @@ describe("bootstrapGame", () => {
   it("restores a persisted round in paused mode once the viewport fits again", async () => {
     const persistedRound: PersistedRound = {
       level: 1,
-      mazeDimensions: { length: 2, width: 1 },
+      mazeDimensions: { length: 2, width: 1, area: 2 },
       maze: createHorizontalRound().maze,
       playerPosition: { x: 1, y: 1 },
       startCell: { row: 0, col: 0 },
-      traversalHistory: [visit(0, 0)],
+      traversalHistory: [selfVisit(0, 0)],
       finalPosition: { x: 3, y: 1 },
       wallWeight: 1,
       status: "running",
@@ -1054,18 +1065,18 @@ describe("bootstrapGame", () => {
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("paused")
     expect(state.canResume).toBe(true)
-    expect(state.traversalHistory).toEqual([visit(0, 0)])
+    expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
     expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(3)
   })
 
   it("rejects malformed persisted traversal history and falls back to a fresh round", async () => {
     const invalidPersistedRound: PersistedRound = {
       level: 2,
-      mazeDimensions: { length: 2, width: 1 },
+      mazeDimensions: { length: 2, width: 1, area: 2 },
       maze: createHorizontalRound().maze,
       playerPosition: { x: 3, y: 1 },
       startCell: { row: 0, col: 0 },
-      traversalHistory: [visit(0, 0), visit(0, 0)],
+      traversalHistory: [selfVisit(0, 0), selfVisit(0, 0)],
       finalPosition: { x: 3, y: 1 },
       wallWeight: 1,
       status: "running",
@@ -1164,7 +1175,7 @@ describe("bootstrapGame", () => {
 
     const actionState = harness.runtime.dispatch(
       { type: "MoveRight" },
-      { wantFeedback: true, playerName: "Blue" },
+      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
 
     state = latestRenderedState(harness.render)
@@ -1176,15 +1187,14 @@ describe("bootstrapGame", () => {
       traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "reached-target",
       visitedBefore: false,
-      submittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["0:MoveRight"],
       lastValidMoveIndex: 0,
     }))
     expect(harness.mode.readLastActionState()).toEqual(actionState)
 
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
-        key: "p",
-        ctrlKey: true,
+        key: "Enter",
         bubbles: true,
       }),
     )

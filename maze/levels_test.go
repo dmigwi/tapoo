@@ -223,13 +223,31 @@ func TestGetMazeDimensionsFits(t *testing.T) {
 func TestGetTerminalSize(t *testing.T) {
 	t.Parallel()
 
-	got := maze.GetTerminalSize(202, 52)
-	want := maze.Dimensions{
-		Length: 49,
-		Width:  21,
-	}
+	t.Run("converts normal termbox size into drawable maze room", func(t *testing.T) {
+		t.Parallel()
 
-	if got.Length != want.Length || got.Width != want.Width {
-		t.Fatalf("unexpected terminal size: got %+v want %+v", got, want)
-	}
+		got := maze.GetTerminalSize(202, 52)
+		want := maze.Dimensions{
+			Length: 49,
+			Width:  21,
+		}
+
+		if got.Length != want.Length || got.Width != want.Width {
+			t.Fatalf("unexpected terminal size: got %+v want %+v", got, want)
+		}
+	})
+
+	t.Run("keeps tiny terminal room tiny instead of inflating it", func(t *testing.T) {
+		t.Parallel()
+
+		got := maze.GetTerminalSize(8, 7)
+		want := maze.Dimensions{
+			Length: 0,
+			Width:  0,
+		}
+
+		if got.Length != want.Length || got.Width != want.Width {
+			t.Fatalf("unexpected tiny terminal size: got %+v want %+v", got, want)
+		}
+	})
 }

@@ -1,5 +1,5 @@
 import { CONFIG } from "./config"
-import { isSpaceFound } from "./traversal"
+import { createMazeDimensions, isSpaceFound } from "./traversal"
 import type {
   BaseDimensions,
   CellAddress,
@@ -45,7 +45,8 @@ function appendFittingDimensions(
   width: number,
   terminalSize: BaseDimensions,
 ): BaseDimensions[] {
-  if (length < mazeConfig.minDimension || width < mazeConfig.minDimension) {
+  // Reject very skinny factor pairs even when they fit, because they make poor playable mazes.
+  if (length < mazeConfig.minMazeSideCells || width < mazeConfig.minMazeSideCells) {
     return candidates
   }
 
@@ -53,12 +54,14 @@ function appendFittingDimensions(
     candidates.push({ length, width })
   }
 
+  const rotatedDimensions = { length: width, width: length }
+  // Also try the same factor pair rotated, because a wide viewport may fit width x length better.
   if (
     length !== width &&
-    terminalSize.length >= width &&
-    terminalSize.width >= length
+    terminalSize.length >= rotatedDimensions.length &&
+    terminalSize.width >= rotatedDimensions.width
   ) {
-    candidates.push({ length: width, width: length })
+    candidates.push(rotatedDimensions)
   }
 
   return candidates
@@ -73,19 +76,14 @@ function fittingDimensionsForArea(
 
   for (
     let divisor = Math.floor(Math.sqrt(area));
-    divisor >= mazeConfig.minDimension;
+    divisor >= mazeConfig.minMazeSideCells;
     divisor -= 1
   ) {
     if (area % divisor !== 0) {
       continue
     }
 
-    appendFittingDimensions(
-      candidates,
-      divisor,
-      Math.floor(area / divisor),
-      terminalSize,
-    )
+    appendFittingDimensions(candidates, divisor, Math.floor(area / divisor), terminalSize)
   }
 
   return candidates
@@ -141,23 +139,58 @@ function chooseBestMazeDimensions(
   return best
 }
 
+// resolveMazeArea keeps isolated bad factor pairs playable without borrowing the next level.
+function resolveMazeArea(
+  level: number,
+  terminalSize: BaseDimensions,
+): BaseDimensions[] | null {
+  // Each visible level owns the area band from its raw target up to the next level's target.
+  const area = generateMazeArea(level)
+  const areaLimit = generateMazeArea(level + 1)
+  const terminalArea = terminalSize.width * terminalSize.length
+  if (area > terminalArea) {
+    return null
+  }
+
+  const exactCandidates = fittingDimensionsForArea(area, terminalSize)
+  if (exactCandidates.length > 0) {
+    return exactCandidates
+  }
+
+  // We only get here after the current exact target missed.
+  // If the next exact target also misses, stop early to preserve UI room for controls and seats.
+  const nextExactCandidates = fittingDimensionsForArea(areaLimit, terminalSize)
+  if (nextExactCandidates.length === 0) {
+    return null
+  }
+
+  // Repair isolated bad factors inside this level's band without consuming the next level's area.
+  for (
+    let candidateArea = area + 1;
+    candidateArea < areaLimit && candidateArea <= terminalArea;
+    candidateArea += 1
+  ) {
+    const candidates = fittingDimensionsForArea(candidateArea, terminalSize)
+    if (candidates.length > 0) {
+      return candidates
+    }
+  }
+
+  return null
+}
+
 // getMazeDimensions finds the best playable dimensions for a level and viewport.
 export function getMazeDimensions(
   level: number,
   terminalSize: BaseDimensions,
 ): LevelDimensions | null {
-  const area = generateMazeArea(level)
-  if (area > terminalSize.width * terminalSize.length) {
-    return null
-  }
-
-  const candidates = fittingDimensionsForArea(area, terminalSize)
-  if (candidates.length === 0) {
+  const candidates = resolveMazeArea(level, terminalSize)
+  if (candidates === null) {
     return null
   }
 
   const selected = chooseBestMazeDimensions(candidates, terminalSize)
-  return { ...selected, level }
+  return { ...createMazeDimensions(selected), level }
 }
 
 // createPlayingField builds the initial fully-walled maze grid.

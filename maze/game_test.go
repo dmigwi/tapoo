@@ -134,9 +134,10 @@ func TestHandlePlayerMovement(t *testing.T) {
 			key  termbox.Key
 			want int
 		}{
-			{name: "quit", key: termbox.KeyEsc, want: maze.StatusQuit},
-			{name: "proceed", key: termbox.KeyCtrlP, want: maze.StatusProceed},
+			{name: "quit", key: termbox.KeyCtrlC, want: maze.StatusQuit},
+			{name: "proceed", key: termbox.KeyEnter, want: maze.StatusProceed},
 			{name: "pause", key: termbox.KeySpace, want: maze.StatusPause},
+			{name: "escape pauses", key: termbox.KeyEsc, want: maze.StatusPause},
 			{name: "cycle wall weight", key: termbox.KeyCtrlB, want: maze.StatusCycleWallWeight},
 		}
 
@@ -307,7 +308,7 @@ func TestStartWithUI(t *testing.T) {
 		t.Parallel()
 
 		ui := newFakeUI(60, 40)
-		ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+		ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlC})
 
 		err := maze.StartWithUI(ui)
 		if err != nil {
@@ -362,8 +363,8 @@ func TestPlayWithUI(t *testing.T) {
 
 		ui.enqueueEvents(
 			termbox.Event{Type: termbox.EventKey, Key: termbox.KeySpace},
-			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlP},
-			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc},
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEnter},
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlC},
 		)
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
@@ -385,7 +386,7 @@ func TestPlayWithUI(t *testing.T) {
 		}
 
 		if !ui.containsText("Scores:") {
-			t.Fatal("expected Ctrl+P after pause to return to the live game view")
+			t.Fatal("expected Enter after pause to return to the live game view")
 		}
 	})
 
@@ -399,8 +400,8 @@ func TestPlayWithUI(t *testing.T) {
 
 		ui.enqueueEvents(
 			termbox.Event{Type: termbox.EventKey, Key: termbox.KeySpace},
-			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlP},
-			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc},
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEnter},
+			termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlC},
 		)
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
@@ -427,7 +428,7 @@ func TestPlayWithUI(t *testing.T) {
 		ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlB})
 		go func() {
 			time.Sleep(2 * maze.RefreshInterval)
-			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlC})
 		}()
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
@@ -464,7 +465,7 @@ func TestPlayWithUI(t *testing.T) {
 		)
 		go func() {
 			time.Sleep(2 * maze.RefreshInterval)
-			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlC})
 		}()
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
@@ -496,7 +497,7 @@ func TestPlayWithUI(t *testing.T) {
 
 		go func() {
 			time.Sleep(100 * time.Millisecond)
-			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlC})
 		}()
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{}, sampleMazeGrid(), maze.StoredGameState{
@@ -525,9 +526,9 @@ func TestPlayWithUI(t *testing.T) {
 
 		go func() {
 			time.Sleep(40 * time.Millisecond)
-			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlP})
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEnter})
 			time.Sleep(40 * time.Millisecond)
-			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlC})
 		}()
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{}, sampleMazeGrid(), maze.StoredGameState{
@@ -540,7 +541,7 @@ func TestPlayWithUI(t *testing.T) {
 		}
 
 		if !ui.containsText("Scores: 7000") {
-			t.Fatal("expected Ctrl+P after failure to reload level 1 with its initial score")
+			t.Fatal("expected Enter after failure to reload level 1 with its initial score")
 		}
 	})
 
@@ -552,7 +553,7 @@ func TestPlayWithUI(t *testing.T) {
 
 		go func() {
 			time.Sleep(120 * time.Millisecond)
-			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlC})
 		}()
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
@@ -582,9 +583,9 @@ func TestPlayWithUI(t *testing.T) {
 
 		go func() {
 			time.Sleep(80 * time.Millisecond)
-			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlP})
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEnter})
 			time.Sleep(40 * time.Millisecond)
-			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+			ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlC})
 		}()
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
@@ -602,7 +603,7 @@ func TestPlayWithUI(t *testing.T) {
 		}
 
 		if !ui.containsText("Scores: 8000") {
-			t.Fatal("expected Ctrl+P after a win to load level 2 with its initial score")
+			t.Fatal("expected Enter after a win to load level 2 with its initial score")
 		}
 	})
 }
@@ -662,7 +663,7 @@ func TestPlayWithUIRestoresPersistedProgressState(t *testing.T) {
 
 			go func() {
 				time.Sleep(120 * time.Millisecond)
-				ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyEsc})
+				ui.enqueueEvents(termbox.Event{Type: termbox.EventKey, Key: termbox.KeyCtrlC})
 			}()
 
 			if err := maze.PlayWithUI(ui); err != nil {

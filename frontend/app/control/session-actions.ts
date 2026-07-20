@@ -50,24 +50,25 @@ export function releaseAllActionBindings({
 
 // sessionActionFromKeyboardEvent translates shared keyboard shortcuts into session actions.
 export function sessionActionFromKeyboardEvent(
-  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey">,
+  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey"> &
+    Partial<Pick<KeyboardEvent, "altKey">>,
 ): SessionMazeAction | null {
   const lowerKey = event.key.toLowerCase()
   const controlCombo = event.ctrlKey || event.metaKey
 
-  if (controlCombo && lowerKey === "b") {
-    return { type: "cycle-walls" }
+  if (controlCombo && event.altKey === true && lowerKey === "r") {
+    return { type: "restart" }
   }
 
-  if (controlCombo && lowerKey === "p") {
-    return { type: "proceed" }
+  if (controlCombo && lowerKey === "b") {
+    return { type: "cycle-walls" }
   }
 
   if (event.key === "Enter") {
     return { type: "proceed" }
   }
 
-  if (event.key === " ") {
+  if (event.key === " " || event.key === "Escape") {
     return { type: "pause" }
   }
 
@@ -90,4 +91,17 @@ export function sessionActionFromButton(
     default:
       return null
   }
+}
+
+// isFormControlTarget identifies editable controls whose keystrokes should not become game shortcuts.
+export function isFormControlTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement &&
+      (target.isContentEditable === true ||
+        target.contentEditable === "true" ||
+        target.getAttribute("contenteditable") === "true"))
+  )
 }

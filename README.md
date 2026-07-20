@@ -35,7 +35,7 @@ Then serve `public/` and open `/index.html`.
 <details>
 <summary><strong>Gameplay Preview</strong></summary>
 
-<img src="public/images/tapoo-gameplay.gif" alt="Tapoo gameplay" width="720" style="max-width: 100%; height: auto;" />
+<img alt="tapoo-gameplay" src="https://github.com/user-attachments/assets/e5596ea7-7ac1-41cc-a2b7-54cf862ff10e" width="720" style="max-width: 100%; height: auto;" />
 
 </details>
 
@@ -48,13 +48,14 @@ Tapoo increases maze area as levels rise. Progress continues until the current t
 
 - `Arrow keys`: move the player
 - `Ctrl+B`: cycle maze wall weight
-- `Space`: pause the current run
-- `Ctrl+P`: proceed after pause, win, or failure
-- `Esc` or `Ctrl+C`: quit
+- `Space` or `Esc`: pause the current run
+- `Enter`: proceed after pause, win, or failure
+- `Ctrl+C`: quit
 
 ### Browser controls
 
 - Keyboard controls mirror the terminal controls
+- `Ctrl+Alt+R`: reset browser progress
 - On touch devices, on-screen controls are shown automatically
 
 </details>
@@ -110,6 +111,10 @@ The SPA stores gameplay state in browser storage:
 
 - `localStorage` for durable preferences such as level and wall weight
 - `sessionStorage` for the active round snapshot
+
+Privacy note: browser storage stays on the current device unless the user clears it, resets progress, or removes configured agent data. Browser storage is lightly obfuscated to discourage casual tampering, but it should not be treated as strong encryption for personal data. When AI Agent play is configured, gameplay context such as player name, current cell, destination cell, submitted moves, score, level, and traversal history may be sent to the configured agent API endpoint.
+
+The deployed browser pages include a short privacy notice at `privacy.html`.
 
 </details>
 

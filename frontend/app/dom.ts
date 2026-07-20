@@ -1,13 +1,14 @@
 import { CONFIG } from "./config"
 import type { BaseDimensions, Elements } from "./types"
 
-const { runtime, viewport } = CONFIG
+const { viewport } = CONFIG
+const missingRequiredElementTemplate = "missing required element: {id}"
 
 // mustElement fetches a required terminal node and fails fast when it is missing.
 function mustElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id)
   if (!(element instanceof HTMLElement)) {
-    throw new Error(runtime.missingElementErrorTemplate.replace("{id}", id))
+    throw new Error(missingRequiredElementTemplate.replace("{id}", id))
   }
 
   return element as T
@@ -37,13 +38,31 @@ export function getGameElements(): Elements | null {
     measure: mustElement<HTMLElement>("terminal-measure"),
     controls: Array.from(
       document.querySelectorAll<HTMLButtonElement>(
-        "[data-action]:not([data-touch-control])",
+        "button[data-action]:not([data-touch-control])",
       ),
     ),
     touchControls: mustElement<HTMLElement>("touch-controls"),
     touchButtons: Array.from(
       document.querySelectorAll<HTMLButtonElement>("[data-touch-control]"),
     ),
+    agentSeatRoster: mustElement<HTMLElement>("agent-seat-roster"),
+    agentConfigForm: mustElement<HTMLFormElement>("agent-config-form"),
+    agentConfigTitle: mustElement<HTMLElement>("agent-config-title"),
+    agentConfigPlayerName: mustElement<HTMLInputElement>("agent-config-player-name"),
+    agentConfigModel: mustElement<HTMLInputElement>("agent-config-model"),
+    agentConfigEndpoint: mustElement<HTMLInputElement>("agent-config-endpoint"),
+    agentConfigEnabled: mustElement<HTMLInputElement>("agent-config-enabled"),
+    agentConfigEnabledLabel: mustElement<HTMLElement>( "agent-config-enabled-label"),
+    agentConfigClose: mustElement<HTMLButtonElement>("agent-config-close"),
+    agentConfigStatus: mustElement<HTMLElement>("agent-config-status"),
+    agentDeleteDialog: mustElement<HTMLElement>("agent-delete-dialog"),
+    agentDeleteTitle: mustElement<HTMLElement>("agent-delete-title"),
+    agentDeleteTarget: mustElement<HTMLElement>("agent-delete-target"),
+    agentDeleteEnabled: mustElement<HTMLInputElement>("agent-delete-enabled"),
+    agentDeleteEnabledLabel: mustElement<HTMLElement>("agent-delete-enabled-label"),
+    agentDeleteApply: mustElement<HTMLButtonElement>("agent-delete-apply"),
+    agentDeleteConfirm: mustElement<HTMLInputElement>("agent-delete-confirm"),
+    agentDeleteClose: mustElement<HTMLButtonElement>("agent-delete-close"),
   }
 }
 
@@ -56,24 +75,23 @@ export function getTerminalSize(elements: Elements): BaseDimensions {
   const measuredRowHeight = sampleRect.height
   const computedLineHeight = Number.parseFloat(screenStyle.lineHeight)
   const computedFontSize = Number.parseFloat(screenStyle.fontSize)
-  const terminalRowHeight =
-    measuredRowHeight || computedLineHeight || computedFontSize || 16
-  const terminalColumns = Math.max(
-    viewport.minTerminalColumns,
-    Math.floor(rect.width / charWidth),
-  )
-  const terminalRows = Math.max(
-    viewport.minTerminalRows,
-    Math.floor(rect.height / terminalRowHeight),
-  )
+  const terminalRowHeight = measuredRowHeight || computedLineHeight || computedFontSize || 16
+  const terminalColumns = Math.floor(rect.width / charWidth)
+  const terminalRows = Math.floor(rect.height / terminalRowHeight)
 
   return {
-    length: Math.floor(
-      (terminalColumns - viewport.terminalHeightInset) /
-        viewport.terminalHeightScale,
+    length: Math.max(
+      0,
+      Math.floor(
+        (terminalColumns - viewport.terminalHeightInset) /
+          viewport.terminalHeightScale,
+      ),
     ),
-    width: Math.floor(
-      (terminalRows - viewport.terminalWidthInset) / viewport.terminalWidthScale,
+    width: Math.max(
+      0,
+      Math.floor(
+        (terminalRows - viewport.terminalWidthInset) / viewport.terminalWidthScale,
+      ),
     ),
   }
 }

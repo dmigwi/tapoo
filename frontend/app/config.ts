@@ -21,10 +21,10 @@ const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
 }
 
 // VERSION_MAJOR is the semantic major version for the browser SPA runtime.
-const VERSION_MAJOR = 1
+const VERSION_MAJOR = 2
 
 // VERSION_MINOR is the semantic minor version for the browser SPA runtime.
-const VERSION_MINOR = 1
+const VERSION_MINOR = 0
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
 const VERSION_PATCH = 0
@@ -46,6 +46,7 @@ export const CONFIG: AppConfig = {
     appSubtitle: "maze runner (hide & seek)",
     pageVersionTemplate: "v{version} © {year} Tapoo",
     contactLabel: "Contact",
+    privacyLabel: "Privacy",
   },
   // Per-page labels and metadata consumed by static page chrome.
   pages: {
@@ -55,7 +56,6 @@ export const CONFIG: AppConfig = {
         "Tapoo maze runner hide and seek game rendered as a browser-based terminal experience.",
       pageLabel: "Game",
       aiAgentsLabel: "AI Agents",
-      resetProgressLabel: "Reset Progress",
     },
     agents: {
       documentTitle: "Tapoo Maze Runner | AI Agents",
@@ -63,36 +63,61 @@ export const CONFIG: AppConfig = {
         "Tapoo maze runner played by an HTTP-driven agent with human session controls.",
       pageLabel: "AI Agents",
       backToGameLabel: "Back To Game",
-      resetProgressLabel: "Reset Progress",
+    },
+    privacy: {
+      documentTitle: "Tapoo Maze Runner | Privacy",
+      description:
+        "Privacy details for Tapoo browser storage and optional AI Agent API gameplay context.",
+      pageLabel: "Privacy",
     },
   },
   // Runtime text shown inside the terminal view and overlay states.
   messages: {
-    // Navigation hints swap between full and compact wording by viewport size.
+    // Navigation hints are view-specific so keyboard bindings never leak into compact touch views.
     navigation: {
-      default:
-        "Use Arrow Keys to guide Blue (Player) to Red. Ctrl+B changes walls.",
-      compact: "Guide Blue (Player) to Red with touch controls.",
+      interactive: {
+        wide:
+          "Use Arrow Keys to guide Blue to Red. Ctrl+B walls, Space/Esc pauses, Enter proceeds.",
+        compact: "Use touch buttons to guide Blue to Red.",
+      },
+      agentApi: {
+        wide:
+          "Agent APIs guide Blue to Red. Ctrl+B walls, Space/Esc pauses, Enter proceeds.",
+        compact: "Agent APIs guide Blue to Red. Use touch buttons for session controls.",
+      },
     },
     pauseMessage: "Game paused !!!",
-    successMessage:
-      "Game over! Congratulations, You won by locating the target on time.",
-    successCompactMessage: "Game over! You won.",
-    failedMessage:
-      "Game over! Ooops!!!, You failed to locate the target on time.",
-    failedCompactMessage: "Game over! You lost.",
-    proceedMessage: "Press Enter or Ctrl+P to Proceed",
-    touchProceedMessage: "Use the buttons below.",
+    success: {
+      wide:
+        "Game over! Congratulations, You won by locating the target on time.",
+      compact: "Game over! You won.",
+    },
+    failed: {
+      wide:
+        "Game over! Ooops!!!, You failed to locate the target on time.",
+      compact: "Game over! You lost.",
+    },
+    proceed: {
+      wide: "Press Enter to Proceed. Ctrl+Alt+R resets progress.",
+      compact: "Use the buttons below.",
+    },
     agentAwaitMessage: "No enabled agent API is configured.",
-    agentAwaitActionMessage: "Configure an agent. ",
+    agentAwaitAction: {
+      wide:
+        "Use the agent seats dock on the right edge of the screen to add/manage an agent, then press Enter to proceed.",
+      compact:
+        "Use the screen-edge seats dock to add/manage an agent, then tap Proceed.",
+    },
     tooSmallMessage: "Level {level} needs more screen room!",
     tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
-    statusTemplate:
-      "Press Space to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
-    touchStatusTemplate: "Level: {level}   Scores: {score}",
+    runningStatus: {
+      wide:
+        "Press Space/Esc to Pause.   Press Ctrl+B to Change Walls.   Level: {level}   Scores: {score}",
+      compact: "Level: {level}   Scores: {score}",
+    },
     highScoreTemplate:
       "Final Level {level} Scores:  {score} ({percent}% retention)",
-    // Win-summary variants are selected from game.ts after comparing retention metrics.
+    // Win-summary variants are selected from scoring.ts after comparing retention metrics.
     winSummary: {
       noPrevious: {
         newRecord: "New scores retention record",
@@ -144,7 +169,36 @@ export const CONFIG: AppConfig = {
       wallsLabel: "Walls",
       pauseLabel: "Pause",
       proceedLabel: "Proceed",
+      resetProgressLabel: "Reset Progress",
     },
+  },
+  // Agent configuration copy is only used by the agent-api overlay form.
+  agentConfig: {
+    title: "New Agent",
+    newAgentLabel: "New Agent",
+    agentEnabledLabel: "Agent enabled",
+    agentDisabledLabel: "Agent disabled",
+    maxSeats: 5,
+    playerNameMinLength: 3,
+    playerNameMaxLength: 8,
+    playerNameLabel: "Player Name",
+    playerNamePlaceholder: "Kora",
+    modelLabel: "Model",
+    modelPlaceholder: "llama3.2",
+    endpointLabel: "Endpoint",
+    submitLabel: "Add Agent",
+    endpointPlaceholder: "localhost:5000 or https://example.com/api/agent/move",
+    invalidMessage: "Fill in Player Name, Model and Endpoint.",
+    invalidEndpointMessage:
+      "Endpoint must be an http:// or https:// URL, or host:port.",
+    duplicatePlayerNameMessage: "This player name is already configured.",
+    playerNameLengthMessage: "Player Name must be 3-8 characters.",
+    editTitle: "Edit Agent",
+    addSeatLabelTemplate: "Add agent to seat {seat}",
+    manageSeatLabelTemplate: "Manage player {agent} in seat {seat}",
+    activeSeatLabelTemplate: "Player {agent} is playing in seat {seat}",
+    deleteMessageTemplate: "Delete now?",
+    updateConfirmLabel: "Apply Changes",
   },
   // Maze glyphs and geometry shared by generation, traversal, and rendering.
   maze: {
@@ -159,7 +213,7 @@ export const CONFIG: AppConfig = {
     cellPathWidth: 3,
     moveStep: 2,
     leftPadding: 3,
-    minDimension: 5,
+    minMazeSideCells: 5,
   },
   // Maze-generation tuning controls level growth and navigation difficulty.
   generation: {
@@ -176,7 +230,7 @@ export const CONFIG: AppConfig = {
   scoring: {
     percentScale: 100,
     budgetMultiplier: 100,
-    retentionScale: 1_000_000,
+    retentionFullScaleUnits: 1_000_000, // Represents 100% scores retention without using floating-point percentages.
   },
   // Timing values drive refresh cadence, score decay, and the slower agent-api pacing.
   timing: {
@@ -190,8 +244,6 @@ export const CONFIG: AppConfig = {
   viewport: {
     compactWidth: 540,
     compactHeight: 520,
-    minTerminalRows: 20,
-    minTerminalColumns: 48,
     terminalHeightInset: 5,
     terminalHeightScale: 4,
     terminalWidthInset: 10,
@@ -205,7 +257,7 @@ export const CONFIG: AppConfig = {
       interactive: "interactive",
     },
     storage: {
-      version: 2,
+      version: 3,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",
@@ -214,7 +266,6 @@ export const CONFIG: AppConfig = {
     },
     interactivePlayerName: "Self",
     agentApiMistakePenaltyMoves: 5,
-    missingElementErrorTemplate: "missing required element: {id}",
   },
 }
 

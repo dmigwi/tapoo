@@ -28,6 +28,7 @@ node_modules/
 .tmp/
 *.tsbuildinfo
 package-lock.json
+public/*.html
 public/js/*.min.js
 public/css/*.min.css
 _DS*

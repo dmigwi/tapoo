@@ -13,15 +13,41 @@ import { handleAgentTurnLoop } from "./agent-api"
 const agentMovePollIntervalMs = CONFIG.timing.agentApiCoreDecayIntervalPerCellMs
 const expectedAgentPrompt = [
   "Your name is Blue.",
-  "Use traversalHistory entries matching your playerName to review your past moves in order,",
-  "then use the provided context to predict the next valid moves.",
-  "Valid moves advance you until the first invalid move stops replay.",
-  "Every submitted prediction counts toward score decay until the destination is reached.",
-  "Locate the randomized path between the current position and destination with the highest score retention.",
-].join("\n")
+  `playerName ${CONFIG.runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
+  "Use currentCell as your current position and destinationCell as the target.",
+  "Use traversalHistory entries matching your playerName to review your past moves in order.",
+  "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
+  "Return only a JSON object matching expectedResponseSchema.",
+  "Moves replay in order until the destination or the first invalid move.",
+  "Every submitted move counts toward score decay, including moves after the first invalid move.",
+  "Stop predicting when lastMoveStatus is reached-target or status is won.",
+  "Choose the moves most likely to reach the destination with the fewest submitted moves.",
+].join(" ")
+
+const expectedResponseSchema: MazeActionState["expectedResponseSchema"] = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  additionalProperties: false,
+  required: ["moves"],
+  properties: {
+    moves: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "string",
+        enum: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+      },
+    },
+  },
+}
+
 
 function visit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Blue", row, col }
+}
+
+function selfVisit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
 }
 
 function createActionState(
@@ -30,28 +56,16 @@ function createActionState(
   return {
     currentCell: { row: 0, col: 0 },
     destinationCell: { row: 0, col: 2 },
-    traversalHistory: [visit(0, 0)],
-    playerName: "Blue",
+    traversalHistory: [selfVisit(0, 0)],
     level: 2,
     score: 600,
     model: "llama3.2",
     stream: false,
     format: "json",
     status: "running",
-    allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
     recommendedAvgPredictionLimit: 18,
     prompt: expectedAgentPrompt,
-    expectedResponseFormat: {
-      validPredictionFormat: {
-        moves: ["MoveRight", "MoveDown"],
-      },
-    },
-    submittedMovesIndexBase: 0,
-    submittedMovesPattern: "<index>:<MoveAction>",
-    submittedMoves: [],
-    lastMoveStatus: null,
-    lastValidMoveIndex: null,
-    decayedMovesCount: 0,
+    expectedResponseSchema,
     ...overrides,
   }
 }
@@ -59,10 +73,10 @@ function createActionState(
 function enabledAgentConfigs(): AgentApiConfig[] {
   return [
     {
-      id: "blue-agent",
+      id: 1,
       playerName: "Blue",
       model: "llama3.2",
-      endpoint: "/api/agent/move",
+      endpoint: "https://agents.example/move",
       enabled: true,
     },
   ]
@@ -143,7 +157,7 @@ describe("agent api turn loop", () => {
     poller.__setAttached(true)
     poller.__scheduleNextAgentTurn()
 
-    expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
+    expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Self" })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -190,19 +204,19 @@ describe("agent api turn loop", () => {
       .fn<(action: MazeAction) => MazeActionState>()
       .mockReturnValueOnce(createActionState({
         currentCell: { row: 0, col: 1 },
-        traversalHistory: [visit(0, 0), visit(0, 1)],
+        traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "applied",
         visitedBefore: false,
       }))
       .mockReturnValueOnce(createActionState({
         currentCell: { row: 1, col: 1 },
-        traversalHistory: [visit(0, 0), visit(0, 1), visit(1, 1)],
+        traversalHistory: [selfVisit(0, 0), visit(0, 1), visit(1, 1)],
         lastMoveStatus: "applied",
         visitedBefore: false,
       }))
       .mockReturnValueOnce(createActionState({
         currentCell: { row: 1, col: 1 },
-        traversalHistory: [visit(0, 0), visit(0, 1), visit(1, 1)],
+        traversalHistory: [selfVisit(0, 0), visit(0, 1), visit(1, 1)],
         lastMoveStatus: "invalid-move",
         visitedBefore: true,
       }))
@@ -233,26 +247,26 @@ describe("agent api turn loop", () => {
       1,
       { type: "MoveRight" },
       dispatch,
-      "Blue",
+      expect.objectContaining({ model: "llama3.2", playerName: "Blue" }),
     )
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       2,
       { type: "MoveDown" },
       dispatch,
-      "Blue",
+      expect.objectContaining({ model: "llama3.2", playerName: "Blue" }),
     )
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       3,
       { type: "MoveLeft" },
       dispatch,
-      "Blue",
+      expect.objectContaining({ model: "llama3.2", playerName: "Blue" }),
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(3)
     expect(onActionState).toHaveBeenCalledWith(
       expect.objectContaining({
         currentCell: { row: 1, col: 1 },
         lastMoveStatus: "invalid-move",
-        submittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
+        lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastValidMoveIndex: 1,
         decayedMovesCount: 3,
       }),
@@ -262,28 +276,28 @@ describe("agent api turn loop", () => {
   it("rotates through enabled agents configured for the shared maze", async () => {
     const agentConfigs: AgentApiConfig[] = [
       {
-        id: "agent-a",
+        id: 1,
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: "/api/agents/a/move",
         enabled: true,
       },
       {
-        id: "agent-b",
+        id: 2,
         playerName: "Agent B",
         model: "gemma4",
         endpoint: "/api/agents/b/move",
         enabled: true,
       },
       {
-        id: "agent-disabled",
+        id: 3,
         playerName: "Disabled Agent",
         model: "disabled-model",
         endpoint: "/api/agents/disabled/move",
         enabled: false,
       },
       {
-        id: "agent-c",
+        id: 4,
         playerName: "Agent C",
         model: "qwen3",
         endpoint: "/api/agents/c/move",
@@ -304,6 +318,7 @@ describe("agent api turn loop", () => {
       }),
     )
     const onActionState = vi.fn()
+    const onActiveAgentChange = vi.fn()
 
     const poller = handleAgentTurnLoop({
       __elements: { body: document.createElement("div") },
@@ -311,6 +326,7 @@ describe("agent api turn loop", () => {
       __dispatch: dispatch,
       __dispatchAgentAction: dispatchAgentAction,
       __onActionState: onActionState,
+      __onActiveAgentChange: onActiveAgentChange,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: () => agentConfigs,
       __readActionState: () => createActionState({ level: 2 }),
@@ -354,38 +370,41 @@ describe("agent api turn loop", () => {
     const secondRequestBody = JSON.parse(secondRequest.body) as MazeActionState
     const thirdRequestBody = JSON.parse(thirdRequest.body) as MazeActionState
 
-    expect(firstRequestBody.playerName).toBe("Agent A")
+    expect(firstRequestBody.prompt).toContain("Your name is Agent A.")
     expect(firstRequestBody.model).toBe("llama3.2")
     expect(firstRequestBody.stream).toBe(false)
     expect(firstRequestBody.format).toBe("json")
     expect(firstRequestBody.prompt).toContain("Your name is Agent A.")
-    expect(secondRequestBody.playerName).toBe("Agent B")
+    expect(secondRequestBody.prompt).toContain("Your name is Agent B.")
     expect(secondRequestBody.model).toBe("gemma4")
     expect(secondRequestBody.prompt).toContain("Your name is Agent B.")
-    expect(thirdRequestBody.playerName).toBe("Agent C")
+    expect(thirdRequestBody.prompt).toContain("Your name is Agent C.")
     expect(thirdRequestBody.model).toBe("qwen3")
     expect(thirdRequestBody.prompt).toContain("Your name is Agent C.")
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       1,
       { type: "MoveRight" },
       dispatch,
-      "Agent A",
+      expect.objectContaining({ model: "llama3.2", playerName: "Agent A" }),
     )
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       2,
       { type: "MoveRight" },
       dispatch,
-      "Agent B",
+      expect.objectContaining({ model: "gemma4", playerName: "Agent B" }),
     )
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       3,
       { type: "MoveRight" },
       dispatch,
-      "Agent C",
+      expect.objectContaining({ model: "qwen3", playerName: "Agent C" }),
     )
     expect(onActionState).toHaveBeenLastCalledWith(
-      expect.objectContaining({ playerName: "Agent C" }),
+      expect.objectContaining({ lastPlayerName: "Agent C" }),
     )
+    expect(onActiveAgentChange).toHaveBeenNthCalledWith(1, agentConfigs[0])
+    expect(onActiveAgentChange).toHaveBeenNthCalledWith(2, agentConfigs[1])
+    expect(onActiveAgentChange).toHaveBeenNthCalledWith(3, agentConfigs[3])
   })
 
   it("stops replaying predictions after the destination is reached", async () => {
@@ -435,7 +454,8 @@ describe("agent api turn loop", () => {
     expect(onActionState).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "reached-target",
-        submittedMoves: ["0:MoveRight", "1:MoveDown"],
+        status: "won",
+        lastSubmittedMoves: ["0:MoveRight", "1:MoveDown"],
         lastValidMoveIndex: 0,
         decayedMovesCount: 2,
       }),
@@ -523,7 +543,7 @@ describe("agent api turn loop", () => {
       expect.objectContaining({
         decayedMovesCount: 0,
         lastMoveStatus: "network-error",
-        playerName: "Blue",
+        lastPlayerName: "Blue",
       }),
     )
   })
@@ -565,7 +585,7 @@ describe("agent api turn loop", () => {
       expect.objectContaining({
         decayedMovesCount: 0,
         lastMoveStatus: "network-error",
-        playerName: "Blue",
+        lastPlayerName: "Blue",
       }),
     )
   })
@@ -604,7 +624,7 @@ describe("agent api turn loop", () => {
       expect.objectContaining({
         decayedMovesCount: 0,
         lastMoveStatus: "network-error",
-        playerName: "Blue",
+        lastPlayerName: "Blue",
       }),
     )
   })
