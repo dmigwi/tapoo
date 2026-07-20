@@ -22,11 +22,30 @@ const expectedAgentPrompt = [
   "Use currentCell as your current position and destinationCell as the target.",
   "Use traversalHistory entries matching your playerName to review your past moves in order.",
   "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
-  "Return only the expected JSON moves payload using allowedMoves.",
+  "Return only a JSON object matching expectedResponseSchema.",
   "Moves replay in order until the destination or the first invalid move.",
   "Every submitted move counts toward score decay, including moves after the first invalid move.",
+  "Stop predicting when lastMoveStatus is reached-target or status is won.",
   "Choose the moves most likely to reach the destination with the fewest submitted moves.",
 ].join(" ")
+
+const expectedResponseSchema: MazeActionState["expectedResponseSchema"] = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  additionalProperties: false,
+  required: ["moves"],
+  properties: {
+    moves: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "string",
+        enum: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+      },
+    },
+  },
+}
+
 
 function enabledAgentConfigs(): AgentApiConfig[] {
   return [
@@ -46,6 +65,10 @@ function createTestAgentMode(elements: Parameters<typeof createAgentMode>[0]) {
 
 function visit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Blue", row, col }
+}
+
+function selfVisit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
 }
 
 function createButton({
@@ -202,28 +225,16 @@ function createActionState(
   return {
     currentCell: { row: 0, col: 0 },
     destinationCell: { row: 0, col: 2 },
-    traversalHistory: [visit(0, 0)],
-    playerName: "Blue",
+    traversalHistory: [selfVisit(0, 0)],
     level: 4,
     score: 800,
     model: "llama3.2",
     stream: false,
     format: "json",
     status: "running",
-    allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
     recommendedAvgPredictionLimit: 18,
     prompt: expectedAgentPrompt,
-    expectedResponseFormat: {
-      validPredictionFormat: {
-        moves: ["MoveRight", "MoveDown"],
-      },
-    },
-    lastMoveStatus: null,
-    submittedMovesIndexBase: 0,
-    submittedMovesPattern: "<index>:<MoveAction>",
-    submittedMoves: [],
-    lastValidMoveIndex: null,
-    decayedMovesCount: 0,
+    expectedResponseSchema,
     ...overrides,
   }
 }
@@ -263,17 +274,17 @@ describe("agent control mode", () => {
       .fn()
       .mockReturnValueOnce(createActionState({
         currentCell: { row: 0, col: 1 },
-        traversalHistory: [visit(0, 0), visit(0, 1)],
+        traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "applied",
-        submittedMoves: ["0:MoveRight"],
+        lastSubmittedMoves: ["0:MoveRight"],
         lastValidMoveIndex: 0,
         visitedBefore: false,
       }))
       .mockReturnValueOnce(createActionState({
         currentCell: { row: 1, col: 1 },
-        traversalHistory: [visit(0, 0), visit(0, 1), visit(1, 1)],
+        traversalHistory: [selfVisit(0, 0), visit(0, 1), visit(1, 1)],
         lastMoveStatus: "applied",
-        submittedMoves: ["0:MoveDown"],
+        lastSubmittedMoves: ["0:MoveDown"],
         lastValidMoveIndex: 0,
         visitedBefore: false,
       }))
@@ -310,38 +321,26 @@ describe("agent control mode", () => {
     expect(JSON.parse(request.body)).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 2 },
-      playerName: "Blue",
       level: 4,
       score: 800,
       model: "llama3.2",
       stream: false,
       format: "json",
       status: "running",
-      traversalHistory: [visit(0, 0)],
-      allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+      traversalHistory: [selfVisit(0, 0)],
       recommendedAvgPredictionLimit: 18,
       prompt: expectedAgentPrompt,
-      expectedResponseFormat: {
-        validPredictionFormat: {
-          moves: ["MoveRight", "MoveDown"],
-        },
-      },
-      lastMoveStatus: null,
-      submittedMovesIndexBase: 0,
-      submittedMovesPattern: "<index>:<MoveAction>",
-      submittedMoves: [],
-      lastValidMoveIndex: null,
-      decayedMovesCount: 0,
+      expectedResponseSchema,
     })
     expect(dispatch).toHaveBeenNthCalledWith(
       1,
       { type: "MoveRight" },
-      { wantFeedback: true, playerName: "Blue" },
+      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
     expect(dispatch).toHaveBeenNthCalledWith(
       2,
       { type: "MoveDown" },
-      { wantFeedback: true, playerName: "Blue" },
+      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(
       2,
@@ -351,7 +350,7 @@ describe("agent control mode", () => {
       expect.objectContaining({
         currentCell: { row: 1, col: 1 },
         lastMoveStatus: "applied",
-        submittedMoves: ["0:MoveRight", "1:MoveDown"],
+        lastSubmittedMoves: ["0:MoveRight", "1:MoveDown"],
         lastValidMoveIndex: 1,
       }),
     )
@@ -377,9 +376,9 @@ describe("agent control mode", () => {
 
     const dispatch = vi.fn().mockReturnValueOnce(createActionState({
       currentCell: { row: 0, col: 1 },
-      traversalHistory: [visit(0, 0), visit(0, 1)],
+      traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "applied",
-      submittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["0:MoveRight"],
       lastValidMoveIndex: 0,
       visitedBefore: false,
     }))
@@ -403,7 +402,7 @@ describe("agent control mode", () => {
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
         lastMoveStatus: "applied",
-        submittedMoves: ["0:MoveRight"],
+        lastSubmittedMoves: ["0:MoveRight"],
         lastValidMoveIndex: 0,
         decayedMovesCount: 1,
       }),
@@ -434,17 +433,17 @@ describe("agent control mode", () => {
       .fn()
       .mockReturnValueOnce(createActionState({
         currentCell: { row: 0, col: 1 },
-        traversalHistory: [visit(0, 0), visit(0, 1)],
+        traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "applied",
-        submittedMoves: ["0:MoveRight"],
+        lastSubmittedMoves: ["0:MoveRight"],
         lastValidMoveIndex: 0,
         visitedBefore: false,
       }))
       .mockReturnValueOnce(createActionState({
         currentCell: { row: 0, col: 1 },
-        traversalHistory: [visit(0, 0), visit(0, 1)],
+        traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "invalid-move",
-        submittedMoves: ["1:MoveDown"],
+        lastSubmittedMoves: ["1:MoveDown"],
         lastValidMoveIndex: 0,
         visitedBefore: true,
       }))
@@ -470,7 +469,7 @@ describe("agent control mode", () => {
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
         lastMoveStatus: "invalid-move",
-        submittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
+        lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastValidMoveIndex: 0,
         decayedMovesCount: 3,
       }),
@@ -500,9 +499,9 @@ describe("agent control mode", () => {
     const dispatch = vi.fn().mockReturnValueOnce(createActionState({
       currentCell: { row: 0, col: 1 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [visit(0, 0), visit(0, 1)],
+      traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "reached-target",
-      submittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["0:MoveRight"],
       lastValidMoveIndex: 0,
       visitedBefore: false,
       status: "won",
@@ -526,7 +525,7 @@ describe("agent control mode", () => {
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith(
       { type: "MoveRight" },
-      { wantFeedback: true, playerName: "Blue" },
+      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(3)
     expect(mode.readLastActionState()).toEqual(
@@ -534,7 +533,7 @@ describe("agent control mode", () => {
         currentCell: { row: 0, col: 1 },
         destinationCell: { row: 0, col: 1 },
         lastMoveStatus: "reached-target",
-        submittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
+        lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastValidMoveIndex: 0,
         decayedMovesCount: 3,
       }),
@@ -642,7 +641,7 @@ describe("agent control mode", () => {
             level: 1,
             score: 100,
             lastMoveStatus: "applied",
-            submittedMoves: ["0:MoveRight"],
+            lastSubmittedMoves: ["0:MoveRight"],
             lastValidMoveIndex: 0,
             visitedBefore: false,
           }),
@@ -674,7 +673,7 @@ describe("agent control mode", () => {
     expect(dispatch).toHaveBeenNthCalledWith(
       2,
       { type: "MoveRight" },
-      { wantFeedback: true, playerName: "Blue" },
+      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
   })
 
@@ -699,7 +698,7 @@ describe("agent control mode", () => {
     const dispatch = vi.fn().mockReturnValue(createActionState({
       currentCell: { row: 0, col: 1 },
       lastMoveStatus: "applied",
-      submittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["0:MoveRight"],
       lastValidMoveIndex: 0,
     }))
     const readActionState = vi.fn(() => createActionState({ level: 1 }))
@@ -711,7 +710,7 @@ describe("agent control mode", () => {
       currentCell: { row: 9, col: 9 },
       level: 99,
       lastMoveStatus: "reached-target",
-      submittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["0:MoveRight"],
     }))
     mode.clearActionState()
 
@@ -725,8 +724,6 @@ describe("agent control mode", () => {
     expect(JSON.parse(request.body)).toEqual(expect.objectContaining({
       currentCell: { row: 0, col: 0 },
       level: 1,
-      lastMoveStatus: null,
-      submittedMoves: [],
     }))
   })
 

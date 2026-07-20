@@ -242,7 +242,7 @@ function createPersistedWonRound(): PersistedRound {
     ],
     playerPosition: { x: 1, y: 1 },
     startCell: { row: 0, col: 0 },
-    traversalHistory: [visit(0, 0)],
+    traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 1, y: 1 },
     wallWeight: 1,
     status: "won",
@@ -735,7 +735,7 @@ describe("bootstrapGame", () => {
 
     const actionState = harness.runtime.dispatch(
       { type: "MoveRight" },
-      { wantFeedback: true, playerName: "Blue" },
+      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
     expect(harness.mode.readLastActionState()).toEqual(actionState)
 
@@ -1024,7 +1024,7 @@ describe("bootstrapGame", () => {
       maze: createHorizontalRound().maze,
       playerPosition: { x: 1, y: 1 },
       startCell: { row: 0, col: 0 },
-      traversalHistory: [visit(0, 0)],
+      traversalHistory: [selfVisit(0, 0)],
       finalPosition: { x: 3, y: 1 },
       wallWeight: 1,
       status: "running",
@@ -1065,7 +1065,7 @@ describe("bootstrapGame", () => {
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("paused")
     expect(state.canResume).toBe(true)
-    expect(state.traversalHistory).toEqual([visit(0, 0)])
+    expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
     expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(3)
   })
 
@@ -1076,7 +1076,7 @@ describe("bootstrapGame", () => {
       maze: createHorizontalRound().maze,
       playerPosition: { x: 3, y: 1 },
       startCell: { row: 0, col: 0 },
-      traversalHistory: [visit(0, 0), visit(0, 0)],
+      traversalHistory: [selfVisit(0, 0), selfVisit(0, 0)],
       finalPosition: { x: 3, y: 1 },
       wallWeight: 1,
       status: "running",
@@ -1175,7 +1175,7 @@ describe("bootstrapGame", () => {
 
     const actionState = harness.runtime.dispatch(
       { type: "MoveRight" },
-      { wantFeedback: true, playerName: "Blue" },
+      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
 
     state = latestRenderedState(harness.render)
@@ -1187,7 +1187,7 @@ describe("bootstrapGame", () => {
       traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "reached-target",
       visitedBefore: false,
-      submittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["0:MoveRight"],
       lastValidMoveIndex: 0,
     }))
     expect(harness.mode.readLastActionState()).toEqual(actionState)

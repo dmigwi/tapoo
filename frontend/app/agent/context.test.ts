@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { CONFIG } from "../config"
-import { executeActionWithFeedback } from "./context"
+import { buildMazeActionState, executeActionWithFeedback } from "./context"
 import type { MazeAction, MoveAction, State, TraversalHistoryEntry } from "../types"
 
-function visit(row: number, col: number): TraversalHistoryEntry {
+function agentVisit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Blue", row, col }
+}
+
+function selfVisit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
 }
 
 const expectedAgentPrompt = [
@@ -14,11 +18,40 @@ const expectedAgentPrompt = [
   "Use currentCell as your current position and destinationCell as the target.",
   "Use traversalHistory entries matching your playerName to review your past moves in order.",
   "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
-  "Return only the expected JSON moves payload using allowedMoves.",
+  "Return only a JSON object matching expectedResponseSchema.",
   "Moves replay in order until the destination or the first invalid move.",
   "Every submitted move counts toward score decay, including moves after the first invalid move.",
+  "Stop predicting when lastMoveStatus is reached-target or status is won.",
   "Choose the moves most likely to reach the destination with the fewest submitted moves.",
 ].join(" ")
+
+const expectedResponseSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  additionalProperties: false,
+  required: ["moves"],
+  properties: {
+    moves: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "string",
+        enum: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+      },
+    },
+  },
+}
+
+const expectedLastSubmittedMovesSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "array",
+  description: "Zero-based replay records formatted as <index>:<move>.",
+  items: {
+    type: "string",
+    pattern: "^(0|[1-9][0-9]*):(MoveUp|MoveDown|MoveLeft|MoveRight)$",
+    examples: ["0:MoveRight"],
+  },
+}
 
 // createState builds a compact agent-facing runtime state for movement feedback tests.
 function createState(overrides: Partial<State> = {}): State {
@@ -32,7 +65,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "|", "---", "|"],
     ],
     playerPosition: { x: 1, y: 1 },
-    traversalHistory: [visit(0, 0)],
+    traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 3, y: 1 },
     status: "running",
     score: 700,
@@ -70,9 +103,10 @@ function createContext(state: State) {
     handleMove: vi.fn((action: MoveAction) => {
       if (action === "MoveRight") {
         state.playerPosition = { x: 3, y: 1 }
-        state.traversalHistory = [visit(0, 0), visit(0, 1)]
+        state.traversalHistory = [selfVisit(0, 0), agentVisit(0, 1)]
       }
     }),
+    model: "llama3.2",
     playerName: "Blue",
   }
 }
@@ -84,6 +118,16 @@ function moveAction(type: MoveAction): MazeAction {
 
 // These tests lock down the compact command feedback returned to agent callers.
 describe("cmd feedback", () => {
+  it("rejects empty traversal history before building agent context", () => {
+    expect(() =>
+      buildMazeActionState(
+        createState({ traversalHistory: [] }),
+        "Blue",
+        "llama3.2",
+      ),
+    ).toThrow("traversalHistory must include the known start cell")
+  })
+
   it("reports when movement is unavailable", () => {
     const state = createState({
       status: "paused",
@@ -96,26 +140,21 @@ describe("cmd feedback", () => {
     ).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [visit(0, 0)],
-      playerName: "Blue",
+      traversalHistory: [selfVisit(0, 0)],
+      lastPlayerName: "Blue",
       level: 4,
       score: 700,
-      model: "",
+      model: "llama3.2",
       stream: false,
       format: "json",
       status: "paused",
-      allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
       prompt: expectedAgentPrompt,
-      expectedResponseFormat: {
-        validPredictionFormat: {
-          moves: ["MoveRight", "MoveDown"],
-        },
-      },
+      expectedResponseSchema,
       lastMoveStatus: "invalid-move",
-      submittedMovesIndexBase: 0,
-      submittedMovesPattern: "<index>:<MoveAction>",
-      submittedMoves: ["0:MoveLeft"],
+      lastSubmittedMovesIndexBase: 0,
+      lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
+      lastSubmittedMoves: ["0:MoveLeft"],
       lastValidMoveIndex: null,
       decayedMovesCount: 0,
     })
@@ -137,26 +176,21 @@ describe("cmd feedback", () => {
     ).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [visit(0, 0)],
-      playerName: "Blue",
+      traversalHistory: [selfVisit(0, 0)],
+      lastPlayerName: "Blue",
       level: 4,
       score: 700,
-      model: "",
+      model: "llama3.2",
       stream: false,
       format: "json",
       status: "running",
-      allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
       prompt: expectedAgentPrompt,
-      expectedResponseFormat: {
-        validPredictionFormat: {
-          moves: ["MoveRight", "MoveDown"],
-        },
-      },
+      expectedResponseSchema,
       lastMoveStatus: "invalid-move",
-      submittedMovesIndexBase: 0,
-      submittedMovesPattern: "<index>:<MoveAction>",
-      submittedMoves: ["0:MoveRight"],
+      lastSubmittedMovesIndexBase: 0,
+      lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
+      lastSubmittedMoves: ["0:MoveRight"],
       lastValidMoveIndex: null,
       decayedMovesCount: 0,
     })
@@ -169,7 +203,7 @@ describe("cmd feedback", () => {
     context.handleMove.mockImplementationOnce((action: MoveAction) => {
       if (action === "MoveRight") {
         state.playerPosition = { x: 3, y: 1 }
-        state.traversalHistory = [visit(0, 0), visit(0, 1)]
+        state.traversalHistory = [selfVisit(0, 0), agentVisit(0, 1)]
         state.status = "won"
       }
     })
@@ -179,27 +213,22 @@ describe("cmd feedback", () => {
     ).toEqual({
       currentCell: { row: 0, col: 1 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [visit(0, 0), visit(0, 1)],
-      playerName: "Blue",
+      traversalHistory: [selfVisit(0, 0), agentVisit(0, 1)],
+      lastPlayerName: "Blue",
       level: 4,
       score: 700,
-      model: "",
+      model: "llama3.2",
       stream: false,
       format: "json",
       status: "won",
-      allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
       prompt: expectedAgentPrompt,
-      expectedResponseFormat: {
-        validPredictionFormat: {
-          moves: ["MoveRight", "MoveDown"],
-        },
-      },
+      expectedResponseSchema,
       lastMoveStatus: "reached-target",
       visitedBefore: false,
-      submittedMovesIndexBase: 0,
-      submittedMovesPattern: "<index>:<MoveAction>",
-      submittedMoves: ["0:MoveRight"],
+      lastSubmittedMovesIndexBase: 0,
+      lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
+      lastSubmittedMoves: ["0:MoveRight"],
       lastValidMoveIndex: 0,
       decayedMovesCount: 0,
     })
@@ -209,7 +238,7 @@ describe("cmd feedback", () => {
   it("keeps traversal history stable when a move revisits an older cell", () => {
     const state = createState({
       playerPosition: { x: 3, y: 1 },
-      traversalHistory: [visit(0, 0), visit(0, 1)],
+      traversalHistory: [selfVisit(0, 0), agentVisit(0, 1)],
     })
     const context = createContext(state)
     context.handleMove.mockImplementationOnce((action: MoveAction) => {
@@ -223,27 +252,22 @@ describe("cmd feedback", () => {
     ).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 1 },
-      traversalHistory: [visit(0, 0), visit(0, 1)],
-      playerName: "Blue",
+      traversalHistory: [selfVisit(0, 0), agentVisit(0, 1)],
+      lastPlayerName: "Blue",
       level: 4,
       score: 700,
-      model: "",
+      model: "llama3.2",
       stream: false,
       format: "json",
       status: "running",
-      allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
       recommendedAvgPredictionLimit: 18,
       prompt: expectedAgentPrompt,
-      expectedResponseFormat: {
-        validPredictionFormat: {
-          moves: ["MoveRight", "MoveDown"],
-        },
-      },
+      expectedResponseSchema,
       lastMoveStatus: "applied",
       visitedBefore: true,
-      submittedMovesIndexBase: 0,
-      submittedMovesPattern: "<index>:<MoveAction>",
-      submittedMoves: ["0:MoveLeft"],
+      lastSubmittedMovesIndexBase: 0,
+      lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
+      lastSubmittedMoves: ["0:MoveLeft"],
       lastValidMoveIndex: 0,
       decayedMovesCount: 0,
     })

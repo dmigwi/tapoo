@@ -8,6 +8,8 @@ import {
   resolvePlayerMove,
 } from "../traversal"
 import type {
+  AgentExpectedResponseSchema,
+  AgentSubmittedMovesSchema,
   MazeAction,
   MazeActionState,
   MoveStatus,
@@ -20,24 +22,48 @@ const { runtime } = CONFIG
 // ALLOWED_MOVE_ACTIONS enumerates the only traversal commands the agent may return.
 const ALLOWED_MOVE_ACTIONS: MoveAction[] = ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"]
 
-// VALID_PREDICTION_FORMAT documents the one supported agent response payload.
-const VALID_PREDICTION_FORMAT = {
-  validPredictionFormat: {
-    moves: ["MoveRight", "MoveDown"] as MoveAction[],
+// EXPECTED_RESPONSE_SCHEMA documents the exact JSON shape agents should return.
+const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  additionalProperties: false,
+  required: ["moves"],
+  properties: {
+    moves: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "string",
+        enum: [...ALLOWED_MOVE_ACTIONS],
+      },
+    },
   },
-} as const
+}
 
-// agentPrompt keeps request guidance compact while naming the active agent for history lookup.
-function agentPrompt(playerName: string): string {
+// SUBMITTED_MOVES_SCHEMA documents the zero-based replay records Tapoo returns after a turn.
+const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "array",
+  description: "Zero-based replay records formatted as <index>:<move>.",
+  items: {
+    type: "string",
+    pattern: "^(0|[1-9][0-9]*):(MoveUp|MoveDown|MoveLeft|MoveRight)$",
+    examples: ["0:MoveRight"],
+  },
+}
+
+// buildAgentPrompt keeps request guidance compact while naming the active agent for history lookup.
+export function buildAgentPrompt(playerName: string): string {
   return [
     `Your name is ${playerName}.`,
     `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
     "Use currentCell as your current position and destinationCell as the target.",
     "Use traversalHistory entries matching your playerName to review your past moves in order.",
     "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
-    "Return only the expected JSON moves payload using allowedMoves.",
+    "Return only a JSON object matching expectedResponseSchema.",
     "Moves replay in order until the destination or the first invalid move.",
     "Every submitted move counts toward score decay, including moves after the first invalid move.",
+    "Stop predicting when lastMoveStatus is reached-target or status is won.",
     "Choose the moves most likely to reach the destination with the fewest submitted moves.",
   ].join(" ")
 }
@@ -61,33 +87,22 @@ function normalizeSubmittedMoves(moves: MoveAction[]): string[] {
 export function buildMazeActionState(
   state: State,
   playerName: string,
+  model: string,
   overrides: Partial<MazeActionState> = {},
 ): MazeActionState {
   return {
     level: state.level,
     status: state.status,
     score: state.score,
-    model: "",
+    model,
     stream: false,
     format: "json",
-    playerName,
     currentCell: state.playerPosition ? cellCoordinateFromGridPoint(state.playerPosition) : null,
     destinationCell: state.finalPosition ? cellCoordinateFromGridPoint(state.finalPosition) : null,
     traversalHistory: cloneTraversalHistory(state.traversalHistory),
-    allowedMoves: [...ALLOWED_MOVE_ACTIONS],
     recommendedAvgPredictionLimit: recommendedAvgPredictionLimit(state),
-    prompt: agentPrompt(playerName),
-    expectedResponseFormat: {
-      validPredictionFormat: {
-        moves: [...VALID_PREDICTION_FORMAT.validPredictionFormat.moves],
-      },
-    },
-    submittedMovesIndexBase: 0,
-    submittedMovesPattern: "<index>:<MoveAction>",
-    submittedMoves: [],
-    lastMoveStatus: null,
-    lastValidMoveIndex: null,
-    decayedMovesCount: 0,
+    prompt: buildAgentPrompt(playerName),
+    expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
     ...overrides,
   }
 }
@@ -97,25 +112,24 @@ export function mergeMazeActionState(
   actionState: MazeActionState,
   overrides: Partial<MazeActionState> = {},
 ): MazeActionState {
-  const playerName = overrides.playerName ?? actionState.playerName
-
   return {
     ...actionState,
-    allowedMoves: [...actionState.allowedMoves],
-    expectedResponseFormat: {
-      validPredictionFormat: {
-        moves: [...actionState.expectedResponseFormat.validPredictionFormat.moves],
-      },
-    },
+    expectedResponseSchema: actionState.expectedResponseSchema,
+    ...(actionState.lastSubmittedMovesSchema
+      ? { lastSubmittedMovesSchema: actionState.lastSubmittedMovesSchema }
+      : {}),
     traversalHistory: cloneTraversalHistory(actionState.traversalHistory),
-    submittedMoves: [...actionState.submittedMoves],
-    prompt: overrides.prompt ?? agentPrompt(playerName),
+    ...(actionState.lastSubmittedMoves
+      ? { lastSubmittedMoves: [...actionState.lastSubmittedMoves] }
+      : {}),
+    prompt: overrides.prompt ?? actionState.prompt,
     ...overrides,
   }
 }
 
 type CommandFeedbackContext = {
   state: State
+  model: string
   playerName: string
   executeCommand: (action: MazeAction) => void
   handleMove: (action: MoveAction, playerName?: string) => void
@@ -124,6 +138,7 @@ type CommandFeedbackContext = {
 // buildReplayState records the result of one replay step using the shared agent payload shape.
 function buildReplayState(
   state: State,
+  model: string,
   playerName: string,
   command: MoveAction,
   status: MoveStatus,
@@ -132,10 +147,14 @@ function buildReplayState(
   const lastValidMoveIndex = status === "applied" || status === "reached-target" ? 0 : null
   const visitedBeforeState = visitedBefore === undefined ? {} : { visitedBefore }
 
-  return buildMazeActionState(state, playerName, {
+  return buildMazeActionState(state, playerName, model, {
+    lastPlayerName: playerName,
     lastMoveStatus: status,
-    submittedMoves: normalizeSubmittedMoves([command]),
+    lastSubmittedMovesIndexBase: 0,
+    lastSubmittedMovesSchema: SUBMITTED_MOVES_SCHEMA,
+    lastSubmittedMoves: normalizeSubmittedMoves([command]),
     lastValidMoveIndex,
+    decayedMovesCount: 0,
     ...visitedBeforeState,
   })
 }
@@ -150,21 +169,17 @@ export function executeActionWithFeedback(
     return null
   }
 
-  const { state, handleMove, playerName } = context
+  const { state, handleMove, model, playerName } = context
   const move = action.type
   const moveEvaluation = resolvePlayerMove(state, move)
   if (!moveEvaluation.canMove) {
-    return buildReplayState(state, playerName, move, "invalid-move")
+    return buildReplayState(state, model, playerName, move, "invalid-move")
   }
 
   handleMove(move, playerName)
   const finalStatus: MoveStatus = isWonStatus(state.status) ? "reached-target" : "applied"
 
   return buildReplayState(
-    state,
-    playerName,
-    move,
-    finalStatus,
-    moveEvaluation.visitedBefore,
+    state, model, playerName, move, finalStatus, moveEvaluation.visitedBefore,
   )
 }

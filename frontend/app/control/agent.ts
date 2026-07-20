@@ -156,11 +156,12 @@ export function createAgentMode(
       const dispatchAgentAction = (
         action: MazeAction,
         nextDispatch: MazeActionDispatch,
-        playerName: string,
+        agent: AgentApiConfig,
       ): MazeActionState => {
         const actionState = nextDispatch(action, {
+          model: agent.model,
           wantFeedback: true,
-          playerName,
+          playerName: agent.playerName,
         })
         if (!actionState) {
           throw new Error("agent move dispatch must return feedback")

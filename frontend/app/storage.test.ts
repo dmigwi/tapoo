@@ -18,8 +18,8 @@ const MODE = CONFIG.runtime.controlModes.interactive
 const AGENT_MODE = CONFIG.runtime.controlModes.agentApi
 const { agentConfigs, gameSetup, winMetrics } = CONFIG.runtime.storage.suffixes
 
-function visit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Blue", row, col }
+function selfVisit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
 }
 
 // storageKey mirrors the production per-mode browser storage naming.
@@ -84,7 +84,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "|"],
     ],
     playerPosition: { x: 1, y: 1 },
-    traversalHistory: [visit(0, 0)],
+    traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 1, y: 1 },
     status: "running",
     score: 1200,
@@ -373,7 +373,7 @@ describe("storage", () => {
       mazeDimensions: { length: 5, width: 5, area: 25 },
       maze: state.maze,
       startCell: { row: 0, col: 0 },
-      traversalHistory: [visit(0, 0)],
+      traversalHistory: [selfVisit(0, 0)],
       playerPosition: { x: 1, y: 1 },
       finalPosition: { x: 1, y: 1 },
       wallWeight: 2,

@@ -1,5 +1,5 @@
 import { CONFIG } from "../config"
-import { mergeMazeActionState } from "../agent/context"
+import { buildAgentPrompt, mergeMazeActionState } from "../agent/context"
 import { isRunningStatus } from "../status"
 import type {
   AgentApiConfig,
@@ -61,7 +61,7 @@ type HandleAgentTurnLoopOptions = {
   __dispatchAgentAction: (
     action: MazeAction,
     dispatch: MazeActionDispatch,
-    playerName: string,
+    agent: AgentApiConfig,
   ) => MazeActionState
   __disableAgentAfterNetworkError: (agent: AgentApiConfig) => void
   __onActiveAgentChange?: (agent: AgentApiConfig | null) => void
@@ -74,8 +74,7 @@ type HandleAgentTurnLoopOptions = {
 export function handleAgentTurnLoop({
   __commitAgentTurn, __disableAgentAfterNetworkError, __dispatch,
   __dispatchAgentAction, __elements, __onActionState, __onActiveAgentChange,
-  __readActionState,
-  __readAgentConfigs,
+  __readActionState, __readAgentConfigs,
 }: HandleAgentTurnLoopOptions): AgentMovePoller {
   let attached = false
   let scheduledTurn: number | null = null
@@ -106,7 +105,10 @@ export function handleAgentTurnLoop({
   // awaitAgent immediately moves the game into its no-agent state without spending score.
   const awaitAgent = (): void => {
     __onActiveAgentChange?.(null)
-    __dispatch({ type: "await-agent" }, { playerName: activeActionState().playerName })
+    __dispatch(
+      { type: "await-agent" },
+      { playerName: activeActionState().lastPlayerName ?? runtime.interactivePlayerName },
+    )
   }
 
   // clearScheduledTurn stops any queued request cycle.
@@ -147,7 +149,7 @@ export function handleAgentTurnLoop({
     __onActiveAgentChange?.(null)
     __disableAgentAfterNetworkError(agent)
     const nextState = mergeMazeActionState(activeActionState(), {
-      playerName: agent.playerName,
+      lastPlayerName: agent.playerName,
       lastMoveStatus: "network-error",
       decayedMovesCount: 0,
     })
@@ -205,7 +207,7 @@ export function handleAgentTurnLoop({
 
       const requestActionState = mergeMazeActionState(currentActionState, {
         model: selectedAgent.model,
-        playerName: selectedAgent.playerName,
+        prompt: buildAgentPrompt(selectedAgent.playerName),
       })
 
       const response = await fetch(selectedAgent.endpoint, {
@@ -231,7 +233,7 @@ export function handleAgentTurnLoop({
         const nextState = mergeMazeActionState(
           __commitAgentTurn(decayedMovesCount),
           {
-            playerName: selectedAgent.playerName,
+            lastPlayerName: selectedAgent.playerName,
             lastMoveStatus: "malformed-response",
           },
         )
@@ -244,11 +246,7 @@ export function handleAgentTurnLoop({
       let appliedMoveCount = 0
 
       for (const move of submittedMoves) {
-        const replayState = __dispatchAgentAction(
-          { type: move },
-          __dispatch,
-          selectedAgent.playerName,
-        )
+        const replayState = __dispatchAgentAction({ type: move }, __dispatch, selectedAgent)
         lastReplayState = replayState
         const status = replayState.lastMoveStatus
 
@@ -277,10 +275,10 @@ export function handleAgentTurnLoop({
       const committedState = __commitAgentTurn(decayedMovesCount)
 
       const nextState = mergeReplayResult(committedState, {
-        playerName: selectedAgent.playerName,
+        lastPlayerName: selectedAgent.playerName,
         lastMoveStatus: lastReplayState.lastMoveStatus,
         visitedBefore: lastReplayState?.visitedBefore,
-        submittedMoves: submittedMoves.map(
+        lastSubmittedMoves: submittedMoves.map(
           (move, index) => `${index}:${move}`,
         ),
         lastValidMoveIndex: appliedMoveCount > 0 ? appliedMoveCount - 1 : null,

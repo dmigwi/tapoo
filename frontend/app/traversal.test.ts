@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { CONFIG } from "./config"
 import {
   cellCoordinateFromGridPoint,
+  cloneTraversalHistory,
   createMazeDimensions,
   gridPointFromCellCoordinate,
   isMoveAction,
@@ -17,7 +18,7 @@ import {
 } from "./traversal"
 import type { MazeAction, State, TraversalHistoryEntry } from "./types"
 
-function visit(row: number, col: number): TraversalHistoryEntry {
+function selfVisit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Self", row, col }
 }
 
@@ -32,7 +33,7 @@ function createState(overrides: Partial<State> = {}): State {
     ],
     mazeDimensions: { length: 2, width: 1, area: 2 },
     playerPosition: { x: 1, y: 1 },
-    traversalHistory: [visit(0, 0)],
+    traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 3, y: 1 },
     status: "running",
     score: 100,
@@ -108,12 +109,24 @@ describe("traversal", () => {
 
   it("tracks traversal history entries by logical cell identity", () => {
     const currentVisit = traversalHistoryEntry({ row: 0, col: 1 }, "Blue")
-    const history = [visit(0, 0), currentVisit]
+    const history = [selfVisit(0, 0), currentVisit]
 
     expect(currentVisit).toEqual({ playerName: "Blue", row: 0, col: 1 })
     expect(mazeCellKey(currentVisit)).toBe("0:1")
     expect(traversalHistoryIncludes(history, { row: 0, col: 1 })).toBe(true)
     expect(traversalHistoryIncludes(history, { row: 1, col: 0 })).toBe(false)
+  })
+
+  it("clones only traversal histories that include the known start cell", () => {
+    const history = [selfVisit(0, 0), traversalHistoryEntry({ row: 0, col: 1 }, "Blue")]
+    const clone = cloneTraversalHistory(history)
+
+    expect(clone).toEqual(history)
+    expect(clone).not.toBe(history)
+    expect(clone[0]).not.toBe(history[0])
+    expect(() => cloneTraversalHistory([])).toThrow(
+      "traversalHistory must include the known start cell",
+    )
   })
 
   it("resolves a valid player move without mutating state", () => {
@@ -126,13 +139,13 @@ describe("traversal", () => {
       visitedBefore: false,
     })
     expect(state.playerPosition).toEqual({ x: 1, y: 1 })
-    expect(state.traversalHistory).toEqual([visit(0, 0)])
+    expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
   })
 
   it("marks revisits without duplicating traversal history", () => {
     const state = createState({
       playerPosition: { x: 3, y: 1 },
-      traversalHistory: [visit(0, 0), visit(0, 1)],
+      traversalHistory: [selfVisit(0, 0), selfVisit(0, 1)],
     })
 
     expect(resolvePlayerMove(state, "MoveLeft")).toEqual({
@@ -141,7 +154,7 @@ describe("traversal", () => {
       nextGridPoint: { x: 1, y: 1 },
       visitedBefore: true,
     })
-    expect(state.traversalHistory).toEqual([visit(0, 0), visit(0, 1)])
+    expect(state.traversalHistory).toEqual([selfVisit(0, 0), selfVisit(0, 1)])
   })
 
   it("rejects movement when the round is not running, blocked, or out of bounds", () => {

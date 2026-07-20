@@ -172,10 +172,33 @@ export type PersistedSnapshot = {
   round: PersistedRound | null
 }
 
-// AgentExpectedResponseFormat documents the one supported prediction payload shape.
-export type AgentExpectedResponseFormat = {
-  validPredictionFormat: {
-    moves: MoveAction[]
+// AgentExpectedResponseSchema documents the one supported prediction payload using JSON Schema.
+export type AgentExpectedResponseSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema"
+  type: "object"
+  additionalProperties: false
+  required: ["moves"]
+  properties: {
+    moves: {
+      type: "array"
+      minItems: 1
+      items: {
+        type: "string"
+        enum: MoveAction[]
+      }
+    }
+  }
+}
+
+// AgentSubmittedMovesSchema documents the replay records Tapoo returns after processing moves.
+export type AgentSubmittedMovesSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema"
+  type: "array"
+  description: string
+  items: {
+    type: "string"
+    pattern: string
+    examples: string[]
   }
 }
 
@@ -204,27 +227,27 @@ export type MazeActionState = {
   model: string
   stream: false
   format: "json"
-  playerName: string
+  lastPlayerName?: string
   currentCell: CellCoordinate | null
   destinationCell: CellCoordinate | null
   traversalHistory: TraversalHistoryEntry[]
 
   prompt: string
-  allowedMoves: MoveAction[]
   recommendedAvgPredictionLimit: number
-  expectedResponseFormat: AgentExpectedResponseFormat
+  expectedResponseSchema: AgentExpectedResponseSchema
 
-  submittedMovesPattern: string
-  submittedMovesIndexBase: 0
-  submittedMoves: string[]
-  lastMoveStatus: MoveStatus | null
-  lastValidMoveIndex: number | null
+  lastSubmittedMovesIndexBase?: 0
+  lastSubmittedMovesSchema?: AgentSubmittedMovesSchema
+  lastSubmittedMoves?: string[]
+  lastMoveStatus?: MoveStatus
+  lastValidMoveIndex?: number | null
   visitedBefore?: boolean
-  decayedMovesCount: number
+  decayedMovesCount?: number
 }
 
 // MazeActionDispatchOptions lets each dispatched command opt into feedback when it needs it.
 export type MazeActionDispatchOptions = {
+  model?: string
   wantFeedback?: boolean
   playerName: string
 }

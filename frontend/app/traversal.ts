@@ -60,6 +60,10 @@ export function cloneRenderGridPoint(point: RenderGridPoint): RenderGridPoint {
 export function cloneTraversalHistory(
   history: TraversalHistoryEntry[],
 ): TraversalHistoryEntry[] {
+  if (history.length === 0) {
+    throw new Error("traversalHistory must include the known start cell")
+  }
+
   return history.map(({ playerName, row, col }) => ({ playerName, row, col }))
 }
 

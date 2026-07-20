@@ -182,7 +182,7 @@ export const CONFIG: AppConfig = {
     playerNameMinLength: 3,
     playerNameMaxLength: 8,
     playerNameLabel: "Player Name",
-    playerNamePlaceholder: "kora",
+    playerNamePlaceholder: "Kora",
     modelLabel: "Model",
     modelPlaceholder: "llama3.2",
     endpointLabel: "Endpoint",

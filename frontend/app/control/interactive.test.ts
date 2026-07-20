@@ -4,6 +4,24 @@ import { CONFIG } from "../config"
 import { createInteractiveMode } from "./interactive"
 import type { MazeActionState } from "../types"
 
+const expectedResponseSchema: MazeActionState["expectedResponseSchema"] = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  additionalProperties: false,
+  required: ["moves"],
+  properties: {
+    moves: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "string",
+        enum: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+      },
+    },
+  },
+}
+
+
 // createButton reproduces the data attributes used by keyboard and touch controls.
 function createButton({
   action,
@@ -33,27 +51,15 @@ function createActionState(
     currentCell: null,
     destinationCell: null,
     traversalHistory: [],
-    playerName: "Blue",
     level: 1,
     score: 0,
     model: "",
     stream: false,
     format: "json",
     status: "boot",
-    allowedMoves: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
     recommendedAvgPredictionLimit: 0,
     prompt: "",
-    expectedResponseFormat: {
-      validPredictionFormat: {
-        moves: ["MoveRight", "MoveDown"],
-      },
-    },
-    lastMoveStatus: null,
-    submittedMovesIndexBase: 0,
-    submittedMovesPattern: "<index>:<MoveAction>",
-    submittedMoves: [],
-    lastValidMoveIndex: null,
-    decayedMovesCount: 0,
+    expectedResponseSchema,
     ...overrides,
   }
 }

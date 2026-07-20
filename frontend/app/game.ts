@@ -152,7 +152,7 @@ function positionsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean 
 
 // readActionState exposes the latest flattened agent-api payload so external callers can plan moves.
 function readActionState(): MazeActionState {
-  return buildMazeActionState(state, runtime.interactivePlayerName)
+  return buildMazeActionState(state, runtime.interactivePlayerName, "")
 }
 
 // isCellCoordinate validates one persisted logical cell coordinate.
@@ -792,6 +792,10 @@ function dispatchControl(
     return null
   }
 
+  if (!options.model) {
+    throw new Error("agent feedback dispatch requires a configured model")
+  }
+
   // Feedback requests run through the agent context path so moves can return structured state.
   const actionState = executeActionWithFeedback(action, {
     executeCommand: (nextAction) => {
@@ -799,6 +803,7 @@ function dispatchControl(
     },
     state,
     handleMove: movePlayer,
+    model: options.model,
     playerName: options.playerName,
   })
 
