@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { requestAgentPrediction, requestPredictionWithAbort } from "./request"
+import { requestPredictionWithAbort } from "./request"
 import type {
   AgentApiConfig,
   MazeActionResult,
@@ -141,6 +141,10 @@ function requestInput(
   }
 }
 
+function requestPrediction(input: Parameters<typeof requestPredictionWithAbort>[0]) {
+  return requestPredictionWithAbort(input).promise
+}
+
 function successfulResponse(content: string) {
   return {
     ok: true,
@@ -251,7 +255,7 @@ describe("agent request service", () => {
       )
     vi.stubGlobal("fetch", fetchMock)
 
-    await expect(requestAgentPrediction(requestInput())).resolves.toEqual(
+    await expect(requestPrediction(requestInput())).resolves.toEqual(
       expectedJsonOutput,
     )
 
@@ -265,7 +269,7 @@ describe("agent request service", () => {
     )
     vi.stubGlobal("fetch", fetchMock)
 
-    await expect(requestAgentPrediction(requestInput())).resolves.toEqual({
+    await expect(requestPrediction(requestInput())).resolves.toEqual({
       ok: true,
       moves: ["MoveRight", "MoveDown"],
     })
@@ -311,7 +315,7 @@ describe("agent request service", () => {
       .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
     vi.stubGlobal("fetch", fetchMock)
 
-    const result = await requestAgentPrediction(
+    const result = await requestPrediction(
       requestInput({
         finalPosition: { x: 3, y: 1 },
         playerPosition: { x: 1, y: 1 },
@@ -363,7 +367,7 @@ describe("agent request service", () => {
       .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveDown\"]}"))
     vi.stubGlobal("fetch", fetchMock)
 
-    await requestAgentPrediction(requestInput())
+    await requestPrediction(requestInput())
 
     const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
     const secondRequestBody = JSON.parse(secondRequest.body as string) as SerializedRequestBody
@@ -391,7 +395,7 @@ describe("agent request service", () => {
   ])("returns malformed-response for %s", async (_caseName, content) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(successfulResponse(content)))
 
-    await expect(requestAgentPrediction(requestInput())).resolves.toEqual({
+    await expect(requestPrediction(requestInput())).resolves.toEqual({
       ok: false,
       reason: "malformed-response",
     })
@@ -403,7 +407,7 @@ describe("agent request service", () => {
   ])("returns network-error for %s", async (_caseName, fetchMock) => {
     vi.stubGlobal("fetch", fetchMock)
 
-    await expect(requestAgentPrediction(requestInput())).resolves.toEqual({
+    await expect(requestPrediction(requestInput())).resolves.toEqual({
       ok: false,
       reason: "network-error",
     })
@@ -420,7 +424,7 @@ describe("agent request service", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const result = requestAgentPrediction({ ...requestInput(), timeoutMs: 1000 })
+    const result = requestPrediction({ ...requestInput(), timeoutMs: 1000 })
     await vi.advanceTimersByTimeAsync(1000)
 
     await expect(result).resolves.toEqual({
@@ -460,24 +464,47 @@ describe("agent request service", () => {
       ),
     )
 
-    await expect(requestAgentPrediction(requestInput())).resolves.toEqual({
+    await expect(requestPrediction(requestInput())).resolves.toEqual({
       ok: false,
       reason: "network-error",
     })
   })
 
-  it("returns network-error when the tool loop exceeds the configured maximum", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
+  it("removes tools after the maximum tool rounds so the model can answer from context", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
         toolCallResponse([
           { function: { name: "get_maze_positions", arguments: {} } },
         ]),
-      ),
-    )
+      )
+      .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
+    vi.stubGlobal("fetch", fetchMock)
 
     await expect(
-      requestAgentPrediction({ ...requestInput(), maxToolRounds: 1 }),
+      requestPrediction({ ...requestInput(), maxToolRounds: 1 }),
+    ).resolves.toEqual({ ok: true, moves: ["MoveRight"] })
+
+    const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
+    const secondRequestBody = JSON.parse(secondRequest.body as string) as SerializedRequestBody
+    expect(secondRequestBody.tools).toEqual([])
+  })
+
+  it("returns network-error when the hard request turn limit is exceeded", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      toolCallResponse([
+        { function: { name: "get_maze_positions", arguments: {} } },
+      ]),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      requestPrediction({
+        ...requestInput(),
+        maxToolRounds: 1,
+      }),
     ).resolves.toEqual({ ok: false, reason: "network-error" })
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })

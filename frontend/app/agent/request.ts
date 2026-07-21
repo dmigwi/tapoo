@@ -256,18 +256,28 @@ export function requestPredictionWithAbort({
         notifyFailure(reason)
         return { ok: false, reason }
       }
+
       const chatMessages = buildAgentMessages(agent.playerName)
       // Tool handlers close over the current State snapshot and last replay metadata for this turn.
       const toolHandlers = buildAgentToolHandlers(state, agent, lastActionResult)
+      let availableTools = AGENT_CONTEXT_TOOLS
+      // Allow configured tool rounds plus two final no-tools requests for the actual prediction.
+      const maxRequestTurns = maxToolRounds + 2
+      let requestTurns = 0
       let toolRounds = 0
 
       while (true) {
+        requestTurns += 1
+        if (requestTurns > maxRequestTurns) {
+          return fail("network-error")
+        }
+
         // Each turn sends the accumulated chat/tool transcript until final moves are returned.
         const response = await requestChatTurn(
           agent.endpoint,
           agent.model,
           chatMessages,
-          AGENT_CONTEXT_TOOLS,
+          availableTools,
           controller.signal,
         )
         if (!response?.message) {
@@ -278,16 +288,10 @@ export function requestPredictionWithAbort({
         if (toolCalls.length === 0) {
           // Final assistant content must be the compact JSON prediction payload.
           const moves = parseAgentPrediction(response.message.content)
-          return moves
-            ? { ok: true, moves }
-            : fail("malformed-response")
+          return moves ? { ok: true, moves } : fail("malformed-response")
         }
 
-        toolRounds += 1
-        if (toolRounds > maxToolRounds) {
-          // Too many tool rounds usually means the model is not converging toward final moves.
-          return fail("network-error")
-        }
+       
 
         // Tool results are appended here so agent-api.ts never manages chat protocol details.
         chatMessages.push({
@@ -296,15 +300,17 @@ export function requestPredictionWithAbort({
           tool_calls: toolCalls,
         })
 
-        const toolMessages = await buildToolResultMessages(
-          toolCalls,
-          toolHandlers,
-        )
+        const toolMessages = await buildToolResultMessages(toolCalls, toolHandlers)
         if (!toolMessages) {
           return fail("network-error")
         }
 
+        toolRounds += 1
         chatMessages.push(...toolMessages)
+        if (toolRounds >= maxToolRounds) {
+          // After enough context rounds, remove tools to nudge the model into a final prediction.
+          availableTools = []
+        }
       }
     } catch {
       // Fetch failures, timeout aborts, and tool-service failures share one network bucket.
@@ -327,11 +333,4 @@ export function requestPredictionWithAbort({
     },
     promise,
   }
-}
-
-// requestAgentPrediction returns only final movement predictions for callers that do not need abort control.
-export async function requestAgentPrediction(
-  input: RequestAgentPredictionInput,
-): Promise<AgentPredictionResult> {
-  return requestPredictionWithAbort(input).promise
 }

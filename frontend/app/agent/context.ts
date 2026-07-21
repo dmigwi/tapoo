@@ -47,7 +47,7 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
   items: {
     type: "string",
     pattern: "^(0|[1-9][0-9]*):(MoveUp|MoveDown|MoveLeft|MoveRight)$",
-    examples: ["0:MoveRight"],
+    examples: ["0:MoveRight", "1:MoveUp", "2:MoveRight"],
   },
 }
 
