@@ -6,6 +6,7 @@ import type {
   MazeAction,
   MazeDimensions,
   MoveAction,
+  PersistedRound,
   RenderGridPoint,
   State,
   TraversalHistoryEntry,
@@ -109,6 +110,57 @@ export function isSpaceFound(item: string): boolean {
   return item.length > 0 && item.charCodeAt(0) === 32
 }
 
+// isCellCoordinate validates one zero-based logical cell coordinate.
+export function isCellCoordinate(value: unknown): value is CellCoordinate {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("row" in value) ||
+    !("col" in value)
+  ) {
+    return false
+  }
+
+  const row = value.row
+  const col = value.col
+
+  return (
+    typeof row === "number" &&
+    typeof col === "number" &&
+    Number.isInteger(row) &&
+    Number.isInteger(col) &&
+    row >= 0 &&
+    col >= 0
+  )
+}
+
+// isTraversalHistoryEntry validates one named visit record restored from storage.
+export function isTraversalHistoryEntry(value: unknown): value is TraversalHistoryEntry {
+  return (
+    isCellCoordinate(value) &&
+    "playerName" in value &&
+    typeof value.playerName === "string" &&
+    value.playerName.length > 0
+  )
+}
+
+// isTraversableGridPoint verifies that a rendered-grid point still lands on open path.
+export function isTraversableGridPoint(
+  data: string[][],
+  position: RenderGridPoint,
+): boolean {
+  const { x, y } = position
+  if (y < 0 || y >= data.length) {
+    return false
+  }
+
+  if (x < 0 || x >= data[y].length) {
+    return false
+  }
+
+  return isSpaceFound(data[y][x])
+}
+
 // isMoveAction reports whether one semantic action is a traversable maze move.
 export function isMoveAction(
   action: MazeAction,
@@ -130,6 +182,91 @@ export function gridPointFromCellCoordinate(cell: CellCoordinate): RenderGridPoi
     x: cell.col * maze.cellSpan + 1,
     y: cell.row * maze.cellSpan + 1,
   }
+}
+
+// isValidPersistedRound verifies that a restored round is internally consistent.
+export function isValidPersistedRound(snapshot: PersistedRound): boolean {
+  // Reject impossible round metadata before trusting nested maze data.
+  if (
+    snapshot.level < 1 ||
+    !isWallWeight(snapshot.wallWeight) ||
+    snapshot.mazeDimensions.length <= 0 ||
+    snapshot.mazeDimensions.width <= 0 ||
+    snapshot.mazeDimensions.area !== snapshot.mazeDimensions.length * snapshot.mazeDimensions.width
+  ) {
+    return false
+  }
+
+  // The stored maze grid must match the dimensions used to generate it.
+  const expectedRows = maze.cellSpan * snapshot.mazeDimensions.width + 1
+  const expectedColumns = snapshot.mazeDimensions.length * 2 + 1
+  if (snapshot.maze.length !== expectedRows) {
+    return false
+  }
+
+  if (
+    !snapshot.maze.every(
+      (row) => Array.isArray(row) && row.length === expectedColumns,
+    )
+  ) {
+    return false
+  }
+
+  // Player and destination positions must both point at open maze cells.
+  if (!isTraversableGridPoint(snapshot.maze, snapshot.playerPosition)) {
+    return false
+  }
+
+  if (!isTraversableGridPoint(snapshot.maze, snapshot.finalPosition)) {
+    return false
+  }
+
+  // Traversal history must start with the saved round start cell.
+  if (
+    !isCellCoordinate(snapshot.startCell) ||
+    !Array.isArray(snapshot.traversalHistory) ||
+    snapshot.traversalHistory.length === 0
+  ) {
+    return false
+  }
+
+  // The saved start cell must still be traversable in the stored maze.
+  if (
+    !isTraversableGridPoint(
+      snapshot.maze,
+      gridPointFromCellCoordinate(snapshot.startCell),
+    )
+  ) {
+    return false
+  }
+
+  const firstVisitedCell = snapshot.traversalHistory[0]
+  if (
+    !isTraversalHistoryEntry(firstVisitedCell) ||
+    mazeCellKey(firstVisitedCell) !== mazeCellKey(snapshot.startCell)
+  ) {
+    return false
+  }
+
+  const visitedCellKeys = new Set<string>()
+  for (const visitedCell of snapshot.traversalHistory) {
+    // History is append-only and unique, so duplicates indicate corrupted state.
+    if (!isTraversalHistoryEntry(visitedCell)) {
+      return false
+    }
+
+    const visitedCellKey = mazeCellKey(visitedCell)
+    if (visitedCellKeys.has(visitedCellKey)) {
+      return false
+    }
+
+    visitedCellKeys.add(visitedCellKey)
+    if (!isTraversableGridPoint(snapshot.maze, gridPointFromCellCoordinate(visitedCell))) {
+      return false
+    }
+  }
+
+  return true
 }
 
 // mazeCellKey builds a stable string key for deduplicating logical maze cells.

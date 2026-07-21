@@ -4,7 +4,7 @@ import type {
   MazeAction,
   MazeActionControl,
   MazeActionDispatch,
-  MazeActionState,
+  MazeActionResult,
 } from "../types"
 import {
   agentConfigValidationError,
@@ -49,6 +49,7 @@ export function createAgentMode(
     disableAgentApiConfigForNetworkError(agent)
   },
 ): MazeActionControl {
+  // These fields track DOM bindings and overlay state for the currently mounted agent mode.
   let attached = false
   let agentMovePoller: AgentMovePoller | null = null
   let activeAgentId: number | null = null
@@ -63,9 +64,11 @@ export function createAgentMode(
   let agentFormCloseHandler: (() => void) | null = null
   let agentFormSubmitHandler: ((event: Event) => void) | null = null
   let agentFormOuterClickHandler: ((event: MouseEvent) => void) | null = null
-  let lastActionState: MazeActionState | null = null
+  let lastActionResult: MazeActionResult | null = null
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null
   const buttonBindings: AgentButtonBinding[] = []
+
+  // Open overlays temporarily own focus, so normal app refocus should pause until they close.
   const isAgentConfigFormOpen = (): boolean => elements.agentConfigForm?.hidden === false
   const isAgentDeleteDialogOpen = (): boolean => elements.agentDeleteDialog?.hidden === false
   const focusCurrentApp = (): void => {
@@ -142,14 +145,14 @@ export function createAgentMode(
     // bindActionDispatch starts the HTTP-driven move loop while keeping session controls local.
     bindActionDispatch(
       dispatch: MazeActionDispatch,
-      readActionState,
+      readState,
       commitAgentTurn,
     ) {
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
 
-      const recordLastActionState = (actionState: MazeActionState): void => {
-        lastActionState = actionState
+      const recordLastActionResult = (actionResult: MazeActionResult): void => {
+        lastActionResult = actionResult
       }
 
       // Agent-owned moves always ask for feedback so the next API request has fresh context.
@@ -157,33 +160,34 @@ export function createAgentMode(
         action: MazeAction,
         nextDispatch: MazeActionDispatch,
         agent: AgentApiConfig,
-      ): MazeActionState => {
-        const actionState = nextDispatch(action, {
+      ): MazeActionResult => {
+        const actionResult = nextDispatch(action, {
           model: agent.model,
           wantFeedback: true,
           playerName: agent.playerName,
         })
-        if (!actionState) {
+        if (!actionResult) {
           throw new Error("agent move dispatch must return feedback")
         }
 
-        recordLastActionState(actionState)
-        return actionState
+        recordLastActionResult(actionResult)
+        return actionResult
       }
 
+      // The poller owns turn timing; this mode supplies UI/storage hooks and move dispatch.
       agentMovePoller = handleAgentTurnLoop({
         __commitAgentTurn: commitAgentTurn,
         __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
         __dispatch: dispatch,
         __dispatchAgentAction: dispatchAgentAction,
         __elements: elements,
-        __onActionState: recordLastActionState,
+        __onActionResult: recordLastActionResult,
         __onActiveAgentChange: (agent) => {
           activeAgentId = agent?.id ?? null
           renderAgentRoster()
         },
         __readAgentConfigs: readAgentConfigs,
-        __readActionState: readActionState,
+        __readState: readState,
       })
 
       const syncCurrentPoller = (): void => {
@@ -204,8 +208,9 @@ export function createAgentMode(
         )
       }
 
+      // Agent management is human-owned, so opening a form pauses active agent traversal.
       const pauseIfRunning = (): void => {
-        if (!isRunningStatus(readActionState().status)) {
+        if (!isRunningStatus(readState().status)) {
           return
         }
 
@@ -340,6 +345,7 @@ export function createAgentMode(
         }
 
         agentRosterClickHandler = (event: MouseEvent): void => {
+          // Seats use event delegation because the roster is re-rendered after every config change.
           const target = event.target
           if (!(target instanceof Element)) {
             return
@@ -356,9 +362,7 @@ export function createAgentMode(
             return
           }
 
-          const seatIdToDelete = agentSeatIdFromDataset(
-            button.dataset.agentSeatDelete,
-          )
+          const seatIdToDelete = agentSeatIdFromDataset(button.dataset.agentSeatDelete)
           if (seatIdToDelete !== null) {
             openAgentDeleteDialog(seatIdToDelete)
           }
@@ -384,6 +388,7 @@ export function createAgentMode(
         }
 
         agentFormSubmitHandler = (event: Event): void => {
+          // Empty seats are the only valid add target; occupied seats are managed in the dialog.
           event.preventDefault()
 
           const model = elements.agentConfigModel?.value.trim() ?? ""
@@ -468,6 +473,7 @@ export function createAgentMode(
         agentDeleteConfirmChangeHandler = syncAgentDeleteOptions
         agentDeleteEnabledChangeHandler = syncAgentDeleteOptions
         agentDeleteApplyHandler = (): void => {
+          // Delete wins over enable/disable edits because the seat becomes empty.
           if (!deleteSeatId) {
             closeAgentDeleteDialog()
             return
@@ -511,6 +517,7 @@ export function createAgentMode(
           return false
         }
 
+        // Form fields keep normal typing behavior; Escape is reserved for closing overlays.
         if (event.key === "Escape" && closeActiveAgentOverlay()) {
           event.preventDefault()
         }
@@ -544,6 +551,7 @@ export function createAgentMode(
       bindAgentDeleteDialog()
 
       keydownHandler = (event: KeyboardEvent): void => {
+        // Global shortcuts are ignored while the user is typing inside agent forms.
         if (handleFormControlKeydown(event)) {
           return
         }
@@ -562,22 +570,22 @@ export function createAgentMode(
       elements.app.addEventListener("click", focusCurrentApp)
       attached = true
       agentMovePoller.__setAttached(true)
-      agentMovePoller.__setLastActionState(lastActionState)
+      agentMovePoller.__setLastActionResult(lastActionResult)
       syncCurrentPoller()
     },
-    // readLastActionState exposes the latest stored response state for agent-side consumers.
-    readLastActionState() {
-      return lastActionState
+    // readLastActionResult exposes the latest stored replay result for agent-side consumers.
+    readLastActionResult() {
+      return lastActionResult
     },
-    // recordActionState keeps the last response state available for the agent-api control flow.
-    recordActionState(actionState: MazeActionState) {
-      lastActionState = actionState
-      agentMovePoller?.__setLastActionState(actionState)
+    // recordActionResult keeps the last replay result available for the agent-api control flow.
+    recordActionResult(actionResult: MazeActionResult) {
+      lastActionResult = actionResult
+      agentMovePoller?.__setLastActionResult(actionResult)
     },
-    // clearActionState drops stale agent-facing context after full-session resets.
-    clearActionState() {
-      lastActionState = null
-      agentMovePoller?.__setLastActionState(null)
+    // clearActionResult drops stale agent-facing replay data after full-session resets.
+    clearActionResult() {
+      lastActionResult = null
+      agentMovePoller?.__setLastActionResult(null)
     },
   }
 }

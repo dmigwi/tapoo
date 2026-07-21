@@ -2,25 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import { CONFIG } from "../config"
 import { createInteractiveMode } from "./interactive"
-import type { MazeActionState } from "../types"
-
-const expectedResponseSchema: MazeActionState["expectedResponseSchema"] = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  type: "object",
-  additionalProperties: false,
-  required: ["moves"],
-  properties: {
-    moves: {
-      type: "array",
-      minItems: 1,
-      items: {
-        type: "string",
-        enum: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
-      },
-    },
-  },
-}
-
+import type { MazeActionResult, State } from "../types"
 
 // createButton reproduces the data attributes used by keyboard and touch controls.
 function createButton({
@@ -43,24 +25,37 @@ function createButton({
   return button
 }
 
-// createActionState supplies the shared flattened agent payload shape expected by the control contract.
-function createActionState(
-  overrides: Partial<MazeActionState> = {},
-): MazeActionState {
+// createActionResult supplies the small replay payload shape expected by the control contract.
+function createActionResult(
+  overrides: Partial<MazeActionResult> = {},
+): MazeActionResult {
   return {
-    currentCell: null,
-    destinationCell: null,
-    traversalHistory: [],
-    level: 1,
-    score: 0,
-    model: "",
-    stream: false,
-    format: "json",
-    status: "boot",
-    recommendedAvgPredictionLimit: 0,
-    prompt: "",
-    expectedResponseSchema,
     ...overrides,
+  }
+}
+
+function createState(): State {
+  return {
+    agentRequestCount: 0,
+    bestWinRequestCount: null,
+    bestWinRetentionUnits: null,
+    canResume: false,
+    clock: null,
+    controlMode: CONFIG.runtime.controlModes.interactive,
+    finalPosition: null,
+    lastAttemptRetentionUnits: null,
+    lastRoundScore: 0,
+    lastWinRequestCount: null,
+    level: 1,
+    maze: null,
+    mazeDimensions: null,
+    playerPosition: null,
+    score: 0,
+    scoreDecayUnits: 0,
+    status: "boot",
+    traversalHistory: [],
+    wallWeight: 1,
+    winSummary: "",
   }
 }
 
@@ -82,9 +77,9 @@ describe("interactive control mode", () => {
     const mode = createInteractiveMode(elements)
 
     expect(mode.name).toBe(CONFIG.runtime.controlModes.interactive)
-    expect(mode.readLastActionState()).toBeNull()
+    expect(mode.readLastActionResult()).toBeNull()
 
-    mode.bindActionDispatch(dispatch, vi.fn(() => createActionState()), vi.fn(() => createActionState()))
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn())
     elements.controls[0].click()
     elements.touchButtons[0].click()
     window.dispatchEvent(
@@ -109,10 +104,10 @@ describe("interactive control mode", () => {
       type: "MoveUp",
     }, { playerName: "Self" })
 
-    mode.recordActionState(createActionState({
+    mode.recordActionResult(createActionResult({
       lastMoveStatus: "applied",
     }))
-    expect(mode.readLastActionState()).toBeNull()
+    expect(mode.readLastActionResult()).toBeNull()
   })
 
   it("ignores unsupported button and keyboard actions", () => {
@@ -130,7 +125,7 @@ describe("interactive control mode", () => {
 
     const mode = createInteractiveMode(elements)
 
-    mode.bindActionDispatch(dispatch, vi.fn(() => createActionState()), vi.fn(() => createActionState()))
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn())
     elements.controls[0].click()
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -158,10 +153,10 @@ describe("interactive control mode", () => {
 
     const mode = createInteractiveMode(elements)
 
-    const readActionState = vi.fn(() => createActionState())
+    const readState = vi.fn(() => createState())
 
-    mode.bindActionDispatch(firstDispatch, readActionState, vi.fn(() => createActionState()))
-    mode.bindActionDispatch(secondDispatch, readActionState, vi.fn(() => createActionState()))
+    mode.bindActionDispatch(firstDispatch, readState, vi.fn())
+    mode.bindActionDispatch(secondDispatch, readState, vi.fn())
     elements.controls[0].click()
 
     expect(firstDispatch).not.toHaveBeenCalled()

@@ -15,10 +15,6 @@ import type {
   TraversalHistoryEntry,
 } from "./types"
 
-function visit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Blue", row, col }
-}
-
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Self", row, col }
 }
@@ -147,6 +143,28 @@ function createTraversalMock({
     row,
     col,
   })
+  const isCellCoordinate = (value: unknown): value is { row: number; col: number } => (
+    typeof value === "object" &&
+    value !== null &&
+    "row" in value &&
+    "col" in value &&
+    typeof value.row === "number" &&
+    typeof value.col === "number" &&
+    Number.isInteger(value.row) &&
+    Number.isInteger(value.col) &&
+    value.row >= 0 &&
+    value.col >= 0
+  )
+  const isTraversalHistoryEntry = (value: unknown): value is TraversalHistoryEntry => (
+    isCellCoordinate(value) &&
+    "playerName" in value &&
+    typeof value.playerName === "string" &&
+    value.playerName.length > 0
+  )
+  const isTraversableGridPoint = (
+    data: string[][],
+    position: { x: number; y: number },
+  ) => data[position.y]?.[position.x] !== undefined && isSpaceFound(data[position.y][position.x])
 
   return {
     cellCoordinateFromGridPoint: vi.fn(cellCoordinateFromGridPoint),
@@ -171,6 +189,41 @@ function createTraversalMock({
       ["MoveLeft", "MoveRight", "MoveUp", "MoveDown"].includes(action.type),
     ),
     isSpaceFound: vi.fn(isSpaceFound),
+    isValidPersistedRound: vi.fn((snapshot: PersistedRound) => {
+      if (
+        snapshot.level < 1 ||
+        snapshot.mazeDimensions.area !== snapshot.mazeDimensions.length * snapshot.mazeDimensions.width ||
+        !isTraversableGridPoint(snapshot.maze, snapshot.playerPosition) ||
+        !isTraversableGridPoint(snapshot.maze, snapshot.finalPosition) ||
+        !isCellCoordinate(snapshot.startCell) ||
+        snapshot.traversalHistory.length === 0
+      ) {
+        return false
+      }
+
+      const firstVisitedCell = snapshot.traversalHistory[0]
+      if (
+        !isTraversalHistoryEntry(firstVisitedCell) ||
+        mazeCellKey(firstVisitedCell) !== mazeCellKey(snapshot.startCell)
+      ) {
+        return false
+      }
+
+      const visitedCellKeys = new Set<string>()
+      return snapshot.traversalHistory.every((visitedCell) => {
+        if (!isTraversalHistoryEntry(visitedCell)) {
+          return false
+        }
+
+        const visitedCellKey = mazeCellKey(visitedCell)
+        if (visitedCellKeys.has(visitedCellKey)) {
+          return false
+        }
+
+        visitedCellKeys.add(visitedCellKey)
+        return isTraversableGridPoint(snapshot.maze, gridPointFromCellCoordinate(visitedCell))
+      })
+    }),
     isWallWeight: vi.fn((value: number) => value >= 1 && value <= 3),
     mazeCellKey: vi.fn(mazeCellKey),
     nextWallWeight: vi.fn(nextWallWeight),
@@ -733,16 +786,16 @@ describe("bootstrapGame", () => {
       round: createHorizontalRound(),
     })
 
-    const actionState = harness.runtime.dispatch(
+    const actionResult = harness.runtime.dispatch(
       { type: "MoveRight" },
       { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
-    expect(harness.mode.readLastActionState()).toEqual(actionState)
+    expect(harness.mode.readLastActionResult()).toEqual(actionResult)
 
     harness.elements.controls[0].click()
 
     expect(harness.clearPersistedSnapshot).toHaveBeenCalledTimes(1)
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
 
     const state = latestRenderedState(harness.render)
     expect(state.controlMode).toBe(CONFIG.runtime.controlModes.agentApi)
@@ -1171,9 +1224,9 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("running")
     expect(state.playerPosition).toEqual({ x: 1, y: 1 })
     expect(state.controlMode).toBe(CONFIG.runtime.controlModes.agentApi)
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
 
-    const actionState = harness.runtime.dispatch(
+    const actionResult = harness.runtime.dispatch(
       { type: "MoveRight" },
       { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
@@ -1181,16 +1234,13 @@ describe("bootstrapGame", () => {
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("won")
     expect(state.playerPosition).toEqual({ x: 3, y: 1 })
-    expect(actionState).toEqual(expect.objectContaining({
-      currentCell: { row: 0, col: 1 },
-      destinationCell: { row: 0, col: 1 },
-      traversalHistory: [selfVisit(0, 0), visit(0, 1)],
+    expect(actionResult).toEqual(expect.objectContaining({
       lastMoveStatus: "reached-target",
       visitedBefore: false,
       lastSubmittedMoves: ["0:MoveRight"],
       lastValidMoveIndex: 0,
     }))
-    expect(harness.mode.readLastActionState()).toEqual(actionState)
+    expect(harness.mode.readLastActionResult()).toEqual(actionResult)
 
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -1203,7 +1253,7 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("running")
     expect(state.level).toBe(2)
     expect(state.playerPosition).toEqual({ x: 1, y: 1 })
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
   })
 
   it("keeps pause, proceed, and wall cycling human-driven in agent-api mode", async () => {
@@ -1217,16 +1267,16 @@ describe("bootstrapGame", () => {
     )
     let state = latestRenderedState(harness.render)
     expect(state.status).toBe("paused")
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
 
     harness.elements.touchButtons[0].click()
     state = latestRenderedState(harness.render)
     expect(state.wallWeight).toBe(2)
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
 
     harness.elements.touchButtons[2].click()
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
   })
 })

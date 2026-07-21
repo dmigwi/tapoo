@@ -1,30 +1,30 @@
 import { CONFIG } from "../config"
 import { getNavigationProfile } from "../maze"
-import { isWonStatus } from "../status"
 import {
   cellCoordinateFromGridPoint,
   cloneTraversalHistory,
-  isMoveAction,
-  resolvePlayerMove,
 } from "../traversal"
 import type {
+  AgentApiConfig,
   AgentExpectedResponseSchema,
   AgentSubmittedMovesSchema,
-  MazeAction,
-  MazeActionState,
-  MoveStatus,
+  MazeActionResult,
   MoveAction,
   State,
 } from "../types"
+import type {
+  AgentChatMessage,
+  AgentToolDefinition,
+  AgentToolHandlers,
+} from "./request"
 
 const { runtime } = CONFIG
 
-// ALLOWED_MOVE_ACTIONS enumerates the only traversal commands the agent may return.
+// ALLOWED_MOVE_ACTIONS enumerates the only traversal commands accepted from prediction sources.
 const ALLOWED_MOVE_ACTIONS: MoveAction[] = ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"]
 
-// EXPECTED_RESPONSE_SCHEMA documents the exact JSON shape agents should return.
-const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
+// EXPECTED_RESPONSE_SCHEMA documents the exact JSON shape returned by prediction sources.
+export const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
   type: "object",
   additionalProperties: false,
   required: ["moves"],
@@ -40,9 +40,8 @@ const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
   },
 }
 
-// SUBMITTED_MOVES_SCHEMA documents the zero-based replay records Tapoo returns after a turn.
-const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
+// SUBMITTED_MOVES_SCHEMA documents the zero-based replay records returned after processing moves.
+export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
   type: "array",
   description: "Zero-based replay records formatted as <index>:<move>.",
   items: {
@@ -52,8 +51,80 @@ const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
   },
 }
 
-// buildAgentPrompt keeps request guidance compact while naming the active agent for history lookup.
-export function buildAgentPrompt(playerName: string): string {
+const emptyToolParameters: AgentToolDefinition["function"]["parameters"] = {
+  type: "object",
+  additionalProperties: false,
+  properties: {},
+  required: [],
+}
+
+// Tool return formats are documented in descriptions because `parameters` only describes inputs.
+// gameStatusTool exposes round progress and the configured model without leaking full state.
+const gameStatusTool: AgentToolDefinition = {
+  type: "function",
+  function: {
+    name: "get_game_status",
+    description:
+      "Get current Tapoo level, status, score, and model. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"model\":string}.",
+    parameters: emptyToolParameters,
+  },
+}
+
+// mazePositionsTool gives agents the minimum location data needed to plan the next move.
+const mazePositionsTool: AgentToolDefinition = {
+  type: "function",
+  function: {
+    name: "get_maze_positions",
+    description:
+      "Get current and destination cells. Returns JSON: {\"currentCell\":{\"row\":number,\"col\":number}|null,\"destinationCell\":{\"row\":number,\"col\":number}|null}.",
+    parameters: emptyToolParameters,
+  },
+}
+
+// traversalHistoryTool lets agents avoid repeating explored logical cells across turns.
+const traversalHistoryTool: AgentToolDefinition = {
+  type: "function",
+  function: {
+    name: "get_traversal_history",
+    description:
+      "Get chronological visited cells. Returns JSON: {\"traversalHistory\":[{\"playerName\":string,\"row\":number,\"col\":number}]}.",
+    parameters: emptyToolParameters,
+  },
+}
+
+// predictionRulesTool documents the only accepted move response and the suggested batch size.
+const predictionRulesTool: AgentToolDefinition = {
+  type: "function",
+  function: {
+    name: "get_prediction_rules",
+    description:
+      "Get movement response rules. Returns JSON: {\"recommendedAvgPredictionLimit\":number,\"expectedResponseSchema\":object}.",
+    parameters: emptyToolParameters,
+  },
+}
+
+// lastReplayResultTool reports the previous replay outcome so agents can correct course.
+const lastReplayResultTool: AgentToolDefinition = {
+  type: "function",
+  function: {
+    name: "get_last_replay_result",
+    description:
+      "Get the previous turn replay result. Returns JSON with lastPlayerName, lastMoveStatus, lastSubmittedMoves, lastValidMoveIndex, visitedBefore, and decayedMovesCount.",
+    parameters: emptyToolParameters,
+  },
+}
+
+// AGENT_CONTEXT_TOOLS exposes focused context slices instead of one oversized state object.
+export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
+  gameStatusTool,
+  mazePositionsTool,
+  traversalHistoryTool,
+  predictionRulesTool,
+  lastReplayResultTool,
+]
+
+// buildMazeActionPrompt keeps request guidance compact while naming the active player.
+export function buildMazeActionPrompt(playerName: string): string {
   return [
     `Your name is ${playerName}.`,
     `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
@@ -68,118 +139,78 @@ export function buildAgentPrompt(playerName: string): string {
   ].join(" ")
 }
 
-// recommendedAvgPredictionLimit derives the advisory prediction length from the active navigation profile.
-function recommendedAvgPredictionLimit(state: State): number {
-  if (!state.mazeDimensions) {
-    return 0
-  }
-
-  const profile = getNavigationProfile(state.mazeDimensions)
-  return profile.__softCorridorLimit + profile.__hardCorridorLimit
+// buildAgentMessages separates durable behavior instructions from the current turn request.
+export function buildAgentMessages(playerName: string): AgentChatMessage[] {
+  return [
+    {
+      role: "developer",
+      content: buildMazeActionPrompt(playerName),
+    },
+    {
+      role: "user",
+      content: [
+        `It is ${playerName}'s turn to predict Tapoo maze moves.`,
+        "Use the available tools to inspect the current maze state.",
+        "Return only JSON matching the movement response schema.",
+      ].join(" "),
+    },
+  ]
 }
 
-// normalizeSubmittedMoves formats replayed commands into the stable stepNumber:MoveAction shape.
-function normalizeSubmittedMoves(moves: MoveAction[]): string[] {
-  return moves.map((move, index) => `${index}:${move}`)
-}
-
-// buildMazeActionState snapshots the live maze state together with the latest agent replay result.
-export function buildMazeActionState(
+// buildAgentToolHandlers binds the latest state snapshot to the context tools for this request.
+export function buildAgentToolHandlers(
   state: State,
-  playerName: string,
-  model: string,
-  overrides: Partial<MazeActionState> = {},
-): MazeActionState {
+  agent: AgentApiConfig,
+  lastActionResult: MazeActionResult | null,
+): AgentToolHandlers {
+  const recommendedAvgPredictionLimit = state.mazeDimensions
+    ? (() => {
+        const profile = getNavigationProfile(state.mazeDimensions)
+        return profile.__softCorridorLimit + profile.__hardCorridorLimit
+      })()
+    : 0
+
   return {
-    level: state.level,
-    status: state.status,
-    score: state.score,
-    model,
-    stream: false,
-    format: "json",
-    currentCell: state.playerPosition ? cellCoordinateFromGridPoint(state.playerPosition) : null,
-    destinationCell: state.finalPosition ? cellCoordinateFromGridPoint(state.finalPosition) : null,
-    traversalHistory: cloneTraversalHistory(state.traversalHistory),
-    recommendedAvgPredictionLimit: recommendedAvgPredictionLimit(state),
-    prompt: buildAgentPrompt(playerName),
-    expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
-    ...overrides,
+    get_game_status() {
+      return {
+        level: state.level,
+        status: state.status,
+        score: state.score,
+        model: agent.model,
+      }
+    },
+    get_maze_positions() {
+      return {
+        currentCell: state.playerPosition
+          ? cellCoordinateFromGridPoint(state.playerPosition)
+          : null,
+        destinationCell: state.finalPosition
+          ? cellCoordinateFromGridPoint(state.finalPosition)
+          : null,
+      }
+    },
+    get_traversal_history() {
+      return {
+        traversalHistory: cloneTraversalHistory(state.traversalHistory),
+      }
+    },
+    get_prediction_rules() {
+      return {
+        recommendedAvgPredictionLimit,
+        expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
+      }
+    },
+    get_last_replay_result() {
+      return {
+        lastPlayerName: lastActionResult?.lastPlayerName ?? null,
+        lastMoveStatus: lastActionResult?.lastMoveStatus ?? null,
+        lastSubmittedMovesIndexBase: lastActionResult?.lastSubmittedMovesIndexBase ?? null,
+        lastSubmittedMovesSchema: lastActionResult?.lastSubmittedMovesSchema ?? null,
+        lastSubmittedMoves: lastActionResult?.lastSubmittedMoves ?? [],
+        lastValidMoveIndex: lastActionResult?.lastValidMoveIndex ?? null,
+        visitedBefore: lastActionResult?.visitedBefore ?? null,
+        decayedMovesCount: lastActionResult?.decayedMovesCount ?? 0,
+      }
+    },
   }
-}
-
-// mergeMazeActionState reapplies transient replay details on top of the latest normalized base payload.
-export function mergeMazeActionState(
-  actionState: MazeActionState,
-  overrides: Partial<MazeActionState> = {},
-): MazeActionState {
-  return {
-    ...actionState,
-    expectedResponseSchema: actionState.expectedResponseSchema,
-    ...(actionState.lastSubmittedMovesSchema
-      ? { lastSubmittedMovesSchema: actionState.lastSubmittedMovesSchema }
-      : {}),
-    traversalHistory: cloneTraversalHistory(actionState.traversalHistory),
-    ...(actionState.lastSubmittedMoves
-      ? { lastSubmittedMoves: [...actionState.lastSubmittedMoves] }
-      : {}),
-    prompt: overrides.prompt ?? actionState.prompt,
-    ...overrides,
-  }
-}
-
-type CommandFeedbackContext = {
-  state: State
-  model: string
-  playerName: string
-  executeCommand: (action: MazeAction) => void
-  handleMove: (action: MoveAction, playerName?: string) => void
-}
-
-// buildReplayState records the result of one replay step using the shared agent payload shape.
-function buildReplayState(
-  state: State,
-  model: string,
-  playerName: string,
-  command: MoveAction,
-  status: MoveStatus,
-  visitedBefore?: boolean,
-): MazeActionState {
-  const lastValidMoveIndex = status === "applied" || status === "reached-target" ? 0 : null
-  const visitedBeforeState = visitedBefore === undefined ? {} : { visitedBefore }
-
-  return buildMazeActionState(state, playerName, model, {
-    lastPlayerName: playerName,
-    lastMoveStatus: status,
-    lastSubmittedMovesIndexBase: 0,
-    lastSubmittedMovesSchema: SUBMITTED_MOVES_SCHEMA,
-    lastSubmittedMoves: normalizeSubmittedMoves([command]),
-    lastValidMoveIndex,
-    decayedMovesCount: 0,
-    ...visitedBeforeState,
-  })
-}
-
-// executeActionWithFeedback classifies one requested command and returns feedback when supported.
-export function executeActionWithFeedback(
-  action: MazeAction,
-  context: CommandFeedbackContext,
-): MazeActionState | null {
-  if (!isMoveAction(action)) {
-    context.executeCommand(action)
-    return null
-  }
-
-  const { state, handleMove, model, playerName } = context
-  const move = action.type
-  const moveEvaluation = resolvePlayerMove(state, move)
-  if (!moveEvaluation.canMove) {
-    return buildReplayState(state, model, playerName, move, "invalid-move")
-  }
-
-  handleMove(move, playerName)
-  const finalStatus: MoveStatus = isWonStatus(state.status) ? "reached-target" : "applied"
-
-  return buildReplayState(
-    state, model, playerName, move, finalStatus, moveEvaluation.visitedBefore,
-  )
 }

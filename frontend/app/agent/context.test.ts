@@ -1,12 +1,21 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
 import { CONFIG } from "../config"
-import { buildMazeActionState, executeActionWithFeedback } from "./context"
-import type { MazeAction, MoveAction, State, TraversalHistoryEntry } from "../types"
-
-function agentVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Blue", row, col }
-}
+import {
+  AGENT_CONTEXT_TOOLS,
+  buildAgentMessages,
+  buildAgentToolHandlers,
+} from "./context"
+import {
+  buildMazeActionResult,
+} from "../control"
+import type {
+  AgentApiConfig,
+  AgentExpectedResponseSchema,
+  MazeActionResult,
+  State,
+  TraversalHistoryEntry,
+} from "../types"
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
@@ -25,8 +34,7 @@ const expectedAgentPrompt = [
   "Choose the moves most likely to reach the destination with the fewest submitted moves.",
 ].join(" ")
 
-const expectedResponseSchema = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
+const expectedResponseSchema: AgentExpectedResponseSchema = {
   type: "object",
   additionalProperties: false,
   required: ["moves"],
@@ -42,8 +50,9 @@ const expectedResponseSchema = {
   },
 }
 
-const expectedLastSubmittedMovesSchema = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
+const expectedLastSubmittedMovesSchema: NonNullable<
+  MazeActionResult["lastSubmittedMovesSchema"]
+> = {
   type: "array",
   description: "Zero-based replay records formatted as <index>:<move>.",
   items: {
@@ -84,192 +93,76 @@ function createState(overrides: Partial<State> = {}): State {
   }
 }
 
-// createClock supplies the pause/resume shape expected by feedback precondition checks.
-function createClock(): State["clock"] {
-  return {
-    pause: vi.fn(),
-    resume: vi.fn(),
-    elapsed: vi.fn(),
-    blink: vi.fn(),
-    remaining: vi.fn(),
-  } as unknown as State["clock"]
-}
-
-// createContext provides the minimal runtime hooks consumed by movement feedback execution.
-function createContext(state: State) {
-  return {
-    executeCommand: vi.fn(),
-    state,
-    handleMove: vi.fn((action: MoveAction) => {
-      if (action === "MoveRight") {
-        state.playerPosition = { x: 3, y: 1 }
-        state.traversalHistory = [selfVisit(0, 0), agentVisit(0, 1)]
-      }
-    }),
-    model: "llama3.2",
-    playerName: "Blue",
-  }
-}
-
-// moveAction keeps the flattened action payload concise in expectations.
-function moveAction(type: MoveAction): MazeAction {
-  return { type }
-}
-
-// These tests lock down the compact command feedback returned to agent callers.
-describe("cmd feedback", () => {
-  it("rejects empty traversal history before building agent context", () => {
-    expect(() =>
-      buildMazeActionState(
-        createState({ traversalHistory: [] }),
-        "Blue",
-        "llama3.2",
-      ),
-    ).toThrow("traversalHistory must include the known start cell")
-  })
-
-  it("reports when movement is unavailable", () => {
-    const state = createState({
-      status: "paused",
-      clock: createClock(),
-    })
-    const context = createContext(state)
-
-    expect(
-      executeActionWithFeedback(moveAction("MoveLeft"), context),
-    ).toEqual({
-      currentCell: { row: 0, col: 0 },
-      destinationCell: { row: 0, col: 1 },
-      traversalHistory: [selfVisit(0, 0)],
-      lastPlayerName: "Blue",
-      level: 4,
-      score: 700,
+// These tests lock down the context slices exposed to prediction requests.
+describe("agent context", () => {
+  it("defines focused context tools that extract their own state slices", () => {
+    const agent: AgentApiConfig = {
+      id: 1,
+      playerName: "Blue",
       model: "llama3.2",
-      stream: false,
-      format: "json",
-      status: "paused",
-      recommendedAvgPredictionLimit: 18,
-      prompt: expectedAgentPrompt,
-      expectedResponseSchema,
-      lastMoveStatus: "invalid-move",
-      lastSubmittedMovesIndexBase: 0,
-      lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
-      lastSubmittedMoves: ["0:MoveLeft"],
-      lastValidMoveIndex: null,
-      decayedMovesCount: 0,
-    })
-    expect(context.handleMove).not.toHaveBeenCalled()
-  })
-
-  it("reports blocked movement when a wall is encountered", () => {
-    const state = createState({
-      maze: [
-        ["|", "---", "|", "---", "|"],
-        ["|", "   ", "|", "   ", "|"],
-        ["|", "---", "|", "---", "|"],
-      ],
-    })
-    const context = createContext(state)
-
-    expect(
-      executeActionWithFeedback(moveAction("MoveRight"), context),
-    ).toEqual({
-      currentCell: { row: 0, col: 0 },
-      destinationCell: { row: 0, col: 1 },
-      traversalHistory: [selfVisit(0, 0)],
+      endpoint: "https://agents.example/chat",
+      enabled: true,
+    }
+    const actionResult = buildMazeActionResult("Blue", {
       lastPlayerName: "Blue",
-      level: 4,
-      score: 700,
-      model: "llama3.2",
-      stream: false,
-      format: "json",
-      status: "running",
-      recommendedAvgPredictionLimit: 18,
-      prompt: expectedAgentPrompt,
-      expectedResponseSchema,
-      lastMoveStatus: "invalid-move",
-      lastSubmittedMovesIndexBase: 0,
-      lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
-      lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: null,
-      decayedMovesCount: 0,
-    })
-    expect(context.handleMove).not.toHaveBeenCalled()
-  })
-
-  it("reports when a move reaches the destination", () => {
-    const state = createState()
-    const context = createContext(state)
-    context.handleMove.mockImplementationOnce((action: MoveAction) => {
-      if (action === "MoveRight") {
-        state.playerPosition = { x: 3, y: 1 }
-        state.traversalHistory = [selfVisit(0, 0), agentVisit(0, 1)]
-        state.status = "won"
-      }
-    })
-
-    expect(
-      executeActionWithFeedback(moveAction("MoveRight"), context),
-    ).toEqual({
-      currentCell: { row: 0, col: 1 },
-      destinationCell: { row: 0, col: 1 },
-      traversalHistory: [selfVisit(0, 0), agentVisit(0, 1)],
-      lastPlayerName: "Blue",
-      level: 4,
-      score: 700,
-      model: "llama3.2",
-      stream: false,
-      format: "json",
-      status: "won",
-      recommendedAvgPredictionLimit: 18,
-      prompt: expectedAgentPrompt,
-      expectedResponseSchema,
-      lastMoveStatus: "reached-target",
-      visitedBefore: false,
-      lastSubmittedMovesIndexBase: 0,
-      lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
-      lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
-      decayedMovesCount: 0,
-    })
-    expect(context.handleMove).toHaveBeenCalledWith("MoveRight", "Blue")
-  })
-
-  it("keeps traversal history stable when a move revisits an older cell", () => {
-    const state = createState({
-      playerPosition: { x: 3, y: 1 },
-      traversalHistory: [selfVisit(0, 0), agentVisit(0, 1)],
-    })
-    const context = createContext(state)
-    context.handleMove.mockImplementationOnce((action: MoveAction) => {
-      if (action === "MoveLeft") {
-        state.playerPosition = { x: 1, y: 1 }
-      }
-    })
-
-    expect(
-      executeActionWithFeedback(moveAction("MoveLeft"), context),
-    ).toEqual({
-      currentCell: { row: 0, col: 0 },
-      destinationCell: { row: 0, col: 1 },
-      traversalHistory: [selfVisit(0, 0), agentVisit(0, 1)],
-      lastPlayerName: "Blue",
-      level: 4,
-      score: 700,
-      model: "llama3.2",
-      stream: false,
-      format: "json",
-      status: "running",
-      recommendedAvgPredictionLimit: 18,
-      prompt: expectedAgentPrompt,
-      expectedResponseSchema,
       lastMoveStatus: "applied",
-      visitedBefore: true,
       lastSubmittedMovesIndexBase: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
-      lastSubmittedMoves: ["0:MoveLeft"],
+      lastSubmittedMoves: ["0:MoveRight"],
       lastValidMoveIndex: 0,
-      decayedMovesCount: 0,
+      visitedBefore: false,
+      decayedMovesCount: 1,
+    })
+    const toolHandlers = buildAgentToolHandlers(createState(), agent, actionResult)
+
+    expect(AGENT_CONTEXT_TOOLS.map((tool) => tool.function.name)).toEqual([
+      "get_game_status",
+      "get_maze_positions",
+      "get_traversal_history",
+      "get_prediction_rules",
+      "get_last_replay_result",
+    ])
+    expect(toolHandlers.get_game_status({})).toEqual({
+      level: 4,
+      status: "running",
+      score: 700,
+      model: "llama3.2",
+    })
+    expect(toolHandlers.get_maze_positions({})).toEqual({
+      currentCell: { row: 0, col: 0 },
+      destinationCell: { row: 0, col: 1 },
+    })
+    expect(toolHandlers.get_traversal_history({})).toEqual({
+      traversalHistory: [selfVisit(0, 0)],
+    })
+    expect(toolHandlers.get_prediction_rules({})).toEqual({
+      recommendedAvgPredictionLimit: 18,
+      expectedResponseSchema,
+    })
+    expect(toolHandlers.get_last_replay_result({})).toEqual({
+      lastPlayerName: "Blue",
+      lastMoveStatus: "applied",
+      lastSubmittedMovesIndexBase: 0,
+      lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
+      lastSubmittedMoves: ["0:MoveRight"],
+      lastValidMoveIndex: 0,
+      visitedBefore: false,
+      decayedMovesCount: 1,
     })
   })
+
+  it("builds the initial agent chat message without embedding the full maze state", () => {
+    expect(buildAgentMessages("Blue")).toEqual([
+      {
+        role: "developer",
+        content: expectedAgentPrompt,
+      },
+      {
+        role: "user",
+        content:
+          "It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state. Return only JSON matching the movement response schema.",
+      },
+    ])
+  })
+
 })

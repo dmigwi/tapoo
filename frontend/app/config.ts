@@ -30,7 +30,7 @@ const VERSION_MINOR = 0
 const VERSION_PATCH = 0
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
-const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
+export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
 
 // BUILD_YEAR is injected by esbuild for production and falls back only for local test imports.
 const BUILD_YEAR =

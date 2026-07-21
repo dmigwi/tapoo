@@ -174,7 +174,6 @@ export type PersistedSnapshot = {
 
 // AgentExpectedResponseSchema documents the one supported prediction payload using JSON Schema.
 export type AgentExpectedResponseSchema = {
-  $schema: "https://json-schema.org/draft/2020-12/schema"
   type: "object"
   additionalProperties: false
   required: ["moves"]
@@ -192,7 +191,6 @@ export type AgentExpectedResponseSchema = {
 
 // AgentSubmittedMovesSchema documents the replay records Tapoo returns after processing moves.
 export type AgentSubmittedMovesSchema = {
-  $schema: "https://json-schema.org/draft/2020-12/schema"
   type: "array"
   description: string
   items: {
@@ -219,23 +217,9 @@ export type AgentSeat = {
   agent: AgentApiConfig | null
 }
 
-// MazeActionState is the flattened agent-api payload that combines live maze context with replay results.
-export type MazeActionState = {
-  level: number
-  status: GameStatus
-  score: number
-  model: string
-  stream: false
-  format: "json"
+// MazeActionResult stores only the previous command/replay outcome; live maze facts stay in State.
+export type MazeActionResult = {
   lastPlayerName?: string
-  currentCell: CellCoordinate | null
-  destinationCell: CellCoordinate | null
-  traversalHistory: TraversalHistoryEntry[]
-
-  prompt: string
-  recommendedAvgPredictionLimit: number
-  expectedResponseSchema: AgentExpectedResponseSchema
-
   lastSubmittedMovesIndexBase?: 0
   lastSubmittedMovesSchema?: AgentSubmittedMovesSchema
   lastSubmittedMoves?: string[]
@@ -255,19 +239,19 @@ export type MazeActionDispatchOptions = {
 export type MazeActionDispatch = (
   action: MazeAction,
   options: MazeActionDispatchOptions,
-) => MazeActionState | null
+) => MazeActionResult | null
 
 // MazeActionControl defines the production contract that each browser action-control mode implements.
 export interface MazeActionControl {
   name: MazeControlModeName
   bindActionDispatch: (
     dispatch: MazeActionDispatch,
-    readActionState: () => MazeActionState,
-    commitAgentTurn: (decayedMovesCount: number) => MazeActionState,
+    readState: () => State,
+    commitAgentTurn: (decayedMovesCount: number) => void,
   ) => void
-  readLastActionState: () => MazeActionState | null
-  recordActionState: (actionState: MazeActionState) => void
-  clearActionState: () => void
+  readLastActionResult: () => MazeActionResult | null
+  recordActionResult: (actionResult: MazeActionResult) => void
+  clearActionResult: () => void
 }
 
 // State is the browser runtime's single source of truth for one session.

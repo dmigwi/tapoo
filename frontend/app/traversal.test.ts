@@ -8,6 +8,7 @@ import {
   gridPointFromCellCoordinate,
   isMoveAction,
   isSpaceFound,
+  isValidPersistedRound,
   isWallWeight,
   mazeCellKey,
   nextWallWeight,
@@ -16,7 +17,12 @@ import {
   traversalHistoryEntry,
   traversalHistoryIncludes,
 } from "./traversal"
-import type { MazeAction, State, TraversalHistoryEntry } from "./types"
+import type {
+  MazeAction,
+  PersistedRound,
+  State,
+  TraversalHistoryEntry,
+} from "./types"
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Self", row, col }
@@ -48,6 +54,30 @@ function createState(overrides: Partial<State> = {}): State {
     scoreDecayUnits: 0,
     agentRequestCount: 0,
     clock: null,
+    ...overrides,
+  }
+}
+
+function createPersistedRound(
+  overrides: Partial<PersistedRound> = {},
+): PersistedRound {
+  return {
+    level: 1,
+    mazeDimensions: { length: 2, width: 1, area: 2 },
+    maze: [
+      ["|", "---", "-", "---", "|"],
+      ["|", "   ", " ", "   ", "|"],
+      ["|", "---", "-", "---", "|"],
+    ],
+    startCell: { row: 0, col: 0 },
+    traversalHistory: [selfVisit(0, 0)],
+    playerPosition: { x: 1, y: 1 },
+    finalPosition: { x: 3, y: 1 },
+    wallWeight: 1,
+    status: "running",
+    score: 200,
+    lastRoundScore: 0,
+    remainingMs: 1500,
     ...overrides,
   }
 }
@@ -178,5 +208,53 @@ describe("traversal", () => {
     expect(resolvePlayerMove(createState(), "MoveLeft")).toEqual({
       canMove: false,
     })
+  })
+
+  it("accepts internally consistent persisted rounds", () => {
+    expect(isValidPersistedRound(createPersistedRound())).toBe(true)
+  })
+
+  it("rejects persisted rounds with impossible dimensions or blocked positions", () => {
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
+          mazeDimensions: { length: 2, width: 1, area: 999 },
+        }),
+      ),
+    ).toBe(false)
+
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
+          playerPosition: { x: 2, y: 0 },
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it("rejects persisted traversal history that is empty, duplicated, or starts elsewhere", () => {
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
+          traversalHistory: [],
+        }),
+      ),
+    ).toBe(false)
+
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
+          traversalHistory: [selfVisit(0, 0), selfVisit(0, 0)],
+        }),
+      ),
+    ).toBe(false)
+
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
+          traversalHistory: [selfVisit(0, 1)],
+        }),
+      ),
+    ).toBe(false)
   })
 })
