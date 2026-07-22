@@ -29,6 +29,23 @@ const PLACEHOLDER_ART_ERROR_POLICY: readonly PlaceholderArtErrorPolicy[] = [
 const unknownFallbackReason =
   "An unexpected runtime Error reached the page shell; showing fallback placeholder."
 
+type DiagnosticLevel = "error" | "info" | "warn"
+
+// logTapooDiagnostic keeps browser diagnostics searchable and consistently prefixed.
+export function logTapooDiagnostic(
+  level: DiagnosticLevel,
+  message: string,
+  details?: unknown,
+): void {
+  const formattedMessage = `[Tapoo] ${message}`
+  if (details === undefined) {
+    console[level](formattedMessage)
+    return
+  }
+
+  console[level](formattedMessage, details)
+}
+
 // placeholderArtErrorPolicy resolves the exact known reason behind a fallback decision.
 function placeholderArtErrorPolicy(error: Error): PlaceholderArtErrorPolicy | null {
   return (
@@ -41,7 +58,7 @@ function placeholderArtErrorPolicy(error: Error): PlaceholderArtErrorPolicy | nu
 // logPlaceholderFallback records the original Error so production debugging keeps the stack trace.
 function logPlaceholderFallback(error: Error): void {
   const reason = placeholderArtErrorPolicy(error)?.reason ?? unknownFallbackReason
-  console.error(`[Tapoo] ${reason}`, error)
+  logTapooDiagnostic("error", reason, error)
 }
 
 // showPageView keeps terminal and placeholder visibility mutually exclusive.

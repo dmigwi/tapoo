@@ -13,7 +13,7 @@ function agent(playerName: string): AgentApiConfig {
     id: 1,
     playerName,
     model: "llama3.2",
-    endpoint: "https://agents.example/move",
+    endpoint: new URL("https://agents.example/move"),
     enabled: true,
   }
 }
@@ -31,11 +31,11 @@ describe("agent config", () => {
   })
 
   it("normalizes host-port shorthand into fetch-safe absolute endpoints", () => {
-    expect(normalizeAgentEndpoint("localhost:5000")).toBe("http://localhost:5000/")
-    expect(normalizeAgentEndpoint("123.34.56.89:5000")).toBe(
+    expect(normalizeAgentEndpoint("localhost:5000")?.href).toBe("http://localhost:5000/")
+    expect(normalizeAgentEndpoint("123.34.56.89:5000")?.href).toBe(
       "http://123.34.56.89:5000/",
     )
-    expect(normalizeAgentEndpoint("https://agents.example/move")).toBe(
+    expect(normalizeAgentEndpoint("https://agents.example/move")?.href).toBe(
       "https://agents.example/move",
     )
     expect(normalizeAgentEndpoint("ftp://agents.example/move")).toBeNull()

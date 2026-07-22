@@ -11,9 +11,10 @@ import type {
 } from "../types"
 import { handleAgentTurnLoop } from "./agent-api"
 
-const agentMovePollIntervalMs = CONFIG.timing.agentApiCoreDecayIntervalPerCellMs
+const testAgentMovePollIntervalMs = 5
+const testAgentResponseTimeoutMs = 20
+const originalAgentResponseTimeoutMs = CONFIG.timing.agentApiResponseTimeoutMs
 type SerializedRequestBody = {
-  format: "json"
   model: string
   stream: false
   think: false
@@ -64,7 +65,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
       id: 1,
       playerName: "Blue",
       model: "llama3.2",
-      endpoint: "https://agents.example/move",
+      endpoint: new URL("https://agents.example/move"),
       enabled: true,
     },
   ]
@@ -76,12 +77,18 @@ function createDisableAgentAfterNetworkError() {
   })
 }
 
+async function flushImmediateAgentTurn(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0)
+}
+
 describe("agent api turn loop", () => {
   beforeEach(() => {
+    CONFIG.timing.agentApiResponseTimeoutMs = testAgentResponseTimeoutMs
     vi.useFakeTimers()
   })
 
   afterEach(() => {
+    CONFIG.timing.agentApiResponseTimeoutMs = originalAgentResponseTimeoutMs
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
@@ -110,20 +117,17 @@ describe("agent api turn loop", () => {
       __readState: () => state,
     })
 
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     expect(fetchMock).not.toHaveBeenCalled()
 
     poller.__setAttached(true)
     state = createState({ status: "paused" })
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     expect(fetchMock).not.toHaveBeenCalled()
 
     state = createState({ status: "running" })
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(elements.body.dataset.agentControl).toBe("active")
   })
@@ -145,7 +149,7 @@ describe("agent api turn loop", () => {
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
 
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Self" })
     expect(fetchMock).not.toHaveBeenCalled()
@@ -173,9 +177,8 @@ describe("agent api turn loop", () => {
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
   })
@@ -222,8 +225,9 @@ describe("agent api turn loop", () => {
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(dispatchAgentAction).toHaveBeenCalledTimes(3)
 
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       1,
@@ -260,28 +264,28 @@ describe("agent api turn loop", () => {
         id: 1,
         playerName: "Agent A",
         model: "llama3.2",
-        endpoint: "/api/agents/a/move",
+        endpoint: new URL("https://agents.example/api/agents/a/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Agent B",
         model: "gemma4",
-        endpoint: "/api/agents/b/move",
+        endpoint: new URL("https://agents.example/api/agents/b/move"),
         enabled: true,
       },
       {
         id: 3,
         playerName: "Disabled Agent",
         model: "disabled-model",
-        endpoint: "/api/agents/disabled/move",
+        endpoint: new URL("https://agents.example/api/agents/disabled/move"),
         enabled: false,
       },
       {
         id: 4,
         playerName: "Agent C",
         model: "qwen3",
-        endpoint: "/api/agents/c/move",
+        endpoint: new URL("https://agents.example/api/agents/c/move"),
         enabled: true,
       },
     ]
@@ -315,24 +319,29 @@ describe("agent api turn loop", () => {
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "/api/agents/a/move",
+      new URL("https://agents.example/api/agents/a/move"),
       expect.objectContaining({ method: "POST" }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "/api/agents/b/move",
+      new URL("https://agents.example/api/agents/b/move"),
       expect.objectContaining({ method: "POST" }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "/api/agents/c/move",
+      new URL("https://agents.example/api/agents/c/move"),
       expect.objectContaining({ method: "POST" }),
     )
 
@@ -354,19 +363,16 @@ describe("agent api turn loop", () => {
 
     expect(firstRequestBody).toEqual(expect.objectContaining({
       model: "llama3.2",
-      format: "json",
       stream: false,
       think: false,
     }))
     expect(secondRequestBody).toEqual(expect.objectContaining({
       model: "gemma4",
-      format: "json",
       stream: false,
       think: false,
     }))
     expect(thirdRequestBody).toEqual(expect.objectContaining({
       model: "qwen3",
-      format: "json",
       stream: false,
       think: false,
     }))
@@ -429,8 +435,9 @@ describe("agent api turn loop", () => {
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(dispatchAgentAction).toHaveBeenCalledTimes(1)
 
     expect(dispatchAgentAction).toHaveBeenCalledTimes(1)
     expect(onActionResult).toHaveBeenCalledWith(
@@ -470,13 +477,13 @@ describe("agent api turn loop", () => {
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-
-    expect(dispatchAgentAction).not.toHaveBeenCalled()
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
     expect(commitAgentTurn).toHaveBeenCalledWith(
       CONFIG.runtime.agentApiMistakePenaltyMoves,
     )
+
+    expect(dispatchAgentAction).not.toHaveBeenCalled()
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "malformed-response",
@@ -512,9 +519,10 @@ describe("agent api turn loop", () => {
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-    await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiResponseTimeoutMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(testAgentResponseTimeoutMs)
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
@@ -553,8 +561,9 @@ describe("agent api turn loop", () => {
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
@@ -590,8 +599,9 @@ describe("agent api turn loop", () => {
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])

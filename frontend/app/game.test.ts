@@ -24,7 +24,7 @@ function enabledAgentConfig(): AgentApiConfig {
     id: 1,
     playerName: "Blue",
     model: "llama3.2",
-    endpoint: "/configured-agents/blue/move",
+    endpoint: new URL("https://agents.example/blue/move"),
     enabled: true,
   }
 }

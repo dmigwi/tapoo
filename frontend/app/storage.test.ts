@@ -32,6 +32,10 @@ function agentStorageKey(suffix: string): string {
   return `tapoo.v${CONFIG.runtime.storage.version}.${AGENT_MODE}.${suffix}`
 }
 
+function endpoint(path: string): URL {
+  return new URL(path, "https://agents.example")
+}
+
 // versionedStorageKey builds explicit namespaces for storage-version cleanup tests.
 function versionedStorageKey(
   version: number,
@@ -155,14 +159,14 @@ describe("storage", () => {
         id: 1,
         playerName: "Agent A",
         model: "llama3.2",
-        endpoint: "/api/agents/a/move",
+        endpoint: endpoint("/api/agents/a/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Agent B",
         model: "gemma4",
-        endpoint: "/api/agents/b/move",
+        endpoint: endpoint("/api/agents/b/move"),
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_000,
@@ -180,14 +184,14 @@ describe("storage", () => {
         id: 1,
         playerName: "Agent A",
         model: "llama3.2",
-        endpoint: "/api/agents/a/move",
+        endpoint: endpoint("/api/agents/a/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Agent B",
         model: "gemma4",
-        endpoint: "/api/agents/b/move",
+        endpoint: endpoint("/api/agents/b/move"),
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_000,
@@ -207,42 +211,42 @@ describe("storage", () => {
         id: 1,
         playerName: "Aone",
         model: "llama3.2",
-        endpoint: "/api/agents/1/move",
+        endpoint: endpoint("/api/agents/1/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Atwo",
         model: "gemma4",
-        endpoint: "/api/agents/2/move",
+        endpoint: endpoint("/api/agents/2/move"),
         enabled: false,
       },
       {
         id: 3,
         playerName: "Athr",
         model: "qwen3",
-        endpoint: "/api/agents/3/move",
+        endpoint: endpoint("/api/agents/3/move"),
         enabled: true,
       },
       {
         id: 4,
         playerName: "Afou",
         model: "mistral",
-        endpoint: "/api/agents/4/move",
+        endpoint: endpoint("/api/agents/4/move"),
         enabled: true,
       },
       {
         id: 5,
         playerName: "Afiv",
         model: "deepseek",
-        endpoint: "/api/agents/5/move",
+        endpoint: endpoint("/api/agents/5/move"),
         enabled: true,
       },
       {
         id: 6,
         playerName: "Asix",
         model: "phi4",
-        endpoint: "/api/agents/6/move",
+        endpoint: endpoint("/api/agents/6/move"),
         enabled: true,
       },
     ])
@@ -269,7 +273,7 @@ describe("storage", () => {
         id: index + 1,
         playerName: `A${index + 1}bot`,
         model: "llama3.2",
-        endpoint: `/api/agents/${index + 1}/move`,
+        endpoint: endpoint(`/api/agents/${index + 1}/move`),
         enabled: true,
       })),
     )
@@ -317,14 +321,14 @@ describe("storage", () => {
         id: 1,
         playerName: "Agent A",
         model: "llama3.2",
-        endpoint: "/api/agents/a/move",
+        endpoint: endpoint("/api/agents/a/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Agent B",
         model: "gemma4",
-        endpoint: "/api/agents/b/move",
+        endpoint: endpoint("/api/agents/b/move"),
         enabled: true,
       },
     ])
@@ -333,7 +337,7 @@ describe("storage", () => {
       id: 2,
       playerName: "Agent B",
       model: "gemma4",
-      endpoint: "/api/agents/b/move",
+      endpoint: endpoint("/api/agents/b/move"),
       enabled: true,
     })
 
@@ -342,14 +346,14 @@ describe("storage", () => {
         id: 1,
         playerName: "Agent A",
         model: "llama3.2",
-        endpoint: "/api/agents/a/move",
+        endpoint: endpoint("/api/agents/a/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Agent B",
         model: "gemma4",
-        endpoint: "/api/agents/b/move",
+        endpoint: endpoint("/api/agents/b/move"),
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_001,

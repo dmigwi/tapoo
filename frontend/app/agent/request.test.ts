@@ -1,6 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import type { MockInstance } from "vitest"
 
+import { EXPECTED_RESPONSE_SCHEMA } from "./context"
 import { requestPredictionWithAbort } from "./request"
+import { getNavigationProfile } from "../maze"
 import type {
   AgentApiConfig,
   MazeActionResult,
@@ -90,7 +93,7 @@ const agent: AgentApiConfig = {
   id: 1,
   playerName: "Blue",
   model,
-  endpoint,
+  endpoint: new URL(endpoint),
   enabled: true,
 }
 
@@ -118,12 +121,21 @@ const state: State = {
 }
 
 type SerializedRequestBody = {
-  format: "json"
   messages: unknown[]
   model: string
   stream: false
   think: false
   tools: unknown[]
+}
+
+type AgentLogDetails = {
+  endpoint: string
+  payload: {
+    message?: { content?: string }
+    model?: string
+    stream?: boolean
+    think?: boolean
+  }
 }
 
 function requestInput(
@@ -167,6 +179,20 @@ function toolCallResponse(toolCalls: unknown[]) {
   }
 }
 
+function thinkingToolCallResponse(toolCalls: unknown[]) {
+  return {
+    ok: true,
+    json: vi.fn().mockResolvedValue({
+      message: {
+        role: "assistant",
+        content: "",
+        thinking: "I should inspect the maze state before predicting moves.",
+        tool_calls: toolCalls,
+      },
+    }),
+  }
+}
+
 // positionsContent mirrors the exact JSON string sent by the focused positions tool.
 function positionsContent(overrides: Partial<State> = {}): string {
   const nextState = { ...state, ...overrides }
@@ -187,7 +213,16 @@ function positionsContent(overrides: Partial<State> = {}): string {
 }
 
 describe("agent request service", () => {
+  let info: MockInstance<typeof console.info>
+  let warn: MockInstance<typeof console.warn>
+
+  beforeEach(() => {
+    info = vi.spyOn(console, "info").mockImplementation(() => {})
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+  })
+
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
@@ -228,7 +263,6 @@ describe("agent request service", () => {
         },
       ],
       tools: agentContextTools,
-      format: "json",
       think: false,
       stream: false,
     }
@@ -275,12 +309,11 @@ describe("agent request service", () => {
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      endpoint,
+      new URL(endpoint),
       expect.objectContaining({
         headers: {
           "Accept": "application/json",
           "Content-Type": "application/json",
-          "X-Tapoo-Agent": "tapoo:v2.0.0",
         },
         method: "POST",
       }),
@@ -295,10 +328,23 @@ describe("agent request service", () => {
         { role: "user", content: userMessage },
       ],
       tools: agentContextTools,
-      format: "json",
       think: false,
       stream: false,
     })
+    const requestLog = info.mock.calls.find(([message]) =>
+      message === "[Tapoo] Agent request.",
+    )?.[1] as AgentLogDetails | undefined
+    const responseLog = info.mock.calls.find(([message]) =>
+      message === "[Tapoo] Agent response.",
+    )?.[1] as AgentLogDetails | undefined
+    expect(requestLog?.endpoint).toBe(endpoint)
+    expect(requestLog?.payload.model).toBe(model)
+    expect(requestLog?.payload.stream).toBe(false)
+    expect(requestLog?.payload.think).toBe(false)
+    expect(responseLog?.endpoint).toBe(endpoint)
+    expect(responseLog?.payload.message?.content).toBe(
+      "{\"moves\":[\"MoveRight\",\"MoveDown\"]}",
+    )
   })
 
   it("executes one tool-call round before reading the final prediction", async () => {
@@ -387,6 +433,84 @@ describe("agent request service", () => {
     ])
   })
 
+  it("detects Ollama thinking responses that include native tool calls", async () => {
+    const firstResponse = thinkingToolCallResponse([
+      {
+        id: "call_status",
+        function: { index: 0, name: "get_game_status", arguments: {} },
+      },
+      {
+        id: "call_positions",
+        function: { index: 1, name: "get_maze_positions", arguments: {} },
+      },
+      {
+        id: "call_history",
+        function: { index: 2, name: "get_traversal_history", arguments: {} },
+      },
+      {
+        id: "call_rules",
+        function: { index: 3, name: "get_prediction_rules", arguments: {} },
+      },
+      {
+        id: "call_replay",
+        function: { index: 4, name: "get_last_replay_result", arguments: {} },
+      },
+    ])
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(firstResponse)
+      .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(requestPrediction(requestInput())).resolves.toEqual({
+      ok: true,
+      moves: ["MoveRight"],
+    })
+
+    expect(firstResponse.json).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
+    const secondRequestBody = JSON.parse(secondRequest.body as string) as SerializedRequestBody
+    const toolMessages = secondRequestBody.messages.slice(-5) as Array<{
+      role: string
+      tool_name: string
+      content: string
+    }>
+    expect(toolMessages.map(({ role, tool_name }) => ({ role, tool_name }))).toEqual([
+      { role: "tool", tool_name: "get_game_status" },
+      { role: "tool", tool_name: "get_maze_positions" },
+      { role: "tool", tool_name: "get_traversal_history" },
+      { role: "tool", tool_name: "get_prediction_rules" },
+      { role: "tool", tool_name: "get_last_replay_result" },
+    ])
+    expect(toolMessages.map(({ content }) => JSON.parse(content) as unknown)).toEqual([
+      {
+        level: state.level,
+        status: state.status,
+        score: state.score,
+        model: agent.model,
+      },
+      JSON.parse(positionsContent()) as unknown,
+      { traversalHistory: state.traversalHistory },
+      {
+        recommendedAvgPredictionLimit:
+          getNavigationProfile(state.mazeDimensions).__softCorridorLimit +
+          getNavigationProfile(state.mazeDimensions).__hardCorridorLimit,
+        expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
+      },
+      {
+        lastPlayerName: null,
+        lastMoveStatus: null,
+        lastSubmittedMovesIndexBase: null,
+        lastSubmittedMovesSchema: null,
+        lastSubmittedMoves: [],
+        lastValidMoveIndex: null,
+        visitedBefore: null,
+        decayedMovesCount: 0,
+      },
+    ])
+  })
+
   it.each([
     ["invalid json", "not-json"],
     ["missing moves", "{}"],
@@ -399,6 +523,18 @@ describe("agent request service", () => {
       ok: false,
       reason: "malformed-response",
     })
+    expect(warn).toHaveBeenCalledWith(
+      "[Tapoo] Agent prediction failed.",
+      expect.objectContaining({
+        lastMoveStatus: null,
+        level: state.level,
+        model: agent.model,
+        playerName: agent.playerName,
+        reason: "malformed-response",
+        status: state.status,
+        timeoutMs: 180_000,
+      }),
+    )
   })
 
   it.each([
@@ -411,6 +547,13 @@ describe("agent request service", () => {
       ok: false,
       reason: "network-error",
     })
+    expect(warn).toHaveBeenCalledWith(
+      "[Tapoo] Agent prediction failed.",
+      expect.objectContaining({
+        endpoint: "https://agents.example/chat",
+        reason: "network-error",
+      }),
+    )
   })
 
   it("returns network-error when the request times out", async () => {

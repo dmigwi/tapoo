@@ -187,7 +187,7 @@ export const CONFIG: AppConfig = {
     modelPlaceholder: "llama3.2",
     endpointLabel: "Endpoint",
     submitLabel: "Add Agent",
-    endpointPlaceholder: "localhost:5000 or https://example.com/api/agent/move",
+    endpointPlaceholder: "http://localhost:11434/api/chat",
     invalidMessage: "Fill in Player Name, Model and Endpoint.",
     invalidEndpointMessage:
       "Endpoint must be an http:// or https:// URL, or host:port.",

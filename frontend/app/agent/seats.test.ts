@@ -21,7 +21,7 @@ function agent(id: number, playerName: string): AgentApiConfig {
     id,
     playerName,
     model: "llama3.2",
-    endpoint: "https://example.test/move",
+    endpoint: new URL("https://example.test/move"),
     enabled: true,
   }
 }

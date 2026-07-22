@@ -3,6 +3,7 @@ import {
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
 } from "./config"
+import { normalizeAgentEndpoint } from "./agent/config"
 import { isAgentSeatId } from "./agent/seats"
 import { canPersistRoundStatus, isAgentApiMode } from "./status"
 import {
@@ -146,8 +147,8 @@ function hasValidAgentPlayerName(playerName: string): boolean {
   )
 }
 
-// isAgentApiConfig validates one persisted HTTP agent configuration.
-function isAgentApiConfig(value: unknown): value is AgentApiConfig {
+// normalizeAgentApiConfig validates persisted data and restores endpoint as a URL object.
+function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   if (
     typeof value !== "object" ||
     value === null ||
@@ -157,24 +158,43 @@ function isAgentApiConfig(value: unknown): value is AgentApiConfig {
     !("endpoint" in value) ||
     !("enabled" in value)
   ) {
-    return false
+    return null
   }
 
-  const disabledReason = "disabledReason" in value ? value.disabledReason : undefined
+  const disabledReasonValue = "disabledReason" in value ? value.disabledReason : undefined
   const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
+  const endpointValue = value.endpoint
+  const endpoint =
+    endpointValue instanceof URL
+      ? normalizeAgentEndpoint(endpointValue.href)
+      : typeof endpointValue === "string"
+        ? normalizeAgentEndpoint(endpointValue)
+        : null
 
-  return (
+  if (
     typeof value.id === "number" &&
     Number.isInteger(value.id) && value.id >= 1 &&
     typeof value.playerName === "string" &&
     hasValidAgentPlayerName(value.playerName.trim()) &&
     typeof value.model === "string" && value.model.length > 0 &&
-    typeof value.endpoint === "string" && value.endpoint.length > 0 &&
-    typeof value.enabled === "boolean" &&
-    (disabledReason === undefined || disabledReason === "network-error") &&
-    (lastErrorAt === undefined ||
-      (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt)))
-  )
+    endpoint !== null && typeof value.enabled === "boolean" &&
+    (disabledReasonValue === undefined || disabledReasonValue === "network-error") &&
+    (lastErrorAt === undefined || (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt)))
+  ) {
+    const disabledReason = disabledReasonValue === "network-error" ? disabledReasonValue : undefined
+
+    return {
+      id: value.id,
+      playerName: value.playerName.trim(),
+      model: value.model,
+      endpoint,
+      enabled: value.enabled,
+      ...(disabledReason ? { disabledReason } : {}),
+      ...(typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
+    }
+  }
+
+  return null
 }
 
 // normalizeAgentApiConfigs keeps valid fixed-seat occupants without reassigning seat ids.
@@ -187,9 +207,10 @@ function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
   const seenPlayerNames = new Set<string>()
   const normalizedConfigs: AgentApiConfig[] = []
 
-  for (const config of configs) {
+  for (const rawConfig of configs) {
+    const config = normalizeAgentApiConfig(rawConfig)
     if (
-      !isAgentApiConfig(config) ||
+      !config ||
       !isAgentSeatId(config.id) ||
       seenIds.has(config.id)
     ) {

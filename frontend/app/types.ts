@@ -205,7 +205,7 @@ export type AgentApiConfig = {
   id: number
   playerName: string
   model: string
-  endpoint: string
+  endpoint: URL
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number

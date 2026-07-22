@@ -190,13 +190,20 @@ export function createAgentMode(
         __readState: readState,
       })
 
+      const renderAgentRoster = (): void => {
+        const currentPlayingAgentId = isRunningStatus(readState().status) ? activeAgentId : null
+        renderAgentSeatRoster(elements.agentSeatRoster,  readAgentConfigs(), currentPlayingAgentId)
+      }
+
       const syncCurrentPoller = (): void => {
         if (!agentMovePoller) {
           return
         }
 
         agentMovePoller.__stopPolling()
+        renderAgentRoster()
         if (agentMovePoller.__shouldPollAgent()) {
+          // Human-triggered start/resume paths poll immediately so agent play begins without a stale wait.
           agentMovePoller.__scheduleNextAgentTurn()
         }
       }
@@ -216,10 +223,6 @@ export function createAgentMode(
 
         dispatch({ type: "pause" }, { playerName: runtime.interactivePlayerName })
         syncCurrentPoller()
-      }
-
-      const renderAgentRoster = (): void => {
-        renderAgentSeatRoster(elements.agentSeatRoster, readAgentConfigs(), activeAgentId)
       }
 
       const clearAgentConfigStatus = (): void => {
@@ -420,11 +423,17 @@ export function createAgentMode(
             return
           }
 
+          const normalizedEndpoint = normalizeAgentEndpoint(endpoint)
+          if (!normalizedEndpoint) {
+            setAgentConfigError(agentConfig.invalidEndpointMessage)
+            return
+          }
+
           const nextAgent: AgentApiConfig = {
             id: selectedSeatId,
             playerName,
             model,
-            endpoint: normalizeAgentEndpoint(endpoint) ?? endpoint,
+            endpoint: normalizedEndpoint,
             enabled,
           }
 

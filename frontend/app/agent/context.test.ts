@@ -58,7 +58,7 @@ const expectedLastSubmittedMovesSchema: NonNullable<
   items: {
     type: "string",
     pattern: "^(0|[1-9][0-9]*):(MoveUp|MoveDown|MoveLeft|MoveRight)$",
-    examples: ["0:MoveRight"],
+    examples: ["0:MoveRight", "1:MoveUp", "2:MoveRight"],
   },
 }
 
@@ -100,7 +100,7 @@ describe("agent context", () => {
       id: 1,
       playerName: "Blue",
       model: "llama3.2",
-      endpoint: "https://agents.example/chat",
+      endpoint: new URL("https://agents.example/chat"),
       enabled: true,
     }
     const actionResult = buildMazeActionResult("Blue", {

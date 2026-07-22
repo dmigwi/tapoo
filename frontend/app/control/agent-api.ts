@@ -24,7 +24,7 @@ function mergeReplayResult(
 export type AgentMovePoller = {
   __stopPolling: () => void
   __shouldPollAgent: () => boolean
-  __scheduleNextAgentTurn: () => void
+  __scheduleNextAgentTurn: (delayMs?: number) => void
   __setAttached: (attached: boolean) => void
   __setLastActionResult: (actionResult: MazeActionResult | null) => void
 }
@@ -141,10 +141,13 @@ export function handleAgentTurnLoop({
     __onActionResult(nextResult)
   }
 
-  // scheduleNextAgentTurn waits for the derived agent-api poll interval before asking again.
-  const scheduleNextAgentTurn = (): void => {
+  // scheduleNextAgentTurn starts/resumes immediately, then delays internal loop continuations.
+  const scheduleNextAgentTurn = (
+    delayMs = timing.agentApiCoreDecayIntervalPerCellMs,
+    isDelay = false,
+  ): void => {
     clearScheduledTurn()
-    if (!shouldPollAgent()) {
+    if (!shouldPollAgent() || activeRequest) {
       return
     }
 
@@ -152,15 +155,21 @@ export function handleAgentTurnLoop({
       return
     }
 
-    const agentMovePollIntervalMs = timing.agentApiCoreDecayIntervalPerCellMs
+    if (!isDelay) {
+      void requestNextAgentTurn(delayMs)
+      return
+    }
+
     scheduledTurn = window.setTimeout(() => {
       scheduledTurn = null
-      void requestNextAgentTurn()
-    }, agentMovePollIntervalMs)
+      void requestNextAgentTurn(delayMs)
+    }, delayMs)
   }
 
   // requestNextAgentTurn asks the next enabled agent for moves, then replays only successful predictions here.
-  const requestNextAgentTurn = async (): Promise<void> => {
+  const requestNextAgentTurn = async (
+    nextDelayMs = timing.agentApiCoreDecayIntervalPerCellMs,
+  ): Promise<void> => {
     if (!shouldPollAgent()) {
       return
     }
@@ -233,9 +242,7 @@ export function handleAgentTurnLoop({
         lastPlayerName: selectedAgent.playerName,
         lastMoveStatus: lastReplayResult.lastMoveStatus,
         visitedBefore: lastReplayResult.visitedBefore,
-        lastSubmittedMoves: submittedMoves.map(
-          (move, index) => `${index}:${move}`,
-        ),
+        lastSubmittedMoves: submittedMoves.map((move, index) => `${index}:${move}`),
         lastValidMoveIndex: appliedMoveCount > 0 ? appliedMoveCount - 1 : null,
         decayedMovesCount,
       })
@@ -245,13 +252,17 @@ export function handleAgentTurnLoop({
     } finally {
       activeRequest = null
       if (shouldPollAgent()) {
-        scheduleNextAgentTurn()
+        // Completed agent turns schedule the next poll after the configured delay to pace API traffic.
+        scheduleNextAgentTurn(nextDelayMs, true)
       }
     }
   }
 
   return {
-    __scheduleNextAgentTurn: scheduleNextAgentTurn,
+    // External callers can tune delay duration for tests, but cannot force delayed mode.
+    __scheduleNextAgentTurn(delayMs) {
+      scheduleNextAgentTurn(delayMs)
+    },
     __setAttached(nextAttached) {
       attached = nextAttached
       __elements.body.dataset.agentControl = nextAttached ? "active" : "idle"

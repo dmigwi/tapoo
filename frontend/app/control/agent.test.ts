@@ -12,18 +12,18 @@ import type {
   MazeAction,
   MazeActionDispatchOptions,
   MazeActionResult,
+  GameStatus,
   State,
   TraversalHistoryEntry,
 } from "../types"
 
-const agentMovePollIntervalMs = CONFIG.timing.agentApiCoreDecayIntervalPerCellMs
 function enabledAgentConfigs(): AgentApiConfig[] {
   return [
     {
       id: 1,
       playerName: "Blue",
       model: "llama3.2",
-      endpoint: "/configured-agents/blue/move",
+      endpoint: new URL("https://agents.example/blue/move"),
       enabled: true,
     },
   ]
@@ -31,6 +31,10 @@ function enabledAgentConfigs(): AgentApiConfig[] {
 
 function createTestAgentMode(elements: Parameters<typeof createAgentMode>[0]) {
   return createAgentMode(elements, enabledAgentConfigs)
+}
+
+async function flushImmediateAgentTurn(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0)
 }
 
 function visit(row: number, col: number): TraversalHistoryEntry {
@@ -285,17 +289,16 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
 
     expect(fetchMock).toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalledWith(
-      "/configured-agents/blue/move",
+      new URL("https://agents.example/blue/move"),
       expect.objectContaining({
         method: "POST",
         headers: {
           "Accept": "application/json",
           "Content-Type": "application/json",
-          "X-Tapoo-Agent": "tapoo:v2.0.0",
         },
       }),
     )
@@ -307,7 +310,6 @@ describe("agent control mode", () => {
 
     expect(JSON.parse(request.body)).toEqual(expect.objectContaining({
       model: "llama3.2",
-      format: "json",
       stream: false,
       think: false,
     }))
@@ -375,7 +377,7 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(commitAgentTurn).toHaveBeenCalledWith(1)
@@ -443,7 +445,7 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(2)
     expect(commitAgentTurn).toHaveBeenCalledWith(
@@ -507,7 +509,7 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith(
@@ -670,11 +672,11 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
 
     mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
     expect(fetchMock).not.toHaveBeenCalled()
 
     elements.touchButtons[0].click()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
 
     expect(fetchMock).toHaveBeenCalled()
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: "proceed" }, { playerName: "Self" })
@@ -743,7 +745,8 @@ describe("agent control mode", () => {
     }))
     mode.clearActionResult()
 
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
 
     const request = fetchMock.mock.calls[1][1] as RequestInit
     if (typeof request.body !== "string") {
@@ -788,7 +791,7 @@ describe("agent control mode", () => {
       vi.fn(() => createControlFixture()),
       vi.fn(() => createControlFixture()),
     )
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
 
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(
       enabledAgentConfigs()[0],
@@ -807,14 +810,14 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Blue",
         model: "llama3.2",
-        endpoint: "/agents/blue/move",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Grey",
         model: "gemma4",
-        endpoint: "/agents/grey/move",
+        endpoint: new URL("https://agents.example/agents/grey/move"),
         enabled: false,
       },
     ])
@@ -858,14 +861,14 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Blue",
         model: "llama3.2",
-        endpoint: "/agents/blue/move",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Red",
         model: "gemma4",
-        endpoint: "/agents/red/move",
+        endpoint: new URL("https://agents.example/agents/red/move"),
         enabled: true,
       },
     ])
@@ -913,14 +916,14 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Blue",
         model: "llama3.2",
-        endpoint: "/agents/blue/move",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Red",
         model: "gemma4",
-        endpoint: "/agents/red/move",
+        endpoint: new URL("https://agents.example/agents/red/move"),
         enabled: true,
       },
     ])
@@ -950,7 +953,7 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Blue",
         model: "llama3.2",
-        endpoint: "/agents/blue/move",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
         enabled: false,
       },
     ])
@@ -994,14 +997,14 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Blue",
         model: "llama3.2",
-        endpoint: "/agents/blue/move",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Red",
         model: "gemma4",
-        endpoint: "/agents/red/move",
+        endpoint: new URL("https://agents.example/agents/red/move"),
         enabled: true,
       },
     ])
@@ -1021,8 +1024,7 @@ describe("agent control mode", () => {
       vi.fn(() => createControlFixture()),
     )
 
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-
+    await flushImmediateAgentTurn()
     expect(
       elements.agentSeatRoster
         ?.querySelector('[data-agent-seat-id="1"]')
@@ -1036,6 +1038,59 @@ describe("agent control mode", () => {
         '[data-agent-seat-id="1"]',
       )?.disabled,
     ).toBe(true)
+  })
+
+  it("clears the active agent seat when the maze stops running", async () => {
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
+        enabled: true,
+      },
+    ])
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+      }),
+    }))
+    const elements = createAgentFormElements()
+    elements.touchButtons = [createButton({ action: "pause" })]
+    let status: GameStatus = "running"
+
+    const mode = createAgentMode(elements)
+    const dispatch = vi.fn((action: { type: string }) => {
+      if (action.type === "pause") {
+        status = "paused"
+      }
+
+      return createControlFixture({ lastMoveStatus: "applied", status })
+    })
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createControlFixture({ status })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    await flushImmediateAgentTurn()
+    expect(
+      elements.agentSeatRoster
+        ?.querySelector('[data-agent-seat-id="1"]')
+        ?.classList.contains("agent-seat--active"),
+    ).toBe(true)
+
+    elements.touchButtons[0].click()
+
+    expect(
+      elements.agentSeatRoster
+        ?.querySelector('[data-agent-seat-id="1"]')
+        ?.classList.contains("agent-seat--active"),
+    ).toBe(false)
+    expect(
+      elements.agentSeatRoster?.querySelector('[data-agent-seat-delete="1"]'),
+    ).not.toBeNull()
   })
 
   it("opens the agent configuration form from an empty seat", () => {
@@ -1246,7 +1301,7 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Scout",
         model: "gemma4",
-        endpoint: "http://localhost:5000/",
+        endpoint: new URL("http://localhost:5000/"),
         enabled: true,
       }),
     ])
@@ -1386,7 +1441,7 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Scout",
         model: "llama3.2",
-        endpoint: "https://agents.example/scout/move",
+        endpoint: new URL("https://agents.example/scout/move"),
         enabled: true,
       },
     ])
