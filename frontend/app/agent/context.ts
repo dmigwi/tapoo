@@ -126,12 +126,15 @@ export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
 // buildMazeActionPrompt keeps request guidance compact while naming the active player.
 export function buildMazeActionPrompt(playerName: string): string {
   return [
-    `Your name is ${playerName}.`,
-    `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
-    "Use currentCell as your current position and destinationCell as the target.",
-    "The maze is randomly generated each level with exactly one path to the destination.",
+    `Your name is ${playerName}. playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and`,
+    "marks the start cell. Use currentCell as your current position and destinationCell as the target.",
+    "The maze is randomly generated at each level with exactly one path to the destination.",
     "Use traversalHistory entries matching your playerName to review your past moves in order.",
-    "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
+    "By design, the maze never guarantees a direct route from start to destination; the only valid path may require",
+    "moving away from the target before turning towards it — never assume the direction vector to the destination is traversable.",
+    "Prefer unvisited cells in any direction over revisiting known cells, and calibrate how many moves you submit",
+    "against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty",
+    "so submit fewer moves; applied signals a confirmed corridor so you may extend further.",
     `Return only JSON {"moves":["MoveRight",...]} where each move is one of MoveUp, MoveDown, MoveLeft, MoveRight.`,
     "Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step).",
     "Every submitted move counts toward score decay, including moves after the first invalid move.",
