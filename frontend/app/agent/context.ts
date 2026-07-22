@@ -59,13 +59,13 @@ const emptyToolParameters: AgentToolDefinition["function"]["parameters"] = {
 }
 
 // Tool return formats are documented in descriptions because `parameters` only describes inputs.
-// gameStatusTool exposes round progress and the configured model without leaking full state.
+// gameStatusTool exposes round progress and maze dimensions without leaking full state.
 const gameStatusTool: AgentToolDefinition = {
   type: "function",
   function: {
     name: "get_game_status",
     description:
-      "Get current Tapoo level, status, score, and model. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"model\":string}.",
+      "Get current Tapoo level, status, score, and maze dimensions. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"mazeDimensions\":{\"length\":number,\"width\":number,\"area\":number}}. length is the number of columns, width is the number of rows, area is the total cell count.",
     parameters: emptyToolParameters,
   },
 }
@@ -76,7 +76,7 @@ const mazePositionsTool: AgentToolDefinition = {
   function: {
     name: "get_maze_positions",
     description:
-      "Get current and destination cells. Returns JSON: {\"currentCell\":{\"row\":number,\"col\":number}|null,\"destinationCell\":{\"row\":number,\"col\":number}|null}.",
+      "Get current and destination cells. Row increases going down, col increases going right; MoveUp/Down changes row by ±1, MoveLeft/Right changes col by ±1. Returns JSON: {\"currentCell\":{\"row\":number,\"col\":number}|null,\"destinationCell\":{\"row\":number,\"col\":number}|null}.",
     parameters: emptyToolParameters,
   },
 }
@@ -87,7 +87,7 @@ const traversalHistoryTool: AgentToolDefinition = {
   function: {
     name: "get_traversal_history",
     description:
-      "Get chronological visited cells. Returns JSON: {\"traversalHistory\":[{\"playerName\":string,\"row\":number,\"col\":number}]}.",
+      "Get all players' visited cells in chronological order. Returns JSON: {\"traversalHistory\":[{\"playerName\":string,\"row\":number,\"col\":number}]}. Filter by playerName to get a specific player's path.",
     parameters: emptyToolParameters,
   },
 }
@@ -98,7 +98,7 @@ const predictionRulesTool: AgentToolDefinition = {
   function: {
     name: "get_prediction_rules",
     description:
-      "Get movement response rules. Returns JSON: {\"recommendedAvgPredictionLimit\":number,\"expectedResponseSchema\":object}.",
+      "Get movement response rules. suggestedMovesPerTurn is the suggested maximum moves to submit per turn, scaled to maze size; submitting fewer moves on early turns limits wasted score if the path turns out to be wrong. Returns JSON: {\"suggestedMovesPerTurn\":number,\"expectedResponseSchema\":object}.",
     parameters: emptyToolParameters,
   },
 }
@@ -109,7 +109,7 @@ const lastReplayResultTool: AgentToolDefinition = {
   function: {
     name: "get_last_replay_result",
     description:
-      "Get the previous turn replay result. Returns JSON with lastPlayerName, lastMoveStatus, lastSubmittedMoves, lastValidMoveIndex, visitedBefore, and decayedMovesCount.",
+      "Get the previous turn replay result. lastMoveStatus is the outcome (e.g. applied, reached-target, invalid-move). lastSubmittedMoves lists the moves from that turn; replayStartIndex is their zero-based offset in the overall move history. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total score-decaying moves charged that turn. Returns JSON with lastPlayerName, lastMoveStatus, replayStartIndex, lastSubmittedMovesSchema, lastSubmittedMoves, lastAppliedMoveIndex, visitedBefore, and chargedMovesCount.",
     parameters: emptyToolParameters,
   },
 }
@@ -129,10 +129,11 @@ export function buildMazeActionPrompt(playerName: string): string {
     `Your name is ${playerName}.`,
     `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
     "Use currentCell as your current position and destinationCell as the target.",
+    "The maze is randomly generated each level with exactly one path to the destination.",
     "Use traversalHistory entries matching your playerName to review your past moves in order.",
     "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
-    "Return only a JSON object matching expectedResponseSchema.",
-    "Moves replay in order until the destination or the first invalid move.",
+    `Return only JSON {"moves":["MoveRight",...]} where each move is one of MoveUp, MoveDown, MoveLeft, MoveRight.`,
+    "Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step).",
     "Every submitted move counts toward score decay, including moves after the first invalid move.",
     "Stop predicting when lastMoveStatus is reached-target or status is won.",
     "Choose the moves most likely to reach the destination with the fewest submitted moves.",
@@ -143,7 +144,7 @@ export function buildMazeActionPrompt(playerName: string): string {
 export function buildAgentMessages(playerName: string): AgentChatMessage[] {
   return [
     {
-      role: "developer",
+      role: "system",
       content: buildMazeActionPrompt(playerName),
     },
     {
@@ -151,7 +152,7 @@ export function buildAgentMessages(playerName: string): AgentChatMessage[] {
       content: [
         `It is ${playerName}'s turn to predict Tapoo maze moves.`,
         "Use the available tools to inspect the current maze state.",
-        "Return only JSON matching the movement response schema.",
+        `Return only JSON {"moves":["MoveRight",...]} with moves from: MoveUp, MoveDown, MoveLeft, MoveRight.`,
       ].join(" "),
     },
   ]
@@ -163,11 +164,8 @@ export function buildAgentToolHandlers(
   agent: AgentApiConfig,
   lastActionResult: MazeActionResult | null,
 ): AgentToolHandlers {
-  const recommendedAvgPredictionLimit = state.mazeDimensions
-    ? (() => {
-        const profile = getNavigationProfile(state.mazeDimensions)
-        return profile.__softCorridorLimit + profile.__hardCorridorLimit
-      })()
+  const suggestedMovesPerTurn = state.mazeDimensions
+    ? getNavigationProfile(state.mazeDimensions).__hardCorridorLimit
     : 0
 
   return {
@@ -176,7 +174,7 @@ export function buildAgentToolHandlers(
         level: state.level,
         status: state.status,
         score: state.score,
-        model: agent.model,
+        mazeDimensions: state.mazeDimensions,
       }
     },
     get_maze_positions() {
@@ -196,7 +194,7 @@ export function buildAgentToolHandlers(
     },
     get_prediction_rules() {
       return {
-        recommendedAvgPredictionLimit,
+        suggestedMovesPerTurn,
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       }
     },
@@ -204,12 +202,12 @@ export function buildAgentToolHandlers(
       return {
         lastPlayerName: lastActionResult?.lastPlayerName ?? null,
         lastMoveStatus: lastActionResult?.lastMoveStatus ?? null,
-        lastSubmittedMovesIndexBase: lastActionResult?.lastSubmittedMovesIndexBase ?? null,
+        replayStartIndex: lastActionResult?.replayStartIndex ?? null,
         lastSubmittedMovesSchema: lastActionResult?.lastSubmittedMovesSchema ?? null,
         lastSubmittedMoves: lastActionResult?.lastSubmittedMoves ?? [],
-        lastValidMoveIndex: lastActionResult?.lastValidMoveIndex ?? null,
+        lastAppliedMoveIndex: lastActionResult?.lastAppliedMoveIndex ?? null,
         visitedBefore: lastActionResult?.visitedBefore ?? null,
-        decayedMovesCount: lastActionResult?.decayedMovesCount ?? 0,
+        chargedMovesCount: lastActionResult?.chargedMovesCount ?? 0,
       }
     },
   }

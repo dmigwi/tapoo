@@ -31,7 +31,7 @@ export type AgentMovePoller = {
 
 type HandleAgentTurnLoopOptions = {
   __elements: { body: HTMLElement }
-  __commitAgentTurn: (decayedMovesCount: number) => void
+  __commitAgentTurn: (chargedMovesCount: number) => void
   __dispatch: MazeActionDispatch
   __dispatchAgentAction: (
     action: MazeAction,
@@ -120,7 +120,7 @@ export function handleAgentTurnLoop({
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
       lastMoveStatus: "network-error",
-      decayedMovesCount: 0,
+      chargedMovesCount: 0,
     })
 
     lastActionResult = nextResult
@@ -130,12 +130,12 @@ export function handleAgentTurnLoop({
 
   // recordMalformedAgentResponse spends the fixed mistake decay without replaying any move.
   const recordMalformedAgentResponse = (agent: AgentApiConfig): void => {
-    const decayedMovesCount = runtime.agentApiMistakePenaltyMoves
-    __commitAgentTurn(decayedMovesCount)
+    const chargedMovesCount = runtime.agentApiMistakePenaltyMoves
+    __commitAgentTurn(chargedMovesCount)
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
       lastMoveStatus: "malformed-response",
-      decayedMovesCount,
+      chargedMovesCount,
     })
     lastActionResult = nextResult
     __onActionResult(nextResult)
@@ -233,18 +233,18 @@ export function handleAgentTurnLoop({
         return
       }
 
-      const decayedMovesCount = submittedMoves.length
+      const chargedMovesCount = submittedMoves.length
 
       // Score decay is based on submitted predictions, not only the moves that were applied.
-      __commitAgentTurn(decayedMovesCount)
+      __commitAgentTurn(chargedMovesCount)
 
       const nextResult = mergeReplayResult(lastReplayResult, {
         lastPlayerName: selectedAgent.playerName,
         lastMoveStatus: lastReplayResult.lastMoveStatus,
         visitedBefore: lastReplayResult.visitedBefore,
         lastSubmittedMoves: submittedMoves.map((move, index) => `${index}:${move}`),
-        lastValidMoveIndex: appliedMoveCount > 0 ? appliedMoveCount - 1 : null,
-        decayedMovesCount,
+        lastAppliedMoveIndex: appliedMoveCount > 0 ? appliedMoveCount - 1 : null,
+        chargedMovesCount,
       })
 
       lastActionResult = nextResult

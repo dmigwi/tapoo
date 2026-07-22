@@ -266,7 +266,7 @@ describe("agent control mode", () => {
         traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "applied",
         lastSubmittedMoves: ["0:MoveRight"],
-        lastValidMoveIndex: 0,
+        lastAppliedMoveIndex: 0,
         visitedBefore: false,
       }))
       .mockReturnValueOnce(createControlFixture({
@@ -274,15 +274,15 @@ describe("agent control mode", () => {
         traversalHistory: [selfVisit(0, 0), visit(0, 1), visit(1, 1)],
         lastMoveStatus: "applied",
         lastSubmittedMoves: ["0:MoveDown"],
-        lastValidMoveIndex: 0,
+        lastAppliedMoveIndex: 0,
         visitedBefore: false,
       }))
 
     const readState = vi.fn().mockReturnValue(createControlFixture())
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
+    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
       createControlFixture({
         currentCell: { row: 1, col: 1 },
-        score: 800 - decayedMovesCount * 100,
+        score: 800 - chargedMovesCount * 100,
       }),
     )
 
@@ -332,7 +332,7 @@ describe("agent control mode", () => {
         currentCell: { row: 1, col: 1 },
         lastMoveStatus: "applied",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown"],
-        lastValidMoveIndex: 1,
+        lastAppliedMoveIndex: 1,
       }),
     )
   })
@@ -362,15 +362,15 @@ describe("agent control mode", () => {
       traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "applied",
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
+      lastAppliedMoveIndex: 0,
       visitedBefore: false,
     }))
 
     const readState = vi.fn().mockReturnValue(createControlFixture())
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
+    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
       createControlFixture({
         currentCell: { row: 0, col: 1 },
-        score: 800 - decayedMovesCount * 100,
+        score: 800 - chargedMovesCount * 100,
       }),
     )
 
@@ -386,8 +386,8 @@ describe("agent control mode", () => {
         currentCell: { row: 0, col: 1 },
         lastMoveStatus: "applied",
         lastSubmittedMoves: ["0:MoveRight"],
-        lastValidMoveIndex: 0,
-        decayedMovesCount: 1,
+        lastAppliedMoveIndex: 0,
+        chargedMovesCount: 1,
       }),
     )
   })
@@ -422,7 +422,7 @@ describe("agent control mode", () => {
         traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "applied",
         lastSubmittedMoves: ["0:MoveRight"],
-        lastValidMoveIndex: 0,
+        lastAppliedMoveIndex: 0,
         visitedBefore: false,
       }))
       .mockReturnValueOnce(createControlFixture({
@@ -430,15 +430,15 @@ describe("agent control mode", () => {
         traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "invalid-move",
         lastSubmittedMoves: ["1:MoveDown"],
-        lastValidMoveIndex: 0,
+        lastAppliedMoveIndex: 0,
         visitedBefore: true,
       }))
 
     const readState = vi.fn().mockReturnValue(createControlFixture())
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
+    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
       createControlFixture({
         currentCell: { row: 0, col: 1 },
-        score: 800 - decayedMovesCount * 100,
+        score: 800 - chargedMovesCount * 100,
       }),
     )
 
@@ -456,8 +456,8 @@ describe("agent control mode", () => {
         currentCell: { row: 0, col: 1 },
         lastMoveStatus: "invalid-move",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
-        lastValidMoveIndex: 0,
-        decayedMovesCount: 3,
+        lastAppliedMoveIndex: 0,
+        chargedMovesCount: 3,
       }),
     )
   })
@@ -491,17 +491,17 @@ describe("agent control mode", () => {
       traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "reached-target",
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
+      lastAppliedMoveIndex: 0,
       visitedBefore: false,
       status: "won",
     }))
 
     const readState = vi.fn().mockReturnValue(createControlFixture())
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
+    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
       createControlFixture({
         currentCell: { row: 0, col: 1 },
         destinationCell: { row: 0, col: 1 },
-        score: 800 - decayedMovesCount * 100,
+        score: 800 - chargedMovesCount * 100,
         status: "won",
       }),
     )
@@ -523,8 +523,8 @@ describe("agent control mode", () => {
         destinationCell: { row: 0, col: 1 },
         lastMoveStatus: "reached-target",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
-        lastValidMoveIndex: 0,
-        decayedMovesCount: 3,
+        lastAppliedMoveIndex: 0,
+        chargedMovesCount: 3,
       }),
     )
   })
@@ -652,7 +652,7 @@ describe("agent control mode", () => {
             score: 100,
             lastMoveStatus: "applied",
             lastSubmittedMoves: ["0:MoveRight"],
-            lastValidMoveIndex: 0,
+            lastAppliedMoveIndex: 0,
             visitedBefore: false,
           }),
         }
@@ -730,7 +730,7 @@ describe("agent control mode", () => {
       currentCell: { row: 0, col: 1 },
       lastMoveStatus: "applied",
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
+      lastAppliedMoveIndex: 0,
     }))
     const readState = vi.fn(() => createControlFixture({ level: 1 }))
     const commitAgentTurn = vi.fn(() => createControlFixture({ level: 1 }))
@@ -799,7 +799,7 @@ describe("agent control mode", () => {
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         lastMoveStatus: "network-error",
-        decayedMovesCount: 0,
+        chargedMovesCount: 0,
       }),
     )
   })

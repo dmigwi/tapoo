@@ -72,16 +72,16 @@ function buildReplayState(
   status: MoveStatus,
   visitedBefore?: boolean,
 ): MazeActionResult {
-  const lastValidMoveIndex = status === "applied" || status === "reached-target" ? 0 : null
+  const lastAppliedMoveIndex = status === "applied" || status === "reached-target" ? 0 : null
   const visitedBeforeState = visitedBefore === undefined ? {} : { visitedBefore }
 
   return buildMazeActionResult(playerName, {
     lastMoveStatus: status,
-    lastSubmittedMovesIndexBase: 0,
+    replayStartIndex: 0,
     lastSubmittedMovesSchema: SUBMITTED_MOVES_SCHEMA,
     lastSubmittedMoves: normalizeSubmittedMoves([command]),
-    lastValidMoveIndex,
-    decayedMovesCount: 0,
+    lastAppliedMoveIndex,
+    chargedMovesCount: 0,
     ...visitedBeforeState,
   })
 }

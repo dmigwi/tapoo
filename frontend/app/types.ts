@@ -220,13 +220,13 @@ export type AgentSeat = {
 // MazeActionResult stores only the previous command/replay outcome; live maze facts stay in State.
 export type MazeActionResult = {
   lastPlayerName?: string
-  lastSubmittedMovesIndexBase?: 0
+  replayStartIndex?: 0
   lastSubmittedMovesSchema?: AgentSubmittedMovesSchema
   lastSubmittedMoves?: string[]
   lastMoveStatus?: MoveStatus
-  lastValidMoveIndex?: number | null
+  lastAppliedMoveIndex?: number | null
   visitedBefore?: boolean
-  decayedMovesCount?: number
+  chargedMovesCount?: number
 }
 
 // MazeActionDispatchOptions lets each dispatched command opt into feedback when it needs it.
@@ -247,7 +247,7 @@ export interface MazeActionControl {
   bindActionDispatch: (
     dispatch: MazeActionDispatch,
     readState: () => State,
-    commitAgentTurn: (decayedMovesCount: number) => void,
+    commitAgentTurn: (chargedMovesCount: number) => void,
   ) => void
   readLastActionResult: () => MazeActionResult | null
   recordActionResult: (actionResult: MazeActionResult) => void

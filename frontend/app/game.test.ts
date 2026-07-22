@@ -1238,7 +1238,7 @@ describe("bootstrapGame", () => {
       lastMoveStatus: "reached-target",
       visitedBefore: false,
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
+      lastAppliedMoveIndex: 0,
     }))
     expect(harness.mode.readLastActionResult()).toEqual(actionResult)
 

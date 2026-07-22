@@ -252,8 +252,8 @@ describe("agent api turn loop", () => {
       expect.objectContaining({
         lastMoveStatus: "invalid-move",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
-        lastValidMoveIndex: 1,
-        decayedMovesCount: 3,
+        lastAppliedMoveIndex: 1,
+        chargedMovesCount: 3,
       }),
     )
   })
@@ -444,8 +444,8 @@ describe("agent api turn loop", () => {
       expect.objectContaining({
         lastMoveStatus: "reached-target",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown"],
-        lastValidMoveIndex: 0,
-        decayedMovesCount: 2,
+        lastAppliedMoveIndex: 0,
+        chargedMovesCount: 2,
       }),
     )
   })
@@ -487,7 +487,7 @@ describe("agent api turn loop", () => {
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "malformed-response",
-        decayedMovesCount: CONFIG.runtime.agentApiMistakePenaltyMoves,
+        chargedMovesCount: CONFIG.runtime.agentApiMistakePenaltyMoves,
       }),
     )
   })
@@ -528,7 +528,7 @@ describe("agent api turn loop", () => {
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
-        decayedMovesCount: 0,
+        chargedMovesCount: 0,
         lastMoveStatus: "network-error",
         lastPlayerName: "Blue",
       }),
@@ -569,7 +569,7 @@ describe("agent api turn loop", () => {
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
-        decayedMovesCount: 0,
+        chargedMovesCount: 0,
         lastMoveStatus: "network-error",
         lastPlayerName: "Blue",
       }),
@@ -607,7 +607,7 @@ describe("agent api turn loop", () => {
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
-        decayedMovesCount: 0,
+        chargedMovesCount: 0,
         lastMoveStatus: "network-error",
         lastPlayerName: "Blue",
       }),

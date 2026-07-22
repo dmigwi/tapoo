@@ -25,10 +25,11 @@ const expectedAgentPrompt = [
   "Your name is Blue.",
   `playerName ${CONFIG.runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
   "Use currentCell as your current position and destinationCell as the target.",
+  "The maze is randomly generated each level with exactly one path to the destination.",
   "Use traversalHistory entries matching your playerName to review your past moves in order.",
   "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
-  "Return only a JSON object matching expectedResponseSchema.",
-  "Moves replay in order until the destination or the first invalid move.",
+  `Return only JSON {"moves":["MoveRight",...]} where each move is one of MoveUp, MoveDown, MoveLeft, MoveRight.`,
+  "Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step).",
   "Every submitted move counts toward score decay, including moves after the first invalid move.",
   "Stop predicting when lastMoveStatus is reached-target or status is won.",
   "Choose the moves most likely to reach the destination with the fewest submitted moves.",
@@ -106,12 +107,12 @@ describe("agent context", () => {
     const actionResult = buildMazeActionResult("Blue", {
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
-      lastSubmittedMovesIndexBase: 0,
+      replayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
+      lastAppliedMoveIndex: 0,
       visitedBefore: false,
-      decayedMovesCount: 1,
+      chargedMovesCount: 1,
     })
     const toolHandlers = buildAgentToolHandlers(createState(), agent, actionResult)
 
@@ -126,7 +127,7 @@ describe("agent context", () => {
       level: 4,
       status: "running",
       score: 700,
-      model: "llama3.2",
+      mazeDimensions: { length: 2, width: 1, area: 2 },
     })
     expect(toolHandlers.get_maze_positions({})).toEqual({
       currentCell: { row: 0, col: 0 },
@@ -136,31 +137,31 @@ describe("agent context", () => {
       traversalHistory: [selfVisit(0, 0)],
     })
     expect(toolHandlers.get_prediction_rules({})).toEqual({
-      recommendedAvgPredictionLimit: 18,
+      suggestedMovesPerTurn: 10,
       expectedResponseSchema,
     })
     expect(toolHandlers.get_last_replay_result({})).toEqual({
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
-      lastSubmittedMovesIndexBase: 0,
+      replayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
+      lastAppliedMoveIndex: 0,
       visitedBefore: false,
-      decayedMovesCount: 1,
+      chargedMovesCount: 1,
     })
   })
 
   it("builds the initial agent chat message without embedding the full maze state", () => {
     expect(buildAgentMessages("Blue")).toEqual([
       {
-        role: "developer",
+        role: "system",
         content: expectedAgentPrompt,
       },
       {
         role: "user",
         content:
-          "It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state. Return only JSON matching the movement response schema.",
+          `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state. Return only JSON {"moves":["MoveRight",...]} with moves from: MoveUp, MoveDown, MoveLeft, MoveRight.`,
       },
     ])
   })

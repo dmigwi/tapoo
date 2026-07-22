@@ -265,7 +265,7 @@ export const CONFIG: AppConfig = {
       },
     },
     interactivePlayerName: "Self",
-    agentApiMistakePenaltyMoves: 5,
+    agentApiMistakePenaltyMoves: 2,
   },
 }
 

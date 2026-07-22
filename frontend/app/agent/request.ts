@@ -13,7 +13,9 @@ import type {
   State,
 } from "../types"
 
-type AgentMessageRole = "assistant" | "tool" | "user" | "system" | "developer"
+// AgentMessageRole lists the chat roles Tapoo sends and receives; Ollama's 
+// supported set is "system", "user", "assistant", and "tool".
+type AgentMessageRole = "assistant" | "tool" | "user" | "system"
 
 // AgentToolDefinition mirrors the provider tool schema Tapoo sends with each chat request.
 export type AgentToolDefinition = {
@@ -59,7 +61,7 @@ type AgentToolCall = {
 export type AgentChatMessage = {
   role: AgentMessageRole
   content?: string
-  tool_name?: string
+  tool_call_id?: string
   tool_calls?: AgentToolCall[]
 }
 
@@ -99,21 +101,22 @@ type RequestAgentPredictionInput = {
 // defaultMaxToolRounds prevents a model from looping indefinitely through context tools.
 const defaultMaxToolRounds = 4
 
+// stripMarkdownFence removes optional ```json or ``` wrappers that models add despite instructions.
+function stripMarkdownFence(content: string): string {
+  return content.replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/s, "$1").trim()
+}
+
+// extractEmbeddedJson handles models that emit inline reasoning before the JSON answer.
+// The last '{' is used as the anchor because models consistently place the JSON payload
+// at the end of their response, after any prose or numbered-list thinking steps.
+function extractEmbeddedJson(content: string): string | null {
+  const start = content.lastIndexOf("{")
+  return start === -1 ? null : content.slice(start).trim()
+}
+
 // parseAgentPrediction extracts the single supported prediction payload from final model content.
 function parseAgentPrediction(content: string | undefined): MoveAction[] | null {
   if (!content) {
-    return null
-  }
-
-  let payload: AgentPredictionPayload
-  try {
-    payload = JSON.parse(content) as AgentPredictionPayload
-  } catch {
-    return null
-  }
-
-  const { moves } = payload
-  if (!Array.isArray(moves) || moves.length === 0) {
     return null
   }
 
@@ -122,7 +125,21 @@ function parseAgentPrediction(content: string | undefined): MoveAction[] | null 
     return typeof move === "string" && isMoveAction({ type: move } as MazeAction)
   }
 
-  return moves.every(isPredictedMove) ? [...moves] : null
+  // Try progressively looser extractions: fenced/plain JSON first, then JSON embedded in prose.
+  const candidates = [stripMarkdownFence(content), extractEmbeddedJson(content)]
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    try {
+      const { moves } = JSON.parse(candidate) as AgentPredictionPayload
+      if (Array.isArray(moves) && moves.length > 0 && moves.every(isPredictedMove)) {
+        return [...moves]
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return null
 }
 
 // normalizeToolArguments accepts object arguments and provider variants that encode them as JSON.
@@ -167,7 +184,7 @@ async function buildToolResultMessages(
       const result = await handler(normalizeToolArguments(toolCall.function?.arguments))
       toolMessages.push({
         role: "tool",
-        tool_name: toolName,
+        tool_call_id: toolCall.id,
         content: serializeToolResult(result),
       })
     } catch {

@@ -243,14 +243,14 @@ function applyWinSummary(totalCells: number): void {
 }
 
 // commitAgentTurn is the only place agent-api spends score decay after one resolved request.
-function commitAgentTurn(decayedMovesCount: number): void {
+function commitAgentTurn(chargedMovesCount: number): void {
   const totalCells = state.mazeDimensions?.area ?? 0
   if (!isAgentApiMode(state.controlMode) || totalCells === 0) {
     return
   }
 
   state.agentRequestCount += 1
-  state.scoreDecayUnits += decayedMovesCount
+  state.scoreDecayUnits += chargedMovesCount
   state.score = calculateRoundScore(totalCells)
 
   if (isWonStatus(state.status)) {

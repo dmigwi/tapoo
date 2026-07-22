@@ -108,11 +108,11 @@ describe("control", () => {
     ).toEqual({
       lastPlayerName: "Blue",
       lastMoveStatus: "invalid-move",
-      lastSubmittedMovesIndexBase: 0,
+      replayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
       lastSubmittedMoves: ["0:MoveLeft"],
-      lastValidMoveIndex: null,
-      decayedMovesCount: 0,
+      lastAppliedMoveIndex: null,
+      chargedMovesCount: 0,
     })
     expect(context.handleMove).not.toHaveBeenCalled()
   })
@@ -132,11 +132,11 @@ describe("control", () => {
     ).toEqual({
       lastPlayerName: "Blue",
       lastMoveStatus: "invalid-move",
-      lastSubmittedMovesIndexBase: 0,
+      replayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: null,
-      decayedMovesCount: 0,
+      lastAppliedMoveIndex: null,
+      chargedMovesCount: 0,
     })
     expect(context.handleMove).not.toHaveBeenCalled()
   })
@@ -158,11 +158,11 @@ describe("control", () => {
       lastPlayerName: "Blue",
       lastMoveStatus: "reached-target",
       visitedBefore: false,
-      lastSubmittedMovesIndexBase: 0,
+      replayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
-      decayedMovesCount: 0,
+      lastAppliedMoveIndex: 0,
+      chargedMovesCount: 0,
     })
     expect(context.handleMove).toHaveBeenCalledWith("MoveRight", "Blue")
   })
@@ -185,11 +185,11 @@ describe("control", () => {
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
       visitedBefore: true,
-      lastSubmittedMovesIndexBase: 0,
+      replayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
       lastSubmittedMoves: ["0:MoveLeft"],
-      lastValidMoveIndex: 0,
-      decayedMovesCount: 0,
+      lastAppliedMoveIndex: 0,
+      chargedMovesCount: 0,
     })
   })
 })
