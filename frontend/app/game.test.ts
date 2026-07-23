@@ -452,6 +452,9 @@ async function bootstrapHarness({
     loadPersistedSnapshot,
     saveGameProgress,
     saveActiveRoundSnapshot,
+    loadTapooLog: vi.fn(() => []),
+    saveTapooLog: vi.fn(),
+    clearTapooLog: vi.fn(),
   }))
   vi.spyOn(window, "setInterval").mockImplementation(
     (handler: TimerHandler) => {
@@ -541,6 +544,10 @@ describe("bootstrapGame", () => {
       loadPersistedSnapshot,
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
+      loadTapooLog: vi.fn(() => []),
+      saveTapooLog: vi.fn(),
+      appendTapooLogEntry: vi.fn(),
+      clearTapooLog: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
@@ -612,6 +619,10 @@ describe("bootstrapGame", () => {
       })),
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
+      loadTapooLog: vi.fn(() => []),
+      saveTapooLog: vi.fn(),
+      appendTapooLogEntry: vi.fn(),
+      clearTapooLog: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
@@ -662,6 +673,10 @@ describe("bootstrapGame", () => {
       loadPersistedSnapshot,
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
+      loadTapooLog: vi.fn(() => []),
+      saveTapooLog: vi.fn(),
+      appendTapooLogEntry: vi.fn(),
+      clearTapooLog: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
@@ -722,6 +737,10 @@ describe("bootstrapGame", () => {
       })),
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
+      loadTapooLog: vi.fn(() => []),
+      saveTapooLog: vi.fn(),
+      appendTapooLogEntry: vi.fn(),
+      clearTapooLog: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 

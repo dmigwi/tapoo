@@ -6,6 +6,7 @@ import type {
   MoveAction,
 } from "../types"
 import {
+  isMazeControlFocused,
   releaseAllActionBindings,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
@@ -61,6 +62,10 @@ export function createInteractiveMode(
     button: HTMLButtonElement,
     dispatch: MazeActionDispatch,
   ): void => {
+    if (!isMazeControlFocused(elements)) {
+      return
+    }
+
     const action = button.dataset.move
       ? { type: button.dataset.move as MoveAction }
       : sessionActionFromButton(button.dataset)
@@ -78,6 +83,10 @@ export function createInteractiveMode(
     event: KeyboardEvent,
     dispatch: MazeActionDispatch,
   ): void => {
+    if (!isMazeControlFocused(elements)) {
+      return
+    }
+
     const moveAction = KEY_TO_MOVE_ACTION[event.key]
     const action = moveAction
       ? { type: moveAction }

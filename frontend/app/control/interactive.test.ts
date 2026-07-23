@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { CONFIG } from "../config"
 import { createInteractiveMode } from "./interactive"
@@ -61,6 +61,11 @@ function createState(): State {
 
 // These tests guard the interactive-mode translation layer and contract shape.
 describe("interactive control mode", () => {
+  afterEach(() => {
+    document.body.replaceChildren()
+    vi.restoreAllMocks()
+  })
+
   it("implements the shared control mode contract", () => {
     const elements = {
       app: document.createElement("div"),
@@ -135,6 +140,39 @@ describe("interactive control mode", () => {
     )
 
     expect(dispatch).not.toHaveBeenCalled()
+  })
+
+  it("handles human controls only while the terminal app is focused", () => {
+    const restartButton = createButton({ action: "restart" })
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [restartButton],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [],
+      touchControls: document.createElement("div"),
+    }
+    const outsideInput = document.createElement("input")
+    elements.app.tabIndex = 0
+    elements.app.append(restartButton)
+    document.body.append(elements.app, outsideInput)
+    const dispatch = vi.fn()
+
+    const mode = createInteractiveMode(elements)
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn())
+
+    outsideInput.focus()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
+
+    expect(dispatch).not.toHaveBeenCalled()
+
+    elements.app.focus()
+    restartButton.click()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
+
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "restart" }, { playerName: "Self" })
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: "pause" }, { playerName: "Self" })
   })
 
   it("rebinds controls without keeping stale listeners alive", () => {

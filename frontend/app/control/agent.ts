@@ -22,6 +22,7 @@ import {
 } from "../agent/seats"
 import {
   isFormControlTarget,
+  isMazeControlFocused,
   releaseAllActionBindings,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
@@ -151,7 +152,6 @@ export function createAgentMode(
   }
 
   return {
-    // This MazeActionControl exposes the agent-api mode name, binds local session actions, and stores feedback for agents.
     // name lets the runtime identify which MazeActionControl implementation is active.
     name: runtime.controlModes.agentApi,
     // bindActionDispatch starts the HTTP-driven move loop while keeping session controls local.
@@ -163,6 +163,7 @@ export function createAgentMode(
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
 
+      // recordLastActionResult captures the move outcome so agents and replays share one source of truth.
       const recordLastActionResult = (actionResult: MazeActionResult): void => {
         lastActionResult = actionResult
       }
@@ -202,9 +203,11 @@ export function createAgentMode(
         __readState: readState,
       })
 
+      // currentPlayingAgentId returns the active agent only while the round is running; idle and paused sessions have none.
       const currentPlayingAgentId = (): number | null =>
         isRunningStatus(readState().status) ? activeAgentId : null
 
+      // renderAgentRoster repaints the seat list with the latest config and highlights the currently playing agent.
       const renderAgentRoster = (): void => {
         if (elements.agentSeatsBody) {
           elements.agentSeatsBody.hidden = false
@@ -212,6 +215,7 @@ export function createAgentMode(
         renderAgentSeatRoster(elements.agentSeatRoster, readAgentConfigs(), currentPlayingAgentId())
       }
 
+      // syncCurrentPoller restarts the turn cycle after any config or session state change.
       const syncCurrentPoller = (): void => {
         if (!agentMovePoller) {
           return
@@ -225,6 +229,7 @@ export function createAgentMode(
         }
       }
 
+      // syncOverlayState toggles the body class that dims the terminal while an overlay is open.
       const syncOverlayState = (): void => {
         elements.body.classList.toggle(
           "terminal-body--agent-form-active",
@@ -242,6 +247,7 @@ export function createAgentMode(
         syncCurrentPoller()
       }
 
+      // clearAgentConfigStatus wipes any previous validation message before the next submission attempt.
       const clearAgentConfigStatus = (): void => {
         if (elements.agentConfigStatus) {
           elements.agentConfigStatus.textContent = ""
@@ -249,6 +255,7 @@ export function createAgentMode(
         }
       }
 
+      // syncAgentEnabledToggle keeps the toggle label and CSS state aligned with the checkbox value.
       const syncAgentEnabledToggle = (
         input: HTMLInputElement | undefined,
         label: HTMLElement | undefined,
@@ -264,10 +271,12 @@ export function createAgentMode(
         }
       }
 
+      // syncAgentConfigEnabledToggle specializes syncAgentEnabledToggle for the add/edit form fields.
       const syncAgentConfigEnabledToggle = (): void => {
         syncAgentEnabledToggle(elements.agentConfigEnabled, elements.agentConfigEnabledLabel)
       }
 
+      // resetAgentConfigForm clears all fields and the seat selection so the form is ready for a fresh add.
       const resetAgentConfigForm = (): void => {
         elements.agentConfigForm?.reset()
         selectedSeatId = null
@@ -278,6 +287,7 @@ export function createAgentMode(
         clearAgentConfigStatus()
       }
 
+      // setAgentConfigError surfaces a validation failure inside the form without a separate modal.
       const setAgentConfigError = (message: string): void => {
         if (!elements.agentConfigStatus) {
           return
@@ -287,6 +297,7 @@ export function createAgentMode(
         elements.agentConfigStatus.classList.add("agent-config-form__status--error")
       }
 
+      // closeAgentConfigForm hides the form, resets its state, and restores the overlay class.
       const closeAgentConfigForm = (): void => {
         if (!elements.agentConfigForm) {
           return
@@ -297,6 +308,7 @@ export function createAgentMode(
         syncOverlayState()
       }
 
+      // openAgentConfigForm pauses an active round, sets the target seat, and shows the add/edit overlay.
       const openAgentConfigForm = (seatId: number): void => {
         if (!elements.agentConfigForm) {
           return
@@ -313,6 +325,7 @@ export function createAgentMode(
         elements.agentConfigPlayerName?.focus()
       }
 
+      // closeAgentDeleteDialog hides the delete/disable dialog and clears the pending seat id.
       const closeAgentDeleteDialog = (): void => {
         if (!elements.agentDeleteDialog) {
           return
@@ -323,6 +336,7 @@ export function createAgentMode(
         syncOverlayState()
       }
 
+      // syncAgentDeleteOptions disables the enable/disable toggle when the delete checkbox is checked.
       const syncAgentDeleteOptions = (): void => {
         const shouldDelete = elements.agentDeleteConfirm?.checked ?? false
         if (elements.agentDeleteEnabled) {
@@ -333,6 +347,7 @@ export function createAgentMode(
         syncAgentEnabledToggle(elements.agentDeleteEnabled, elements.agentDeleteEnabledLabel)
       }
 
+      // openAgentDeleteDialog pauses an active round and opens the manage/delete overlay for the chosen seat.
       const openAgentDeleteDialog = (seatId: number): void => {
         const agent = readAgentConfigs().find((config) => config.id === seatId)
         if (!agent || agent.id === currentPlayingAgentId() || !elements.agentDeleteDialog) {
@@ -359,6 +374,7 @@ export function createAgentMode(
         elements.agentDeleteApply?.focus()
       }
 
+      // bindAgentRoster attaches a single delegated click handler to the seat roster container.
       const bindAgentRoster = (): void => {
         if (!elements.agentSeatRoster) {
           return
@@ -392,7 +408,9 @@ export function createAgentMode(
         renderAgentRoster()
       }
 
+      // bindLogButtons wires the reset and download controls to the agent-api log store.
       const bindLogButtons = (): void => {
+        // syncResetButton disables both log controls when there is nothing to act on.
         const syncResetButton = (): void => {
           const hasLogs = tapooLogCount() > 0
           if (elements.tapooLogsReset) {
@@ -403,6 +421,7 @@ export function createAgentMode(
           }
         }
 
+        // showButtonFeedback briefly pulses the button's acknowledged CSS class for visual confirmation.
         const showButtonFeedback = (button: HTMLButtonElement): void => {
           button.classList.remove("tapoo-logs-control--acknowledged")
           void button.offsetWidth
@@ -415,7 +434,7 @@ export function createAgentMode(
         if (elements.tapooLogsReset) {
           const onClick = (): void => {
             showButtonFeedback(elements.tapooLogsReset)
-            tapooResetLogs()
+            tapooResetLogs(runtime.controlModes.agentApi)
           }
           buttonBindings.push({
             __button: elements.tapooLogsReset,
@@ -427,7 +446,7 @@ export function createAgentMode(
         if (elements.tapooLogsDownload) {
           const onClick = (): void => {
             showButtonFeedback(elements.tapooLogsDownload)
-            tapooDownloadLogs()
+            tapooDownloadLogs(runtime.controlModes.agentApi)
           }
           buttonBindings.push({
             __button: elements.tapooLogsDownload,
@@ -439,6 +458,7 @@ export function createAgentMode(
         releaseLogSubscription = subscribeTapooLogs(syncResetButton)
       }
 
+      // bindAgentConfigForm attaches submit, close, toggle, and outer-click handlers to the add/edit overlay.
       const bindAgentConfigForm = (): void => {
         const form = elements.agentConfigForm
         if (
@@ -531,6 +551,7 @@ export function createAgentMode(
         elements.body.addEventListener("click", agentFormOuterClickHandler)
       }
 
+      // bindAgentDeleteDialog wires the confirm-delete, enable-toggle, apply, and close handlers.
       const bindAgentDeleteDialog = (): void => {
         if (
           !elements.agentDeleteClose ||
@@ -571,6 +592,7 @@ export function createAgentMode(
         elements.agentDeleteApply.addEventListener("click", agentDeleteApplyHandler)
       }
 
+      // closeActiveAgentOverlay dismisses whichever overlay is open and returns true so callers can skip further handling.
       const closeActiveAgentOverlay = (): boolean => {
         if (isAgentConfigFormOpen()) {
           closeAgentConfigForm()
@@ -585,6 +607,7 @@ export function createAgentMode(
         return false
       }
 
+      // handleFormControlKeydown intercepts keys inside form fields, allowing Escape to close overlays.
       const handleFormControlKeydown = (event: KeyboardEvent): boolean => {
         if (!isFormControlTarget(event.target)) {
           return false
@@ -602,6 +625,10 @@ export function createAgentMode(
       const bindSessionButtons = (buttons: HTMLButtonElement[]): void => {
         buttons.forEach((button) => {
           const onClick = (): void => {
+            if (!isMazeControlFocused(elements)) {
+              return
+            }
+
             const command = sessionActionFromButton(button.dataset)
             if (!command) {
               return
@@ -624,9 +651,14 @@ export function createAgentMode(
       bindAgentConfigForm()
       bindAgentDeleteDialog()
 
+      // keydownHandler routes global keyboard shortcuts while yielding control to open overlays.
       keydownHandler = (event: KeyboardEvent): void => {
         // Global shortcuts are ignored while the user is typing inside agent forms.
         if (handleFormControlKeydown(event)) {
+          return
+        }
+
+        if (!isMazeControlFocused(elements)) {
           return
         }
 

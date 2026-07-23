@@ -549,6 +549,52 @@ export function loadPersistedSnapshot(
   }
 }
 
+// Tapoo log persistence. Logs are scoped to the browser tab session: they survive page reloads
+// within the same tab but are discarded when the tab closes or tapooResetLogs is called.
+
+// loadTapooLog restores buffered log entries that survived a page reload within the same tab.
+export function loadTapooLog<T>(modeName: MazeControlModeName): T[] {
+  try {
+    const stored = window.sessionStorage.getItem(
+      storageKey(modeName, storageConfig.suffixes.tapooLog),
+    )
+    return stored ? (decodeStoredPayload<T[]>(stored) ?? []) : []
+  } catch {
+    return []
+  }
+}
+
+// saveTapooLog writes an arbitrary set of log entries to sessionStorage; used internally and
+// when restoring a known snapshot (e.g. after filtering or migration).
+export function saveTapooLog(modeName: MazeControlModeName, entries: unknown[]): void {
+  try {
+    window.sessionStorage.setItem(
+      storageKey(modeName, storageConfig.suffixes.tapooLog),
+      encodeStoredPayload(entries),
+    )
+  } catch {
+    // Quota exceeded or storage unavailable — the in-memory count is still accurate.
+  }
+}
+
+// appendTapooLogEntry reads the existing persisted entries, appends one new entry, and writes
+// the result back. Only the count is kept in memory; the full payload lives in sessionStorage.
+export function appendTapooLogEntry(modeName: MazeControlModeName, entry: unknown): void {
+  saveTapooLog(modeName, [...loadTapooLog<unknown>(modeName), entry])
+}
+
+// clearTapooLog removes the persisted log snapshot from sessionStorage; called by tapooResetLogs
+// so a deliberate reset clears both the in-memory buffer and its sessionStorage copy.
+export function clearTapooLog(modeName: MazeControlModeName): void {
+  try {
+    window.sessionStorage.removeItem(
+      storageKey(modeName, storageConfig.suffixes.tapooLog),
+    )
+  } catch {
+    // ignore
+  }
+}
+
 // clearPersistedSnapshot clears both long-lived preferences and the active round.
 export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   try {
@@ -563,4 +609,5 @@ export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   }
 
   clearPersistedRound(modeName)
+  clearTapooLog(modeName)
 }

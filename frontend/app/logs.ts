@@ -1,22 +1,18 @@
-type LogLevel = "error" | "info" | "warn"
-
-type LogEntry = {
-  timestamp: string
-  level: LogLevel
-  message: string
-  details?: unknown
-}
+import { appendTapooLogEntry, clearTapooLog, loadTapooLog } from "./storage"
+import type { LogEntry, LogLevel, MazeControlModeName } from "./types"
 
 type LogStateListener = (logCount: number) => void
 
-// logBuffer keeps Tapoo runtime/debug entries in memory for the current page session.
-const logBuffer: LogEntry[] = []
 const logStateListeners = new Set<LogStateListener>()
 
-// notifyLogStateListeners keeps UI controls aligned with the in-memory log buffer.
+// logCount tracks how many entries are stored without holding the full payloads in memory.
+// Seeded by initTapooLogs once the page mode is known; zero until then.
+let logCount = 0
+
+// notifyLogStateListeners keeps UI controls aligned with the current log count.
 function notifyLogStateListeners(): void {
   logStateListeners.forEach((listener) => {
-    listener(logBuffer.length)
+    listener(logCount)
   })
 }
 
@@ -48,45 +44,61 @@ function getDownloadTimestamp(): string {
   return `${localDate}${localTime}`
 }
 
-// logTapooDiagnostic buffers entries for later download without touching browser storage.
-export function logTapooDiagnostic(
-  level: LogLevel,
-  message: string,
-  details?: unknown,
-): void {
-  const entry: LogEntry = { timestamp: getLocalTimestamp(), level, message }
-  if (details !== undefined) {
-    entry.details = details
-  }
-  logBuffer.push(entry)
+// initTapooLogs seeds the in-memory log count from sessionStorage entries that survived a page
+// reload for the given mode. Call once at page startup after the control mode is resolved.
+export function initTapooLogs(modeName: MazeControlModeName): void {
+  logCount = loadTapooLog<unknown>(modeName).length
   notifyLogStateListeners()
 }
 
-// tapooResetLogs clears only the in-memory Tapoo log buffer for the active page session.
-export function tapooResetLogs(): void {
-  logBuffer.length = 0
+// logTapooDiagnostic appends one entry to sessionStorage and increments the in-memory count.
+// The full payload is never held in memory; only the count is, so large request/response bodies
+// accumulated over many turns do not grow the JS heap.
+export function logTapooDiagnostic(
+  modeName: MazeControlModeName,
+  type: LogLevel,
+  message: string,
+  details?: unknown,
+): void {
+  const entry: LogEntry = { timestamp: Date.now() / 1000, time: getLocalTimestamp(), type, payload: message }
+  if (details !== undefined) {
+    entry.details = details
+  }
+  appendTapooLogEntry(modeName, entry)
+  logCount += 1
+
+  notifyLogStateListeners()
+}
+
+// tapooResetLogs clears the sessionStorage log snapshot for the given mode and resets the count.
+export function tapooResetLogs(modeName: MazeControlModeName): void {
+  clearTapooLog(modeName)
+  logCount = 0
+  
   notifyLogStateListeners()
 }
 
 // tapooLogCount reports whether reset controls have anything meaningful to clear.
 export function tapooLogCount(): number {
-  return logBuffer.length
+  return logCount
 }
 
-// subscribeTapooLogs notifies UI surfaces whenever log availability changes.
+// subscribeTapooLogs notifies UI surfaces whenever the log count changes.
 export function subscribeTapooLogs(listener: LogStateListener): () => void {
   logStateListeners.add(listener)
-  listener(logBuffer.length)
+  listener(logCount)
 
   return () => {
     logStateListeners.delete(listener)
   }
 }
 
-// tapooDownloadLogs triggers a JSON download of all buffered Tapoo log entries.
+// tapooDownloadLogs reads the full log payload from sessionStorage on demand and triggers a
+// JSON file download. Reading only at download time means memory usage stays flat during gameplay.
 // Attach to window in the page entry point so it survives property mangling and tree-shaking.
-export function tapooDownloadLogs(): void {
-  const blob = new Blob([JSON.stringify(logBuffer, null, 2)], {
+export function tapooDownloadLogs(modeName: MazeControlModeName): void {
+  const entries = loadTapooLog<LogEntry>(modeName)
+  const blob = new Blob([JSON.stringify(entries, null, 2)], {
     type: "application/json",
   })
   const url = URL.createObjectURL(blob)

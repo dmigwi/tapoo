@@ -347,6 +347,24 @@ export type SummaryComparisonTemplates = {
   behindBest: string
 }
 
+// LogLevel classifies the severity of a Tapoo log entry for filtering and analysis.
+export type LogLevel = "error" | "info" | "warn"
+
+// LogEntry is one structured record in the Tapoo log buffer.
+// timestamp is Unix time in seconds — machine-readable and suitable for sorting or arithmetic.
+// time is the same instant expressed in local timezone as a human-readable string, so downloaded
+// logs are interpretable without UTC conversion.
+// payload is the human-readable description of what was logged.
+// details holds arbitrary context — request payloads, response bodies, error objects — and is
+// omitted when there is nothing beyond the payload to record.
+export type LogEntry = {
+  timestamp: number
+  time: string
+  type: LogLevel
+  payload: string
+  details?: unknown
+}
+
 // AppConfig gathers translatable copy and shared runtime constants.
 export type AppConfig = {
   chrome: {
@@ -490,6 +508,7 @@ export type AppConfig = {
         agentConfigs: string
         gameSetup: string
         winMetrics: string
+        tapooLog: string
       }
     }
     agentApiMistakePenaltyMoves: number

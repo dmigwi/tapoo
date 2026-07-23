@@ -263,6 +263,7 @@ export const CONFIG: AppConfig = {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",
         agentConfigs: "agentConfigs",
+        tapooLog: "tapooLog",
       },
     },
     interactivePlayerName: "Self",

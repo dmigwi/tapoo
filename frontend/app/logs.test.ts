@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { loadTapooLog } from "./storage"
 import {
+  initTapooLogs,
   logTapooDiagnostic,
   subscribeTapooLogs,
   tapooDownloadLogs,
@@ -10,10 +12,14 @@ import {
 
 // These tests keep the in-memory Tapoo log export/reset behavior intentionally small.
 describe("tapoo logs", () => {
+  beforeEach(() => {
+    initTapooLogs("interactive")
+  })
+
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
-    tapooResetLogs()
+    tapooResetLogs("interactive")
   })
 
   it("resets in-memory logs before downloading them", async () => {
@@ -34,8 +40,8 @@ describe("tapoo logs", () => {
       downloadedFilename = this.download
     })
 
-    logTapooDiagnostic("info", "before reset", { source: "test" })
-    tapooDownloadLogs()
+    logTapooDiagnostic("interactive", "info", "before reset", { source: "test" })
+    tapooDownloadLogs("interactive")
 
     expect(createObjectURL).toHaveBeenCalledTimes(1)
     if (!downloadedBlob) {
@@ -46,18 +52,30 @@ describe("tapoo logs", () => {
     )
     const downloadedText = await downloadedBlob.text()
     expect(downloadedText).toContain("before reset")
+    expect(downloadedText).toMatch(/"timestamp": \d+(\.\d+)?/)
     expect(downloadedText).toMatch(
-      /"timestamp": "\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}[+-]\d{2}-\d{2}"/,
+      /"time": "\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}[+-]\d{2}-\d{2}"/,
     )
 
-    tapooResetLogs()
-    tapooDownloadLogs()
+    tapooResetLogs("interactive")
+    tapooDownloadLogs("interactive")
 
     expect(createObjectURL).toHaveBeenCalledTimes(2)
     if (!downloadedBlob) {
       throw new Error("expected reset log download blob")
     }
     await expect(downloadedBlob.text()).resolves.toBe("[]")
+  })
+
+  it("persists log entries to sessionStorage and clears them on reset", () => {
+    logTapooDiagnostic("interactive", "info", "first entry")
+    logTapooDiagnostic("interactive", "warn", "second entry")
+
+    expect(loadTapooLog("interactive")).toHaveLength(2)
+
+    tapooResetLogs("interactive")
+
+    expect(loadTapooLog("interactive")).toHaveLength(0)
   })
 
   it("notifies subscribers when log availability changes", () => {
@@ -67,18 +85,18 @@ describe("tapoo logs", () => {
     expect(listener).toHaveBeenLastCalledWith(0)
     expect(tapooLogCount()).toBe(0)
 
-    logTapooDiagnostic("warn", "something happened")
+    logTapooDiagnostic("interactive", "warn", "something happened")
 
     expect(listener).toHaveBeenLastCalledWith(1)
     expect(tapooLogCount()).toBe(1)
 
-    tapooResetLogs()
+    tapooResetLogs("interactive")
 
     expect(listener).toHaveBeenLastCalledWith(0)
     expect(tapooLogCount()).toBe(0)
 
     unsubscribe()
-    logTapooDiagnostic("info", "after unsubscribe")
+    logTapooDiagnostic("interactive", "info", "after unsubscribe")
 
     expect(listener).toHaveBeenCalledTimes(3)
   })

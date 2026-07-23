@@ -241,7 +241,7 @@ describe("agent control mode", () => {
 
   afterEach(() => {
     window.localStorage.clear()
-    tapooResetLogs()
+    tapooResetLogs("agent-api")
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
@@ -888,10 +888,10 @@ describe("agent control mode", () => {
     expect(elements.agentSeatsBody?.hidden).toBe(false)
     expect(elements.tapooLogsReset?.disabled).toBe(true)
     expect(elements.tapooLogsDownload?.disabled).toBe(true)
-    logTapooDiagnostic("info", "downloadable log")
+    logTapooDiagnostic("agent-api", "info", "downloadable log")
     expect(elements.tapooLogsDownload?.disabled).toBe(false)
     elements.tapooLogsReset?.click()
-    logTapooDiagnostic("info", "downloadable log")
+    logTapooDiagnostic("agent-api", "info", "downloadable log")
     elements.tapooLogsDownload?.click()
 
     expect(dispatch).not.toHaveBeenCalled()
@@ -912,7 +912,7 @@ describe("agent control mode", () => {
     expect(elements.tapooLogsReset?.disabled).toBe(true)
     expect(elements.tapooLogsDownload?.disabled).toBe(true)
 
-    logTapooDiagnostic("info", "agent request")
+    logTapooDiagnostic("agent-api", "info", "agent request")
 
     expect(elements.tapooLogsReset?.disabled).toBe(false)
     expect(elements.tapooLogsDownload?.disabled).toBe(false)
@@ -1616,5 +1616,43 @@ describe("agent control mode", () => {
 
     expect(firstDispatch).not.toHaveBeenCalled()
     expect(secondDispatch).toHaveBeenCalledWith({ type: "pause" }, { playerName: "Self" })
+  })
+
+  it("handles human session controls only while the terminal app is focused", () => {
+    const pauseButton = createButton({ action: "pause" })
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [pauseButton],
+      touchControls: document.createElement("div"),
+    }
+    const outsideInput = document.createElement("input")
+    elements.app.tabIndex = 0
+    elements.app.append(pauseButton)
+    document.body.append(elements.app, outsideInput)
+    vi.stubGlobal("fetch", vi.fn())
+    const dispatch = vi.fn()
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createControlFixture({ status: "running" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    outsideInput.focus()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
+
+    expect(dispatch).not.toHaveBeenCalled()
+
+    elements.app.focus()
+    pauseButton.click()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
+
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "pause" }, { playerName: "Self" })
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: "pause" }, { playerName: "Self" })
   })
 })

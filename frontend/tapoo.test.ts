@@ -6,6 +6,7 @@ import type * as FallbackPolicy from "./app/fallback-policy"
 describe("tapoo entrypoint", () => {
   beforeEach(() => {
     vi.resetModules()
+    delete document.body.dataset.tapooControlMode
   })
 
   it("boots the game on import", async () => {
@@ -132,7 +133,7 @@ describe("tapoo entrypoint", () => {
 
     await import("./tapoo")
 
-    expect(showPlaceholderArt).toHaveBeenCalledWith(failure)
+    expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
   })
 
   it("shows placeholder art when bootstrap throws a known fallback Error", async () => {
@@ -162,7 +163,7 @@ describe("tapoo entrypoint", () => {
 
     await import("./tapoo")
 
-    expect(showPlaceholderArt).toHaveBeenCalledWith(failure)
+    expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
   })
 
   it("does not persist the active runtime after a later invariant failure", async () => {
@@ -199,6 +200,6 @@ describe("tapoo entrypoint", () => {
     window.dispatchEvent(new ErrorEvent("error", { error: failure }))
 
     expect(runtime.persistSnapshot).not.toHaveBeenCalled()
-    expect(showPlaceholderArt).toHaveBeenCalledWith(failure)
+    expect(showPlaceholderArt).toHaveBeenCalledWith("agent-api", failure)
   })
 })

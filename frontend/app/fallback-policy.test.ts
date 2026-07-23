@@ -18,12 +18,12 @@ describe("fallback policy", () => {
     const terminalApp = document.getElementById("terminal-app")
     const placeholder = document.getElementById("placeholder-art")
 
-    showPlaceholderArt("handled status")
+    showPlaceholderArt("interactive", "handled status")
 
     expect(terminalApp).toHaveProperty("hidden", false)
     expect(placeholder).toHaveProperty("hidden", true)
 
-    showPlaceholderArt(new Error("network timeout"))
+    showPlaceholderArt("interactive", new Error("network timeout"))
 
     expect(terminalApp).toHaveProperty("hidden", false)
     expect(terminalApp?.getAttribute("aria-hidden")).toBe("true")
@@ -56,7 +56,7 @@ describe("fallback policy", () => {
 
     const placeholder = document.getElementById("placeholder-art")
 
-    showPlaceholderArt(new Error("missing required element: terminal-body"))
+    showPlaceholderArt("interactive", new Error("missing required element: terminal-body"))
 
     expect(placeholder).toHaveProperty("hidden", false)
     expect(placeholder?.getAttribute("aria-hidden")).toBe("false")

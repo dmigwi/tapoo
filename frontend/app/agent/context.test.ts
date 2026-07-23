@@ -28,6 +28,7 @@ const expectedAgentPrompt = [
   "The maze is randomly generated at each level with exactly one path to the destination.",
   "Use traversalHistory entries matching your playerName to review your past moves in order.",
   "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it — never assume the direction vector to the destination is traversable.",
+  "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
   "Prefer unvisited cells in any direction over revisiting known cells, and calibrate how many moves you submit against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty so submit fewer moves; applied signals a confirmed corridor so you may extend further.",
   `Return only JSON {"moves":["MoveRight",...]} where each move is one of MoveUp, MoveDown, MoveLeft, MoveRight.`,
   "Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step).",

@@ -1,5 +1,6 @@
 import { isMoveAction } from "../traversal"
 import { logTapooDiagnostic } from "../logs"
+import { CONFIG } from "../config"
 import {
   AGENT_CONTEXT_TOOLS,
   buildAgentMessages,
@@ -98,7 +99,9 @@ type RequestAgentPredictionInput = {
     onNetworkError?: (agent: AgentApiConfig) => void
 }
 
-// defaultMaxToolRounds prevents a model from looping indefinitely through context tools.
+// defaultMaxToolRounds caps context-gathering rounds per prediction turn. The higher limit
+// reserves capacity for future multi-agent levels where in-level constraints may change and
+// a model may legitimately need several rounds; the system prompt discourages redundant calls.
 const defaultMaxToolRounds = 4
 
 // stripMarkdownFence removes optional ```json or ``` wrappers that models add despite instructions.
@@ -221,11 +224,15 @@ async function requestChatTurn(
   }
 
   const endpointLabel = `${endpoint.origin}${endpoint.pathname}`
-  logTapooDiagnostic("info", "Agent request.", {
-    endpoint: endpointLabel,
-    payload: msgBody,
-  })
+  // Snapshot messages at log time: chatMessages is mutated by push() after each tool round,
+  // so storing the live reference would cause all log entries to reflect the final state.
+  const agentApiModeName = CONFIG.runtime.controlModes.agentApi
   
+  logTapooDiagnostic(agentApiModeName, "info", "Agent request.", {
+    endpoint: endpointLabel,
+    payload: { ...msgBody, messages: [...messages] },
+  })
+
   const response = await fetch(endpoint, {
     body: JSON.stringify(msgBody),
     headers: {
@@ -237,7 +244,7 @@ async function requestChatTurn(
   })
 
   if (!response.ok) {
-    logTapooDiagnostic("warn", "Agent HTTP response failed.", {
+    logTapooDiagnostic(agentApiModeName, "warn", "Agent HTTP response failed.", {
       endpoint: endpointLabel,
       status: response.status,
       statusText: response.statusText,
@@ -246,7 +253,7 @@ async function requestChatTurn(
   }
 
   const responseBody = (await response.json()) as AgentChatResponse
-  logTapooDiagnostic("info", "Agent response.", {
+  logTapooDiagnostic(agentApiModeName, "info", "Agent response.", {
     endpoint: endpointLabel,
     payload: responseBody,
   })
@@ -317,9 +324,9 @@ export function requestPredictionWithAbort({
         return { ok: false, reason }
       }
 
-      const chatMessages = buildAgentMessages(agent.playerName)
       // Tool handlers close over the current State snapshot and last replay metadata for this turn.
       const toolHandlers = buildAgentToolHandlers(state, agent, lastActionResult)
+      let messages = buildAgentMessages(agent.playerName)
       let availableTools = AGENT_CONTEXT_TOOLS
       // Allow configured tool rounds plus two final no-tools requests for the actual prediction.
       const maxRequestTurns = maxToolRounds + 2
@@ -333,7 +340,7 @@ export function requestPredictionWithAbort({
         }
 
         // Each turn sends the accumulated chat/tool transcript until final moves are returned.
-        const response = await requestChatTurnWithTimeout(chatMessages, availableTools)
+        const response = await requestChatTurnWithTimeout(messages, availableTools)
         if (!response?.message) {
           return fail("network-error")
         }
@@ -345,20 +352,20 @@ export function requestPredictionWithAbort({
           return moves ? { ok: true, moves } : fail("malformed-response")
         }
 
-        // Tool results are appended here so agent-api.ts never manages chat protocol details.
-        chatMessages.push({
-          role: "assistant",
-          content: response.message.content ?? "",
-          tool_calls: toolCalls,
-        })
-
         const toolMessages = await buildToolResultMessages(toolCalls, toolHandlers)
         if (!toolMessages) {
           return fail("network-error")
         }
 
+        // Build a fresh messages array for the next request so each turn's log entry captures
+        // only the messages that were actually sent in that turn, not the accumulated history.
+        messages = [
+          ...messages,
+          { role: "assistant", content: response.message.content ?? "", tool_calls: toolCalls },
+          ...toolMessages,
+        ]
+
         toolRounds += 1
-        chatMessages.push(...toolMessages)
         if (toolRounds >= maxToolRounds) {
           // After enough context rounds, remove tools to nudge the model into a final prediction.
           availableTools = []
