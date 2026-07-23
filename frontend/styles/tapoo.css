@@ -697,13 +697,94 @@ body {
   pointer-events: none;
 }
 
-.agent-seat-roster {
+.agent-seats-body {
   flex: 0 0 auto;
-  align-self: center;
+  align-self: stretch;
+  min-height: 0;
   display: grid;
+  grid-template-rows: max-content 1fr;
   gap: 6px;
   padding-inline-start: 4px;
   border-inline-start: 1px solid rgba(72, 198, 62, 0.34);
+  pointer-events: auto;
+}
+
+.agent-seats-body[hidden] {
+  display: none;
+}
+
+.tapoo-logs-controls {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding-block-start: 2px;
+}
+
+.tapoo-logs-control {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(72, 198, 62, 0.72);
+  border-radius: 5px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(72, 198, 62, 0.16) 0%,
+      rgba(72, 198, 62, 0.07) 100%
+    );
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  box-shadow:
+    inset 0 0 0 1px rgba(72, 198, 62, 0.12),
+    0 0 10px rgba(72, 198, 62, 0.08);
+}
+
+.tapoo-logs-control:hover,
+.tapoo-logs-control:focus-visible {
+  border-color: var(--text);
+  background: rgba(72, 198, 62, 0.13);
+  box-shadow:
+    inset 0 0 0 1px rgba(72, 198, 62, 0.18),
+    0 0 14px rgba(72, 198, 62, 0.18);
+  outline: none;
+}
+
+.tapoo-logs-control:disabled {
+  border-color: rgba(143, 148, 122, 0.36);
+  background: rgba(143, 148, 122, 0.035);
+  color: var(--disabled);
+  cursor: default;
+  box-shadow: none;
+}
+
+.tapoo-logs-control--acknowledged {
+  border-color: var(--status);
+  color: var(--status);
+  box-shadow:
+    inset 0 0 0 1px rgba(241, 208, 101, 0.18),
+    0 0 14px rgba(241, 208, 101, 0.28);
+}
+
+.tapoo-logs-control__icon {
+  width: 18px;
+  height: 18px;
+}
+
+.agent-seats-roster-shell {
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-seat-roster {
+  display: grid;
+  gap: 6px;
   pointer-events: auto;
 }
 

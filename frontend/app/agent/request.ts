@@ -1,5 +1,5 @@
 import { isMoveAction } from "../traversal"
-import { logTapooDiagnostic } from "../fallback-policy"
+import { logTapooDiagnostic } from "../logs"
 import {
   AGENT_CONTEXT_TOOLS,
   buildAgentMessages,

@@ -2,7 +2,8 @@ import { createAgentMode } from "./app/control/agent"
 import { createInteractiveMode } from "./app/control/interactive"
 import { CONFIG } from "./app/config"
 import { getGameElements } from "./app/dom"
-import { showPlaceholderArt, showTerminalApp, tapooDownloadLogs } from "./app/fallback-policy"
+import { showPlaceholderArt, showTerminalApp } from "./app/fallback-policy"
+import { tapooDownloadLogs, tapooResetLogs } from "./app/logs"
 import { bootstrapGame } from "./app/game"
 import type { Elements, MazeActionControl } from "./app/types"
 
@@ -17,6 +18,7 @@ function pageControlMode(elements: Elements): MazeActionControl {
 // tapooDownloadLogs is attached without the __ prefix so the build's --mangle-props=^__ rule
 // does not rename it; it remains callable by name from the browser DevTools console.
 ;(window as unknown as Record<string, unknown>)["tapooDownloadLogs"] = tapooDownloadLogs
+;(window as unknown as Record<string, unknown>)["tapooResetLogs"] = tapooResetLogs
 
 window.addEventListener("error", (event) => {
   showPlaceholderArt(event.error)

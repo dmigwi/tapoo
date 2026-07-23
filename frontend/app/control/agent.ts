@@ -32,6 +32,12 @@ import {
   savePersistedAgentApiConfigs,
 } from "../storage"
 import { CONFIG } from "../config"
+import {
+  subscribeTapooLogs,
+  tapooDownloadLogs,
+  tapooLogCount,
+  tapooResetLogs,
+} from "../logs"
 import { isRunningStatus } from "../status"
 
 const { agentConfig, runtime } = CONFIG
@@ -64,6 +70,7 @@ export function createAgentMode(
   let agentFormCloseHandler: (() => void) | null = null
   let agentFormSubmitHandler: ((event: Event) => void) | null = null
   let agentFormOuterClickHandler: ((event: MouseEvent) => void) | null = null
+  let releaseLogSubscription: (() => void) | null = null
   let lastActionResult: MazeActionResult | null = null
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null
   const buttonBindings: AgentButtonBinding[] = []
@@ -89,6 +96,11 @@ export function createAgentMode(
         agentMovePoller?.__setAttached(false)
         agentMovePoller?.__stopPolling()
         elements.body.classList.remove("terminal-body--agent-form-active")
+        if (elements.agentSeatsBody) {
+          elements.agentSeatsBody.hidden = true
+        }
+        releaseLogSubscription?.()
+        releaseLogSubscription = null
         if (elements.agentSeatRoster && agentRosterClickHandler) {
           elements.agentSeatRoster.removeEventListener("click", agentRosterClickHandler)
           agentRosterClickHandler = null
@@ -194,6 +206,9 @@ export function createAgentMode(
         isRunningStatus(readState().status) ? activeAgentId : null
 
       const renderAgentRoster = (): void => {
+        if (elements.agentSeatsBody) {
+          elements.agentSeatsBody.hidden = false
+        }
         renderAgentSeatRoster(elements.agentSeatRoster, readAgentConfigs(), currentPlayingAgentId())
       }
 
@@ -377,6 +392,53 @@ export function createAgentMode(
         renderAgentRoster()
       }
 
+      const bindLogButtons = (): void => {
+        const syncResetButton = (): void => {
+          const hasLogs = tapooLogCount() > 0
+          if (elements.tapooLogsReset) {
+            elements.tapooLogsReset.disabled = !hasLogs
+          }
+          if (elements.tapooLogsDownload) {
+            elements.tapooLogsDownload.disabled = !hasLogs
+          }
+        }
+
+        const showButtonFeedback = (button: HTMLButtonElement): void => {
+          button.classList.remove("tapoo-logs-control--acknowledged")
+          void button.offsetWidth
+          button.classList.add("tapoo-logs-control--acknowledged")
+          window.setTimeout(() => {
+            button.classList.remove("tapoo-logs-control--acknowledged")
+          }, 420)
+        }
+
+        if (elements.tapooLogsReset) {
+          const onClick = (): void => {
+            showButtonFeedback(elements.tapooLogsReset)
+            tapooResetLogs()
+          }
+          buttonBindings.push({
+            __button: elements.tapooLogsReset,
+            __onClick: onClick,
+          })
+          elements.tapooLogsReset.addEventListener("click", onClick)
+        }
+
+        if (elements.tapooLogsDownload) {
+          const onClick = (): void => {
+            showButtonFeedback(elements.tapooLogsDownload)
+            tapooDownloadLogs()
+          }
+          buttonBindings.push({
+            __button: elements.tapooLogsDownload,
+            __onClick: onClick,
+          })
+          elements.tapooLogsDownload.addEventListener("click", onClick)
+        }
+
+        releaseLogSubscription = subscribeTapooLogs(syncResetButton)
+      }
+
       const bindAgentConfigForm = (): void => {
         const form = elements.agentConfigForm
         if (
@@ -557,6 +619,7 @@ export function createAgentMode(
 
       bindSessionButtons(elements.controls)
       bindSessionButtons(elements.touchButtons)
+      bindLogButtons()
       bindAgentRoster()
       bindAgentConfigForm()
       bindAgentDeleteDialog()

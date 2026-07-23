@@ -308,6 +308,9 @@ export type TerminalElements = {
 
 // AgentElements are only used by the agent-api page overlays and seat roster.
 export type AgentElements = {
+  agentSeatsBody?: HTMLElement
+  tapooLogsReset?: HTMLButtonElement
+  tapooLogsDownload?: HTMLButtonElement
   agentSeatRoster?: HTMLElement
   agentConfigForm?: HTMLFormElement
   agentConfigTitle?: HTMLElement

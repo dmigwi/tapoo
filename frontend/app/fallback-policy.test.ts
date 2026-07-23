@@ -6,6 +6,7 @@ import { showPlaceholderArt, showTerminalApp } from "./fallback-policy"
 describe("fallback policy", () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it("shows the placeholder art only for Error failures", () => {
@@ -60,4 +61,5 @@ describe("fallback policy", () => {
     expect(placeholder).toHaveProperty("hidden", false)
     expect(placeholder?.getAttribute("aria-hidden")).toBe("false")
   })
+
 })

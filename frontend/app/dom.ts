@@ -45,6 +45,9 @@ export function getGameElements(): Elements | null {
     touchButtons: Array.from(
       document.querySelectorAll<HTMLButtonElement>("[data-touch-control]"),
     ),
+    agentSeatsBody: mustElement<HTMLElement>("agent-seats-body"),
+    tapooLogsReset: mustElement<HTMLButtonElement>("tapoo-logs-reset"),
+    tapooLogsDownload: mustElement<HTMLButtonElement>("tapoo-logs-download"),
     agentSeatRoster: mustElement<HTMLElement>("agent-seat-roster"),
     agentConfigForm: mustElement<HTMLFormElement>("agent-config-form"),
     agentConfigTitle: mustElement<HTMLElement>("agent-config-title"),

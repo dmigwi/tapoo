@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createAgentMode } from "./agent"
 import { CONFIG } from "../config"
+import { logTapooDiagnostic, tapooResetLogs } from "../logs"
 import {
   loadPersistedAgentApiConfigs,
   savePersistedAgentApiConfigs,
@@ -66,6 +67,9 @@ function createButton({
 }
 
 function createAgentFormElements(): Elements {
+  const agentSeatsBody = document.createElement("div")
+  const tapooLogsReset = document.createElement("button")
+  const tapooLogsDownload = document.createElement("button")
   const agentSeatRoster = document.createElement("div")
   const agentConfigForm = document.createElement("form")
   const agentConfigTitle = document.createElement("strong")
@@ -88,6 +92,7 @@ function createAgentFormElements(): Elements {
   const agentDeleteClose = document.createElement("button")
 
   agentSeatRoster.hidden = true
+  agentSeatsBody.hidden = true
   agentConfigForm.hidden = true
   agentConfigForm.noValidate = true
   agentDeleteDialog.hidden = true
@@ -119,7 +124,8 @@ function createAgentFormElements(): Elements {
     agentDeleteConfirm,
     agentDeleteClose,
   )
-  app.append(agentSeatRoster, agentConfigForm, agentDeleteDialog)
+  app.append(agentSeatsBody, agentConfigForm, agentDeleteDialog)
+  agentSeatsBody.append(tapooLogsReset, tapooLogsDownload, agentSeatRoster)
 
   return {
     app,
@@ -129,6 +135,9 @@ function createAgentFormElements(): Elements {
     screen: document.createElement("div"),
     touchButtons: [],
     touchControls: document.createElement("div"),
+    agentSeatsBody,
+    tapooLogsReset,
+    tapooLogsDownload,
     agentSeatRoster,
     agentConfigForm,
     agentConfigTitle,
@@ -232,6 +241,8 @@ describe("agent control mode", () => {
 
   afterEach(() => {
     window.localStorage.clear()
+    tapooResetLogs()
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
@@ -853,6 +864,66 @@ describe("agent control mode", () => {
     expect(
       elements.agentSeatRoster?.querySelectorAll("[data-agent-seat-add]"),
     ).toHaveLength(CONFIG.agentConfig.maxSeats - 2)
+  })
+
+  it("keeps log side buttons separate from maze actions", () => {
+    const elements = createAgentFormElements()
+    const dispatch = vi.fn()
+    const createObjectURL = vi.fn(() => "blob:tapoo-logs")
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL,
+      revokeObjectURL: vi.fn(),
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, () => [])
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    expect(elements.agentSeatsBody?.hidden).toBe(false)
+    expect(elements.tapooLogsReset?.disabled).toBe(true)
+    expect(elements.tapooLogsDownload?.disabled).toBe(true)
+    logTapooDiagnostic("info", "downloadable log")
+    expect(elements.tapooLogsDownload?.disabled).toBe(false)
+    elements.tapooLogsReset?.click()
+    logTapooDiagnostic("info", "downloadable log")
+    elements.tapooLogsDownload?.click()
+
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+  })
+
+  it("enables reset logs only while in-memory logs exist", () => {
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, () => [])
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    expect(elements.tapooLogsReset?.disabled).toBe(true)
+    expect(elements.tapooLogsDownload?.disabled).toBe(true)
+
+    logTapooDiagnostic("info", "agent request")
+
+    expect(elements.tapooLogsReset?.disabled).toBe(false)
+    expect(elements.tapooLogsDownload?.disabled).toBe(false)
+
+    elements.tapooLogsReset?.click()
+
+    expect(elements.tapooLogsReset?.disabled).toBe(true)
+    expect(elements.tapooLogsDownload?.disabled).toBe(true)
+    expect(
+      elements.tapooLogsReset?.classList.contains("tapoo-logs-control--acknowledged"),
+    ).toBe(true)
   })
 
   it("opens delete confirmation for an inactive occupied seat", () => {

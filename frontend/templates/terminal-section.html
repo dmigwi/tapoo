@@ -238,12 +238,46 @@
           </div>
         </section>
       </div>
-      <div
-        id="agent-seat-roster"
-        class="agent-seat-roster"
-        hidden
-        aria-label="Agent seats"
-      ></div>
+      <div id="agent-seats-body" class="agent-seats-body" hidden aria-label="Agent seats and Tapoo logs">
+        <div class="tapoo-logs-controls" aria-label="Tapoo log controls">
+          <button
+            id="tapoo-logs-reset"
+            class="tapoo-logs-control"
+            type="button"
+            title="Reset Tapoo logs"
+            aria-label="Reset Tapoo logs"
+          >
+            <svg class="tapoo-logs-control__icon" viewBox="0 0 512 512" aria-hidden="true" focusable="false">
+              <path
+                d="M64,256H34A222,222,0,0,1,430,118.15V85h30V190H355V160h67.27A192.21,192.21,0,0,0,256,64C150.13,64,64,150.13,64,256Zm384,0c0,105.87-86.13,192-192,192A192.21,192.21,0,0,1,89.73,352H157V322H52V427H82V393.85A222,222,0,0,0,478,256Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+          <button
+            id="tapoo-logs-download"
+            class="tapoo-logs-control"
+            type="button"
+            title="Download Tapoo logs"
+            aria-label="Download Tapoo logs"
+          >
+            <svg class="tapoo-logs-control__icon" viewBox="0 0 1024 1024" aria-hidden="true" focusable="false">
+              <path
+                d="M512 666.5L367.2 521.7l36.2-36.2 83 83V256h51.2v312.5l83-83 36.2 36.2L512 666.5zm-204.8 50.3V768h409.6v-51.2H307.2z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="agent-seats-roster-shell">
+          <div
+            id="agent-seat-roster"
+            class="agent-seat-roster"
+            hidden
+            aria-label="Agent seats"
+          ></div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
