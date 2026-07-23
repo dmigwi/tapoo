@@ -773,6 +773,7 @@ describe("agent control mode", () => {
     expect(toolResult).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 2 },
+      directions: { open: [], blocked: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"] },
     })
   })
 

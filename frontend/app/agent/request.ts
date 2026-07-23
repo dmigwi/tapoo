@@ -27,8 +27,8 @@ export type AgentToolDefinition = {
     parameters: {
       type: "object"
       additionalProperties?: boolean
-      properties: Record<string, unknown>
-      required: string[]
+      // properties: Record<string, unknown>
+      // required: string[]
     }
   }
 }
@@ -93,10 +93,11 @@ type RequestAgentPredictionInput = {
     state: State
     timeoutMs: number
     agent: AgentApiConfig
+    openDirections: MoveAction[]
     maxToolRounds?: number
     lastActionResult: MazeActionResult | null
-    onMalformedResponse?: (agent: AgentApiConfig) => void
     onNetworkError?: (agent: AgentApiConfig) => void
+    onMalformedResponse?: (agent: AgentApiConfig) => void
 }
 
 // defaultMaxToolRounds caps context-gathering rounds per prediction turn. The higher limit
@@ -263,6 +264,7 @@ async function requestChatTurn(
 // requestPredictionWithAbort hides request construction, timeout control, and tool-call servicing.
 export function requestPredictionWithAbort({
   lastActionResult,
+  openDirections,
   state,
   agent,
   maxToolRounds = defaultMaxToolRounds,
@@ -325,7 +327,7 @@ export function requestPredictionWithAbort({
       }
 
       // Tool handlers close over the current State snapshot and last replay metadata for this turn.
-      const toolHandlers = buildAgentToolHandlers(state, agent, lastActionResult)
+      const toolHandlers = buildAgentToolHandlers(state, lastActionResult, openDirections)
       let messages = buildAgentMessages(agent.playerName)
       let availableTools = AGENT_CONTEXT_TOOLS
       // Allow configured tool rounds plus two final no-tools requests for the actual prediction.

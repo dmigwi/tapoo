@@ -6,28 +6,30 @@ import { getNavigationProfile } from "../maze"
 import type {
   AgentApiConfig,
   MazeActionResult,
+  MoveAction,
   State,
 } from "../types"
 
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt =
-  `Your name is Blue. playerName Self always appears first in traversalHistory and marks the start cell. Use currentCell as your current position and destinationCell as the target. The maze is randomly generated at each level with exactly one path to the destination. Use traversalHistory entries matching your playerName to review your past moves in order. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it — never assume the direction vector to the destination is traversable. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. Prefer unvisited cells in any direction over revisiting known cells, and calibrate how many moves you submit against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty so submit fewer moves; applied signals a confirmed corridor so you may extend further. Return only JSON {"moves":["MoveRight",...]} where each move is one of MoveUp, MoveDown, MoveLeft, MoveRight. Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step). Every submitted move counts toward score decay, including moves after the first invalid move. Stop predicting when lastMoveStatus is reached-target or status is won. Choose the moves most likely to reach the destination with the fewest submitted moves.`
+  `Your name is Blue. playerName Self always appears first in traversalHistory and marks the start cell. Use currentCell as your current position and destinationCell as the target. The maze is randomly generated at each level with exactly one path to the destination. Use traversalHistory entries matching your playerName to review your past moves in order. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it — never assume moves toward the destination are passable. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. Prefer unvisited cells over revisiting known ones, and calibrate how many moves you submit against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty so submit fewer moves; applied signals confirmed progress so you may extend your move sequence. Call get_prediction_rules to get the required response format and submission constraints before predicting moves. Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step). Every submitted move counts toward score decay, including moves after the first invalid move. Stop predicting when lastMoveStatus is reached-target or status is won. Choose the moves most likely to reach the destination with the fewest submitted moves.`
 const developerMessage = prompt
-const userMessage =
-  `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state. Return only JSON {"moves":["MoveRight",...]} with moves from: MoveUp, MoveDown, MoveLeft, MoveRight.`
+// openDirections for request tests: maze is null so all directions are blocked (empty list).
+const testOpenDirections: MoveAction[] = []
+const userMessage = `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state.`
 const agentContextTools = [
   {
     type: "function" as const,
     function: {
       name: "get_game_status",
       description:
-        "Get current Tapoo level, status, score, and maze dimensions. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"mazeDimensions\":{\"length\":number,\"width\":number,\"area\":number}}. length is the number of columns, width is the number of rows, area is the total cell count.",
+        "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won (destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"mazeDimensions\":{\"length\":number,\"width\":number,\"area\":number}}. length is the number of columns, width is the number of rows, area is the total cell count.",
       parameters: {
         type: "object",
         additionalProperties: false,
-        properties: {},
-        required: [],
+        // properties: {},
+        // required: [],
       },
     },
   },
@@ -36,12 +38,12 @@ const agentContextTools = [
     function: {
       name: "get_maze_positions",
       description:
-        "Get current and destination cells. Row increases going down, col increases going right; MoveUp/Down changes row by ±1, MoveLeft/Right changes col by ±1. Returns JSON: {\"currentCell\":{\"row\":number,\"col\":number}|null,\"destinationCell\":{\"row\":number,\"col\":number}|null}.",
+        "Get current cell, destination cell, and which moves are passable from the current cell. Row increases going down, col increases going right; MoveUp and MoveDown change row by ±1; MoveLeft and MoveRight change col by ±1. All 4 moves are always classified in directions — each appears in exactly one of open or blocked; selecting a blocked move triggers an invalid-move. Returns JSON: {\"currentCell\":{\"row\":number,\"col\":number}|null,\"destinationCell\":{\"row\":number,\"col\":number}|null,\"directions\":{\"open\":[...],\"blocked\":[]}}.",
       parameters: {
         type: "object",
         additionalProperties: false,
-        properties: {},
-        required: [],
+        // properties: {},
+        // required: [],
       },
     },
   },
@@ -50,26 +52,12 @@ const agentContextTools = [
     function: {
       name: "get_traversal_history",
       description:
-        "Get all players' visited cells in chronological order. Returns JSON: {\"traversalHistory\":[{\"playerName\":string,\"row\":number,\"col\":number}]}. Filter by playerName to get a specific player's path.",
+        "Get all players' visit records in chronological order. Returns JSON: {\"traversalHistory\":[{\"playerName\":string,\"row\":number,\"col\":number}]}. Filter by playerName to review a specific player's visit sequence.",
       parameters: {
         type: "object",
         additionalProperties: false,
-        properties: {},
-        required: [],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "get_prediction_rules",
-      description:
-        "Get movement response rules. suggestedMovesPerTurn is the suggested maximum moves to submit per turn, scaled to maze size; submitting fewer moves on early turns limits wasted score if the path turns out to be wrong. Returns JSON: {\"suggestedMovesPerTurn\":number,\"expectedResponseSchema\":object}.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-        required: [],
+        // properties: {},
+        // required: [],
       },
     },
   },
@@ -78,12 +66,26 @@ const agentContextTools = [
     function: {
       name: "get_last_replay_result",
       description:
-        "Get the previous turn replay result. lastMoveStatus values: null=first turn no history yet; applied=move executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move hit a wall or boundary, replay stopped; malformed-response=your previous response was not valid JSON in the required {\"moves\":[...]} format, no moves were replayed and a fixed score penalty was charged, ensure the next response is valid JSON only; network-error=HTTP failure, no score charged. lastSubmittedMoves lists the moves from that turn; replayStartIndex is their zero-based offset in the overall move history. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total score-decaying moves charged that turn. Returns JSON with lastPlayerName, lastMoveStatus, replayStartIndex, lastSubmittedMovesSchema, lastSubmittedMoves, lastAppliedMoveIndex, visitedBefore, and chargedMovesCount.",
+        "Get the previous turn replay result. lastMoveStatus values: null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged. lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total moves charged toward score decay that turn. Returns JSON: {\"lastPlayerName\":string|null,\"lastMoveStatus\":string|null,\"lastReplayStartIndex\":number|null,\"lastSubmittedMoves\":string[],\"lastAppliedMoveIndex\":number|null,\"visitedBefore\":boolean|null,\"chargedMovesCount\":number}.",
       parameters: {
         type: "object",
         additionalProperties: false,
-        properties: {},
-        required: [],
+        // properties: {},
+        // required: [],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_prediction_rules",
+      description:
+        "Get move submission rules. suggestedMovesPerTurn is the suggested maximum moves to submit per turn, scaled to maze size; submitting fewer moves on early turns limits wasted score if your predicted moves turn out to be wrong. Returns JSON: {\"suggestedMovesPerTurn\":number,\"expectedResponseSchema\":object}.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        // properties: {},
+        // required: [],
       },
     },
   },
@@ -138,6 +140,7 @@ function requestInput(
   return {
     agent,
     lastActionResult,
+    openDirections: testOpenDirections,
     state: { ...state, ...stateOverrides },
     timeoutMs: 180_000,
   }
@@ -183,7 +186,8 @@ function thinkingToolCallResponse(toolCalls: unknown[]) {
   }
 }
 
-// positionsContent mirrors the exact JSON string sent by the focused positions tool.
+// positionsContent mirrors the exact JSON string sent by the merged positions tool.
+// maze is null in test state so all 4 directions are always blocked (testOpenDirections is []).
 function positionsContent(overrides: Partial<State> = {}): string {
   const nextState = { ...state, ...overrides }
   return JSON.stringify({
@@ -199,6 +203,7 @@ function positionsContent(overrides: Partial<State> = {}): string {
           col: Math.floor((nextState.finalPosition.x - 1) / 2),
         }
       : null,
+    directions: { open: testOpenDirections, blocked: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"] },
   })
 }
 
@@ -220,13 +225,11 @@ describe("agent request service", () => {
       messages: [
         {
           role: "system",
-          content:
-            `Your name is Blue. playerName Self always appears first in traversalHistory and marks the start cell. Use currentCell as your current position and destinationCell as the target. The maze is randomly generated at each level with exactly one path to the destination. Use traversalHistory entries matching your playerName to review your past moves in order. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it — never assume the direction vector to the destination is traversable. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. Prefer unvisited cells in any direction over revisiting known cells, and calibrate how many moves you submit against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty so submit fewer moves; applied signals a confirmed corridor so you may extend further. Return only JSON {"moves":["MoveRight",...]} where each move is one of MoveUp, MoveDown, MoveLeft, MoveRight. Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step). Every submitted move counts toward score decay, including moves after the first invalid move. Stop predicting when lastMoveStatus is reached-target or status is won. Choose the moves most likely to reach the destination with the fewest submitted moves.`,
+          content: developerMessage,
         },
         {
           role: "user",
-          content:
-            `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state. Return only JSON {"moves":["MoveRight",...]} with moves from: MoveUp, MoveDown, MoveLeft, MoveRight.`,
+          content: userMessage,
         },
         {
           role: "assistant",
@@ -246,7 +249,7 @@ describe("agent request service", () => {
           role: "tool",
           tool_call_id: "call_positions",
           content:
-            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7}}",
+            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"directions\":{\"open\":[],\"blocked\":[\"MoveUp\",\"MoveDown\",\"MoveLeft\",\"MoveRight\"]}}",
         },
       ],
       tools: agentContextTools,
@@ -419,12 +422,12 @@ describe("agent request service", () => {
         function: { index: 2, name: "get_traversal_history", arguments: {} },
       },
       {
-        id: "call_rules",
-        function: { index: 3, name: "get_prediction_rules", arguments: {} },
+        id: "call_replay",
+        function: { index: 3, name: "get_last_replay_result", arguments: {} },
       },
       {
-        id: "call_replay",
-        function: { index: 4, name: "get_last_replay_result", arguments: {} },
+        id: "call_rules",
+        function: { index: 4, name: "get_prediction_rules", arguments: {} },
       },
     ])
     const fetchMock = vi
@@ -451,8 +454,8 @@ describe("agent request service", () => {
       { role: "tool", tool_call_id: "call_status" },
       { role: "tool", tool_call_id: "call_positions" },
       { role: "tool", tool_call_id: "call_history" },
-      { role: "tool", tool_call_id: "call_rules" },
       { role: "tool", tool_call_id: "call_replay" },
+      { role: "tool", tool_call_id: "call_rules" },
     ])
     expect(toolMessages.map(({ content }) => JSON.parse(content) as unknown)).toEqual([
       {
@@ -464,18 +467,17 @@ describe("agent request service", () => {
       JSON.parse(positionsContent()) as unknown,
       { traversalHistory: state.traversalHistory },
       {
-        suggestedMovesPerTurn: getNavigationProfile(state.mazeDimensions).__hardCorridorLimit,
-        expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
-      },
-      {
         lastPlayerName: null,
         lastMoveStatus: null,
-        replayStartIndex: null,
-        lastSubmittedMovesSchema: null,
+        lastReplayStartIndex: null,
         lastSubmittedMoves: [],
         lastAppliedMoveIndex: null,
         visitedBefore: null,
         chargedMovesCount: 0,
+      },
+      {
+        suggestedMovesPerTurn: getNavigationProfile(state.mazeDimensions).__hardCorridorLimit,
+        expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       },
     ])
   })

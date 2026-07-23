@@ -77,7 +77,7 @@ function buildReplayState(
 
   return buildMazeActionResult(playerName, {
     lastMoveStatus: status,
-    replayStartIndex: 0,
+    lastReplayStartIndex: 0,
     lastSubmittedMovesSchema: SUBMITTED_MOVES_SCHEMA,
     lastSubmittedMoves: normalizeSubmittedMoves([command]),
     lastAppliedMoveIndex,

@@ -174,6 +174,7 @@ export type PersistedSnapshot = {
 
 // AgentExpectedResponseSchema documents the one supported prediction payload using JSON Schema.
 export type AgentExpectedResponseSchema = {
+  description?: string
   type: "object"
   additionalProperties: false
   required: ["moves"]
@@ -220,7 +221,7 @@ export type AgentSeat = {
 // MazeActionResult stores only the previous command/replay outcome; live maze facts stay in State.
 export type MazeActionResult = {
   lastPlayerName?: string
-  replayStartIndex?: 0
+  lastReplayStartIndex?: 0
   lastSubmittedMovesSchema?: AgentSubmittedMovesSchema
   lastSubmittedMoves?: string[]
   lastMoveStatus?: MoveStatus

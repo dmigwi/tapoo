@@ -28,7 +28,7 @@ const expectedLastSubmittedMovesSchema: NonNullable<
   items: {
     type: "string",
     pattern: "^(0|[1-9][0-9]*):(MoveUp|MoveDown|MoveLeft|MoveRight)$",
-    examples: ["0:MoveRight", "1:MoveUp", "2:MoveRight"],
+    examples: ["0:MoveRight", "1:MoveUp", "2:MoveRight", "..."],
   },
 }
 
@@ -108,7 +108,7 @@ describe("control", () => {
     ).toEqual({
       lastPlayerName: "Blue",
       lastMoveStatus: "invalid-move",
-      replayStartIndex: 0,
+      lastReplayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
       lastSubmittedMoves: ["0:MoveLeft"],
       lastAppliedMoveIndex: null,
@@ -132,7 +132,7 @@ describe("control", () => {
     ).toEqual({
       lastPlayerName: "Blue",
       lastMoveStatus: "invalid-move",
-      replayStartIndex: 0,
+      lastReplayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
       lastSubmittedMoves: ["0:MoveRight"],
       lastAppliedMoveIndex: null,
@@ -158,7 +158,7 @@ describe("control", () => {
       lastPlayerName: "Blue",
       lastMoveStatus: "reached-target",
       visitedBefore: false,
-      replayStartIndex: 0,
+      lastReplayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
       lastSubmittedMoves: ["0:MoveRight"],
       lastAppliedMoveIndex: 0,
@@ -185,7 +185,7 @@ describe("control", () => {
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
       visitedBefore: true,
-      replayStartIndex: 0,
+      lastReplayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
       lastSubmittedMoves: ["0:MoveLeft"],
       lastAppliedMoveIndex: 0,

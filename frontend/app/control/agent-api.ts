@@ -1,12 +1,15 @@
 import { CONFIG } from "../config"
 import { mergeMazeActionResult } from "../control"
+import { ALLOWED_MOVE_ACTIONS } from "../agent/context"
 import { requestPredictionWithAbort } from "../agent/request"
 import { isRunningStatus } from "../status"
+import { resolvePlayerMove } from "../traversal"
 import type {
   AgentApiConfig,
   MazeAction,
   MazeActionDispatch,
   MazeActionResult,
+  MoveAction,
   State,
 } from "../types"
 import type { AgentPredictionRequest } from "../agent/request"
@@ -189,10 +192,15 @@ export function handleAgentTurnLoop({
       __onActiveAgentChange?.(selectedAgent)
 
       // The request service owns HTTP, timeout, tool calls, and classified failure handling.
+      const currentState = __readState()
+      const openDirections: MoveAction[] = ALLOWED_MOVE_ACTIONS.filter(
+        (move) => resolvePlayerMove(currentState, move).canMove,
+      )
       const predictionRequest = requestPredictionWithAbort({
         agent: selectedAgent,
         lastActionResult: activeActionResult(),
-        state: __readState(),
+        openDirections,
+        state: currentState,
         timeoutMs: timing.agentApiResponseTimeoutMs,
         onMalformedResponse: recordMalformedAgentResponse,
         onNetworkError: recordAgentNetworkError,

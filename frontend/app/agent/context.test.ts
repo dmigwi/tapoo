@@ -10,7 +10,6 @@ import {
   buildMazeActionResult,
 } from "../control"
 import type {
-  AgentApiConfig,
   AgentExpectedResponseSchema,
   MazeActionResult,
   State,
@@ -27,10 +26,10 @@ const expectedAgentPrompt = [
   "Use currentCell as your current position and destinationCell as the target.",
   "The maze is randomly generated at each level with exactly one path to the destination.",
   "Use traversalHistory entries matching your playerName to review your past moves in order.",
-  "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it — never assume the direction vector to the destination is traversable.",
+  "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it — never assume moves toward the destination are passable.",
   "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
-  "Prefer unvisited cells in any direction over revisiting known cells, and calibrate how many moves you submit against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty so submit fewer moves; applied signals a confirmed corridor so you may extend further.",
-  `Return only JSON {"moves":["MoveRight",...]} where each move is one of MoveUp, MoveDown, MoveLeft, MoveRight.`,
+  "Prefer unvisited cells over revisiting known ones, and calibrate how many moves you submit against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty so submit fewer moves; applied signals confirmed progress so you may extend your move sequence.",
+  "Call get_prediction_rules to get the required response format and submission constraints before predicting moves.",
   "Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step).",
   "Every submitted move counts toward score decay, including moves after the first invalid move.",
   "Stop predicting when lastMoveStatus is reached-target or status is won.",
@@ -38,6 +37,7 @@ const expectedAgentPrompt = [
 ].join(" ")
 
 const expectedResponseSchema: AgentExpectedResponseSchema = {
+  description: "The only accepted response format. Return this exact JSON object with no surrounding text or markdown fences.",
   type: "object",
   additionalProperties: false,
   required: ["moves"],
@@ -53,17 +53,6 @@ const expectedResponseSchema: AgentExpectedResponseSchema = {
   },
 }
 
-const expectedLastSubmittedMovesSchema: NonNullable<
-  MazeActionResult["lastSubmittedMovesSchema"]
-> = {
-  type: "array",
-  description: "Zero-based replay records formatted as <index>:<move>.",
-  items: {
-    type: "string",
-    pattern: "^(0|[1-9][0-9]*):(MoveUp|MoveDown|MoveLeft|MoveRight)$",
-    examples: ["0:MoveRight", "1:MoveUp", "2:MoveRight"],
-  },
-}
 
 // createState builds a compact agent-facing runtime state for movement feedback tests.
 function createState(overrides: Partial<State> = {}): State {
@@ -99,31 +88,23 @@ function createState(overrides: Partial<State> = {}): State {
 // These tests lock down the context slices exposed to prediction requests.
 describe("agent context", () => {
   it("defines focused context tools that extract their own state slices", () => {
-    const agent: AgentApiConfig = {
-      id: 1,
-      playerName: "Blue",
-      model: "llama3.2",
-      endpoint: new URL("https://agents.example/chat"),
-      enabled: true,
-    }
     const actionResult = buildMazeActionResult("Blue", {
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
-      replayStartIndex: 0,
-      lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
+      lastReplayStartIndex: 0,
       lastSubmittedMoves: ["0:MoveRight"],
       lastAppliedMoveIndex: 0,
       visitedBefore: false,
       chargedMovesCount: 1,
     })
-    const toolHandlers = buildAgentToolHandlers(createState(), agent, actionResult)
+    const toolHandlers = buildAgentToolHandlers(createState(), actionResult, ["MoveRight"])
 
     expect(AGENT_CONTEXT_TOOLS.map((tool) => tool.function.name)).toEqual([
       "get_game_status",
       "get_maze_positions",
       "get_traversal_history",
-      "get_prediction_rules",
       "get_last_replay_result",
+      "get_prediction_rules",
     ])
     expect(toolHandlers.get_game_status({})).toEqual({
       level: 4,
@@ -134,6 +115,7 @@ describe("agent context", () => {
     expect(toolHandlers.get_maze_positions({})).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 1 },
+      directions: { open: ["MoveRight"], blocked: ["MoveUp", "MoveDown", "MoveLeft"] },
     })
     expect(toolHandlers.get_traversal_history({})).toEqual({
       traversalHistory: [selfVisit(0, 0)],
@@ -145,8 +127,7 @@ describe("agent context", () => {
     expect(toolHandlers.get_last_replay_result({})).toEqual({
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
-      replayStartIndex: 0,
-      lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
+      lastReplayStartIndex: 0,
       lastSubmittedMoves: ["0:MoveRight"],
       lastAppliedMoveIndex: 0,
       visitedBefore: false,
@@ -162,8 +143,7 @@ describe("agent context", () => {
       },
       {
         role: "user",
-        content:
-          `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state. Return only JSON {"moves":["MoveRight",...]} with moves from: MoveUp, MoveDown, MoveLeft, MoveRight.`,
+        content: `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state.`,
       },
     ])
   })
