@@ -414,6 +414,7 @@ export type AppConfig = {
     agentEnabledLabel: string
     agentDisabledLabel: string
     maxSeats: number
+    maxModelDisplayLength: number
     playerNameMinLength: number
     playerNameMaxLength: number
     playerNameLabel: string

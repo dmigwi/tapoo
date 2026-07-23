@@ -106,6 +106,14 @@ function stripMarkdownFence(content: string): string {
   return content.replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/s, "$1").trim()
 }
 
+// extractFencedJson finds a ```json or ``` block anywhere in the content, handling models
+// that prefix a fenced JSON answer with inline reasoning. Unlike stripMarkdownFence, it
+// does not require the fence to span the entire string.
+function extractFencedJson(content: string): string | null {
+  const match = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/s)
+  return match ? match[1].trim() : null
+}
+
 // extractEmbeddedJson handles models that emit inline reasoning before the JSON answer.
 // The last '{' is used as the anchor because models consistently place the JSON payload
 // at the end of their response, after any prose or numbered-list thinking steps.
@@ -125,8 +133,8 @@ function parseAgentPrediction(content: string | undefined): MoveAction[] | null 
     return typeof move === "string" && isMoveAction({ type: move } as MazeAction)
   }
 
-  // Try progressively looser extractions: fenced/plain JSON first, then JSON embedded in prose.
-  const candidates = [stripMarkdownFence(content), extractEmbeddedJson(content)]
+  // Try progressively looser extractions: full-string fence, embedded fence in prose, plain JSON in prose.
+  const candidates = [stripMarkdownFence(content), extractFencedJson(content), extractEmbeddedJson(content)]
   for (const candidate of candidates) {
     if (!candidate) continue
     try {
@@ -217,6 +225,7 @@ async function requestChatTurn(
     endpoint: endpointLabel,
     payload: msgBody,
   })
+  
   const response = await fetch(endpoint, {
     body: JSON.stringify(msgBody),
     headers: {
@@ -286,21 +295,6 @@ export function requestPredictionWithAbort({
     if (wasAborted) {
       return
     }
-
-    logTapooDiagnostic(
-      "warn",
-      "Agent prediction failed.",
-      {
-        endpoint: `${agent.endpoint.origin}${agent.endpoint.pathname}`,
-        level: state.level,
-        model: agent.model,
-        playerName: agent.playerName,
-        reason,
-        status: state.status,
-        lastMoveStatus: lastActionResult?.lastMoveStatus ?? null,
-        timeoutMs,
-      },
-    )
 
     try {
       if (reason === "network-error") {

@@ -16,11 +16,11 @@ import {
 import { CONFIG } from "../config"
 import type { AgentApiConfig } from "../types"
 
-function agent(id: number, playerName: string): AgentApiConfig {
+function agent(id: number, playerName: string, model = "llama3.2"): AgentApiConfig {
   return {
     id,
     playerName,
-    model: "llama3.2",
+    model,
     endpoint: new URL("https://example.test/move"),
     enabled: true,
   }
@@ -58,10 +58,16 @@ describe("agent seats", () => {
   it("uses behavior-specific accessible labels for roster seats", () => {
     expect(agentSeatAddLabel(1)).toBe("Add agent to seat 01")
     expect(agentSeatManageLabel(agent(2, "Kora"))).toBe(
-      "Manage player Kora in seat 02",
+      "Manage Kora (llama3.2) in seat 02",
     )
     expect(activeAgentSeatLabel(agent(3, "Mika"))).toBe(
       "Player Mika is playing in seat 03",
+    )
+  })
+
+  it("trims long model names in the middle for compact dialog titles", () => {
+    expect(agentSeatManageLabel(agent(2, "Kora", "qwen3.6-coder-ultra:32b"))).toBe(
+      "Manage Kora (qwen3.6...ltra:32b) in seat 02",
     )
   })
 

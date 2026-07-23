@@ -891,7 +891,7 @@ describe("agent control mode", () => {
     )
     expect(elements.agentDeleteDialog?.hidden).toBe(false)
     expect(elements.agentDeleteTitle?.textContent).toBe(
-      "Manage player Red in seat 02",
+      "Manage Red (gemma4) in seat 02",
     )
     expect(elements.agentDeleteTarget?.textContent).toBe("Delete now?")
     expect(elements.agentDeleteConfirm?.checked).toBe(false)
@@ -1091,6 +1091,13 @@ describe("agent control mode", () => {
     expect(
       elements.agentSeatRoster?.querySelector('[data-agent-seat-delete="1"]'),
     ).not.toBeNull()
+
+    clickDeleteSeat(elements, "1")
+
+    expect(elements.agentDeleteDialog?.hidden).toBe(false)
+    expect(elements.agentDeleteTitle?.textContent).toBe(
+      "Manage Blue (llama3.2) in seat 01",
+    )
   })
 
   it("opens the agent configuration form from an empty seat", () => {

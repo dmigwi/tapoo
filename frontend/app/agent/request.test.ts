@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { MockInstance } from "vitest"
 
 import { EXPECTED_RESPONSE_SCHEMA } from "./context"
 import { requestPredictionWithAbort } from "./request"
@@ -79,7 +78,7 @@ const agentContextTools = [
     function: {
       name: "get_last_replay_result",
       description:
-        "Get the previous turn replay result. lastMoveStatus is the outcome (e.g. applied, reached-target, invalid-move). lastSubmittedMoves lists the moves from that turn; replayStartIndex is their zero-based offset in the overall move history. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total score-decaying moves charged that turn. Returns JSON with lastPlayerName, lastMoveStatus, replayStartIndex, lastSubmittedMovesSchema, lastSubmittedMoves, lastAppliedMoveIndex, visitedBefore, and chargedMovesCount.",
+        "Get the previous turn replay result. lastMoveStatus values: null=first turn no history yet; applied=move executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move hit a wall or boundary, replay stopped; malformed-response=your previous response was not valid JSON in the required {\"moves\":[...]} format, no moves were replayed and a fixed score penalty was charged, ensure the next response is valid JSON only; network-error=HTTP failure, no score charged. lastSubmittedMoves lists the moves from that turn; replayStartIndex is their zero-based offset in the overall move history. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total score-decaying moves charged that turn. Returns JSON with lastPlayerName, lastMoveStatus, replayStartIndex, lastSubmittedMovesSchema, lastSubmittedMoves, lastAppliedMoveIndex, visitedBefore, and chargedMovesCount.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -128,15 +127,6 @@ type SerializedRequestBody = {
   tools: unknown[]
 }
 
-type AgentLogDetails = {
-  endpoint: string
-  payload: {
-    message?: { content?: string }
-    model?: string
-    stream?: boolean
-    think?: boolean
-  }
-}
 
 function requestInput(
   stateOverrides: Partial<State> = {},
@@ -213,12 +203,9 @@ function positionsContent(overrides: Partial<State> = {}): string {
 }
 
 describe("agent request service", () => {
-  let info: MockInstance<typeof console.info>
-  let warn: MockInstance<typeof console.warn>
-
   beforeEach(() => {
-    info = vi.spyOn(console, "info").mockImplementation(() => {})
-    warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    vi.spyOn(console, "info").mockImplementation(() => {})
+    vi.spyOn(console, "warn").mockImplementation(() => {})
   })
 
   afterEach(() => {
@@ -331,20 +318,6 @@ describe("agent request service", () => {
       think: false,
       stream: false,
     })
-    const requestLog = info.mock.calls.find(([message]) =>
-      message === "[Tapoo] Agent request.",
-    )?.[1] as AgentLogDetails | undefined
-    const responseLog = info.mock.calls.find(([message]) =>
-      message === "[Tapoo] Agent response.",
-    )?.[1] as AgentLogDetails | undefined
-    expect(requestLog?.endpoint).toBe(endpoint)
-    expect(requestLog?.payload.model).toBe(model)
-    expect(requestLog?.payload.stream).toBe(false)
-    expect(requestLog?.payload.think).toBe(false)
-    expect(responseLog?.endpoint).toBe(endpoint)
-    expect(responseLog?.payload.message?.content).toBe(
-      "{\"moves\":[\"MoveRight\",\"MoveDown\"]}",
-    )
   })
 
   it("executes one tool-call round before reading the final prediction", async () => {
@@ -512,6 +485,24 @@ describe("agent request service", () => {
     ["json fence", "```json\n{\"moves\":[\"MoveDown\"]}\n```", ["MoveDown"]],
     ["plain fence", "```\n{\"moves\":[\"MoveLeft\",\"MoveUp\"]}\n```", ["MoveLeft", "MoveUp"]],
     [
+      "prose prefix with embedded json fence",
+      [
+        "Based on the current state:",
+        "- **Current Cell**: `(row: 0, col: 8)`",
+        "- **Destination Cell**: `(row: 2, col: 2)`",
+        "",
+        "The destination is 2 rows down and 6 columns to the left.",
+        "I will predict the following moves:",
+        "1. Move Left 6 times to reach column 2.",
+        "2. Move Down 2 times to reach row 2.",
+        "",
+        "```json",
+        "{\"moves\":[\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveDown\",\"MoveDown\"]}",
+        "```",
+      ].join("\n"),
+      ["MoveLeft", "MoveLeft", "MoveLeft", "MoveLeft", "MoveLeft", "MoveLeft", "MoveDown", "MoveDown"],
+    ],
+    [
       "prose prefix with reasoning",
       [
         "I am currently at (0,8). The destination is at (2,2).",
@@ -553,18 +544,6 @@ describe("agent request service", () => {
       ok: false,
       reason: "malformed-response",
     })
-    expect(warn).toHaveBeenCalledWith(
-      "[Tapoo] Agent prediction failed.",
-      expect.objectContaining({
-        lastMoveStatus: null,
-        level: state.level,
-        model: agent.model,
-        playerName: agent.playerName,
-        reason: "malformed-response",
-        status: state.status,
-        timeoutMs: 180_000,
-      }),
-    )
   })
 
   it.each([
@@ -577,13 +556,6 @@ describe("agent request service", () => {
       ok: false,
       reason: "network-error",
     })
-    expect(warn).toHaveBeenCalledWith(
-      "[Tapoo] Agent prediction failed.",
-      expect.objectContaining({
-        endpoint: "https://agents.example/chat",
-        reason: "network-error",
-      }),
-    )
   })
 
   it("returns network-error when the request times out", async () => {

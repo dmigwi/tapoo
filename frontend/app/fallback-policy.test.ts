@@ -16,7 +16,6 @@ describe("fallback policy", () => {
 
     const terminalApp = document.getElementById("terminal-app")
     const placeholder = document.getElementById("placeholder-art")
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 
     showPlaceholderArt("handled status")
 
@@ -29,11 +28,6 @@ describe("fallback policy", () => {
     expect(terminalApp?.getAttribute("aria-hidden")).toBe("true")
     expect(placeholder).toHaveProperty("hidden", false)
     expect(placeholder?.getAttribute("aria-hidden")).toBe("false")
-    expect(consoleError).toHaveBeenCalledOnce()
-    expect(consoleError).toHaveBeenCalledWith(
-      "[Tapoo] An unexpected runtime Error reached the page shell; showing fallback placeholder.",
-      expect.any(Error),
-    )
   })
 
   it("shows the terminal app and hides the default placeholder after successful checks", () => {
@@ -53,20 +47,17 @@ describe("fallback policy", () => {
     expect(placeholder?.getAttribute("aria-hidden")).toBe("true")
   })
 
-  it("logs the specific policy reason for known fallback failures", () => {
+  it("shows the placeholder art for known policy failures", () => {
     document.body.innerHTML = `
       <section id="terminal-app"></section>
       <section id="placeholder-art" hidden aria-hidden="true"></section>
     `
 
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    const placeholder = document.getElementById("placeholder-art")
 
     showPlaceholderArt(new Error("missing required element: terminal-body"))
 
-    expect(consoleError).toHaveBeenCalledOnce()
-    expect(consoleError).toHaveBeenCalledWith(
-      "[Tapoo] The terminal template was removed, corrupted, or manipulated after load.",
-      expect.any(Error),
-    )
+    expect(placeholder).toHaveProperty("hidden", false)
+    expect(placeholder?.getAttribute("aria-hidden")).toBe("false")
   })
 })

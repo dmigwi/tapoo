@@ -31,19 +31,63 @@ const unknownFallbackReason =
 
 type DiagnosticLevel = "error" | "info" | "warn"
 
-// logTapooDiagnostic keeps browser diagnostics searchable and consistently prefixed.
+type DiagnosticEntry = {
+  timestamp: string
+  level: DiagnosticLevel
+  message: string
+  details?: unknown
+}
+
+// diagnosticBuffer accumulates all log entries for the lifetime of the page session.
+const diagnosticBuffer: DiagnosticEntry[] = []
+
+function getLocalTimestamp(): string {
+  const date = new Date()
+  const pad = (value: number): string => String(value).padStart(2, "0")
+  const offsetMinutes = -date.getTimezoneOffset()
+  const offsetSign = offsetMinutes >= 0 ? "+" : "-"
+  const absoluteOffsetMinutes = Math.abs(offsetMinutes)
+  const offsetHours = pad(Math.floor(absoluteOffsetMinutes / 60))
+  const offsetRemainderMinutes = pad(absoluteOffsetMinutes % 60)
+
+  return [
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    `T${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`,
+    `${offsetSign}${offsetHours}-${offsetRemainderMinutes}`,
+  ].join("")
+}
+
+// logTapooDiagnostic buffers diagnostic entries for download; console output is omitted
+// because all diagnostic data is available via window.tapooDownloadLogs().
 export function logTapooDiagnostic(
   level: DiagnosticLevel,
   message: string,
   details?: unknown,
 ): void {
-  const formattedMessage = `[Tapoo] ${message}`
-  if (details === undefined) {
-    console[level](formattedMessage)
-    return
+  const entry: DiagnosticEntry = { timestamp: getLocalTimestamp(), level, message }
+  if (details !== undefined) {
+    entry.details = details
   }
+  diagnosticBuffer.push(entry)
+}
 
-  console[level](formattedMessage, details)
+// tapooDownloadLogs triggers a JSON download of all buffered diagnostic entries.
+// Attach to window in the page entry point so it survives property mangling and tree-shaking.
+export function tapooDownloadLogs(): void {
+  const blob = new Blob([JSON.stringify(diagnosticBuffer, null, 2)], {
+    type: "application/json",
+  })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = `tapoo-diagnostic-${getLocalTimestamp()}.json`
+  anchor.hidden = true
+  document.body.append(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url)
+  }, 0)
 }
 
 // placeholderArtErrorPolicy resolves the exact known reason behind a fallback decision.

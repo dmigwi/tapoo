@@ -190,9 +190,11 @@ export function createAgentMode(
         __readState: readState,
       })
 
+      const currentPlayingAgentId = (): number | null =>
+        isRunningStatus(readState().status) ? activeAgentId : null
+
       const renderAgentRoster = (): void => {
-        const currentPlayingAgentId = isRunningStatus(readState().status) ? activeAgentId : null
-        renderAgentSeatRoster(elements.agentSeatRoster,  readAgentConfigs(), currentPlayingAgentId)
+        renderAgentSeatRoster(elements.agentSeatRoster, readAgentConfigs(), currentPlayingAgentId())
       }
 
       const syncCurrentPoller = (): void => {
@@ -318,7 +320,7 @@ export function createAgentMode(
 
       const openAgentDeleteDialog = (seatId: number): void => {
         const agent = readAgentConfigs().find((config) => config.id === seatId)
-        if (!agent || agent.id === activeAgentId || !elements.agentDeleteDialog) {
+        if (!agent || agent.id === currentPlayingAgentId() || !elements.agentDeleteDialog) {
           return
         }
 

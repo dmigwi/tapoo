@@ -2,6 +2,7 @@ import { CONFIG } from "../config"
 import type { AgentApiConfig, AgentSeat } from "../types"
 
 const { agentConfig } = CONFIG
+const middleTrimMarker = "..."
 export const emptyAgentSeatLabel = "+"
 
 // agentSeatIds lists every fixed numeric seat id in display order.
@@ -56,10 +57,25 @@ export function activeAgentSeatLabel(agent: AgentApiConfig): string {
 function seatTemplate(template: string, seat: AgentApiConfig | number): string {
   const seatId = typeof seat === "number" ? seat : seat.id
   const agentName = typeof seat === "number" ? "" : seat.playerName
+  const agentModel = typeof seat === "number" ? "" : compactAgentModelLabel(seat.model)
 
   return template
     .replace("{agent}", agentName)
+    .replace("{model}", agentModel)
     .replace("{seat}", agentSeatLabel(seatId))
+}
+
+// compactAgentModelLabel keeps long model names readable in tight dialog titles.
+function compactAgentModelLabel(model: string): string {
+  if (model.length <= agentConfig.maxModelDisplayLength) {
+    return model
+  }
+
+  const availableCharacters = agentConfig.maxModelDisplayLength - middleTrimMarker.length
+  const leadingCharacters = Math.floor(availableCharacters / 2)
+  const trailingCharacters = availableCharacters - leadingCharacters
+
+  return `${model.slice(0, leadingCharacters)}${middleTrimMarker}${model.slice(-trailingCharacters)}`
 }
 
 // buildAgentSeats returns fixed slots; occupied seats carry an agent, empty seats carry null.
