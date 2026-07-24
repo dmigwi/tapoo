@@ -27,8 +27,8 @@ export const ALLOWED_MOVE_ACTIONS: MoveAction[] = ["MoveUp", "MoveDown", "MoveLe
 
 // EXPECTED_RESPONSE_SCHEMA documents the exact JSON shape returned by prediction sources.
 export const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
-  description: "The only accepted response format. Return this exact JSON object with no surrounding text or markdown fences.",
   type: "object",
+  description: "The only accepted response format. Return this exact JSON object with no surrounding text or markdown fences.",
   additionalProperties: false,
   required: ["moves"],
   properties: {
@@ -69,12 +69,12 @@ export function buildMazeActionPrompt(playerName: string): string {
     "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
     "Prefer unvisited cells over revisiting known ones, and calibrate how many moves you submit",
     "against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty",
-    "so submit fewer moves; applied signals confirmed progress so you may extend your move sequence.",
-    "Call get_prediction_rules to get the required response format and submission constraints before predicting moves.",
+    "so return fewer moves; applied signals confirmed progress so you may include more moves in your response.",
+    "Call get_prediction_rules to get the required response format and move count guidance before predicting moves.",
     "Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step).",
-    "Every submitted move counts toward score decay, including moves after the first invalid move.",
+    "Every move in your response counts toward score decay, including moves after the first invalid move.",
     "Stop predicting when lastMoveStatus is reached-target or status is won.",
-    "Choose the moves most likely to reach the destination with the fewest submitted moves.",
+    "Choose the moves most likely to reach the destination with the fewest moves in your response.",
   ].join(" ")
 }
 
@@ -98,9 +98,8 @@ export function buildAgentMessages(playerName: string): AgentChatMessage[] {
 
 const emptyToolParameters: AgentToolDefinition["function"]["parameters"] = {
   type: "object",
-  additionalProperties: false,
-  // properties: {},
-  // required: [],
+  properties: {},
+  required: [],
 }
 
 // gameStatusTool exposes round progress and maze dimensions without leaking full state.
@@ -153,7 +152,7 @@ const predictionRulesTool: AgentToolDefinition = {
   function: {
     name: "get_prediction_rules",
     description:
-      "Get move submission rules. suggestedMovesPerTurn is the suggested maximum moves to submit per turn, scaled to maze size; submitting fewer moves on early turns limits wasted score if your predicted moves turn out to be wrong. Returns JSON: {\"suggestedMovesPerTurn\":number,\"expectedResponseSchema\":object}.",
+      "Get move response rules. suggestedMovesPerTurn is the suggested maximum moves to include in your response per turn, scaled to maze size; returning fewer moves on early turns limits wasted score if your predicted moves turn out to be wrong. Returns JSON: {\"suggestedMovesPerTurn\":number,\"expectedResponseSchema\":object}.",
     parameters: emptyToolParameters,
   },
 }

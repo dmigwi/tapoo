@@ -174,8 +174,8 @@ export type PersistedSnapshot = {
 
 // AgentExpectedResponseSchema documents the one supported prediction payload using JSON Schema.
 export type AgentExpectedResponseSchema = {
-  description?: string
   type: "object"
+  description?: string
   additionalProperties: false
   required: ["moves"]
   properties: {

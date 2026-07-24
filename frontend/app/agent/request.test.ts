@@ -13,7 +13,7 @@ import type {
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt =
-  `Your name is Blue. playerName Self always appears first in traversalHistory and marks the start cell. Use currentCell as your current position and destinationCell as the target. The maze is randomly generated at each level with exactly one path to the destination. Use traversalHistory entries matching your playerName to review your past moves in order. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it — never assume moves toward the destination are passable. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. Prefer unvisited cells over revisiting known ones, and calibrate how many moves you submit against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty so submit fewer moves; applied signals confirmed progress so you may extend your move sequence. Call get_prediction_rules to get the required response format and submission constraints before predicting moves. Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step). Every submitted move counts toward score decay, including moves after the first invalid move. Stop predicting when lastMoveStatus is reached-target or status is won. Choose the moves most likely to reach the destination with the fewest submitted moves.`
+  `Your name is Blue. playerName Self always appears first in traversalHistory and marks the start cell. Use currentCell as your current position and destinationCell as the target. The maze is randomly generated at each level with exactly one path to the destination. Use traversalHistory entries matching your playerName to review your past moves in order. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it — never assume moves toward the destination are passable. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. Prefer unvisited cells over revisiting known ones, and calibrate how many moves you submit against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty so return fewer moves; applied signals confirmed progress so you may include more moves in your response. Call get_prediction_rules to get the required response format and move count guidance before predicting moves. Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step). Every move in your response counts toward score decay, including moves after the first invalid move. Stop predicting when lastMoveStatus is reached-target or status is won. Choose the moves most likely to reach the destination with the fewest moves in your response.`
 const developerMessage = prompt
 // openDirections for request tests: maze is null so all directions are blocked (empty list).
 const testOpenDirections: MoveAction[] = []
@@ -27,9 +27,8 @@ const agentContextTools = [
         "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won (destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"mazeDimensions\":{\"length\":number,\"width\":number,\"area\":number}}. length is the number of columns, width is the number of rows, area is the total cell count.",
       parameters: {
         type: "object",
-        additionalProperties: false,
-        // properties: {},
-        // required: [],
+        properties: {},
+        required: [],
       },
     },
   },
@@ -41,9 +40,8 @@ const agentContextTools = [
         "Get current cell, destination cell, and which moves are passable from the current cell. Row increases going down, col increases going right; MoveUp and MoveDown change row by ±1; MoveLeft and MoveRight change col by ±1. All 4 moves are always classified in directions — each appears in exactly one of open or blocked; selecting a blocked move triggers an invalid-move. Returns JSON: {\"currentCell\":{\"row\":number,\"col\":number}|null,\"destinationCell\":{\"row\":number,\"col\":number}|null,\"directions\":{\"open\":[...],\"blocked\":[]}}.",
       parameters: {
         type: "object",
-        additionalProperties: false,
-        // properties: {},
-        // required: [],
+        properties: {},
+        required: [],
       },
     },
   },
@@ -55,9 +53,8 @@ const agentContextTools = [
         "Get all players' visit records in chronological order. Returns JSON: {\"traversalHistory\":[{\"playerName\":string,\"row\":number,\"col\":number}]}. Filter by playerName to review a specific player's visit sequence.",
       parameters: {
         type: "object",
-        additionalProperties: false,
-        // properties: {},
-        // required: [],
+        properties: {},
+        required: [],
       },
     },
   },
@@ -69,9 +66,8 @@ const agentContextTools = [
         "Get the previous turn replay result. lastMoveStatus values: null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged. lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total moves charged toward score decay that turn. Returns JSON: {\"lastPlayerName\":string|null,\"lastMoveStatus\":string|null,\"lastReplayStartIndex\":number|null,\"lastSubmittedMoves\":string[],\"lastAppliedMoveIndex\":number|null,\"visitedBefore\":boolean|null,\"chargedMovesCount\":number}.",
       parameters: {
         type: "object",
-        additionalProperties: false,
-        // properties: {},
-        // required: [],
+        properties: {},
+        required: [],
       },
     },
   },
@@ -80,12 +76,11 @@ const agentContextTools = [
     function: {
       name: "get_prediction_rules",
       description:
-        "Get move submission rules. suggestedMovesPerTurn is the suggested maximum moves to submit per turn, scaled to maze size; submitting fewer moves on early turns limits wasted score if your predicted moves turn out to be wrong. Returns JSON: {\"suggestedMovesPerTurn\":number,\"expectedResponseSchema\":object}.",
+        "Get move response rules. suggestedMovesPerTurn is the suggested maximum moves to include in your response per turn, scaled to maze size; returning fewer moves on early turns limits wasted score if your predicted moves turn out to be wrong. Returns JSON: {\"suggestedMovesPerTurn\":number,\"expectedResponseSchema\":object}.",
       parameters: {
         type: "object",
-        additionalProperties: false,
-        // properties: {},
-        // required: [],
+        properties: {},
+        required: [],
       },
     },
   },
@@ -248,6 +243,7 @@ describe("agent request service", () => {
         {
           role: "tool",
           tool_call_id: "call_positions",
+          tool_name: "get_maze_positions",
           content:
             "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"directions\":{\"open\":[],\"blocked\":[\"MoveUp\",\"MoveDown\",\"MoveLeft\",\"MoveRight\"]}}",
         },
@@ -369,6 +365,7 @@ describe("agent request service", () => {
       {
         role: "tool",
         tool_call_id: "call_1",
+        tool_name: "get_maze_positions",
         content: positionsContent({
           finalPosition: { x: 3, y: 1 },
           playerPosition: { x: 1, y: 1 },
@@ -396,10 +393,12 @@ describe("agent request service", () => {
     expect(secondRequestBody.messages.slice(-2)).toEqual([
       {
         role: "tool",
+        tool_name: "get_maze_positions",
         content: positionsContent(),
       },
       {
         role: "tool",
+        tool_name: "get_traversal_history",
         content: JSON.stringify({
           traversalHistory: state.traversalHistory,
         }),
@@ -448,14 +447,15 @@ describe("agent request service", () => {
     const toolMessages = secondRequestBody.messages.slice(-5) as Array<{
       role: string
       tool_call_id: string
+      tool_name: string
       content: string
     }>
-    expect(toolMessages.map(({ role, tool_call_id }) => ({ role, tool_call_id }))).toEqual([
-      { role: "tool", tool_call_id: "call_status" },
-      { role: "tool", tool_call_id: "call_positions" },
-      { role: "tool", tool_call_id: "call_history" },
-      { role: "tool", tool_call_id: "call_replay" },
-      { role: "tool", tool_call_id: "call_rules" },
+    expect(toolMessages.map(({ role, tool_call_id, tool_name }) => ({ role, tool_call_id, tool_name }))).toEqual([
+      { role: "tool", tool_call_id: "call_status",    tool_name: "get_game_status" },
+      { role: "tool", tool_call_id: "call_positions", tool_name: "get_maze_positions" },
+      { role: "tool", tool_call_id: "call_history",   tool_name: "get_traversal_history" },
+      { role: "tool", tool_call_id: "call_replay",    tool_name: "get_last_replay_result" },
+      { role: "tool", tool_call_id: "call_rules",     tool_name: "get_prediction_rules" },
     ])
     expect(toolMessages.map(({ content }) => JSON.parse(content) as unknown)).toEqual([
       {

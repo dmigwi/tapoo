@@ -11,7 +11,6 @@ import {
 } from "../control"
 import type {
   AgentExpectedResponseSchema,
-  MazeActionResult,
   State,
   TraversalHistoryEntry,
 } from "../types"
@@ -28,17 +27,17 @@ const expectedAgentPrompt = [
   "Use traversalHistory entries matching your playerName to review your past moves in order.",
   "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it — never assume moves toward the destination are passable.",
   "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
-  "Prefer unvisited cells over revisiting known ones, and calibrate how many moves you submit against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty so submit fewer moves; applied signals confirmed progress so you may extend your move sequence.",
-  "Call get_prediction_rules to get the required response format and submission constraints before predicting moves.",
+  "Prefer unvisited cells over revisiting known ones, and calibrate how many moves you submit against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty so return fewer moves; applied signals confirmed progress so you may include more moves in your response.",
+  "Call get_prediction_rules to get the required response format and move count guidance before predicting moves.",
   "Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step).",
-  "Every submitted move counts toward score decay, including moves after the first invalid move.",
+  "Every move in your response counts toward score decay, including moves after the first invalid move.",
   "Stop predicting when lastMoveStatus is reached-target or status is won.",
-  "Choose the moves most likely to reach the destination with the fewest submitted moves.",
+  "Choose the moves most likely to reach the destination with the fewest moves in your response.",
 ].join(" ")
 
 const expectedResponseSchema: AgentExpectedResponseSchema = {
-  description: "The only accepted response format. Return this exact JSON object with no surrounding text or markdown fences.",
   type: "object",
+  description: "The only accepted response format. Return this exact JSON object with no surrounding text or markdown fences.",
   additionalProperties: false,
   required: ["moves"],
   properties: {

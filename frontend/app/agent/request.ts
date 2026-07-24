@@ -26,9 +26,8 @@ export type AgentToolDefinition = {
     description: string
     parameters: {
       type: "object"
-      additionalProperties?: boolean
-      // properties: Record<string, unknown>
-      // required: string[]
+      properties: Record<string, unknown>
+      required: string[]
     }
   }
 }
@@ -63,6 +62,7 @@ export type AgentChatMessage = {
   role: AgentMessageRole
   content?: string
   tool_call_id?: string
+  tool_name?: string
   tool_calls?: AgentToolCall[]
 }
 
@@ -197,6 +197,7 @@ async function buildToolResultMessages(
       toolMessages.push({
         role: "tool",
         tool_call_id: toolCall.id,
+        tool_name: toolCall.function?.name,
         content: serializeToolResult(result),
       })
     } catch {
