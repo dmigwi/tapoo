@@ -4,17 +4,23 @@
       <p class="privacy-eyebrow">Privacy Notice</p>
       <h1 id="privacy-title">Tapoo Browser Privacy</h1>
       <p>
-        In the current Tapoo game version highlighted at the bottom of this page, normal
-        gameplay state stays on your device. Gameplay data is not sent to a remote service
-        by Tapoo unless you configure AI Agent mode to request predictions from an agent
-        API endpoint.
+        In the current Tapoo game version highlighted at the bottom of this page, Tapoo
+        supports two control modes: Interactive mode, where you play directly, and AI Agent
+        mode, where a configured agent API endpoint plays on your behalf. In both modes,
+        normal gameplay state stays on your device. Gameplay data is not sent to a remote
+        service by Tapoo unless you configure AI Agent mode to request predictions from an
+        agent API endpoint.
       </p>
 
       <h2>Browser Storage</h2>
       <p>
         Tapoo uses <code>localStorage</code> to keep durable game preferences such as
-        level, wall weight, score-retention metrics, and optional AI Agent configuration.
-        It uses <code>sessionStorage</code> for the active round snapshot so a refresh can
+        level, wall weight, score-retention metrics, optional AI Agent configuration, and
+        Tapoo Logs recorded across both interactive and AI Agent gameplay. Tapoo Logs
+        capture requests and responses exchanged during play, are stored only on your
+        device and never sent over the network, and can be downloaded for statistical
+        inference on gameplay output or cleared from the game controls. It uses 
+        <code>sessionStorage</code> for the active round snapshot so a refresh can
         restore the current maze session.
       </p>
       <p>
@@ -26,8 +32,11 @@
       <h2>AI Agent Mode</h2>
       <p>
         AI Agent mode can send gameplay context to agent API endpoints that you configure.
-        That context may include the current cell, destination cell, player name, model name,
-        allowed moves, submitted moves, score, level, and traversal history.
+        That context may include the current cell, destination cell, player names (user-chosen
+        in-game nicknames), model name, allowed moves, submitted moves, score, level, and
+        traversal history. Each traversal history entry also includes the open exits recorded
+        at that cell, which describes partial maze topology accumulated during play. Tapoo
+        Logs store this same context locally for download and further processing.
       </p>
       <p>
         Only configure endpoints you trust. External endpoints may receive network metadata
@@ -43,9 +52,9 @@
 
       <h2>Your Controls</h2>
       <p>
-        You can reset game progress from the game controls and clear stored site data from
-        your browser settings. If AI Agent configuration is added, remove endpoints you no
-        longer trust before using that mode.
+        You can reset game progress, download Tapoo Logs, or clear Tapoo Logs from the game
+        controls. To remove all stored site data, use your browser settings. If you have
+        configured AI Agent endpoints, remove any you no longer trust before using that mode.
       </p>
 
       <h2>Project Status</h2>
