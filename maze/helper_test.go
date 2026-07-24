@@ -10,7 +10,7 @@ import (
 func TestCreatePlayingField(t *testing.T) {
 	t.Parallel()
 
-	config := &maze.Dimensions{Length: 7, Width: 7}
+	config := &maze.Dimensions{NumCols: 7, NumRows: 7}
 
 	regularWeightMaze := [][]string{
 		{"|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "---", "|", "\n"},
@@ -83,7 +83,7 @@ func TestCreatePlayingField(t *testing.T) {
 		}
 
 		for _, line := range gridView {
-			if got, want := len(line), (config.Length+1)*2; got != want {
+			if got, want := len(line), (config.NumCols+1)*2; got != want {
 				t.Fatalf("unexpected row width for wall weight %d: got %d want %d", weight, got, want)
 			}
 		}
@@ -115,8 +115,8 @@ func TestGetCellAddress(t *testing.T) {
 	t.Parallel()
 
 	config := &maze.Dimensions{
-		Length: 6,
-		Width:  5,
+		NumCols: 6,
+		NumRows: 5,
 	}
 
 	got := config.GetCellAddress(17)
@@ -145,8 +145,8 @@ func TestGetCellNeighbors(t *testing.T) {
 	t.Parallel()
 
 	config := &maze.Dimensions{
-		Length: 6,
-		Width:  5,
+		NumCols: 6,
+		NumRows: 5,
 	}
 
 	got := config.GetCellNeighbors(17)

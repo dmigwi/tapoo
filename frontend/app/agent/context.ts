@@ -73,6 +73,8 @@ export function buildMazeActionPrompt(playerName: string): string {
     "traversalHistory entries matching your playerName record your past moves in chronological order.",
     "Each entry includes openMoves — the exits that were open from that cell.",
     "openMoves count reveals cell topology: one open move is a dead end (unless that is where you came from); two is a corridor; three or more is a junction.",
+    "If the traversalHistory shows each cell has exactly one unvisited exit, you may safely predict that entire sequence of moves in one response.",
+    "traversalHistory only records the first visit to each cell; cells revisited during backtracking don't appear again, so apparent gaps are expected.",
     "Revisiting a cell already in traversalHistory is only valid when every other exit from the current cell leads to already-visited cells.",
     "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
     "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
@@ -117,7 +119,7 @@ const gameStatusTool: AgentToolDefinition = {
   function: {
     name: "get_game_status",
     description:
-      "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won (destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"mazeDimensions\":{\"length\":number,\"width\":number,\"area\":number}}. length is the number of columns, width is the number of rows, area is the total cell count.",
+      "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won (destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"area\":number}}. numCols is the number of columns, numRows is the number of rows, area is the total cell count.",
     parameters: emptyToolParameters,
   },
 }

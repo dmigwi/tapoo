@@ -13,7 +13,7 @@ import type {
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt =
-  `Your name is Blue. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry includes openMoves — the exits that were open from that cell. openMoves count reveals cell topology: one open move is a dead end (unless that is where you came from); two is a corridor; three or more is a junction. Revisiting a cell already in traversalHistory is only valid when every other exit from the current cell leads to already-visited cells. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a score penalty was charged; applied means it succeeded. get_prediction_rules provides the required response format and move count guidance. Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step). Every move in your response counts toward score decay, including moves after the first invalid move. lastMoveStatus reached-target or status won means the game is complete — stop predicting. Score decay charges every submitted move, so fewer correct moves preserve more score.`
+  `Your name is Blue. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry includes openMoves — the exits that were open from that cell. openMoves count reveals cell topology: one open move is a dead end (unless that is where you came from); two is a corridor; three or more is a junction. If the traversalHistory shows each cell has exactly one unvisited exit, you may safely predict that entire sequence of moves in one response. traversalHistory only records the first visit to each cell; cells revisited during backtracking don't appear again, so apparent gaps are expected. Revisiting a cell already in traversalHistory is only valid when every other exit from the current cell leads to already-visited cells. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a score penalty was charged; applied means it succeeded. get_prediction_rules provides the required response format and move count guidance. Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step). Every move in your response counts toward score decay, including moves after the first invalid move. lastMoveStatus reached-target or status won means the game is complete — stop predicting. Score decay charges every submitted move, so fewer correct moves preserve more score.`
 const developerMessage = prompt
 const userMessage = `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state.`
 const agentContextTools = [
@@ -22,7 +22,7 @@ const agentContextTools = [
     function: {
       name: "get_game_status",
       description:
-        "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won (destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"mazeDimensions\":{\"length\":number,\"width\":number,\"area\":number}}. length is the number of columns, width is the number of rows, area is the total cell count.",
+        "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won (destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"area\":number}}. numCols is the number of columns, numRows is the number of rows, area is the total cell count.",
       parameters: {
         type: "object",
         properties: {},
@@ -112,7 +112,7 @@ const state: State = {
   lastWinRequestCount: null,
   level: 1,
   maze: null,
-  mazeDimensions: { length: 10, width: 10, area: 100 },
+  mazeDimensions: { numCols: 10, numRows: 10, area: 100 },
   playerPosition: { x: 1, y: 1 },
   score: 10000,
   scoreDecayUnits: 0,
@@ -643,7 +643,7 @@ describe("agent request service", () => {
     const secondRequestBody = JSON.parse(secondRequest.body as string) as SerializedRequestBody
     expect(secondRequestBody.tools).toEqual([])
     expect(secondRequestBody.format).toEqual(PREDICTION_FORMAT)
-    expect(secondRequestBody.options).toEqual({ num_ctx: 2500, temperature: 0.35, num_predict: 200 })
+    expect(secondRequestBody.options).toEqual({ num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict })
   })
 
   it("proactively removes tools when all available tools were called in the previous round", async () => {
@@ -667,7 +667,7 @@ describe("agent request service", () => {
     const secondBody = JSON.parse(secondRequest.body as string) as SerializedRequestBody
     expect(secondBody.tools).toEqual([])
     expect(secondBody.format).toEqual(PREDICTION_FORMAT)
-    expect(secondBody.options).toEqual({ num_ctx: 2500, temperature: 0.35, num_predict: 200 })
+    expect(secondBody.options).toEqual({ num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict })
   })
 
   it("skips duplicate tool rounds without appending to history and forces a final prediction", async () => {
@@ -701,7 +701,7 @@ describe("agent request service", () => {
     // Third request must carry no tools and the structured-output constraints.
     expect(thirdBody.tools).toEqual([])
     expect(thirdBody.format).toEqual(PREDICTION_FORMAT)
-    expect(thirdBody.options).toEqual({ num_ctx: 2500, temperature: 0.35, num_predict: 200 })
+    expect(thirdBody.options).toEqual({ num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict })
 
     // Third request messages must be identical to second request messages —
     // the duplicate round was skipped so nothing was appended to history.

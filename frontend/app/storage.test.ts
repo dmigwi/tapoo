@@ -81,7 +81,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.interactive,
     level: 4,
-    mazeDimensions: { length: 5, width: 5, area: 25 },
+    mazeDimensions: { numCols: 5, numRows: 5, area: 25 },
     maze: [
       ["|", "---", "|"],
       ["|", "   ", "|"],
@@ -374,7 +374,7 @@ describe("storage", () => {
 
     expect(snapshot.round).toEqual({
       level: 4,
-      mazeDimensions: { length: 5, width: 5, area: 25 },
+      mazeDimensions: { numCols: 5, numRows: 5, area: 25 },
       maze: state.maze,
       startCell: { row: 0, col: 0 },
       traversalHistory: [selfVisit(0, 0)],

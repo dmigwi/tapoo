@@ -117,7 +117,7 @@ describe("dom", () => {
       fontSize: "16px",
     } as CSSStyleDeclaration)
 
-    expect(getTerminalSize(elements)).toEqual({ length: 22, width: 11 })
+    expect(getTerminalSize(elements)).toEqual({ numCols: 22, numRows: 11 })
   })
 
   it("uses actual drawable room for very small terminal measurements", async () => {
@@ -157,7 +157,7 @@ describe("dom", () => {
 
     const terminalSize = getTerminalSize(elements)
 
-    expect(terminalSize).toEqual({ length: 3, width: 0 })
+    expect(terminalSize).toEqual({ numCols: 3, numRows: 0 })
     expect(getMazeDimensions(1, terminalSize)).toBeNull()
   })
 
@@ -222,7 +222,7 @@ describe("dom", () => {
       fontSize: "16px",
     } as CSSStyleDeclaration)
 
-    expect(getTerminalSize(elements)).toEqual({ length: 22, width: 11 })
+    expect(getTerminalSize(elements)).toEqual({ numCols: 22, numRows: 11 })
     expect(touchControlsRect).not.toHaveBeenCalled()
   })
 
@@ -268,35 +268,35 @@ describe("dom", () => {
     } as CSSStyleDeclaration)
 
     const terminalSize = getTerminalSize(elements)
-    expect(terminalSize).toEqual({ length: 61, width: 39 })
+    expect(terminalSize).toEqual({ numCols: 61, numRows: 39 })
     expect(getMazeDimensions(47, terminalSize)).toEqual({
       level: 47,
-      length: 53,
-      width: 10,
+      numCols: 53,
+      numRows: 10,
       area: 530,
     })
     expect(getMazeDimensions(53, terminalSize)).toEqual({
       level: 53,
-      length: 59,
-      width: 10,
+      numCols: 59,
+      numRows: 10,
       area: 590,
     })
     expect(getMazeDimensions(55, terminalSize)).toEqual({
       level: 55,
-      length: 61,
-      width: 10,
+      numCols: 61,
+      numRows: 10,
       area: 610,
     })
     expect(getMazeDimensions(109, terminalSize)).toEqual({
       level: 109,
-      length: 46,
-      width: 25,
+      numCols: 46,
+      numRows: 25,
       area: 1150,
     })
     expect(highestContinuousDrawableLevel(getMazeDimensions, terminalSize, 500)).toEqual({
       level: 150,
-      length: 40,
-      width: 39,
+      numCols: 40,
+      numRows: 39,
       area: 1560,
     })
     expect(getMazeDimensions(151, terminalSize)).toBeNull()

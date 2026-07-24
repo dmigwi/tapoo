@@ -27,6 +27,8 @@ const expectedAgentPrompt = [
   "traversalHistory entries matching your playerName record your past moves in chronological order.",
   "Each entry includes openMoves — the exits that were open from that cell.",
   "openMoves count reveals cell topology: one open move is a dead end (unless that is where you came from); two is a corridor; three or more is a junction.",
+  "If the traversalHistory shows each cell has exactly one unvisited exit, you may safely predict that entire sequence of moves in one response.",
+  "traversalHistory only records the first visit to each cell; cells revisited during backtracking don't appear again, so apparent gaps are expected.",
   "Revisiting a cell already in traversalHistory is only valid when every other exit from the current cell leads to already-visited cells.",
   "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
   "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
@@ -62,7 +64,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.agentApi,
     level: 4,
-    mazeDimensions: { length: 2, width: 1, area: 2 },
+    mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
     maze: [
       ["|", "---", "|", "---", "|"],
       ["|", "   ", " ", "   ", "|"],
@@ -113,7 +115,7 @@ describe("agent context", () => {
       level: 4,
       status: "running",
       score: 700,
-      mazeDimensions: { length: 2, width: 1, area: 2 },
+      mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
     })
     expect(toolHandlers.get_maze_positions({})).toEqual({
       currentCell: { row: 0, col: 0 },

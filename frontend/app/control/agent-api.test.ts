@@ -38,7 +38,7 @@ function createState(overrides: Partial<State> = {}): State {
     lastWinRequestCount: null,
     level: 2,
     maze: null,
-    mazeDimensions: { length: 3, width: 1, area: 3 },
+    mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
     playerPosition: { x: 1, y: 1 },
     score: 600,
     scoreDecayUnits: 0,

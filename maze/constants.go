@@ -255,7 +255,7 @@ type NavigationProfile struct {
 // straights so the maze feels approachable, then the profile gradually clamps
 // corridor length until the largest mazes use the hardest supported settings.
 func GetNavigationProfile(config Dimensions) NavigationProfile {
-	area := config.Length * config.Width
+	area := config.NumCols * config.NumRows
 
 	// Area growth compounds navigation density quickly, so the square-root curve tightens
 	// corridors faster than a plain linear interpolation while still staying smooth.

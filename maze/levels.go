@@ -12,18 +12,18 @@ func GenerateMazeArea(level int) int {
 }
 
 // appendFittingDimensions adds every orientation of the factor pair that fits within the terminal bounds.
-func appendFittingDimensions(candidates []Dimensions, length, width int, terminalSize Dimensions) []Dimensions {
-	if length < minMazeDimension || width < minMazeDimension {
+func appendFittingDimensions(candidates []Dimensions, numCols, numRows int, terminalSize Dimensions) []Dimensions {
+	if numCols < minMazeDimension || numRows < minMazeDimension {
 		return candidates
 	}
 
 	// Each factor pair can fit in landscape, portrait, or both depending on the terminal bounds.
-	if terminalSize.Length >= length && terminalSize.Width >= width {
-		candidates = append(candidates, Dimensions{Length: length, Width: width})
+	if terminalSize.NumCols >= numCols && terminalSize.NumRows >= numRows {
+		candidates = append(candidates, Dimensions{NumCols: numCols, NumRows: numRows})
 	}
 
-	if length != width && terminalSize.Length >= width && terminalSize.Width >= length {
-		candidates = append(candidates, Dimensions{Length: width, Width: length})
+	if numCols != numRows && terminalSize.NumCols >= numRows && terminalSize.NumRows >= numCols {
+		candidates = append(candidates, Dimensions{NumCols: numRows, NumRows: numCols})
 	}
 
 	return candidates
@@ -46,7 +46,7 @@ func fittingDimensionsForArea(mazeArea int, terminalSize Dimensions) []Dimension
 // aspectMismatchScore measures how far a candidate maze shape is from the terminal aspect ratio.
 // Lower scores indicate a better fit for the available drawing area.
 func aspectMismatchScore(candidate, terminalSize Dimensions) int {
-	return absInt(candidate.Length*terminalSize.Width - candidate.Width*terminalSize.Length)
+	return absInt(candidate.NumCols*terminalSize.NumRows - candidate.NumRows*terminalSize.NumCols)
 }
 
 // isPreferredMazeDimensions compares two fitting candidates and reports whether candidate should win.
@@ -55,8 +55,8 @@ func aspectMismatchScore(candidate, terminalSize Dimensions) int {
 // 2. Closest aspect ratio match to the terminal.
 // Any remaining tie keeps the first deterministic candidate.
 func isPreferredMazeDimensions(candidate, currentBest, terminalSize Dimensions) bool {
-	candidateSkew := absInt(candidate.Length - candidate.Width)
-	bestSkew := absInt(currentBest.Length - currentBest.Width)
+	candidateSkew := absInt(candidate.NumCols - candidate.NumRows)
+	bestSkew := absInt(currentBest.NumCols - currentBest.NumRows)
 	if candidateSkew != bestSkew {
 		return candidateSkew < bestSkew
 	}
@@ -82,14 +82,14 @@ func chooseBestMazeDimensions(candidates []Dimensions, terminalSize Dimensions) 
 	return best
 }
 
-// GetMazeDimensions obtains the best length and width measurements for the
+// GetMazeDimensions obtains the best numCols and numRows measurements for the
 // current level and terminal size provided.
 func GetMazeDimensions(level int, terminalSize Dimensions) (*Dimensions, error) {
 	area := GenerateMazeArea(level)
 	errMsg := fmt.Sprintf(tooSmallMazeFormat, level)
 
 	// Bail out early when the raw area cannot possibly fit before spending time on factorization.
-	if area > (terminalSize.Width * terminalSize.Length) {
+	if area > (terminalSize.NumRows * terminalSize.NumCols) {
 		return &Dimensions{}, errors.New(errMsg)
 	}
 
@@ -107,8 +107,8 @@ func GetMazeDimensions(level int, terminalSize Dimensions) (*Dimensions, error) 
 func GetTerminalSize(h, w int) Dimensions {
 	// The termbox canvas reserves header and margin space, so only part of the terminal is available to the maze.
 	return Dimensions{
-		Length: nonNegative((h - terminalHeightInset) / terminalHeightScale),
-		Width:  nonNegative((w - terminalWidthInset) / terminalWidthScale),
+		NumCols: nonNegative((h - terminalHeightInset) / terminalHeightScale),
+		NumRows: nonNegative((w - terminalWidthInset) / terminalWidthScale),
 	}
 }
 

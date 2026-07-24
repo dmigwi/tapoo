@@ -93,9 +93,9 @@ export function cloneRenderGridPoint(point: RenderGridPoint): RenderGridPoint {
 // createMazeDimensions appends the logical cell area to a validated maze shape.
 export function createMazeDimensions(dimensions: BaseDimensions): MazeDimensions {
   return {
-    length: dimensions.length,
-    width: dimensions.width,
-    area: dimensions.length * dimensions.width,
+    numCols: dimensions.numCols,
+    numRows: dimensions.numRows,
+    area: dimensions.numCols * dimensions.numRows,
   }
 }
 
@@ -239,11 +239,11 @@ export function resolvePlayerMove(
   const nextY = y + rowDelta * maze.moveStep
   const nextX = x + columnDelta * maze.moveStep
 
-  if (nextY <= 0 || nextY > state.mazeDimensions.width * maze.cellSpan) {
+  if (nextY <= 0 || nextY > state.mazeDimensions.numRows * maze.cellSpan) {
     return { canMove: false }
   }
 
-  if (nextX <= 0 || nextX > state.mazeDimensions.length * maze.cellSpan) {
+  if (nextX <= 0 || nextX > state.mazeDimensions.numCols * maze.cellSpan) {
     return { canMove: false }
   }
 
@@ -332,16 +332,16 @@ export function isValidPersistedRound(snapshot: PersistedRound): boolean {
   if (
     snapshot.level < 1 ||
     !isWallWeight(snapshot.wallWeight) ||
-    snapshot.mazeDimensions.length <= 0 ||
-    snapshot.mazeDimensions.width <= 0 ||
-    snapshot.mazeDimensions.area !== snapshot.mazeDimensions.length * snapshot.mazeDimensions.width
+    snapshot.mazeDimensions.numCols <= 0 ||
+    snapshot.mazeDimensions.numRows <= 0 ||
+    snapshot.mazeDimensions.area !== snapshot.mazeDimensions.numCols * snapshot.mazeDimensions.numRows
   ) {
     return false
   }
 
   // The stored maze grid must match the dimensions used to generate it.
-  const expectedRows = maze.cellSpan * snapshot.mazeDimensions.width + 1
-  const expectedColumns = snapshot.mazeDimensions.length * 2 + 1
+  const expectedRows = maze.cellSpan * snapshot.mazeDimensions.numRows + 1
+  const expectedColumns = snapshot.mazeDimensions.numCols * 2 + 1
   if (snapshot.maze.length !== expectedRows) {
     return false
   }

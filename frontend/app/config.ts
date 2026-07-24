@@ -271,8 +271,8 @@ export const CONFIG: AppConfig = {
     modelConfig: {
       contextWindowFloor: 2500,       // Floor above Ollama's 2048 default; avoids 500 errors on long histories
       contextWindowAreaMultiplier: 5, // Tokens-per-cell scaling factor; grows context with maze area
-      temperature: 0.35,              // Lower than 0.8 default; favors format-compliant over creative replies
-      numPredict: 200,                // Caps output; enough for tool calls and the final prediction JSON
+      temperature: 0.5,               // Lower than 0.8 default; favors format-compliant over creative replies
+      numPredict: 3000,               // Caps total output (thinking + content); thinking models consume ~1000-2000 tokens before emitting the JSON
     },
   },
 }

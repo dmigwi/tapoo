@@ -75,7 +75,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.interactive,
     level: 1,
-    mazeDimensions: { length: 2, width: 2, area: 4 },
+    mazeDimensions: { numCols: 2, numRows: 2, area: 4 },
     maze: [
       ["|", "---", "|", "---", "|"],
       ["|", "   ", " ", "   ", "|"],
@@ -450,7 +450,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        mazeDimensions: { length: 3, width: 3, area: 9 },
+        mazeDimensions: { numCols: 3, numRows: 3, area: 9 },
         level: 3,
         status: "won",
         lastRoundScore: 900,
@@ -482,7 +482,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        mazeDimensions: { length: 3, width: 3, area: 9 },
+        mazeDimensions: { numCols: 3, numRows: 3, area: 9 },
         level: 1,
         status: "won",
         lastRoundScore: 900,
@@ -503,7 +503,7 @@ describe("render", () => {
     render(
       elements,
       createState({
-        mazeDimensions: { length: 3, width: 3, area: 9 },
+        mazeDimensions: { numCols: 3, numRows: 3, area: 9 },
         status: "won",
         lastRoundScore: 1,
         lastAttemptRetentionUnits: 500_000,

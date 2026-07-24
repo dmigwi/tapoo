@@ -34,3 +34,4 @@ public/css/*.min.css
 _DS*
 .DS_Store
 .vscode
+.claude

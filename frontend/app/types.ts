@@ -12,6 +12,9 @@ export type PersistedGameStatus =
 export type GameStatus = PersistedGameStatus | "boot" | "too-small"
 
 // CellCoordinate represents one logical cell position using zero-based row and column indexes.
+// It stays independent from RenderGridPoint because the two spaces scale differently: a single
+// logical cell spans multiple rendered grid points (walls plus path), so converting between them
+// requires an explicit multiply/divide by the cell span rather than a field rename.
 export type CellCoordinate = {
   row: number
   col: number
@@ -24,15 +27,17 @@ export type TraversalHistoryEntry = CellCoordinate & {
 }
 
 // RenderGridPoint represents one drawn maze-grid point using positive x/y coordinates.
+// It stays independent from CellCoordinate because it addresses the rendered maze grid (walls
+// and paths included), not logical cells; see CellCoordinate for why the two must not be merged.
 export type RenderGridPoint = {
   x: number
   y: number
 }
 
-// BaseDimensions captures raw length and width, including viewport or terminal room.
+// BaseDimensions captures raw numCols and numRows, including viewport or terminal room.
 export type BaseDimensions = {
-  length: number
-  width: number
+  numCols: number
+  numRows: number
 }
 
 // MazeDimensions captures a concrete maze shape and its logical cell area.

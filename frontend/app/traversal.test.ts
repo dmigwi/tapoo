@@ -37,7 +37,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "   ", " ", "   ", "|"],
       ["|", "---", "-", "---", "|"],
     ],
-    mazeDimensions: { length: 2, width: 1, area: 2 },
+    mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
     playerPosition: { x: 1, y: 1 },
     traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 3, y: 1 },
@@ -63,7 +63,7 @@ function createPersistedRound(
 ): PersistedRound {
   return {
     level: 1,
-    mazeDimensions: { length: 2, width: 1, area: 2 },
+    mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
     maze: [
       ["|", "---", "-", "---", "|"],
       ["|", "   ", " ", "   ", "|"],
@@ -130,9 +130,9 @@ describe("traversal", () => {
   })
 
   it("creates maze dimensions with their logical cell area", () => {
-    expect(createMazeDimensions({ length: 4, width: 3 })).toEqual({
-      length: 4,
-      width: 3,
+    expect(createMazeDimensions({ numCols: 4, numRows: 3 })).toEqual({
+      numCols: 4,
+      numRows: 3,
       area: 12,
     })
   })
@@ -218,7 +218,7 @@ describe("traversal", () => {
     expect(
       isValidPersistedRound(
         createPersistedRound({
-          mazeDimensions: { length: 2, width: 1, area: 999 },
+          mazeDimensions: { numCols: 2, numRows: 1, area: 999 },
         }),
       ),
     ).toBe(false)

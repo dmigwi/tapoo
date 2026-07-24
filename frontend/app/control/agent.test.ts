@@ -220,7 +220,7 @@ function createControlFixture(
     lastWinRequestCount: null,
     level: 4,
     maze: null,
-    mazeDimensions: { length: 3, width: 1, area: 3 },
+    mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
     playerPosition: { x: 1, y: 1 },
     score: 800,
     scoreDecayUnits: 0,

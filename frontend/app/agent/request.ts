@@ -394,7 +394,14 @@ export function requestPredictionWithAbort({
         if (toolCalls.length === 0) {
           // Final assistant content must be the compact JSON prediction payload.
           const moves = parseAgentPrediction(response.message.content)
-          return moves ? { ok: true, moves } : fail("malformed-response")
+          if (!moves) {
+            // The full response payload is already in the preceding "Agent response." info log.
+            logTapooDiagnostic(CONFIG.runtime.controlModes.agentApi, "warn", "Malformed response.", {
+              endpoint: `${agent.endpoint.origin}${agent.endpoint.pathname}`,
+            })
+            return fail("malformed-response")
+          }
+          return { ok: true, moves }
         }
 
         // If every requested tool was already called this turn, skip appending duplicate messages
@@ -431,6 +438,12 @@ export function requestPredictionWithAbort({
       }
     } catch {
       // Fetch failures, timeout aborts, and tool-service failures share one network bucket.
+      // Caller-initiated aborts (wasAborted) are silent; all other failures are logged.
+      if (!wasAborted) {
+        logTapooDiagnostic(CONFIG.runtime.controlModes.agentApi, "warn", "Network error.", {
+          endpoint: `${agent.endpoint.origin}${agent.endpoint.pathname}`,
+        })
+      }
       notifyFailure("network-error")
       return { ok: false, reason: "network-error" }
     }

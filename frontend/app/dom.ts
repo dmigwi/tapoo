@@ -83,14 +83,14 @@ export function getTerminalSize(elements: Elements): BaseDimensions {
   const terminalRows = Math.floor(rect.height / terminalRowHeight)
 
   return {
-    length: Math.max(
+    numCols: Math.max(
       0,
       Math.floor(
         (terminalColumns - viewport.terminalHeightInset) /
           viewport.terminalHeightScale,
       ),
     ),
-    width: Math.max(
+    numRows: Math.max(
       0,
       Math.floor(
         (terminalRows - viewport.terminalWidthInset) / viewport.terminalWidthScale,

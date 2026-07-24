@@ -6,12 +6,12 @@ import (
 	"slices"
 )
 
-// Dimensions defines the actual number of cells that make up the maze along the vertical and
-// the horizontal edges. Length represents the number of the cells along the horizontal
-// edge while Width represents the number of the cells along the vertical edge.
+// Dimensions defines the actual number of cells that make up the maze.
+// NumCols is the number of cells along the horizontal edge (columns).
+// NumRows is the number of cells along the vertical edge (rows).
 type Dimensions struct {
-	Length        int
-	Width         int
+	NumCols       int
+	NumRows       int
 	StartPosition [2]int
 	FinalPosition [2]int
 }
@@ -190,18 +190,19 @@ func (config *Dimensions) validateMazeGenerationInputs(weight WallWeight) (int, 
 		)
 	}
 
-	if config.Length <= 0 || config.Width <= 0 {
+	if config.NumCols <= 0 || config.NumRows <= 0 {
 		return 0, fmt.Errorf(
-			"invalid maze dimensions: length=%d width=%d. both values must be greater than zero",
-			config.Length, config.Width,
+			"invalid maze dimensions: numCols=%d numRows=%d. both values must be greater than zero",
+			config.NumCols, config.NumRows,
 		)
 	}
 
-	totalCells := config.Length * config.Width
+	totalCells := config.NumCols * config.NumRows
 	if totalCells < minPlayableMazeCells {
 		return 0, fmt.Errorf(
-			"invalid maze dimensions: length=%d width=%d. at least two cells are required to create distinct endpoints",
-			config.Length, config.Width,
+			"invalid maze dimensions: numCols=%d numRows=%d. at least two cells are required to create distinct endpoints",
+			config.NumCols,
+			config.NumRows,
 		)
 	}
 
@@ -218,8 +219,8 @@ func (config *Dimensions) resetPositions() {
 func (config *Dimensions) validateGeneratedPositions() error {
 	if slices.Equal(config.StartPosition[:], config.FinalPosition[:]) {
 		return fmt.Errorf(
-			"generate maze: start and final positions must differ (length=%d width=%d)",
-			config.Length, config.Width,
+			"generate maze: start and final positions must differ (numCols=%d numRows=%d)",
+			config.NumCols, config.NumRows,
 		)
 	}
 	return nil
@@ -311,7 +312,7 @@ func (config *Dimensions) directionBetween(currentCell, nextCell int) direction 
 // The starting position can only be a cell along the  maze edges i.e. has less than four
 // neighbors. When getStartPosition is called, all cells are have no common paths to other cells.
 func (config *Dimensions) getStartPosition() (int, error) {
-	totalCells := config.Length * config.Width
+	totalCells := config.NumCols * config.NumRows
 	for {
 		randCellNo, err := secureRandomIndex(totalCells)
 		if err != nil {
@@ -336,7 +337,7 @@ func (config *Dimensions) optimizeMaze(weight WallWeight, maze [][]string) {
 	}
 
 	// Corner cleanup swaps in horizontal glyphs where two open passages meet for a cleaner terminal render.
-	for cell := 1; cell <= (config.Length * config.Width); cell++ {
+	for cell := 1; cell <= (config.NumCols * config.NumRows); cell++ {
 		addr := config.GetCellAddress(cell)
 
 		config.replaceChar(addr.BottomRight, chars[2], maze)
@@ -356,7 +357,7 @@ func (config *Dimensions) replaceChar(point [2]int, replChar string, maze [][]st
 	}
 
 	// checks if the bottom point in relation to the given point can be calculated
-	if (point[0] + 1) <= (config.Width * cellSpan) {
+	if (point[0] + 1) <= (config.NumRows * cellSpan) {
 		elemBottom = maze[point[0]+1][point[1]]
 		lenBottom = true
 	}

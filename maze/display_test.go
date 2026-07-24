@@ -18,8 +18,8 @@ func TestRenderMazeUI(t *testing.T) {
 
 		ui := newFakeUI(40, 80)
 		config := &maze.Dimensions{
-			Length:        3,
-			Width:         3,
+			NumCols:       3,
+			NumRows:       3,
 			StartPosition: [2]int{1, 1},
 			FinalPosition: [2]int{3, 3},
 		}
@@ -59,8 +59,8 @@ func TestRenderMazeUI(t *testing.T) {
 
 		ui := newFakeUI(40, 80)
 		config := &maze.Dimensions{
-			Length:        3,
-			Width:         3,
+			NumCols:       3,
+			NumRows:       3,
 			StartPosition: [2]int{3, 3},
 			FinalPosition: [2]int{3, 3},
 		}
@@ -137,8 +137,8 @@ func TestRenderMazeUI(t *testing.T) {
 		ui.flushErr = errors.New("flush failed")
 
 		_, err := maze.RenderMazeUI(ui, &maze.Dimensions{
-			Length:        3,
-			Width:         3,
+			NumCols:       3,
+			NumRows:       3,
 			StartPosition: [2]int{1, 1},
 			FinalPosition: [2]int{3, 3},
 		}, 1, 100, sampleMazeGrid(), nil)
@@ -173,7 +173,7 @@ func TestDrawMaze(t *testing.T) {
 	t.Run("renders supported wall weights with expected spacing and organization", func(t *testing.T) {
 		t.Parallel()
 
-		config := &maze.Dimensions{Length: 4, Width: 3}
+		config := &maze.Dimensions{NumCols: 4, NumRows: 3}
 		expectedMazeRows := map[maze.WallWeight][]string{
 			maze.WallWeightRegular: {
 				"   |---|---|---|---|\n",

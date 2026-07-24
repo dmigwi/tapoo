@@ -48,8 +48,8 @@ func TestPlayerMovement(t *testing.T) {
 			t.Parallel()
 
 			dimensions := maze.Dimensions{
-				Length:        3,
-				Width:         3,
+				NumCols:       3,
+				NumRows:       3,
 				StartPosition: testCase.startPos,
 			}
 
@@ -100,8 +100,8 @@ func TestHandlePlayerMovement(t *testing.T) {
 				t.Parallel()
 
 				dimensions := maze.Dimensions{
-					Length:        3,
-					Width:         3,
+					NumCols:       3,
+					NumRows:       3,
 					StartPosition: testCase.startPos,
 				}
 
@@ -145,7 +145,7 @@ func TestHandlePlayerMovement(t *testing.T) {
 			t.Run(testCase.name, func(t *testing.T) {
 				t.Parallel()
 
-				dimensions := maze.Dimensions{Length: 3, Width: 3}
+				dimensions := maze.Dimensions{NumCols: 3, NumRows: 3}
 				got, ok := dimensions.HandlePlayerMovement(testCase.key, data)
 				if !ok {
 					t.Fatalf("expected a status for key %v", testCase.key)
@@ -340,7 +340,7 @@ func TestPlayWithUI(t *testing.T) {
 
 		ui.enqueueEvents(termbox.Event{Type: termbox.EventError, Err: errors.New("keyboard failed")})
 
-		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{Length: 3, Width: 3},
+		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{NumCols: 3, NumRows: 3},
 			sampleMazeGrid(), maze.StoredGameState{
 				Level:      1,
 				WallWeight: maze.WallWeightRegular,
@@ -368,8 +368,8 @@ func TestPlayWithUI(t *testing.T) {
 		)
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
-			Length:        3,
-			Width:         3,
+			NumCols:       3,
+			NumRows:       3,
 			StartPosition: [2]int{1, 1},
 			FinalPosition: [2]int{3, 3},
 		}, sampleMazeGrid(), maze.StoredGameState{
@@ -405,8 +405,8 @@ func TestPlayWithUI(t *testing.T) {
 		)
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
-			Length:        3,
-			Width:         3,
+			NumCols:       3,
+			NumRows:       3,
 			StartPosition: [2]int{1, 1},
 			FinalPosition: [2]int{3, 3},
 		}, sampleMazeGrid(), maze.StoredGameState{
@@ -432,8 +432,8 @@ func TestPlayWithUI(t *testing.T) {
 		}()
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
-			Length:        3,
-			Width:         3,
+			NumCols:       3,
+			NumRows:       3,
 			StartPosition: [2]int{1, 1},
 			FinalPosition: [2]int{3, 3},
 		}, sampleMazeGrid(), maze.StoredGameState{
@@ -469,8 +469,8 @@ func TestPlayWithUI(t *testing.T) {
 		}()
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
-			Length:        3,
-			Width:         3,
+			NumCols:       3,
+			NumRows:       3,
 			StartPosition: [2]int{1, 1},
 			FinalPosition: [2]int{3, 3},
 		}, sampleMazeGrid(), maze.StoredGameState{
@@ -557,8 +557,8 @@ func TestPlayWithUI(t *testing.T) {
 		}()
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
-			Length:        1,
-			Width:         1,
+			NumCols:       1,
+			NumRows:       1,
 			StartPosition: [2]int{1, 1},
 			FinalPosition: [2]int{1, 1},
 		}, sampleMazeGrid(), maze.StoredGameState{
@@ -589,8 +589,8 @@ func TestPlayWithUI(t *testing.T) {
 		}()
 
 		err := maze.PlayPreparedGameWithStore(ui, &maze.Dimensions{
-			Length:        1,
-			Width:         1,
+			NumCols:       1,
+			NumRows:       1,
 			StartPosition: [2]int{1, 1},
 			FinalPosition: [2]int{1, 1},
 		}, sampleMazeGrid(), maze.StoredGameState{
