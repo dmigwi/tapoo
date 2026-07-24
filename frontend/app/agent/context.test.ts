@@ -15,24 +15,28 @@ import type {
   TraversalHistoryEntry,
 } from "../types"
 
-function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
+function selfVisit(row: number, col: number, openMoves: TraversalHistoryEntry["openMoves"] = []): TraversalHistoryEntry {
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves }
 }
 
 const expectedAgentPrompt = [
   "Your name is Blue.",
   `playerName ${CONFIG.runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
-  "Use currentCell as your current position and destinationCell as the target.",
+  "currentCell is your current position; destinationCell is the target.",
   "The maze is randomly generated at each level with exactly one path to the destination.",
-  "Use traversalHistory entries matching your playerName to review your past moves in order.",
-  "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it — never assume moves toward the destination are passable.",
+  "traversalHistory entries matching your playerName record your past moves in chronological order.",
+  "Each entry includes openMoves — the exits that were open from that cell.",
+  "openMoves count reveals cell topology: one open move is a dead end (unless that is where you came from); two is a corridor; three or more is a junction.",
+  "Revisiting a cell already in traversalHistory is only valid when every other exit from the current cell leads to already-visited cells.",
+  "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
   "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
-  "Prefer unvisited cells over revisiting known ones, and calibrate how many moves you submit against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty so return fewer moves; applied signals confirmed progress so you may include more moves in your response.",
-  "Call get_prediction_rules to get the required response format and move count guidance before predicting moves.",
+  "get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is.",
+  "lastMoveStatus null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a score penalty was charged; applied means it succeeded.",
+  "get_prediction_rules provides the required response format and move count guidance.",
   "Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step).",
   "Every move in your response counts toward score decay, including moves after the first invalid move.",
-  "Stop predicting when lastMoveStatus is reached-target or status is won.",
-  "Choose the moves most likely to reach the destination with the fewest moves in your response.",
+  "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
+  "Score decay charges every submitted move, so fewer correct moves preserve more score.",
 ].join(" ")
 
 const expectedResponseSchema: AgentExpectedResponseSchema = {
@@ -46,7 +50,7 @@ const expectedResponseSchema: AgentExpectedResponseSchema = {
       minItems: 1,
       items: {
         type: "string",
-        enum: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
+        enum: ["MoveLeft", "MoveRight", "MoveUp", "MoveDown"],
       },
     },
   },
@@ -65,7 +69,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "|", "---", "|"],
     ],
     playerPosition: { x: 1, y: 1 },
-    traversalHistory: [selfVisit(0, 0)],
+    traversalHistory: [selfVisit(0, 0, ["MoveRight"])],
     finalPosition: { x: 3, y: 1 },
     status: "running",
     score: 700,
@@ -96,7 +100,7 @@ describe("agent context", () => {
       visitedBefore: false,
       chargedMovesCount: 1,
     })
-    const toolHandlers = buildAgentToolHandlers(createState(), actionResult, ["MoveRight"])
+    const toolHandlers = buildAgentToolHandlers(createState(), actionResult)
 
     expect(AGENT_CONTEXT_TOOLS.map((tool) => tool.function.name)).toEqual([
       "get_game_status",
@@ -114,13 +118,12 @@ describe("agent context", () => {
     expect(toolHandlers.get_maze_positions({})).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 1 },
-      directions: { open: ["MoveRight"], blocked: ["MoveUp", "MoveDown", "MoveLeft"] },
     })
     expect(toolHandlers.get_traversal_history({})).toEqual({
-      traversalHistory: [selfVisit(0, 0)],
+      traversalHistory: [selfVisit(0, 0, ["MoveRight"])],
     })
     expect(toolHandlers.get_prediction_rules({})).toEqual({
-      suggestedMovesPerTurn: 10,
+      suggestedMovesPerTurn: 4,
       expectedResponseSchema,
     })
     expect(toolHandlers.get_last_replay_result({})).toEqual({

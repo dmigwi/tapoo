@@ -3,6 +3,7 @@ import { logTapooDiagnostic } from "../logs"
 import { CONFIG } from "../config"
 import {
   AGENT_CONTEXT_TOOLS,
+  PREDICTION_FORMAT,
   buildAgentMessages,
   buildAgentToolHandlers,
 } from "./context"
@@ -93,7 +94,6 @@ type RequestAgentPredictionInput = {
     state: State
     timeoutMs: number
     agent: AgentApiConfig
-    openDirections: MoveAction[]
     maxToolRounds?: number
     lastActionResult: MazeActionResult | null
     onNetworkError?: (agent: AgentApiConfig) => void
@@ -101,8 +101,8 @@ type RequestAgentPredictionInput = {
 }
 
 // defaultMaxToolRounds caps context-gathering rounds per prediction turn. The higher limit
-// reserves capacity for future multi-agent levels where in-level constraints may change and
-// a model may legitimately need several rounds; the system prompt discourages redundant calls.
+// reserves capacity for future multi-agent levels; duplicate-call detection (below) prevents
+// the model from wasting rounds by calling the same tool more than once per turn.
 const defaultMaxToolRounds = 4
 
 // stripMarkdownFence removes optional ```json or ``` wrappers that models add despite instructions.
@@ -208,19 +208,53 @@ async function buildToolResultMessages(
   return toolMessages
 }
 
+// compactToolsPayload manages the follow-up tool payload in one place:
+// - Round 0 or no tools: returns tools unchanged (full definitions for the first request).
+// - All tools called: returns [] to signal prediction mode (no tools, structured-output format).
+// - Otherwise: compact called tools to name-only (model already has their definitions in context)
+//   and keep uncalled tools at full definition to prompt the model to consider them.
+function compactToolsPayload(
+  tools: AgentToolDefinition[],
+  calledToolNames: Set<string>,
+  toolRounds: number,
+): object[] {
+  if (toolRounds === 0 || tools.length === 0) return tools
+  if (tools.every((t) => calledToolNames.has(t.function.name))) return []
+  return tools.map((t) =>
+    calledToolNames.has(t.function.name)
+      ? { type: t.type, function: { name: t.function.name } }
+      : t
+  )
+}
+
+// contextWindowForArea scales the KV-cache size proportionally to maze area so larger mazes
+// with longer traversal histories do not overflow the context window.
+function contextWindowForArea(area: number): number {
+  const { contextWindowFloor, contextWindowAreaMultiplier } = CONFIG.runtime.modelConfig
+  return Math.max(contextWindowFloor, area * contextWindowAreaMultiplier)
+}
+
 // requestChatTurn sends one provider-compatible chat request while keeping wire details local.
 async function requestChatTurn(
   endpoint: URL,
   model: string,
   messages: AgentChatMessage[],
-  tools: AgentToolDefinition[],
+  tools: object[],
   signal: AbortSignal,
+  mazeArea?: number,
+  format?: Record<string, unknown>,
 ): Promise<AgentChatResponse | null> {
-  // The request body stays provider-neutral enough for Ollama-style chat APIs without importing SDKs.
+
   const msgBody = {
     model,
     messages,
     tools,
+    options: {
+      num_ctx: contextWindowForArea(mazeArea ?? 0),
+      temperature: CONFIG.runtime.modelConfig.temperature,
+      num_predict: CONFIG.runtime.modelConfig.numPredict,
+    },
+    ...(format !== undefined ? { format } : {}),
     think: false,
     stream: false,
   }
@@ -265,7 +299,6 @@ async function requestChatTurn(
 // requestPredictionWithAbort hides request construction, timeout control, and tool-call servicing.
 export function requestPredictionWithAbort({
   lastActionResult,
-  openDirections,
   state,
   agent,
   maxToolRounds = defaultMaxToolRounds,
@@ -280,7 +313,8 @@ export function requestPredictionWithAbort({
   // requestChatTurnWithTimeout gives each provider HTTP request its own timeout window.
   const requestChatTurnWithTimeout = async (
     messages: AgentChatMessage[],
-    tools: AgentToolDefinition[],
+    tools: object[],
+    format?: Record<string, unknown>,
   ): Promise<AgentChatResponse | null> => {
     const controller = new AbortController()
     activeController = controller
@@ -289,7 +323,9 @@ export function requestPredictionWithAbort({
     }, timeoutMs)
 
     try {
-      return await requestChatTurn(agent.endpoint, agent.model, messages, tools, controller.signal)
+      return await requestChatTurn(
+        agent.endpoint, agent.model, messages, tools, controller.signal, state.mazeDimensions?.area, format,
+      )
     } finally {
       window.clearTimeout(requestTimeout)
       if (activeController === controller) {
@@ -328,13 +364,15 @@ export function requestPredictionWithAbort({
       }
 
       // Tool handlers close over the current State snapshot and last replay metadata for this turn.
-      const toolHandlers = buildAgentToolHandlers(state, lastActionResult, openDirections)
+      const toolHandlers = buildAgentToolHandlers(state, lastActionResult)
       let messages = buildAgentMessages(agent.playerName)
       let availableTools = AGENT_CONTEXT_TOOLS
       // Allow configured tool rounds plus two final no-tools requests for the actual prediction.
       const maxRequestTurns = maxToolRounds + 2
       let requestTurns = 0
       let toolRounds = 0
+      // Track which tools have already been called this turn so duplicate-only rounds are skipped.
+      const calledToolNames = new Set<string>()
 
       while (true) {
         requestTurns += 1
@@ -342,8 +380,12 @@ export function requestPredictionWithAbort({
           return fail("network-error")
         }
 
-        // Each turn sends the accumulated chat/tool transcript until final moves are returned.
-        const response = await requestChatTurnWithTimeout(messages, availableTools)
+        // compactToolsPayload owns all follow-up tool payload decisions: compacts called tools,
+        // keeps full definitions for uncalled ones, and returns [] when all tools are exhausted
+        // or availableTools was explicitly cleared (max-rounds), switching to prediction mode.
+        const toolsToSend = compactToolsPayload(availableTools, calledToolNames, toolRounds)
+        const format = toolsToSend.length === 0 ? PREDICTION_FORMAT : undefined
+        const response = await requestChatTurnWithTimeout(messages, toolsToSend, format)
         if (!response?.message) {
           return fail("network-error")
         }
@@ -354,6 +396,19 @@ export function requestPredictionWithAbort({
           const moves = parseAgentPrediction(response.message.content)
           return moves ? { ok: true, moves } : fail("malformed-response")
         }
+
+        // If every requested tool was already called this turn, skip appending duplicate messages
+        // to keep the context window bounded. Clear availableTools so compactToolsPayload returns []
+        // on the next iteration, switching to prediction mode regardless of how many tools remain.
+        // (compactToolsPayload alone only clears when every *available* tool is exhausted; the model
+        // could otherwise keep requesting the same subset of duplicates until maxRequestTurns.)
+        const requestedNames = toolCalls.map((tc) => tc.function?.name)
+          .filter((name): name is string => name !== undefined)
+        if (requestedNames.length > 0 && requestedNames.every((name) => calledToolNames.has(name))) {
+          availableTools = []
+          continue
+        }
+        requestedNames.forEach((name) => calledToolNames.add(name))
 
         const toolMessages = await buildToolResultMessages(toolCalls, toolHandlers)
         if (!toolMessages) {

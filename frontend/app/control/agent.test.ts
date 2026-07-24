@@ -39,11 +39,11 @@ async function flushImmediateAgentTurn(): Promise<void> {
 }
 
 function visit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Blue", row, col }
+  return { playerName: "Blue", row, col, openMoves: [] }
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
 }
 
 function createButton({
@@ -773,7 +773,6 @@ describe("agent control mode", () => {
     expect(toolResult).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 2 },
-      directions: { open: [], blocked: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"] },
     })
   })
 

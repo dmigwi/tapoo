@@ -16,7 +16,7 @@ import type {
 } from "./types"
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Self", row, col }
+  return { playerName: "Self", row, col, openMoves: [] }
 }
 
 function enabledAgentConfig(): AgentApiConfig {
@@ -159,7 +159,9 @@ function createTraversalMock({
     isCellCoordinate(value) &&
     "playerName" in value &&
     typeof value.playerName === "string" &&
-    value.playerName.length > 0
+    value.playerName.length > 0 &&
+    "openMoves" in value &&
+    Array.isArray(value.openMoves)
   )
   const isTraversableGridPoint = (
     data: string[][],
@@ -182,7 +184,7 @@ function createTraversalMock({
     cloneMazeRows: vi.fn((mazeRows: string[][]) => mazeRows.map((row) => [...row])),
     cloneRenderGridPoint: vi.fn(({ x, y }: { x: number; y: number }) => ({ x, y })),
     cloneTraversalHistory: vi.fn((history: TraversalHistoryEntry[]) =>
-      history.map(({ playerName, row, col }) => ({ playerName, row, col })),
+      history.map(({ playerName, row, col, openMoves }) => ({ playerName, row, col, openMoves: [...openMoves] })),
     ),
     gridPointFromCellCoordinate: vi.fn(gridPointFromCellCoordinate),
     isMoveAction: vi.fn((action: { type: string }) =>
@@ -274,12 +276,14 @@ function createTraversalMock({
     traversalHistoryEntry: vi.fn((cell: { row: number; col: number }, playerName: string) => ({
       ...cell,
       playerName,
+      openMoves: [],
     })),
     traversalHistoryIncludes: vi.fn(traversalHistoryIncludes),
     startCellFromTraversalHistory: vi.fn((history: TraversalHistoryEntry[]) => {
       const [startCell] = history
       return startCell ? cloneCellCoordinate(startCell) : null
     }),
+    MOVE_ACTIONS: ["MoveLeft", "MoveRight", "MoveUp", "MoveDown"],
   }
 }
 

@@ -13,11 +13,11 @@ import type {
 } from "./types"
 
 function agentVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Blue", row, col }
+  return { playerName: "Blue", row, col, openMoves: [] }
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
 }
 
 const expectedLastSubmittedMovesSchema: NonNullable<

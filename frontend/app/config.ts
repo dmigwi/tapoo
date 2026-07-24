@@ -258,7 +258,7 @@ export const CONFIG: AppConfig = {
       interactive: "interactive",
     },
     storage: {
-      version: 3,
+      version: 4,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",
@@ -268,8 +268,17 @@ export const CONFIG: AppConfig = {
     },
     interactivePlayerName: "Self",
     agentApiMistakePenaltyMoves: 2,
+    modelConfig: {
+      contextWindowFloor: 2500,       // Floor above Ollama's 2048 default; avoids 500 errors on long histories
+      contextWindowAreaMultiplier: 5, // Tokens-per-cell scaling factor; grows context with maze area
+      temperature: 0.35,              // Lower than 0.8 default; favors format-compliant over creative replies
+      numPredict: 200,                // Caps output; enough for tool calls and the final prediction JSON
+    },
   },
 }
+
+// AGENT_MOVES_PER_TURN_CAP is the p95 of actual corridor run lengths measured across all levels.
+export const AGENT_MOVES_PER_TURN_CAP = 4  // simulation: p50=1, p75=2, p90=3, p95=4
 
 // PAGE_COPYRIGHT_TEXT is the fully composed footer text shared by static browser pages.
 export const PAGE_COPYRIGHT_TEXT = CONFIG.chrome.pageVersionTemplate

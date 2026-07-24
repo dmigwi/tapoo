@@ -21,7 +21,7 @@ type SerializedRequestBody = {
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
 }
 
 function createState(overrides: Partial<State> = {}): State {

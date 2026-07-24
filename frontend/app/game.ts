@@ -356,6 +356,7 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
 // startRoundWithDimensions initializes a round after viewport-safe dimensions have been selected.
 function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): void {
   const round = generateMaze(dimensions, state.wallWeight)
+  const startCell = cellCoordinateFromGridPoint(round.startPosition)
 
   activeControlMode?.clearActionResult()
   applyRuntimeRoundState({
@@ -364,7 +365,7 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
     maze: round.maze,
     playerPosition: round.startPosition,
     traversalHistory: [
-      traversalHistoryEntry(cellCoordinateFromGridPoint(round.startPosition), runtime.interactivePlayerName),
+      traversalHistoryEntry(startCell, runtime.interactivePlayerName, round.maze),
     ],
     finalPosition: round.finalPosition,
   })
@@ -541,7 +542,7 @@ function movePlayer(action: MoveAction, playerName: string): void {
   state.playerPosition = moveEvaluation.nextGridPoint
   if (!traversalHistoryIncludes(state.traversalHistory, moveEvaluation.nextCell)) {
     state.traversalHistory.push(
-      traversalHistoryEntry(moveEvaluation.nextCell, playerName),
+      traversalHistoryEntry(moveEvaluation.nextCell, playerName, state.maze),
     )
   }
 

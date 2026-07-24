@@ -20,6 +20,7 @@ export type CellCoordinate = {
 // TraversalHistoryEntry records one chronological logical-cell visit for the named player.
 export type TraversalHistoryEntry = CellCoordinate & {
   playerName: string
+  openMoves: MoveAction[]
 }
 
 // RenderGridPoint represents one drawn maze-grid point using positive x/y coordinates.
@@ -514,5 +515,11 @@ export type AppConfig = {
     }
     agentApiMistakePenaltyMoves: number
     interactivePlayerName: string
+    modelConfig: {
+      contextWindowFloor: number
+      contextWindowAreaMultiplier: number
+      temperature: number
+      numPredict: number
+    }
   }
 }

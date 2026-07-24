@@ -8,7 +8,7 @@ import type { Elements, State, TraversalHistoryEntry } from "./types"
 const { messages } = CONFIG
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
 }
 
 // normalizeScreenText keeps DOM assertions readable by collapsing non-breaking spaces.

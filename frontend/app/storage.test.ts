@@ -19,7 +19,7 @@ const AGENT_MODE = CONFIG.runtime.controlModes.agentApi
 const { agentConfigs, gameSetup, winMetrics } = CONFIG.runtime.storage.suffixes
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
 }
 
 // storageKey mirrors the production per-mode browser storage naming.

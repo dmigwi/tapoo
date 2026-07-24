@@ -1,6 +1,7 @@
-import { CONFIG } from "../config"
+import { AGENT_MOVES_PER_TURN_CAP, CONFIG } from "../config"
 import { getNavigationProfile } from "../maze"
 import {
+  MOVE_ACTIONS,
   cellCoordinateFromGridPoint,
   cloneTraversalHistory,
 } from "../traversal"
@@ -8,7 +9,6 @@ import type {
   AgentExpectedResponseSchema,
   AgentSubmittedMovesSchema,
   MazeActionResult,
-  MoveAction,
   State,
 } from "../types"
 import type {
@@ -22,9 +22,6 @@ const { runtime } = CONFIG
 // --- Shared constants ---
 // These are referenced by both the message builders and the tool layer below.
 
-// ALLOWED_MOVE_ACTIONS enumerates the only traversal commands accepted from prediction sources.
-export const ALLOWED_MOVE_ACTIONS: MoveAction[] = ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"]
-
 // EXPECTED_RESPONSE_SCHEMA documents the exact JSON shape returned by prediction sources.
 export const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
   type: "object",
@@ -37,11 +34,21 @@ export const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
       minItems: 1,
       items: {
         type: "string",
-        enum: [...ALLOWED_MOVE_ACTIONS],
+        enum: [...MOVE_ACTIONS],
       },
     },
   },
 }
+
+// PREDICTION_FORMAT is the Ollama-compatible structured-output schema for the final prediction
+// request. It uses the same shape as EXPECTED_RESPONSE_SCHEMA but omits description so Ollama
+// treats it as a pure JSON Schema constraint, not a model-facing annotation.
+export const PREDICTION_FORMAT = {
+  type: "object",
+  additionalProperties: false,
+  required: EXPECTED_RESPONSE_SCHEMA.required,
+  properties: EXPECTED_RESPONSE_SCHEMA.properties,
+} as const
 
 // SUBMITTED_MOVES_SCHEMA documents the zero-based replay records returned after processing moves.
 export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
@@ -60,21 +67,23 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
 // buildMazeActionPrompt keeps request guidance compact while naming the active player.
 export function buildMazeActionPrompt(playerName: string): string {
   return [
-    `Your name is ${playerName}. playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and`,
-    "marks the start cell. Use currentCell as your current position and destinationCell as the target.",
+    `Your name is ${playerName}. playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
+    "currentCell is your current position; destinationCell is the target.",
     "The maze is randomly generated at each level with exactly one path to the destination.",
-    "Use traversalHistory entries matching your playerName to review your past moves in order.",
-    "By design, the maze never guarantees a direct route from start to destination; the only valid path may require",
-    "moving away from the target before turning towards it — never assume moves toward the destination are passable.",
+    "traversalHistory entries matching your playerName record your past moves in chronological order.",
+    "Each entry includes openMoves — the exits that were open from that cell.",
+    "openMoves count reveals cell topology: one open move is a dead end (unless that is where you came from); two is a corridor; three or more is a junction.",
+    "Revisiting a cell already in traversalHistory is only valid when every other exit from the current cell leads to already-visited cells.",
+    "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
     "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
-    "Prefer unvisited cells over revisiting known ones, and calibrate how many moves you submit",
-    "against your own last replay outcome from get_last_replay_result: null or invalid-move signals high uncertainty",
-    "so return fewer moves; applied signals confirmed progress so you may include more moves in your response.",
-    "Call get_prediction_rules to get the required response format and move count guidance before predicting moves.",
+    "get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is.",
+    "lastMoveStatus null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means",
+    "the previous response was not valid JSON and a score penalty was charged; applied means it succeeded.",
+    "get_prediction_rules provides the required response format and move count guidance.",
     "Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step).",
     "Every move in your response counts toward score decay, including moves after the first invalid move.",
-    "Stop predicting when lastMoveStatus is reached-target or status is won.",
-    "Choose the moves most likely to reach the destination with the fewest moves in your response.",
+    "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
+    "Score decay charges every submitted move, so fewer correct moves preserve more score.",
   ].join(" ")
 }
 
@@ -113,24 +122,25 @@ const gameStatusTool: AgentToolDefinition = {
   },
 }
 
-// mazePositionsTool gives agents their current location, destination, and passable exits in one call.
+// mazePositionsTool gives agents their current location and destination in one call.
 const mazePositionsTool: AgentToolDefinition = {
   type: "function",
   function: {
     name: "get_maze_positions",
     description:
-      "Get current cell, destination cell, and which moves are passable from the current cell. Row increases going down, col increases going right; MoveUp and MoveDown change row by ±1; MoveLeft and MoveRight change col by ±1. All 4 moves are always classified in directions — each appears in exactly one of open or blocked; selecting a blocked move triggers an invalid-move. Returns JSON: {\"currentCell\":{\"row\":number,\"col\":number}|null,\"destinationCell\":{\"row\":number,\"col\":number}|null,\"directions\":{\"open\":[...],\"blocked\":[]}}.",
+      "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp and MoveDown change row by ±1; MoveLeft and MoveRight change col by ±1. Use get_traversal_history to find which moves are open from the current cell. Returns JSON: {\"currentCell\":{\"row\":number,\"col\":number}|null,\"destinationCell\":{\"row\":number,\"col\":number}|null}.",
     parameters: emptyToolParameters,
   },
 }
 
 // traversalHistoryTool lets agents avoid repeating explored logical cells across turns.
+// Each entry includes openMoves so the model can reconstruct dead ends and junction topology.
 const traversalHistoryTool: AgentToolDefinition = {
   type: "function",
   function: {
     name: "get_traversal_history",
     description:
-      "Get all players' visit records in chronological order. Returns JSON: {\"traversalHistory\":[{\"playerName\":string,\"row\":number,\"col\":number}]}. Filter by playerName to review a specific player's visit sequence.",
+      "Get all players' visit records in chronological order. Each entry includes openMoves — the open exits from that cell — so you can reconstruct the maze topology you have already explored. Returns JSON: {\"traversalHistory\":[{\"playerName\":string,\"row\":number,\"col\":number,\"openMoves\":[\"MoveLeft\",...]}]}. Filter by playerName to review a specific player's visit sequence.",
     parameters: emptyToolParameters,
   },
 }
@@ -173,33 +183,26 @@ export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
 export function buildAgentToolHandlers(
   state: State,
   lastActionResult: MazeActionResult | null,
-  openDirections: MoveAction[],
 ): AgentToolHandlers {
+  // The hard corridor limit governs DFS maze carving, not player path planning.
+  // AGENT_MOVES_PER_TURN_CAP (p95 of actual run lengths) is the tighter bound for predictions.
   const suggestedMovesPerTurn = state.mazeDimensions
-    ? getNavigationProfile(state.mazeDimensions).__hardCorridorLimit
+    ? Math.min(getNavigationProfile(state.mazeDimensions).__hardCorridorLimit, AGENT_MOVES_PER_TURN_CAP)
     : 0
 
   return {
     get_game_status() {
       return {
+        score: state.score,
         level: state.level,
         status: state.status,
-        score: state.score,
         mazeDimensions: state.mazeDimensions,
       }
     },
     get_maze_positions() {
       return {
-        currentCell: state.playerPosition
-          ? cellCoordinateFromGridPoint(state.playerPosition)
-          : null,
-        destinationCell: state.finalPosition
-          ? cellCoordinateFromGridPoint(state.finalPosition)
-          : null,
-        directions: {
-          open: openDirections,
-          blocked: ALLOWED_MOVE_ACTIONS.filter((m) => !openDirections.includes(m)),
-        },
+        currentCell: state.playerPosition ? cellCoordinateFromGridPoint(state.playerPosition) : null,
+        destinationCell: state.finalPosition ? cellCoordinateFromGridPoint(state.finalPosition) : null,
       }
     },
     get_traversal_history() {

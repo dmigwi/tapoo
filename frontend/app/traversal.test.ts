@@ -25,7 +25,7 @@ import type {
 } from "./types"
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Self", row, col }
+  return { playerName: "Self", row, col, openMoves: [] }
 }
 
 function createState(overrides: Partial<State> = {}): State {
@@ -138,17 +138,17 @@ describe("traversal", () => {
   })
 
   it("tracks traversal history entries by logical cell identity", () => {
-    const currentVisit = traversalHistoryEntry({ row: 0, col: 1 }, "Blue")
+    const currentVisit = traversalHistoryEntry({ row: 0, col: 1 }, "Blue", null)
     const history = [selfVisit(0, 0), currentVisit]
 
-    expect(currentVisit).toEqual({ playerName: "Blue", row: 0, col: 1 })
+    expect(currentVisit).toEqual({ playerName: "Blue", row: 0, col: 1, openMoves: [] })
     expect(mazeCellKey(currentVisit)).toBe("0:1")
     expect(traversalHistoryIncludes(history, { row: 0, col: 1 })).toBe(true)
     expect(traversalHistoryIncludes(history, { row: 1, col: 0 })).toBe(false)
   })
 
   it("clones only traversal histories that include the known start cell", () => {
-    const history = [selfVisit(0, 0), traversalHistoryEntry({ row: 0, col: 1 }, "Blue")]
+    const history = [selfVisit(0, 0), traversalHistoryEntry({ row: 0, col: 1 }, "Blue", null)]
     const clone = cloneTraversalHistory(history)
 
     expect(clone).toEqual(history)
