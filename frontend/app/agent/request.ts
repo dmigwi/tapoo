@@ -256,7 +256,7 @@ async function requestChatTurn(
       num_predict: CONFIG.runtime.modelConfig.numPredict,
     },
     ...(format !== undefined ? { format } : {}),
-    think: true,
+    think: false,
     stream: false,
   }
 

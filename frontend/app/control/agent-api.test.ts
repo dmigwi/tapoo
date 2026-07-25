@@ -17,7 +17,7 @@ const originalAgentResponseTimeoutMs = CONFIG.timing.agentApiResponseTimeoutMs
 type SerializedRequestBody = {
   model: string
   stream: false
-  think: true
+  think: false
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
@@ -365,17 +365,17 @@ describe("agent api turn loop", () => {
     expect(firstRequestBody).toEqual(expect.objectContaining({
       model: "llama3.2",
       stream: false,
-      think: true,
+      think: false,
     }))
     expect(secondRequestBody).toEqual(expect.objectContaining({
       model: "gemma4",
       stream: false,
-      think: true,
+      think: false,
     }))
     expect(thirdRequestBody).toEqual(expect.objectContaining({
       model: "qwen3",
       stream: false,
-      think: true,
+      think: false,
     }))
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       1,

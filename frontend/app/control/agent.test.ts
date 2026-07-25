@@ -323,7 +323,7 @@ describe("agent control mode", () => {
     expect(JSON.parse(request.body)).toEqual(expect.objectContaining({
       model: "llama3.2",
       stream: false,
-      think: true,
+      think: false,
     }))
     expect(dispatch).toHaveBeenNthCalledWith(
       1,
