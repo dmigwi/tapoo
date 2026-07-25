@@ -163,6 +163,9 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
 
   const disabledReasonValue = "disabledReason" in value ? value.disabledReason : undefined
   const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
+  const gameLevel = "gameLevel" in value ? value.gameLevel : undefined
+  const requestsCount = "requestsCount" in value ? value.requestsCount : undefined
+  const cumulativeRoundCount = "cumulativeRoundCount" in value ? value.cumulativeRoundCount : undefined
   const endpointValue = value.endpoint
   const endpoint =
     endpointValue instanceof URL
@@ -179,7 +182,10 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
     typeof value.model === "string" && value.model.length > 0 &&
     endpoint !== null && typeof value.enabled === "boolean" &&
     (disabledReasonValue === undefined || disabledReasonValue === "network-error") &&
-    (lastErrorAt === undefined || (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt)))
+    (lastErrorAt === undefined || (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt))) &&
+    (gameLevel === undefined || (typeof gameLevel === "number" && Number.isInteger(gameLevel) && gameLevel >= 0)) &&
+    (cumulativeRoundCount === undefined || (typeof cumulativeRoundCount === "number" && Number.isInteger(cumulativeRoundCount) && cumulativeRoundCount >= 0)) &&
+    (requestsCount === undefined || (typeof requestsCount === "number" && Number.isInteger(requestsCount) && requestsCount >= 0))
   ) {
     const disabledReason = disabledReasonValue === "network-error" ? disabledReasonValue : undefined
 
@@ -190,7 +196,10 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
       endpoint,
       enabled: value.enabled,
       ...(disabledReason ? { disabledReason } : {}),
+      ...(typeof gameLevel === "number" ? { gameLevel } : {}),
       ...(typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
+      ...(typeof requestsCount === "number" ? { requestsCount } : {}),
+      ...(typeof cumulativeRoundCount === "number" ? { cumulativeRoundCount } : {}),
     }
   }
 
@@ -287,6 +296,52 @@ export function disableAgentApiConfigForNetworkError(
 
   savePersistedAgentApiConfigs(nextConfigs)
   return nextConfigs
+}
+
+// recordAgentTurnStats persists one agent's post-turn request count, resetting it when the
+// current level or round no longer matches what requestsCount was last tracked against.
+//
+// Both gameLevel and cumulativeRoundCount are required in the isSameAttempt check below — do
+// not simplify this to cumulativeRoundCount alone. Reasoning:
+//   - Level alone can't tell a retry of the same level apart from continuing it, hence
+//     cumulativeRoundCount.
+//   - cumulativeRoundCount alone looks sufficient (it's a strictly increasing, never-reused
+//     counter within one continuous session) but is NOT safe across a "Reset Progress":
+//     clearPersistedSnapshot never touches the separate agentConfigs storage namespace, so an
+//     agent's stored gameLevel/cumulativeRoundCount survive a reset untouched, while
+//     state.cumulativeRoundCount restarts from 0 on the next page load (no persisted round to
+//     restore it from). A later session can therefore legitimately reach the same
+//     cumulativeRoundCount value an old, unrelated agent record already holds. gameLevel is
+//     what catches that collision, since the new round's level will almost never match the
+//     stale record's level. Dropping gameLevel would let a post-reset session silently inherit
+//     a stale requestsCount from a prior session, corrupting the batchEfficiencyLevel an agent
+//     is scored against.
+export function recordAgentTurnStats(
+  turnAgent: AgentApiConfig,
+  level: number,
+  cumulativeRoundCount: number,
+): AgentApiConfig {
+  let updatedAgent: AgentApiConfig = turnAgent
+
+  const nextConfigs = loadPersistedAgentApiConfigs().map((agent) => {
+    if (agent.id !== turnAgent.id) {
+      return agent
+    }
+
+    const isSameAttempt = agent.gameLevel === level && agent.cumulativeRoundCount === cumulativeRoundCount
+    const priorRequestsCount = isSameAttempt ? (agent.requestsCount ?? 0) : 0
+    updatedAgent = {
+      ...agent,
+      gameLevel: level,
+      cumulativeRoundCount,
+      requestsCount: priorRequestsCount + 1,
+    }
+
+    return updatedAgent
+  })
+
+  savePersistedAgentApiConfigs(nextConfigs)
+  return updatedAgent
 }
 
 // Game progress preference persistence.
@@ -468,6 +523,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     winSummary: state.winSummary,
     scoreDecayUnits: state.scoreDecayUnits,
     agentRequestCount: state.agentRequestCount,
+    cumulativeRoundCount: state.cumulativeRoundCount,
   }
 }
 

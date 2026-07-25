@@ -53,6 +53,7 @@ function createState(overrides: Partial<State> = {}): State {
     wallWeight: 1,
     scoreDecayUnits: 0,
     agentRequestCount: 0,
+    cumulativeRoundCount: 0,
     clock: null,
     ...overrides,
   }

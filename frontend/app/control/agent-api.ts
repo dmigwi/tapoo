@@ -1,6 +1,7 @@
 import { CONFIG } from "../config"
 import { mergeMazeActionResult } from "../control"
 import { requestPredictionWithAbort } from "../agent/request"
+import { recordAgentTurnStats } from "../storage"
 import { isRunningStatus } from "../status"
 import type {
   AgentApiConfig,
@@ -132,6 +133,7 @@ export function handleAgentTurnLoop({
   const recordMalformedAgentResponse = (agent: AgentApiConfig): void => {
     const chargedMovesCount = runtime.agentApiMistakePenaltyMoves
     __commitAgentTurn(chargedMovesCount)
+    recordAgentTurnStats(agent, __readState().level, __readState().cumulativeRoundCount)
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
       lastMoveStatus: "malformed-response",
@@ -208,6 +210,7 @@ export function handleAgentTurnLoop({
       const { moves: submittedMoves } = prediction
       let lastReplayResult: MazeActionResult | null = null
       let appliedMoveCount = 0
+      let hasInvalidMove = false
 
       for (const move of submittedMoves) {
         const replayState = __dispatchAgentAction({ type: move }, __dispatch, selectedAgent)
@@ -225,7 +228,8 @@ export function handleAgentTurnLoop({
           continue
         }
 
-        // Invalid moves stop replay, but the full submitted batch still counts toward score decay.
+        // Invalid moves stop replay; moves queued behind it were never executed and aren't charged.
+        hasInvalidMove = true
         break
       }
 
@@ -233,10 +237,13 @@ export function handleAgentTurnLoop({
         return
       }
 
-      const chargedMovesCount = submittedMoves.length
+      // A wrong guess always costs the same flat mistake penalty, regardless of how many
+      // speculative moves were queued behind it — so longer guesses are never punished harder
+      // than short ones for the same single mistake.
+      const chargedMovesCount = appliedMoveCount + (hasInvalidMove ? runtime.agentApiMistakePenaltyMoves : 0)
 
-      // Score decay is based on submitted predictions, not only the moves that were applied.
       __commitAgentTurn(chargedMovesCount)
+      recordAgentTurnStats(selectedAgent, __readState().level, __readState().cumulativeRoundCount)
 
       const nextResult = mergeReplayResult(lastReplayResult, {
         lastPlayerName: selectedAgent.playerName,

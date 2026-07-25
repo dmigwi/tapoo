@@ -209,6 +209,7 @@ function createControlFixture(
 ): AgentControlFixture {
   return {
     agentRequestCount: 0,
+    cumulativeRoundCount: 0,
     bestWinRequestCount: null,
     bestWinRetentionUnits: null,
     canResume: false,
@@ -322,7 +323,7 @@ describe("agent control mode", () => {
     expect(JSON.parse(request.body)).toEqual(expect.objectContaining({
       model: "llama3.2",
       stream: false,
-      think: false,
+      think: true,
     }))
     expect(dispatch).toHaveBeenNthCalledWith(
       1,
@@ -527,7 +528,7 @@ describe("agent control mode", () => {
       { type: "MoveRight" },
       { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
-    expect(commitAgentTurn).toHaveBeenCalledWith(3)
+    expect(commitAgentTurn).toHaveBeenCalledWith(1)
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
@@ -535,7 +536,7 @@ describe("agent control mode", () => {
         lastMoveStatus: "reached-target",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastAppliedMoveIndex: 0,
-        chargedMovesCount: 3,
+        chargedMovesCount: 1,
       }),
     )
   })
@@ -850,12 +851,12 @@ describe("agent control mode", () => {
       elements.agentSeatRoster
         ?.querySelector('[data-agent-seat-id="1"]')
         ?.getAttribute("title"),
-    ).toBe("Blue")
+    ).toBe("Blue the Trailblazer")
     expect(
       elements.agentSeatRoster
         ?.querySelector('[data-agent-seat-id="2"]')
         ?.getAttribute("title"),
-    ).toBe("Grey")
+    ).toBe("Grey the Trailblazer")
     expect(
       elements.agentSeatRoster
         ?.querySelector('[data-agent-seat-id="2"]')
@@ -962,7 +963,7 @@ describe("agent control mode", () => {
     )
     expect(elements.agentDeleteDialog?.hidden).toBe(false)
     expect(elements.agentDeleteTitle?.textContent).toBe(
-      "Manage Red (gemma4) in seat 02",
+      "Manage Red the Trailblazer (gemma4) in seat 02",
     )
     expect(elements.agentDeleteTarget?.textContent).toBe("Delete now?")
     expect(elements.agentDeleteConfirm?.checked).toBe(false)
@@ -1167,7 +1168,7 @@ describe("agent control mode", () => {
 
     expect(elements.agentDeleteDialog?.hidden).toBe(false)
     expect(elements.agentDeleteTitle?.textContent).toBe(
-      "Manage Blue (llama3.2) in seat 01",
+      "Manage Blue the Backtracker (llama3.2) in seat 01",
     )
   })
 
@@ -1388,7 +1389,7 @@ describe("agent control mode", () => {
     expect(
       elements.agentSeatRoster?.querySelector('[data-agent-seat-id="1"]')
         ?.getAttribute("title"),
-    ).toBe("Scout")
+    ).toBe("Scout the Trailblazer")
   })
 
   it("shows required-field errors at the bottom of the agent form", () => {

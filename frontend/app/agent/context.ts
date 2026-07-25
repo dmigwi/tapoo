@@ -5,7 +5,13 @@ import {
   cellCoordinateFromGridPoint,
   cloneTraversalHistory,
 } from "../traversal"
+import {
+  getBatchEfficiencyMetrics,
+  resolveBatchEfficiencyLevel,
+} from "./efficiency"
+import type { BatchEfficiencyLevel } from "./efficiency"
 import type {
+  AgentApiConfig,
   AgentExpectedResponseSchema,
   AgentSubmittedMovesSchema,
   MazeActionResult,
@@ -64,37 +70,58 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
 // --- 1. Messages ---
 // System and user messages are the first content the model receives each turn.
 
-// buildMazeActionPrompt keeps request guidance compact while naming the active player.
-export function buildMazeActionPrompt(playerName: string): string {
+// describeAgentRankIdentity states the agent's current rank as a personal identity to
+// defend or escape. It stays deliberately bare: the flat-penalty mechanic that makes the
+// identity worth acting on is already explained once in buildMazeActionPrompt, so repeating it
+// here would only duplicate that reasoning rather than reinforce it.
+export function describeAgentRankIdentity(
+  playerName: string,
+  level: BatchEfficiencyLevel,
+): string {
+  if (level === "trailblazer") {
+    return `You are ${playerName} and currently hold the most coveted rank of trailblazer. Work smarter to maintain it.`
+  }
+
   return [
-    `Your name is ${playerName}. playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
-    "currentCell is your current position; destinationCell is the target.",
-    "The maze is randomly generated at each level with exactly one path to the destination.",
-    "traversalHistory entries matching your playerName record your past moves in chronological order.",
-    "Each entry includes openMoves — the exits that were open from that cell.",
-    "openMoves count reveals cell topology: one open move is a dead end (unless that is where you came from); two is a corridor; three or more is a junction.",
-    "If the traversalHistory shows each cell has exactly one unvisited exit, you may safely predict that entire sequence of moves in one response.",
-    "traversalHistory only records the first visit to each cell; cells revisited during backtracking don't appear again, so apparent gaps are expected.",
-    "Revisiting a cell already in traversalHistory is only valid when every other exit from the current cell leads to already-visited cells.",
-    "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
-    "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
-    "get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is.",
-    "lastMoveStatus null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means",
-    "the previous response was not valid JSON and a score penalty was charged; applied means it succeeded.",
-    "get_prediction_rules provides the required response format and move count guidance.",
-    "Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step).",
-    "Every move in your response counts toward score decay, including moves after the first invalid move.",
-    "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
-    "Score decay charges every submitted move, so fewer correct moves preserve more score.",
+    `You are ${playerName} and currently hold the rank of ${level}. Work smarter to climb to the most coveted rank of`,
+    `trailblazer.`,
+  ].join(" ")
+}
+
+// buildMazeActionPrompt keeps request guidance compact while naming the active player.
+export function buildMazeActionPrompt(playerName: string, batchEfficiencyLevel: BatchEfficiencyLevel): string {
+  return [
+    describeAgentRankIdentity(playerName, batchEfficiencyLevel),
+    `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
+    "currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level",
+    "with exactly one path to the destination. traversalHistory entries matching your playerName record your past",
+    "moves in chronological order. Each entry includes openMoves — the exits open from that cell. openMoves count",
+    "reveals cell topology: one open move is a dead end (unless that is your start or destination cell); two is a",
+    "corridor; three or more is a junction. traversalHistory only records the first visit to each cell; cells",
+    "revisited during backtracking are not duplicated, so apparent gaps are expected. Revisiting a cell already in",
+    "traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking",
+    "through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze",
+    "never guarantees a direct route from start to destination; the only valid path may require moving away from the",
+    "target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call",
+    "may return updated or identical data depending on what has changed. get_last_replay_result reflects the most",
+    "recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus null means no",
+    "moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the",
+    "previous response was not valid JSON and a score penalty was charged; applied means it succeeded.",
+    "get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted",
+    "order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
+    `Invalid moves cost a flat score decay of ${runtime.agentApiMistakePenaltyMoves} per turn — total score decay`,
+    `equals valid moves plus ${runtime.agentApiMistakePenaltyMoves} if an invalid move was detected, so a long`,
+    "speculative guess never costs more than a short one for the same mistake. lastMoveStatus reached-target or status",
+    "won means the game is complete — stop predicting.",
   ].join(" ")
 }
 
 // buildAgentMessages separates durable behavior instructions from the current turn request.
-export function buildAgentMessages(playerName: string): AgentChatMessage[] {
+export function buildAgentMessages(playerName: string, batchEfficiencyLevel: BatchEfficiencyLevel): AgentChatMessage[] {
   return [
     {
       role: "system",
-      content: buildMazeActionPrompt(playerName),
+      content: buildMazeActionPrompt(playerName, batchEfficiencyLevel),
     },
     {
       role: "user",
@@ -118,8 +145,13 @@ const gameStatusTool: AgentToolDefinition = {
   type: "function",
   function: {
     name: "get_game_status",
-    description:
-      "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won (destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"area\":number}}. numCols is the number of columns, numRows is the number of rows, area is the total cell count.",
+    description: [
+      "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won",
+      "(destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number,",
+      "\"status\":string, \"score\":number, \"mazeDimensions\":{\"numCols\":number, \"numRows\":number,",
+      "\"area\":number}}. numCols is the number of columns, numRows is the number of rows, area is the total cell",
+      "count.",
+    ].join(" "),
     parameters: emptyToolParameters,
   },
 }
@@ -129,8 +161,12 @@ const mazePositionsTool: AgentToolDefinition = {
   type: "function",
   function: {
     name: "get_maze_positions",
-    description:
-      "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp and MoveDown change row by ±1; MoveLeft and MoveRight change col by ±1. Use get_traversal_history to find which moves are open from the current cell. Returns JSON: {\"currentCell\":{\"row\":number,\"col\":number}|null,\"destinationCell\":{\"row\":number,\"col\":number}|null}.",
+    description: [
+      "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp and MoveDown",
+      "change row by ±1; MoveLeft and MoveRight change col by ±1. Use get_traversal_history to find which moves are",
+      "open from the current cell. Returns JSON: {\"currentCell\":{\"row\":number, \"col\":number}|null,",
+      "\"destinationCell\":{\"row\":number, \"col\":number}|null}.",
+    ].join(" "),
     parameters: emptyToolParameters,
   },
 }
@@ -141,8 +177,12 @@ const traversalHistoryTool: AgentToolDefinition = {
   type: "function",
   function: {
     name: "get_traversal_history",
-    description:
-      "Get all players' visit records in chronological order. Each entry includes openMoves — the open exits from that cell — so you can reconstruct the maze topology you have already explored. Returns JSON: {\"traversalHistory\":[{\"playerName\":string,\"row\":number,\"col\":number,\"openMoves\":[\"MoveLeft\",...]}]}. Filter by playerName to review a specific player's visit sequence.",
+    description: [
+      "Get all players' visit records in chronological order. Each entry includes openMoves — the open exits from that",
+      "cell — so you can reconstruct the maze topology you have already explored. Returns JSON:",
+      "{\"traversalHistory\":[{\"playerName\":string, \"row\":number, \"col\":number, \"openMoves\":[\"MoveLeft\",",
+      "...]}]}. Filter by playerName to review a specific player's visit sequence.",
+    ].join(" "),
     parameters: emptyToolParameters,
   },
 }
@@ -152,8 +192,19 @@ const lastReplayResultTool: AgentToolDefinition = {
   type: "function",
   function: {
     name: "get_last_replay_result",
-    description:
-      "Get the previous turn replay result. lastMoveStatus values: null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged. lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total moves charged toward score decay that turn. Returns JSON: {\"lastPlayerName\":string|null,\"lastMoveStatus\":string|null,\"lastReplayStartIndex\":number|null,\"lastSubmittedMoves\":string[],\"lastAppliedMoveIndex\":number|null,\"visitedBefore\":boolean|null,\"chargedMovesCount\":number}.",
+    description: [
+      "Get the previous turn replay result. lastMoveStatus values: null=first turn, no history yet; applied=move",
+      "executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move",
+      "hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, no moves were",
+      "replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged.",
+      "lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is",
+      "their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within",
+      "lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore",
+      "indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount",
+      "is the total moves charged toward score decay that turn. Returns JSON: {\"lastPlayerName\":string|null,",
+      "\"lastMoveStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[],",
+      "\"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
+    ].join(" "),
     parameters: emptyToolParameters,
   },
 }
@@ -163,8 +214,19 @@ const predictionRulesTool: AgentToolDefinition = {
   type: "function",
   function: {
     name: "get_prediction_rules",
-    description:
-      "Get move response rules. suggestedMovesPerTurn is the suggested maximum moves to include in your response per turn, scaled to maze size; returning fewer moves on early turns limits wasted score if your predicted moves turn out to be wrong. Returns JSON: {\"suggestedMovesPerTurn\":number,\"expectedResponseSchema\":object}.",
+    description: [
+      "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions",
+      "response per turn. All wrong predictions per turn cost the same flat penalty, so predicting many moves at once",
+      "costs nothing extra if you are wrong but advances further if you are right. uniqueCellsVisited and requestsMade",
+      "do not affect score; they are the raw metrics behind batchEfficiencyLevel — obtained by dividing",
+      "uniqueCellsVisited by requestsMade. batchEfficiencyLevel is set to backtracker when that rate is below 1.0",
+      "(requests being wasted on invalid moves or oscillation between cells), navigator at exactly 1.0 (matching one",
+      "move per turn), or trailblazer above 1.0 (multi-move guesses are paying off). Before you have made any requests",
+      "this level, batchEfficiencyLevel defaults to trailblazer regardless of these counts, so you start already",
+      "primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number,",
+      "\"uniqueCellsVisited\":number, \"requestsMade\":number, \"batchEfficiencyLevel\":string,",
+      "\"expectedResponseSchema\":object}.",
+    ].join(" "),
     parameters: emptyToolParameters,
   },
 }
@@ -185,6 +247,7 @@ export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
 export function buildAgentToolHandlers(
   state: State,
   lastActionResult: MazeActionResult | null,
+  agent: AgentApiConfig,
 ): AgentToolHandlers {
   // The hard corridor limit governs DFS maze carving, not player path planning.
   // AGENT_MOVES_PER_TURN_CAP (p95 of actual run lengths) is the tighter bound for predictions.
@@ -224,8 +287,16 @@ export function buildAgentToolHandlers(
       }
     },
     get_prediction_rules() {
+      // Raw counts are exposed instead of the derived rate so the model can compute and verify the
+      // rank itself; both are always concrete numbers (0 is a valid count), never null, so there is
+      // nothing ambiguous for the model to puzzle over before its first request.
+      const batchEfficiencyLevel = resolveBatchEfficiencyLevel(state.traversalHistory, agent)
+      const { uniqueCellsVisited, requestsMade } = getBatchEfficiencyMetrics(state.traversalHistory, agent)
       return {
         suggestedMovesPerTurn,
+        uniqueCellsVisited,
+        requestsMade,
+        batchEfficiencyLevel,
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       }
     },

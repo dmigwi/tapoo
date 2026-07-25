@@ -153,6 +153,7 @@ export type PersistedRound = {
   winSummary?: string
   scoreDecayUnits?: number
   agentRequestCount?: number
+  cumulativeRoundCount?: number
 }
 
 // PersistedGameSetup stores the progress fields usually loaded together before a round starts.
@@ -216,6 +217,12 @@ export type AgentApiConfig = {
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number
+  // gameLevel and cumulativeRoundCount are the level and round requestsCount was last tracked against; a
+  // mismatch on either against the current round means the agent's efficiency tracking resets.
+  // Level alone can't tell a retry of the same level apart from continuing it, hence cumulativeRoundCount.
+  gameLevel?: number
+  cumulativeRoundCount?: number
+  requestsCount?: number
 }
 
 // AgentSeat represents one fixed roster slot; null means the seat is empty.
@@ -284,6 +291,10 @@ export type State = {
   winSummary: string
   scoreDecayUnits: number
   agentRequestCount: number
+  // cumulativeRoundCount is the total number of rounds played since the last progress reset —
+  // every level start and every retry counts once. It also lets recordAgentTurnStats tell a
+  // genuinely new attempt apart from a resumed one.
+  cumulativeRoundCount: number
 
   clock: GameClock | null
 }

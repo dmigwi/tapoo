@@ -7,6 +7,7 @@ import {
   buildAgentMessages,
   buildAgentToolHandlers,
 } from "./context"
+import { resolveBatchEfficiencyLevel } from "./efficiency"
 import type {
   AgentApiConfig,
   MazeAction,
@@ -255,7 +256,7 @@ async function requestChatTurn(
       num_predict: CONFIG.runtime.modelConfig.numPredict,
     },
     ...(format !== undefined ? { format } : {}),
-    think: false,
+    think: true,
     stream: false,
   }
 
@@ -364,8 +365,11 @@ export function requestPredictionWithAbort({
       }
 
       // Tool handlers close over the current State snapshot and last replay metadata for this turn.
-      const toolHandlers = buildAgentToolHandlers(state, lastActionResult)
-      let messages = buildAgentMessages(agent.playerName)
+      const toolHandlers = buildAgentToolHandlers(state, lastActionResult, agent)
+      // The rank is computed once up front so it appears unconditionally in the system prompt,
+      // not only when the model chooses to call get_prediction_rules.
+      const batchEfficiencyLevel = resolveBatchEfficiencyLevel(state.traversalHistory, agent)
+      let messages = buildAgentMessages(agent.playerName, batchEfficiencyLevel)
       let availableTools = AGENT_CONTEXT_TOOLS
       // Allow configured tool rounds plus two final no-tools requests for the actual prediction.
       const maxRequestTurns = maxToolRounds + 2

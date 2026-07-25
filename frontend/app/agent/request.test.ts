@@ -13,7 +13,7 @@ import type {
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt =
-  `Your name is Blue. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry includes openMoves — the exits that were open from that cell. openMoves count reveals cell topology: one open move is a dead end (unless that is where you came from); two is a corridor; three or more is a junction. If the traversalHistory shows each cell has exactly one unvisited exit, you may safely predict that entire sequence of moves in one response. traversalHistory only records the first visit to each cell; cells revisited during backtracking don't appear again, so apparent gaps are expected. Revisiting a cell already in traversalHistory is only valid when every other exit from the current cell leads to already-visited cells. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a score penalty was charged; applied means it succeeded. get_prediction_rules provides the required response format and move count guidance. Moves replay in order until the destination or the first invalid move (a wall collision or out-of-bounds step). Every move in your response counts toward score decay, including moves after the first invalid move. lastMoveStatus reached-target or status won means the game is complete — stop predicting. Score decay charges every submitted move, so fewer correct moves preserve more score.`
+  `You are Blue and currently hold the most coveted rank of trailblazer. Work smarter to maintain it. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry includes openMoves — the exits open from that cell. openMoves count reveals cell topology: one open move is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction. traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a score penalty was charged; applied means it succeeded. get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Invalid moves cost a flat score decay of 2 per turn — total score decay equals valid moves plus 2 if an invalid move was detected, so a long speculative guess never costs more than a short one for the same mistake. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
 const developerMessage = prompt
 const userMessage = `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state.`
 const agentContextTools = [
@@ -22,7 +22,7 @@ const agentContextTools = [
     function: {
       name: "get_game_status",
       description:
-        "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won (destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number,\"status\":string,\"score\":number,\"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"area\":number}}. numCols is the number of columns, numRows is the number of rows, area is the total cell count.",
+        "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won (destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number, \"status\":string, \"score\":number, \"mazeDimensions\":{\"numCols\":number, \"numRows\":number, \"area\":number}}. numCols is the number of columns, numRows is the number of rows, area is the total cell count.",
       parameters: {
         type: "object",
         properties: {},
@@ -35,7 +35,7 @@ const agentContextTools = [
     function: {
       name: "get_maze_positions",
       description:
-        "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp and MoveDown change row by ±1; MoveLeft and MoveRight change col by ±1. Use get_traversal_history to find which moves are open from the current cell. Returns JSON: {\"currentCell\":{\"row\":number,\"col\":number}|null,\"destinationCell\":{\"row\":number,\"col\":number}|null}.",
+        "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp and MoveDown change row by ±1; MoveLeft and MoveRight change col by ±1. Use get_traversal_history to find which moves are open from the current cell. Returns JSON: {\"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null}.",
       parameters: {
         type: "object",
         properties: {},
@@ -48,7 +48,7 @@ const agentContextTools = [
     function: {
       name: "get_traversal_history",
       description:
-        "Get all players' visit records in chronological order. Each entry includes openMoves — the open exits from that cell — so you can reconstruct the maze topology you have already explored. Returns JSON: {\"traversalHistory\":[{\"playerName\":string,\"row\":number,\"col\":number,\"openMoves\":[\"MoveLeft\",...]}]}. Filter by playerName to review a specific player's visit sequence.",
+        "Get all players' visit records in chronological order. Each entry includes openMoves — the open exits from that cell — so you can reconstruct the maze topology you have already explored. Returns JSON: {\"traversalHistory\":[{\"playerName\":string, \"row\":number, \"col\":number, \"openMoves\":[\"MoveLeft\", ...]}]}. Filter by playerName to review a specific player's visit sequence.",
       parameters: {
         type: "object",
         properties: {},
@@ -61,7 +61,7 @@ const agentContextTools = [
     function: {
       name: "get_last_replay_result",
       description:
-        "Get the previous turn replay result. lastMoveStatus values: null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged. lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total moves charged toward score decay that turn. Returns JSON: {\"lastPlayerName\":string|null,\"lastMoveStatus\":string|null,\"lastReplayStartIndex\":number|null,\"lastSubmittedMoves\":string[],\"lastAppliedMoveIndex\":number|null,\"visitedBefore\":boolean|null,\"chargedMovesCount\":number}.",
+        "Get the previous turn replay result. lastMoveStatus values: null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged. lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total moves charged toward score decay that turn. Returns JSON: {\"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
       parameters: {
         type: "object",
         properties: {},
@@ -74,7 +74,7 @@ const agentContextTools = [
     function: {
       name: "get_prediction_rules",
       description:
-        "Get move response rules. suggestedMovesPerTurn is the suggested maximum moves to include in your response per turn, scaled to maze size; returning fewer moves on early turns limits wasted score if your predicted moves turn out to be wrong. Returns JSON: {\"suggestedMovesPerTurn\":number,\"expectedResponseSchema\":object}.",
+        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn. All wrong predictions per turn cost the same flat penalty, so predicting many moves at once costs nothing extra if you are wrong but advances further if you are right. uniqueCellsVisited and requestsMade do not affect score; they are the raw metrics behind batchEfficiencyLevel — obtained by dividing uniqueCellsVisited by requestsMade. batchEfficiencyLevel is set to backtracker when that rate is below 1.0 (requests being wasted on invalid moves or oscillation between cells), navigator at exactly 1.0 (matching one move per turn), or trailblazer above 1.0 (multi-move guesses are paying off). Before you have made any requests this level, batchEfficiencyLevel defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"requestsMade\":number, \"batchEfficiencyLevel\":string, \"expectedResponseSchema\":object}.",
       parameters: {
         type: "object",
         properties: {},
@@ -101,6 +101,7 @@ const agent: AgentApiConfig = {
 
 const state: State = {
   agentRequestCount: 0,
+    cumulativeRoundCount: 0,
   bestWinRequestCount: null,
   bestWinRetentionUnits: null,
   canResume: false,
@@ -126,7 +127,7 @@ type SerializedRequestBody = {
   messages: unknown[]
   model: string
   stream: false
-  think: false
+  think: true
   tools: unknown[]
   format?: unknown
   options?: unknown
@@ -255,7 +256,7 @@ describe("agent request service", () => {
       ],
       tools: compactedTools(["get_maze_positions"]),
       options: { num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict },
-      think: false,
+      think: true,
       stream: false,
     }
     const expectedJsonOutput = {
@@ -321,7 +322,7 @@ describe("agent request service", () => {
       ],
       tools: agentContextTools,
       options: { num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict },
-      think: false,
+      think: true,
       stream: false,
     })
   })
@@ -484,6 +485,9 @@ describe("agent request service", () => {
       },
       {
         suggestedMovesPerTurn: Math.min(getNavigationProfile(state.mazeDimensions).__hardCorridorLimit, 4),
+        uniqueCellsVisited: 0,
+        requestsMade: 0,
+        batchEfficiencyLevel: "trailblazer",
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       },
     ])

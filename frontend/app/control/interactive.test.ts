@@ -37,6 +37,7 @@ function createActionResult(
 function createState(): State {
   return {
     agentRequestCount: 0,
+    cumulativeRoundCount: 0,
     bestWinRequestCount: null,
     bestWinRetentionUnits: null,
     canResume: false,

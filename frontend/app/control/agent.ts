@@ -212,7 +212,12 @@ export function createAgentMode(
         if (elements.agentSeatsBody) {
           elements.agentSeatsBody.hidden = false
         }
-        renderAgentSeatRoster(elements.agentSeatRoster, readAgentConfigs(), currentPlayingAgentId())
+        renderAgentSeatRoster(
+          elements.agentSeatRoster,
+          readAgentConfigs(),
+          currentPlayingAgentId(),
+          readState().traversalHistory,
+        )
       }
 
       // syncCurrentPoller restarts the turn cycle after any config or session state change.
@@ -357,7 +362,7 @@ export function createAgentMode(
         pauseIfRunning()
         deleteSeatId = seatId
         if (elements.agentDeleteTitle) {
-          elements.agentDeleteTitle.textContent = agentSeatManageLabel(agent)
+          elements.agentDeleteTitle.textContent = agentSeatManageLabel(agent, readState().traversalHistory)
         }
         if (elements.agentDeleteTarget) {
           elements.agentDeleteTarget.textContent = agentConfig.deleteMessageTemplate

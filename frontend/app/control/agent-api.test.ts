@@ -17,7 +17,7 @@ const originalAgentResponseTimeoutMs = CONFIG.timing.agentApiResponseTimeoutMs
 type SerializedRequestBody = {
   model: string
   stream: false
-  think: false
+  think: true
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
@@ -27,6 +27,7 @@ function selfVisit(row: number, col: number): TraversalHistoryEntry {
 function createState(overrides: Partial<State> = {}): State {
   return {
     agentRequestCount: 0,
+    cumulativeRoundCount: 0,
     bestWinRequestCount: null,
     bestWinRetentionUnits: null,
     canResume: false,
@@ -183,7 +184,7 @@ describe("agent api turn loop", () => {
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
   })
 
-  it("replays valid predictions and decays score by every submitted move", async () => {
+  it("replays valid predictions and decays score by applied moves plus a flat mistake penalty", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
@@ -247,13 +248,13 @@ describe("agent api turn loop", () => {
       dispatch,
       expect.objectContaining({ model: "llama3.2", playerName: "Blue" }),
     )
-    expect(commitAgentTurn).toHaveBeenCalledWith(3)
+    expect(commitAgentTurn).toHaveBeenCalledWith(4)
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "invalid-move",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastAppliedMoveIndex: 1,
-        chargedMovesCount: 3,
+        chargedMovesCount: 4,
       }),
     )
   })
@@ -364,17 +365,17 @@ describe("agent api turn loop", () => {
     expect(firstRequestBody).toEqual(expect.objectContaining({
       model: "llama3.2",
       stream: false,
-      think: false,
+      think: true,
     }))
     expect(secondRequestBody).toEqual(expect.objectContaining({
       model: "gemma4",
       stream: false,
-      think: false,
+      think: true,
     }))
     expect(thirdRequestBody).toEqual(expect.objectContaining({
       model: "qwen3",
       stream: false,
-      think: false,
+      think: true,
     }))
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       1,
@@ -445,7 +446,7 @@ describe("agent api turn loop", () => {
         lastMoveStatus: "reached-target",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown"],
         lastAppliedMoveIndex: 0,
-        chargedMovesCount: 2,
+        chargedMovesCount: 1,
       }),
     )
   })

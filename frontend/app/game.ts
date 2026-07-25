@@ -101,6 +101,7 @@ const state: State = {
   wallWeight: WALL_WEIGHTS[0],
   scoreDecayUnits: 0,
   agentRequestCount: 0,
+  cumulativeRoundCount: 0,
   clock: null,
 }
 
@@ -171,6 +172,7 @@ function applyTooSmallState(level: number): void {
   state.lastRoundScore = 0
   state.scoreDecayUnits = 0
   state.agentRequestCount = 0
+  state.cumulativeRoundCount += 1
   state.winSummary = ""
   state.canResume = false
   state.clock = null
@@ -195,6 +197,22 @@ function cancelScheduledRoundPersist(): void {
 }
 
 // persistNow flushes the current round and optionally includes long-lived progress preferences.
+//
+// The "round" and "state" scopes write to two browser stores with different survival guarantees,
+// and level/wallWeight deliberately live in both:
+//   - sessionStorage (saveActiveRoundSnapshot, always written) holds the exact state of the
+//     currently active round — maze, traversal history, positions, score, level, wallWeight — so
+//     a same-tab refresh can restore it. It's wiped when the tab/browser closes.
+//   - localStorage (saveGameProgress, "state" scope only) holds just level and wallWeight as
+//     durable defaults for the *next* round, since sessionStorage won't survive closing the
+//     browser or the round finishing (win/loss clears its snapshot).
+// "round" is used for frequent per-move writes (cheap, sessionStorage only); "state" is used for
+// checkpoints worth syncing to the durable copy too — level changes, wins, wall-weight cycling,
+// pause/exit. This keeps the two copies from ever drifting apart. At boot (bootstrapGame), the
+// localStorage values are only ever used as the fallback when no valid sessionStorage round
+// exists to resume — removing either copy would break a real case: closing the browser (loses
+// sessionStorage) or a same-tab refresh mid-round (needs a self-contained round snapshot without
+// reaching into a separate store).
 function persistNow(scope: PersistenceScope): void {
   cancelScheduledRoundPersist()
   if (scope === "state") {
@@ -326,6 +344,7 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
   state.lastRoundScore = snapshot.lastRoundScore
   state.scoreDecayUnits = snapshot.scoreDecayUnits ?? 0
   state.agentRequestCount = snapshot.agentRequestCount ?? 0
+  state.cumulativeRoundCount = snapshot.cumulativeRoundCount ?? 0
   state.winSummary = snapshot.winSummary ?? ""
   state.canResume = false
 
@@ -374,6 +393,7 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
   state.lastRoundScore = 0
   state.scoreDecayUnits = 0
   state.agentRequestCount = 0
+  state.cumulativeRoundCount += 1
   state.winSummary = ""
 
   const totalCells = dimensions.area
