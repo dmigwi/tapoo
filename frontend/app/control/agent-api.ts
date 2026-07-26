@@ -268,6 +268,10 @@ export function handleAgentTurnLoop({
       if (shouldPollAgent()) {
         // Completed agent turns schedule the next poll after the configured delay to pace API traffic.
         scheduleNextAgentTurn(nextDelayMs, true)
+      } else {
+        // The round ended (won/lost) or polling was detached mid-turn — release the active seat so
+        // its UI stops showing an agent as still playing.
+        __onActiveAgentChange?.(null)
       }
     }
   }

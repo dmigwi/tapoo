@@ -259,6 +259,51 @@ describe("agent api turn loop", () => {
     )
   })
 
+  it("releases the active seat when a turn ends the round (win or loss)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      }),
+    )
+
+    const dispatchAgentAction = vi.fn(() =>
+      createActionResult({ lastMoveStatus: "applied" }),
+    )
+    const onActiveAgentChange = vi.fn()
+    // commitAgentTurn stands in for game.ts committing the turn and flipping status to "lost"
+    // (e.g. via handleLoss) once the round's score is depleted mid-turn.
+    let roundStatus: State["status"] = "running"
+    const commitAgentTurn = vi.fn(() => {
+      roundStatus = "lost"
+    })
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionResult: vi.fn(),
+      __onActiveAgentChange: onActiveAgentChange,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState({ status: roundStatus }),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    expect(commitAgentTurn).toHaveBeenCalledTimes(1)
+    expect(onActiveAgentChange).toHaveBeenCalledWith(
+      expect.objectContaining({ playerName: "Blue" }),
+    )
+    expect(onActiveAgentChange).toHaveBeenLastCalledWith(null)
+  })
+
   it("rotates through enabled agents configured for the shared maze", async () => {
     const agentConfigs: AgentApiConfig[] = [
       {
