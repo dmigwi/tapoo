@@ -4,9 +4,9 @@ import type { AgentApiConfig, TraversalHistoryEntry } from "../types"
 // agent is behaving exactly like the conservative single-step strategy, no better and no worse.
 export const BATCH_EFFICIENCY_BASELINE_RATE = 1
 
-// BatchEfficiencyLevel names the traversal behavior the rate measures, not just a grade, so the
+// BatchEfficiencyRank names the traversal behavior the rate measures, not just a grade, so the
 // rank itself carries the corrective instruction: climb out of backtracker, defend trailblazer.
-export type BatchEfficiencyLevel = "backtracker" | "navigator" | "trailblazer"
+export type BatchEfficiencyRank = "backtracker" | "navigator" | "trailblazer"
 
 // BatchEfficiencyMetrics are the raw counts behind batchEfficiencyRate, exposed to the model
 // directly so it can compute and verify the rate/rank itself instead of treating the rank as an
@@ -37,45 +37,36 @@ export function getBatchEfficiencyMetrics(
   }
 }
 
-// calculateBatchEfficiencyRate is a self-diagnostic signal only; it never affects score.
-// traversalHistory only records the first visit to each cell, so oscillation or wasted requests
-// grow requestsCount without growing the agent's distinct-cell count, pulling the rate below the
-// baseline. A fresh agent with no prior requests reports the neutral baseline rate here — see
-// resolveBatchEfficiencyLevel for the rank a fresh agent is actually assigned.
-export function calculateBatchEfficiencyRate(
-  traversalHistory: TraversalHistoryEntry[],
-  agent: AgentApiConfig,
-): number {
-  const { uniqueCellsVisited, requestsMade } = getBatchEfficiencyMetrics(traversalHistory, agent)
-  return requestsMade > 0 ? uniqueCellsVisited / requestsMade : BATCH_EFFICIENCY_BASELINE_RATE
-}
-
-// classifyBatchEfficiencyRate labels a raw rate so the model doesn't have to compare it itself.
-export function classifyBatchEfficiencyRate(rate: number): BatchEfficiencyLevel {
-  if (rate < BATCH_EFFICIENCY_BASELINE_RATE) {
-    return "backtracker"
-  }
-
-  if (rate > BATCH_EFFICIENCY_BASELINE_RATE) {
-    return "trailblazer"
-  }
-
-  return "navigator"
-}
-
-// resolveBatchEfficiencyLevel is the single source of truth for an agent's current rank,
+// resolveBatchEfficiencyRank is the single source of truth for an agent's current rank,
 // everywhere one is shown or sent. An agent with no tracked requests yet defaults to
-// trailblazer — not the neutral baseline — so it starts the level already primed to predict
-// multi-move sequences, matching the identity stated in its very first prompt.
-export function resolveBatchEfficiencyLevel(
+// trailblazer — not the neutral baseline — so it starts already primed to predict multi-move
+// sequences, matching the identity stated in its very first prompt. traversalHistory only
+// records the first visit to each cell, so oscillation or wasted requests grow requestsCount
+// without growing the agent's distinct-cell count, pulling the rate below the baseline.
+export function resolveBatchEfficiencyRank(
   traversalHistory: TraversalHistoryEntry[],
   agent: AgentApiConfig,
-): BatchEfficiencyLevel {
+): BatchEfficiencyRank {
+  // Fresh agent, no track record yet — grant trailblazer rather than the neutral baseline.
   if (!agent.requestsCount) {
     return "trailblazer"
   }
 
-  return classifyBatchEfficiencyRate(
-    calculateBatchEfficiencyRate(traversalHistory, agent),
-  )
+  // Distinct cells reached per request made; requestsMade is guaranteed > 0 here since the
+  // fresh-agent case above already returned for a falsy requestsCount.
+  const { uniqueCellsVisited, requestsMade } = getBatchEfficiencyMetrics(traversalHistory, agent)
+  const rate = uniqueCellsVisited / requestsMade
+
+  // Below baseline: requests are being wasted on invalid moves or oscillation between cells.
+  if (rate < BATCH_EFFICIENCY_BASELINE_RATE) {
+    return "backtracker"
+  }
+
+  // Above baseline: multi-move batches are paying off with more than one cell per request.
+  if (rate > BATCH_EFFICIENCY_BASELINE_RATE) {
+    return "trailblazer"
+  }
+
+  // Exactly at baseline: matching one move per request, no better and no worse.
+  return "navigator"
 }

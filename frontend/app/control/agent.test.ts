@@ -336,7 +336,7 @@ describe("agent control mode", () => {
       { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(
-      2,
+      1,
     )
     expect(commitAgentTurn).toHaveBeenCalledTimes(1)
     expect(mode.readLastActionResult()).toEqual(

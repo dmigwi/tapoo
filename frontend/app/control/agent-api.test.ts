@@ -184,7 +184,7 @@ describe("agent api turn loop", () => {
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
   })
 
-  it("replays valid predictions and decays score by applied moves plus a flat mistake penalty", async () => {
+  it("replays valid predictions and decays score by a flat valid-turn charge plus a flat mistake penalty", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
@@ -248,13 +248,13 @@ describe("agent api turn loop", () => {
       dispatch,
       expect.objectContaining({ model: "llama3.2", playerName: "Blue" }),
     )
-    expect(commitAgentTurn).toHaveBeenCalledWith(4)
+    expect(commitAgentTurn).toHaveBeenCalledWith(3)
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "invalid-move",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastAppliedMoveIndex: 1,
-        chargedMovesCount: 4,
+        chargedMovesCount: 3,
       }),
     )
   })
@@ -481,14 +481,14 @@ describe("agent api turn loop", () => {
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
     expect(commitAgentTurn).toHaveBeenCalledWith(
-      CONFIG.runtime.agentApiMistakePenaltyMoves,
+      CONFIG.scoring.agentPenaltyDecayUnits,
     )
 
     expect(dispatchAgentAction).not.toHaveBeenCalled()
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "malformed-response",
-        chargedMovesCount: CONFIG.runtime.agentApiMistakePenaltyMoves,
+        chargedMovesCount: CONFIG.scoring.agentPenaltyDecayUnits,
       }),
     )
   })

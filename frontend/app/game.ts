@@ -260,7 +260,7 @@ function applyWinSummary(totalCells: number): void {
   state.bestWinRequestCount = winScore.bestWinRequestCount
 }
 
-// commitAgentTurn is the only place agent-api spends score decay after one resolved request.
+// commitAgentTurn is the only place agent-api spends decay units after one resolved request.
 function commitAgentTurn(chargedMovesCount: number): void {
   const totalCells = state.mazeDimensions?.area ?? 0
   if (!isAgentApiMode(state.controlMode) || totalCells === 0) {
@@ -613,7 +613,7 @@ function refreshRunningRound(): void {
   if (isInteractiveMode(state.controlMode)) {
     state.score = calculateRoundScore(totalCells)
   }
-  // Agent-api score is left untouched here; commitAgentTurn owns request-based score decay.
+  // Agent-api score is left untouched here; commitAgentTurn owns request-based decay units.
 
   // Score depletion is the shared loss signal for both interactive and agent-api modes.
   if (state.score <= 0) {

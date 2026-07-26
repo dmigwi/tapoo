@@ -1,5 +1,5 @@
 import { CONFIG } from "../config"
-import { resolveBatchEfficiencyLevel } from "./efficiency"
+import { resolveBatchEfficiencyRank } from "./efficiency"
 import type { AgentApiConfig, AgentSeat, TraversalHistoryEntry } from "../types"
 
 const { agentConfig } = CONFIG
@@ -81,8 +81,8 @@ function seatTemplate(
 // observer too, e.g. "Kora the Trailblazer". An agent with no tracked requests yet defaults to
 // Trailblazer, matching the rank stated in its very first prompt.
 function agentDisplayName(agent: AgentApiConfig, traversalHistory: TraversalHistoryEntry[]): string {
-  const level = resolveBatchEfficiencyLevel(traversalHistory, agent)
-  return `${agent.playerName} the ${capitalize(level)}`
+  const rank = resolveBatchEfficiencyRank(traversalHistory, agent)
+  return `${agent.playerName} the ${capitalize(rank)}`
 }
 
 // capitalize renders lowercase rank identifiers (kept lowercase for model-facing JSON/prose)

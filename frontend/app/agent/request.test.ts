@@ -13,10 +13,23 @@ import type {
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt =
-  `You are Blue and currently hold the most coveted rank of trailblazer. Work smarter to maintain it. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry includes openMoves — the exits open from that cell. openMoves count reveals cell topology: one open move is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction. traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a score penalty was charged; applied means it succeeded. get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Invalid moves cost a flat score decay of 2 per turn — total score decay equals valid moves plus 2 if an invalid move was detected, so a long speculative guess never costs more than a short one for the same mistake. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
+  `You are Blue and currently hold the most coveted rank of trailblazer. Work smarter to maintain it. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry includes openMoves — the exits open from that cell. openMoves count reveals cell topology: one open move is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction. traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units. get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Longer, well-reasoned predictions are strictly cheaper per move than single-stepping — a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
 const developerMessage = prompt
 const userMessage = `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state.`
 const agentContextTools = [
+  {
+    type: "function" as const,
+    function: {
+      name: "get_prediction_rules",
+      description:
+        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn. All correct predictions per turn cost a constant number of decay units regardless of how many moves you included, and all wrong predictions per turn cost a further penalty in decay units on top — so predicting many moves at once costs nothing extra if you are wrong but advances further, more cheaply, if you are right. Each turn's decay units are subtracted immediately; the resulting score retention is visible via get_game_status. uniqueCellsVisited and requestsMade are the raw metrics behind batchEfficiencyRank, which shows your likelihood of finishing the game — obtained by dividing uniqueCellsVisited by requestsMade. It is set to backtracker rank when that rate is below 1.0 (requests being wasted on invalid moves or oscillation between cells), navigator rank at 1.0 (matching one move per turn), or trailblazer rank above 1.0 (multi-move guesses are paying off). Before making any requests on this level, batchEfficiencyRank defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"requestsMade\":number, \"batchEfficiencyRank\":string, \"expectedResponseSchema\":object}.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
   {
     type: "function" as const,
     function: {
@@ -61,20 +74,7 @@ const agentContextTools = [
     function: {
       name: "get_last_replay_result",
       description:
-        "Get the previous turn replay result. lastMoveStatus values: null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged. lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total moves charged toward score decay that turn. Returns JSON: {\"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: [],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "get_prediction_rules",
-      description:
-        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn. All wrong predictions per turn cost the same flat penalty, so predicting many moves at once costs nothing extra if you are wrong but advances further if you are right. uniqueCellsVisited and requestsMade do not affect score; they are the raw metrics behind batchEfficiencyLevel — obtained by dividing uniqueCellsVisited by requestsMade. batchEfficiencyLevel is set to backtracker when that rate is below 1.0 (requests being wasted on invalid moves or oscillation between cells), navigator at exactly 1.0 (matching one move per turn), or trailblazer above 1.0 (multi-move guesses are paying off). Before you have made any requests this level, batchEfficiencyLevel defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"requestsMade\":number, \"batchEfficiencyLevel\":string, \"expectedResponseSchema\":object}.",
+        "Get the previous turn replay result. lastMoveStatus values: null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged. lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total decay units charged toward score that turn. Returns JSON: {\"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
       parameters: {
         type: "object",
         properties: {},
@@ -487,7 +487,7 @@ describe("agent request service", () => {
         suggestedMovesPerTurn: Math.min(getNavigationProfile(state.mazeDimensions).__hardCorridorLimit, 4),
         uniqueCellsVisited: 0,
         requestsMade: 0,
-        batchEfficiencyLevel: "trailblazer",
+        batchEfficiencyRank: "trailblazer",
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       },
     ])

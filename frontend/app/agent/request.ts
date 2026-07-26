@@ -7,7 +7,7 @@ import {
   buildAgentMessages,
   buildAgentToolHandlers,
 } from "./context"
-import { resolveBatchEfficiencyLevel } from "./efficiency"
+import { resolveBatchEfficiencyRank } from "./efficiency"
 import type {
   AgentApiConfig,
   MazeAction,
@@ -368,8 +368,8 @@ export function requestPredictionWithAbort({
       const toolHandlers = buildAgentToolHandlers(state, lastActionResult, agent)
       // The rank is computed once up front so it appears unconditionally in the system prompt,
       // not only when the model chooses to call get_prediction_rules.
-      const batchEfficiencyLevel = resolveBatchEfficiencyLevel(state.traversalHistory, agent)
-      let messages = buildAgentMessages(agent.playerName, batchEfficiencyLevel)
+      const batchEfficiencyRank = resolveBatchEfficiencyRank(state.traversalHistory, agent)
+      let messages = buildAgentMessages(agent.playerName, batchEfficiencyRank)
       let availableTools = AGENT_CONTEXT_TOOLS
       // Allow configured tool rounds plus two final no-tools requests for the actual prediction.
       const maxRequestTurns = maxToolRounds + 2

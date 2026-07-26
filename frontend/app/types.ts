@@ -498,6 +498,8 @@ export type AppConfig = {
     budgetMultiplier: number
     percentScale: number
     retentionFullScaleUnits: number
+    agentPenaltyDecayUnits: number
+    agentBaseDecayUnits: number
   }
   timing: {
     refreshInterval: number
@@ -529,7 +531,6 @@ export type AppConfig = {
         tapooLog: string
       }
     }
-    agentApiMistakePenaltyMoves: number
     interactivePlayerName: string
     modelConfig: {
       contextWindowFloor: number

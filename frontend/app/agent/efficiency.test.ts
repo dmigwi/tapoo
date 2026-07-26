@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest"
 
 import {
-  BATCH_EFFICIENCY_BASELINE_RATE,
-  calculateBatchEfficiencyRate,
-  classifyBatchEfficiencyRate,
   getBatchEfficiencyMetrics,
+  resolveBatchEfficiencyRank,
 } from "./efficiency"
 import type { AgentApiConfig, TraversalHistoryEntry } from "../types"
 
@@ -23,19 +21,17 @@ function visit(playerName: string, row: number, col: number): TraversalHistoryEn
   return { playerName, row, col, openMoves: [] }
 }
 
-describe("calculateBatchEfficiencyRate", () => {
-  it("defaults to the neutral baseline when the agent has made no prior requests", () => {
+describe("resolveBatchEfficiencyRank", () => {
+  it("defaults to trailblazer when the agent has made no prior requests", () => {
     const agent = createAgent({ requestsCount: undefined })
-    const rate = calculateBatchEfficiencyRate([visit("Blue", 0, 1)], agent)
 
-    expect(rate).toBe(BATCH_EFFICIENCY_BASELINE_RATE)
+    expect(resolveBatchEfficiencyRank([visit("Blue", 0, 1)], agent)).toBe("trailblazer")
   })
 
-  it("defaults to the neutral baseline when requestsCount is explicitly zero", () => {
+  it("defaults to trailblazer when requestsCount is explicitly zero", () => {
     const agent = createAgent({ requestsCount: 0 })
-    const rate = calculateBatchEfficiencyRate([visit("Blue", 0, 1)], agent)
 
-    expect(rate).toBe(BATCH_EFFICIENCY_BASELINE_RATE)
+    expect(resolveBatchEfficiencyRank([visit("Blue", 0, 1)], agent)).toBe("trailblazer")
   })
 
   it("only counts distinct cells attributed to the requesting agent's playerName", () => {
@@ -46,14 +42,14 @@ describe("calculateBatchEfficiencyRate", () => {
       visit("Red", 0, 2),
     ]
 
-    expect(calculateBatchEfficiencyRate(traversalHistory, agent)).toBe(0.5)
+    expect(resolveBatchEfficiencyRank(traversalHistory, agent)).toBe("backtracker")
   })
 
   it("falls below the baseline when requests outpace distinct progress (oscillation)", () => {
     const agent = createAgent({ requestsCount: 4 })
     const traversalHistory = [visit("Blue", 0, 0)]
 
-    expect(calculateBatchEfficiencyRate(traversalHistory, agent)).toBe(0.25)
+    expect(resolveBatchEfficiencyRank(traversalHistory, agent)).toBe("backtracker")
   })
 
   it("rises above the baseline when a batch advances multiple distinct cells per request", () => {
@@ -65,7 +61,14 @@ describe("calculateBatchEfficiencyRate", () => {
       visit("Blue", 0, 3),
     ]
 
-    expect(calculateBatchEfficiencyRate(traversalHistory, agent)).toBe(2)
+    expect(resolveBatchEfficiencyRank(traversalHistory, agent)).toBe("trailblazer")
+  })
+
+  it("labels exactly the baseline rate as navigator", () => {
+    const agent = createAgent({ requestsCount: 1 })
+    const traversalHistory = [visit("Blue", 0, 0)]
+
+    expect(resolveBatchEfficiencyRank(traversalHistory, agent)).toBe("navigator")
   })
 })
 
@@ -92,19 +95,5 @@ describe("getBatchEfficiencyMetrics", () => {
       uniqueCellsVisited: 2,
       requestsMade: 3,
     })
-  })
-})
-
-describe("classifyBatchEfficiencyRate", () => {
-  it("labels a below-baseline rate as backtracker", () => {
-    expect(classifyBatchEfficiencyRate(0.5)).toBe("backtracker")
-  })
-
-  it("labels exactly the baseline rate as navigator", () => {
-    expect(classifyBatchEfficiencyRate(BATCH_EFFICIENCY_BASELINE_RATE)).toBe("navigator")
-  })
-
-  it("labels an above-baseline rate as trailblazer", () => {
-    expect(classifyBatchEfficiencyRate(1.5)).toBe("trailblazer")
   })
 })

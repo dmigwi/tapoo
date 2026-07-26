@@ -7,9 +7,9 @@ import {
 } from "../traversal"
 import {
   getBatchEfficiencyMetrics,
-  resolveBatchEfficiencyLevel,
+  resolveBatchEfficiencyRank,
 } from "./efficiency"
-import type { BatchEfficiencyLevel } from "./efficiency"
+import type { BatchEfficiencyRank } from "./efficiency"
 import type {
   AgentApiConfig,
   AgentExpectedResponseSchema,
@@ -23,7 +23,8 @@ import type {
   AgentToolHandlers,
 } from "./request"
 
-const { runtime } = CONFIG
+const { runtime, scoring } = CONFIG
+const { agentBaseDecayUnits, agentPenaltyDecayUnits } = scoring
 
 // --- Shared constants ---
 // These are referenced by both the message builders and the tool layer below.
@@ -76,22 +77,23 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
 // here would only duplicate that reasoning rather than reinforce it.
 export function describeAgentRankIdentity(
   playerName: string,
-  level: BatchEfficiencyLevel,
+  rank: BatchEfficiencyRank,
 ): string {
-  if (level === "trailblazer") {
+  if (rank === "trailblazer") {
     return `You are ${playerName} and currently hold the most coveted rank of trailblazer. Work smarter to maintain it.`
   }
 
   return [
-    `You are ${playerName} and currently hold the rank of ${level}. Work smarter to climb to the most coveted rank of`,
+    `You are ${playerName} and currently hold the rank of ${rank}. Work smarter to climb to the most coveted rank of`,
     `trailblazer.`,
   ].join(" ")
 }
 
 // buildMazeActionPrompt keeps request guidance compact while naming the active player.
-export function buildMazeActionPrompt(playerName: string, batchEfficiencyLevel: BatchEfficiencyLevel): string {
+export function buildMazeActionPrompt(playerName: string, batchEfficiencyRank: BatchEfficiencyRank): string {
+  const maxTurnCost = agentBaseDecayUnits + agentPenaltyDecayUnits
   return [
-    describeAgentRankIdentity(playerName, batchEfficiencyLevel),
+    describeAgentRankIdentity(playerName, batchEfficiencyRank),
     `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
     "currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level",
     "with exactly one path to the destination. traversalHistory entries matching your playerName record your past",
@@ -104,24 +106,28 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyLevel: 
     "never guarantees a direct route from start to destination; the only valid path may require moving away from the",
     "target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call",
     "may return updated or identical data depending on what has changed. get_last_replay_result reflects the most",
-    "recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus null means no",
-    "moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the",
-    "previous response was not valid JSON and a score penalty was charged; applied means it succeeded.",
+    "recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus being null",
+    "means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means",
+    `the previous response was not valid JSON and a penalty of ${agentPenaltyDecayUnits} decay units was charged;`,
+    `applied means it succeeded. A turn with any valid moves costs a constant ${agentBaseDecayUnits} decay units`,
+    "regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a",
+    `further penalty of ${agentPenaltyDecayUnits} decay units on top — the maximum possible in a turn is`,
+    `${maxTurnCost} decay units.`,
     "get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted",
     "order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
-    `Invalid moves cost a flat score decay of ${runtime.agentApiMistakePenaltyMoves} per turn — total score decay`,
-    `equals valid moves plus ${runtime.agentApiMistakePenaltyMoves} if an invalid move was detected, so a long`,
-    "speculative guess never costs more than a short one for the same mistake. lastMoveStatus reached-target or status",
-    "won means the game is complete — stop predicting.",
+    "Longer, well-reasoned predictions are strictly cheaper per move than single-stepping — a trailblazer can set a",
+    "new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain",
+    "to fail unless it corrects course. lastMoveStatus reached-target or status won means the game is complete —",
+    "stop predicting.",
   ].join(" ")
 }
 
 // buildAgentMessages separates durable behavior instructions from the current turn request.
-export function buildAgentMessages(playerName: string, batchEfficiencyLevel: BatchEfficiencyLevel): AgentChatMessage[] {
+export function buildAgentMessages(playerName: string, batchEfficiencyRank: BatchEfficiencyRank): AgentChatMessage[] {
   return [
     {
       role: "system",
-      content: buildMazeActionPrompt(playerName, batchEfficiencyLevel),
+      content: buildMazeActionPrompt(playerName, batchEfficiencyRank),
     },
     {
       role: "user",
@@ -138,6 +144,33 @@ const emptyToolParameters: AgentToolDefinition["function"]["parameters"] = {
   type: "object",
   properties: {},
   required: [],
+}
+
+// predictionRulesTool documents the only accepted move response and the suggested batch size.
+const predictionRulesTool: AgentToolDefinition = {
+  type: "function",
+  function: {
+    name: "get_prediction_rules",
+    description: [
+      "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions",
+      "response per turn. All correct predictions per turn cost a constant number of decay units regardless of how",
+      "many moves you included, and all wrong predictions per turn cost a further penalty in decay units on top —",
+      "so predicting many moves at once costs nothing extra if you are wrong but advances further, more cheaply, if",
+      "you are right. Each turn's decay units are subtracted immediately; the resulting score retention is visible",
+      "via get_game_status.",
+      "uniqueCellsVisited and requestsMade are the raw metrics behind batchEfficiencyRank, which shows your",
+      "likelihood of finishing the game — obtained by dividing uniqueCellsVisited by requestsMade. It is set to",
+      "backtracker rank when that rate is below 1.0 (requests being wasted on invalid moves or oscillation between",
+      "cells), navigator rank at 1.0 (matching one move per turn), or trailblazer rank above 1.0 (multi-move guesses",
+      "are paying off).",
+      "Before making any requests on this level, batchEfficiencyRank defaults to trailblazer regardless of these",
+      "counts, so you start already primed to predict multi-move sequences. Returns JSON:",
+      "{\"suggestedMovesPerTurn\":number,",
+      "\"uniqueCellsVisited\":number, \"requestsMade\":number, \"batchEfficiencyRank\":string,",
+      "\"expectedResponseSchema\":object}.",
+    ].join(" "),
+    parameters: emptyToolParameters,
+  },
 }
 
 // gameStatusTool exposes round progress and maze dimensions without leaking full state.
@@ -201,7 +234,7 @@ const lastReplayResultTool: AgentToolDefinition = {
       "their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within",
       "lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore",
       "indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount",
-      "is the total moves charged toward score decay that turn. Returns JSON: {\"lastPlayerName\":string|null,",
+      "is the total decay units charged toward score that turn. Returns JSON: {\"lastPlayerName\":string|null,",
       "\"lastMoveStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[],",
       "\"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
     ].join(" "),
@@ -209,35 +242,13 @@ const lastReplayResultTool: AgentToolDefinition = {
   },
 }
 
-// predictionRulesTool documents the only accepted move response and the suggested batch size.
-const predictionRulesTool: AgentToolDefinition = {
-  type: "function",
-  function: {
-    name: "get_prediction_rules",
-    description: [
-      "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions",
-      "response per turn. All wrong predictions per turn cost the same flat penalty, so predicting many moves at once",
-      "costs nothing extra if you are wrong but advances further if you are right. uniqueCellsVisited and requestsMade",
-      "do not affect score; they are the raw metrics behind batchEfficiencyLevel — obtained by dividing",
-      "uniqueCellsVisited by requestsMade. batchEfficiencyLevel is set to backtracker when that rate is below 1.0",
-      "(requests being wasted on invalid moves or oscillation between cells), navigator at exactly 1.0 (matching one",
-      "move per turn), or trailblazer above 1.0 (multi-move guesses are paying off). Before you have made any requests",
-      "this level, batchEfficiencyLevel defaults to trailblazer regardless of these counts, so you start already",
-      "primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number,",
-      "\"uniqueCellsVisited\":number, \"requestsMade\":number, \"batchEfficiencyLevel\":string,",
-      "\"expectedResponseSchema\":object}.",
-    ].join(" "),
-    parameters: emptyToolParameters,
-  },
-}
-
 // AGENT_CONTEXT_TOOLS exposes focused context slices instead of one oversized state object.
 export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
+  predictionRulesTool,
   gameStatusTool,
   mazePositionsTool,
   traversalHistoryTool,
   lastReplayResultTool,
-  predictionRulesTool,
 ]
 
 // --- 3. Tool handlers ---
@@ -256,6 +267,20 @@ export function buildAgentToolHandlers(
     : 0
 
   return {
+    get_prediction_rules() {
+      // Raw counts are exposed instead of the derived rate so the model can compute and verify the
+      // rank itself; both are always concrete numbers (0 is a valid count), never null, so there is
+      // nothing ambiguous for the model to puzzle over before its first request.
+      const batchEfficiencyRank = resolveBatchEfficiencyRank(state.traversalHistory, agent)
+      const { uniqueCellsVisited, requestsMade } = getBatchEfficiencyMetrics(state.traversalHistory, agent)
+      return {
+        suggestedMovesPerTurn,
+        uniqueCellsVisited,
+        requestsMade,
+        batchEfficiencyRank,
+        expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
+      }
+    },
     get_game_status() {
       return {
         score: state.score,
@@ -284,20 +309,6 @@ export function buildAgentToolHandlers(
         lastAppliedMoveIndex: lastActionResult?.lastAppliedMoveIndex ?? null,
         visitedBefore: lastActionResult?.visitedBefore ?? null,
         chargedMovesCount: lastActionResult?.chargedMovesCount ?? 0,
-      }
-    },
-    get_prediction_rules() {
-      // Raw counts are exposed instead of the derived rate so the model can compute and verify the
-      // rank itself; both are always concrete numbers (0 is a valid count), never null, so there is
-      // nothing ambiguous for the model to puzzle over before its first request.
-      const batchEfficiencyLevel = resolveBatchEfficiencyLevel(state.traversalHistory, agent)
-      const { uniqueCellsVisited, requestsMade } = getBatchEfficiencyMetrics(state.traversalHistory, agent)
-      return {
-        suggestedMovesPerTurn,
-        uniqueCellsVisited,
-        requestsMade,
-        batchEfficiencyLevel,
-        expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       }
     },
   }

@@ -24,7 +24,7 @@ const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
 const VERSION_MAJOR = 2
 
 // VERSION_MINOR is the semantic minor version for the browser SPA runtime.
-const VERSION_MINOR = 0
+const VERSION_MINOR = 1
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
 const VERSION_PATCH = 0
@@ -232,6 +232,8 @@ export const CONFIG: AppConfig = {
     percentScale: 100,
     budgetMultiplier: 100,
     retentionFullScaleUnits: 1_000_000, // Represents 100% scores retention without using floating-point percentages.
+    agentPenaltyDecayUnits: 2, // Penalty for any agent mistake (invalid move or malformed error).
+    agentBaseDecayUnits: 1,    // Constant decay for a turn that applied any valid moves.
   },
   // Timing values drive refresh cadence, score decay, and the slower agent-api pacing.
   timing: {
@@ -267,7 +269,6 @@ export const CONFIG: AppConfig = {
       },
     },
     interactivePlayerName: "Self",
-    agentApiMistakePenaltyMoves: 2,
     modelConfig: {
       contextWindowFloor: 2500,       // Floor above Ollama's 2048 default; avoids 500 errors on long histories
       contextWindowAreaMultiplier: 5, // Tokens-per-cell scaling factor; grows context with maze area

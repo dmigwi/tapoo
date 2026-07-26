@@ -51,10 +51,10 @@ const expectedAgentPrompt = [
   "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
   "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
   "get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is.",
-  "lastMoveStatus null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a score penalty was charged; applied means it succeeded.",
+  "lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units.",
   "get_prediction_rules provides the required response format and move count guidance.",
   "Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
-  "Invalid moves cost a flat score decay of 2 per turn — total score decay equals valid moves plus 2 if an invalid move was detected, so a long speculative guess never costs more than a short one for the same mistake.",
+  "Longer, well-reasoned predictions are strictly cheaper per move than single-stepping — a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course.",
   "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
 ].join(" ")
 
@@ -123,11 +123,11 @@ describe("agent context", () => {
     const toolHandlers = buildAgentToolHandlers(createState(), actionResult, createAgent())
 
     expect(AGENT_CONTEXT_TOOLS.map((tool) => tool.function.name)).toEqual([
+      "get_prediction_rules",
       "get_game_status",
       "get_maze_positions",
       "get_traversal_history",
       "get_last_replay_result",
-      "get_prediction_rules",
     ])
     expect(toolHandlers.get_game_status({})).toEqual({
       level: 4,
@@ -146,7 +146,7 @@ describe("agent context", () => {
       suggestedMovesPerTurn: 4,
       uniqueCellsVisited: 1,
       requestsMade: 2,
-      batchEfficiencyLevel: "backtracker",
+      batchEfficiencyRank: "backtracker",
       expectedResponseSchema,
     })
     expect(toolHandlers.get_last_replay_result({})).toEqual({
@@ -168,7 +168,7 @@ describe("agent context", () => {
       suggestedMovesPerTurn: 4,
       uniqueCellsVisited: 1,
       requestsMade: 0,
-      batchEfficiencyLevel: "trailblazer",
+      batchEfficiencyRank: "trailblazer",
       expectedResponseSchema,
     })
   })

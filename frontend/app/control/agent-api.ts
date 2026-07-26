@@ -12,7 +12,8 @@ import type {
 } from "../types"
 import type { AgentPredictionRequest } from "../agent/request"
 
-const { runtime, timing } = CONFIG
+const { runtime, scoring, timing } = CONFIG
+const { agentBaseDecayUnits, agentPenaltyDecayUnits } = scoring
 
 // mergeReplayResult reapplies replay metadata without duplicating live game state.
 function mergeReplayResult(
@@ -131,7 +132,7 @@ export function handleAgentTurnLoop({
 
   // recordMalformedAgentResponse spends the fixed mistake decay without replaying any move.
   const recordMalformedAgentResponse = (agent: AgentApiConfig): void => {
-    const chargedMovesCount = runtime.agentApiMistakePenaltyMoves
+    const chargedMovesCount = agentPenaltyDecayUnits
     __commitAgentTurn(chargedMovesCount)
     recordAgentTurnStats(agent, __readState().level, __readState().cumulativeRoundCount)
     const nextResult = mergeMazeActionResult(activeActionResult(), {
@@ -237,10 +238,16 @@ export function handleAgentTurnLoop({
         return
       }
 
-      // A wrong guess always costs the same flat mistake penalty, regardless of how many
-      // speculative moves were queued behind it — so longer guesses are never punished harder
-      // than short ones for the same single mistake.
-      const chargedMovesCount = appliedMoveCount + (hasInvalidMove ? runtime.agentApiMistakePenaltyMoves : 0)
+      // A turn with any valid moves costs a flat decay charge regardless of how many moves it
+      // applied, and a wrong guess costs a flat mistake penalty regardless of how many speculative
+      // moves were queued behind it. Together these make single-move-per-turn play the costliest
+      // way to solve the maze — batching more moves per turn is strictly cheaper per move, so
+      // agents are pushed toward longer, more carefully reasoned predictions rather than
+      // conservative single-stepping. The most a single turn can ever be charged is
+      // agentBaseDecayUnits + agentPenaltyDecayUnits, when a turn applies at least one valid move
+      // before hitting an invalid one.
+      const chargedMovesCount =
+        (appliedMoveCount > 0 ? agentBaseDecayUnits : 0) + (hasInvalidMove ? agentPenaltyDecayUnits : 0)
 
       __commitAgentTurn(chargedMovesCount)
       recordAgentTurnStats(selectedAgent, __readState().level, __readState().cumulativeRoundCount)
