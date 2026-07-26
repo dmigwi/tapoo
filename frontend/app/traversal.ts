@@ -208,7 +208,7 @@ export function openMovesFromCell(
 export function isMoveAction(
   action: MazeAction,
 ): action is Extract<MazeAction, { type: MoveAction }> {
-  return action.type in MOVE_DELTAS
+  return Object.hasOwn(MOVE_DELTAS, action.type)
 }
 
 export type ResolvedPlayerMove =
@@ -277,7 +277,7 @@ export function isTraversalHistoryEntry(value: unknown): value is TraversalHisto
   ) {
     return false
   }
-  return (value.openMoves as unknown[]).every((m) => typeof m === "string" && m in MOVE_DELTAS)
+  return (value.openMoves as unknown[]).every((m) => typeof m === "string" && Object.hasOwn(MOVE_DELTAS, m))
 }
 
 // traversalHistoryEntry records one logical-cell visit for the player who made the move.
@@ -404,6 +404,17 @@ export function isValidPersistedRound(snapshot: PersistedRound): boolean {
 
     visitedCellKeys.add(visitedCellKey)
     if (!isTraversableGridPoint(snapshot.maze, gridPointFromCellCoordinate(visitedCell))) {
+      return false
+    }
+
+    // The stored openMoves must match what the restored maze actually has open at this cell —
+    // a stale or tampered snapshot's saved directions must not be trusted as fact and forwarded
+    // to agents unchecked.
+    const actualOpenMoves = openMovesFromCell(snapshot.maze, visitedCell)
+    if (
+      visitedCell.openMoves.length !== actualOpenMoves.length ||
+      !visitedCell.openMoves.every((move) => actualOpenMoves.includes(move))
+    ) {
       return false
     }
   }

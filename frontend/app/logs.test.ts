@@ -48,7 +48,7 @@ describe("tapoo logs", () => {
       throw new Error("expected log download blob")
     }
     expect(downloadedFilename).toMatch(
-      /^tapoo-logs-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/,
+      /^tapoo-interactive-logs-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/,
     )
     const downloadedText = await downloadedBlob.text()
     expect(downloadedText).toContain("before reset")

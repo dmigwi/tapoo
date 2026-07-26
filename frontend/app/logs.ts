@@ -104,7 +104,7 @@ export function tapooDownloadLogs(modeName: MazeControlModeName): void {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement("a")
   anchor.href = url
-  anchor.download = `tapoo-logs-${getDownloadTimestamp()}.json`
+  anchor.download = `tapoo-${modeName}-logs-${getDownloadTimestamp()}.json`
   anchor.hidden = true
   document.body.append(anchor)
   anchor.click()

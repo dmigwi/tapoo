@@ -97,17 +97,19 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyRank: B
     `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
     "currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level",
     "with exactly one path to the destination. traversalHistory entries matching your playerName record your past",
-    "moves in chronological order. Each entry includes openMoves — the exits open from that cell. openMoves count",
-    "reveals cell topology: one open move is a dead end (unless that is your start or destination cell); two is a",
-    "corridor; three or more is a junction. traversalHistory only records the first visit to each cell; cells",
-    "revisited during backtracking are not duplicated, so apparent gaps are expected. Revisiting a cell already in",
-    "traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking",
-    "through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze",
-    "never guarantees a direct route from start to destination; the only valid path may require moving away from the",
-    "target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call",
-    "may return updated or identical data depending on what has changed. get_last_replay_result reflects the most",
-    "recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus being null",
-    "means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means",
+    "moves in chronological order. Each entry includes openMoves — the open exits from that cell are fixed since",
+    "creation — helping you reconstruct the maze's path flow; so entries recorded by other players are just as",
+    "trustworthy as your own. openMoves count reveals the physical maze structure at that cell: one open move is a",
+    "dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction.",
+    "traversalHistory only records the first visit to each cell; cells revisited during backtracking are not",
+    "duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once",
+    "the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way",
+    "to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start",
+    "to destination; the only valid path may require moving away from the target before turning towards it. Tool",
+    "results reflect the maze state at the time of each call — a repeat call may return updated or identical data",
+    "depending on what has changed. get_last_replay_result reflects the most recent replay across all agents;",
+    "lastPlayerName identifies whose outcome it is. lastMoveStatus being null means no moves have been made yet;",
+    "invalid-move means the last prediction hit a wall; malformed-response means",
     `the previous response was not valid JSON and a penalty of ${agentPenaltyDecayUnits} decay units was charged;`,
     `applied means it succeeded. A turn with any valid moves costs a constant ${agentBaseDecayUnits} decay units`,
     "regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a",
@@ -205,14 +207,14 @@ const mazePositionsTool: AgentToolDefinition = {
 }
 
 // traversalHistoryTool lets agents avoid repeating explored logical cells across turns.
-// Each entry includes openMoves so the model can reconstruct dead ends and junction topology.
+// Each entry includes openMoves so the model can reconstruct dead ends and junctions.
 const traversalHistoryTool: AgentToolDefinition = {
   type: "function",
   function: {
     name: "get_traversal_history",
     description: [
       "Get all players' visit records in chronological order. Each entry includes openMoves — the open exits from that",
-      "cell — so you can reconstruct the maze topology you have already explored. Returns JSON:",
+      "cell — so you can reconstruct the physical maze structure you have already explored. Returns JSON:",
       "{\"traversalHistory\":[{\"playerName\":string, \"row\":number, \"col\":number, \"openMoves\":[\"MoveLeft\",",
       "...]}]}. Filter by playerName to review a specific player's visit sequence.",
     ].join(" "),

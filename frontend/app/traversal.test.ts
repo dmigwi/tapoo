@@ -8,6 +8,7 @@ import {
   gridPointFromCellCoordinate,
   isMoveAction,
   isSpaceFound,
+  isTraversalHistoryEntry,
   isValidPersistedRound,
   isWallWeight,
   mazeCellKey,
@@ -59,19 +60,23 @@ function createState(overrides: Partial<State> = {}): State {
   }
 }
 
+const persistedRoundMaze = [
+  ["|", "---", "-", "---", "|"],
+  ["|", "   ", " ", "   ", "|"],
+  ["|", "---", "-", "---", "|"],
+]
+
 function createPersistedRound(
   overrides: Partial<PersistedRound> = {},
 ): PersistedRound {
   return {
     level: 1,
     mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
-    maze: [
-      ["|", "---", "-", "---", "|"],
-      ["|", "   ", " ", "   ", "|"],
-      ["|", "---", "-", "---", "|"],
-    ],
+    maze: persistedRoundMaze,
     startCell: { row: 0, col: 0 },
-    traversalHistory: [selfVisit(0, 0)],
+    // openMoves must reflect the actual maze above, since isValidPersistedRound now recomputes
+    // and cross-checks it against the restored maze rather than trusting the stored value.
+    traversalHistory: [traversalHistoryEntry({ row: 0, col: 0 }, "Self", persistedRoundMaze)],
     playerPosition: { x: 1, y: 1 },
     finalPosition: { x: 3, y: 1 },
     wallWeight: 1,
@@ -122,6 +127,15 @@ describe("traversal", () => {
     expect(isMoveAction({ type: "pause" })).toBe(false)
     expect(isMoveAction({ type: "await-agent" })).toBe(false)
     expect(isMoveAction({ type: "Unknown" } as unknown as MazeAction)).toBe(false)
+  })
+
+  it("rejects inherited Object.prototype keys as maze moves", () => {
+    // MOVE_DELTAS is a plain object, so a naive `in` check would treat inherited keys like
+    // "constructor" or "toString" as valid moves even though they were never assigned as own
+    // properties. An agent response of {"moves":["constructor"]} must not slip past validation.
+    expect(isMoveAction({ type: "constructor" } as unknown as MazeAction)).toBe(false)
+    expect(isMoveAction({ type: "toString" } as unknown as MazeAction)).toBe(false)
+    expect(isMoveAction({ type: "hasOwnProperty" } as unknown as MazeAction)).toBe(false)
   })
 
   it("converts between render-grid points and logical cell coordinates", () => {
@@ -213,6 +227,29 @@ describe("traversal", () => {
 
   it("accepts internally consistent persisted rounds", () => {
     expect(isValidPersistedRound(createPersistedRound())).toBe(true)
+  })
+
+  it("rejects a persisted round whose stored openMoves no longer match the restored maze", () => {
+    // A stale or tampered snapshot could claim exits that don't exist in the actual maze; since
+    // that history is later sent to agents as ground truth, it must be cross-checked, not trusted.
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
+          traversalHistory: [{ playerName: "Self", row: 0, col: 0, openMoves: ["MoveDown"] }],
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it("rejects a traversal history entry whose openMoves include inherited Object.prototype keys", () => {
+    // Same prototype-pollution concern as isMoveAction: openMoves is restored from persisted or
+    // agent-supplied data, so "constructor" must not be accepted as a valid move direction.
+    expect(
+      isTraversalHistoryEntry({ playerName: "Self", row: 0, col: 0, openMoves: ["constructor"] }),
+    ).toBe(false)
+    expect(
+      isTraversalHistoryEntry({ playerName: "Self", row: 0, col: 0, openMoves: ["MoveRight"] }),
+    ).toBe(true)
   })
 
   it("rejects persisted rounds with impossible dimensions or blocked positions", () => {
