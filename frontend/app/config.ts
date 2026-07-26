@@ -24,13 +24,13 @@ const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
 const VERSION_MAJOR = 2
 
 // VERSION_MINOR is the semantic minor version for the browser SPA runtime.
-const VERSION_MINOR = 0
+const VERSION_MINOR = 1
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
 const VERSION_PATCH = 0
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
-const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
+export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
 
 // BUILD_YEAR is injected by esbuild for production and falls back only for local test imports.
 const BUILD_YEAR =
@@ -176,9 +176,10 @@ export const CONFIG: AppConfig = {
   agentConfig: {
     title: "New Agent",
     newAgentLabel: "New Agent",
-    agentEnabledLabel: "Agent enabled",
-    agentDisabledLabel: "Agent disabled",
+    agentEnabledLabel: "Agent is enabled.",
+    agentDisabledLabel: "Agent is disabled.",
     maxSeats: 5,
+    maxModelDisplayLength: 18,
     playerNameMinLength: 3,
     playerNameMaxLength: 8,
     playerNameLabel: "Player Name",
@@ -187,7 +188,7 @@ export const CONFIG: AppConfig = {
     modelPlaceholder: "llama3.2",
     endpointLabel: "Endpoint",
     submitLabel: "Add Agent",
-    endpointPlaceholder: "localhost:5000 or https://example.com/api/agent/move",
+    endpointPlaceholder: "http://localhost:11434/api/chat",
     invalidMessage: "Fill in Player Name, Model and Endpoint.",
     invalidEndpointMessage:
       "Endpoint must be an http:// or https:// URL, or host:port.",
@@ -195,7 +196,7 @@ export const CONFIG: AppConfig = {
     playerNameLengthMessage: "Player Name must be 3-8 characters.",
     editTitle: "Edit Agent",
     addSeatLabelTemplate: "Add agent to seat {seat}",
-    manageSeatLabelTemplate: "Manage player {agent} in seat {seat}",
+    manageSeatLabelTemplate: "Manage {agent} ({model}) in seat {seat}",
     activeSeatLabelTemplate: "Player {agent} is playing in seat {seat}",
     deleteMessageTemplate: "Delete now?",
     updateConfirmLabel: "Apply Changes",
@@ -231,6 +232,8 @@ export const CONFIG: AppConfig = {
     percentScale: 100,
     budgetMultiplier: 100,
     retentionFullScaleUnits: 1_000_000, // Represents 100% scores retention without using floating-point percentages.
+    agentPenaltyDecayUnits: 2, // Penalty for any agent mistake (invalid move or malformed error).
+    agentBaseDecayUnits: 1,    // Constant decay for a turn that applied any valid moves.
   },
   // Timing values drive refresh cadence, score decay, and the slower agent-api pacing.
   timing: {
@@ -257,17 +260,26 @@ export const CONFIG: AppConfig = {
       interactive: "interactive",
     },
     storage: {
-      version: 3,
+      version: 4,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",
         agentConfigs: "agentConfigs",
+        tapooLog: "tapooLog",
       },
     },
     interactivePlayerName: "Self",
-    agentApiMistakePenaltyMoves: 5,
+    modelConfig: {
+      contextWindowFloor: 2500,       // Floor above Ollama's 2048 default; avoids 500 errors on long histories
+      contextWindowAreaMultiplier: 5, // Tokens-per-cell scaling factor; grows context with maze area
+      temperature: 0.5,               // Lower than 0.8 default; favors format-compliant over creative replies
+      numPredict: 3000,               // Caps total output (thinking + content); thinking models consume ~1000-2000 tokens before emitting the JSON
+    },
   },
 }
+
+// AGENT_MOVES_PER_TURN_CAP is the p95 of actual corridor run lengths measured across all levels.
+export const AGENT_MOVES_PER_TURN_CAP = 4  // simulation: p50=1, p75=2, p90=3, p95=4
 
 // PAGE_COPYRIGHT_TEXT is the fully composed footer text shared by static browser pages.
 export const PAGE_COPYRIGHT_TEXT = CONFIG.chrome.pageVersionTemplate

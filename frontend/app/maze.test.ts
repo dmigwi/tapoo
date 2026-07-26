@@ -10,7 +10,7 @@ import {
 // physical panel 3024x1964px, CSS viewport about 1512x982px after device scaling,
 // 10 measured PT Mono sample characters about 60 CSS px, and one text row about 11 CSS px.
 // After app insets are removed, the browser maze receives 61 columns by 39 rows of room.
-const macbookBrowserTerminalSize = { length: 61, width: 39 }
+const macbookBrowserTerminalSize = { numCols: 61, numRows: 39 }
 
 // These tests keep maze sizing, navigation tuning, and deterministic carving stable.
 describe("maze", () => {
@@ -19,47 +19,47 @@ describe("maze", () => {
   })
 
   it("returns the preferred maze dimensions for a fitting viewport", () => {
-    expect(getMazeDimensions(1, { length: 20, width: 20 })).toEqual({
+    expect(getMazeDimensions(1, { numCols: 20, numRows: 20 })).toEqual({
       level: 1,
-      length: 7,
-      width: 10,
+      numCols: 7,
+      numRows: 10,
       area: 70,
     })
   })
 
   it("prefers balanced maze dimensions before viewport aspect ratio", () => {
-    expect(getMazeDimensions(2, { length: 30, width: 10 })).toEqual({
+    expect(getMazeDimensions(2, { numCols: 30, numRows: 10 })).toEqual({
       level: 2,
-      length: 10,
-      width: 8,
+      numCols: 10,
+      numRows: 8,
       area: 80,
     })
   })
 
   it("keeps growing maze dimensions for large levels when the viewport can fit them", () => {
-    expect(getMazeDimensions(994, { length: 100, width: 100 })).toEqual({
+    expect(getMazeDimensions(994, { numCols: 100, numRows: 100 })).toEqual({
       level: 994,
-      width: 100,
-      length: 100,
+      numRows: 100,
+      numCols: 100,
       area: 10000,
     })
   })
 
   it("returns no dimensions when the viewport cannot fit the maze area", () => {
-    expect(getMazeDimensions(1, { length: 6, width: 10 })).toBeNull()
+    expect(getMazeDimensions(1, { numCols: 6, numRows: 10 })).toBeNull()
   })
 
   it("repairs isolated bad area factors without consuming the next level target", () => {
     expect(getMazeDimensions(143, macbookBrowserTerminalSize)).toEqual({
       level: 143,
-      length: 44,
-      width: 34,
+      numCols: 44,
+      numRows: 34,
       area: 1496,
     })
     expect(getMazeDimensions(144, macbookBrowserTerminalSize)).toEqual({
       level: 144,
-      length: 50,
-      width: 30,
+      numCols: 50,
+      numRows: 30,
       area: 1500,
     })
   })
@@ -68,33 +68,33 @@ describe("maze", () => {
     // This modeled room keeps the 14-inch browser UX from filling every last drawable cell.
     expect(getMazeDimensions(150, macbookBrowserTerminalSize)).toEqual({
       level: 150,
-      length: 40,
-      width: 39,
+      numCols: 40,
+      numRows: 39,
       area: 1560,
     })
     expect(getMazeDimensions(151, macbookBrowserTerminalSize)).toBeNull()
   })
 
   it("tightens the navigation profile as maze area grows", () => {
-    expect(getNavigationProfile({ length: 10, width: 11 })).toEqual({
+    expect(getNavigationProfile({ numCols: 10, numRows: 11 })).toEqual({
       __softCorridorLimit: 8,
       __hardCorridorLimit: 10,
       __preferTurnPercent: 90,
     })
 
-    expect(getNavigationProfile({ length: 20, width: 20 })).toEqual({
+    expect(getNavigationProfile({ numCols: 20, numRows: 20 })).toEqual({
       __softCorridorLimit: 5,
       __hardCorridorLimit: 7,
       __preferTurnPercent: 75,
     })
 
-    expect(getNavigationProfile({ length: 30, width: 30 })).toEqual({
+    expect(getNavigationProfile({ numCols: 30, numRows: 30 })).toEqual({
       __softCorridorLimit: 4,
       __hardCorridorLimit: 5,
       __preferTurnPercent: 65,
     })
 
-    expect(getNavigationProfile({ length: 60, width: 60 })).toEqual({
+    expect(getNavigationProfile({ numCols: 60, numRows: 60 })).toEqual({
       __softCorridorLimit: 2,
       __hardCorridorLimit: 3,
       __preferTurnPercent: 55,
@@ -104,7 +104,7 @@ describe("maze", () => {
   it("generates a deterministic maze layout for a fixed random source", () => {
     vi.spyOn(Math, "random").mockReturnValue(0)
 
-    const round = generateMaze({ length: 5, width: 5 }, 1)
+    const round = generateMaze({ numCols: 5, numRows: 5 }, 1)
 
     expect(round).toMatchSnapshot()
     expect(round.startPosition).not.toEqual(round.finalPosition)

@@ -45,6 +45,9 @@ export function getGameElements(): Elements | null {
     touchButtons: Array.from(
       document.querySelectorAll<HTMLButtonElement>("[data-touch-control]"),
     ),
+    agentSeatsBody: mustElement<HTMLElement>("agent-seats-body"),
+    tapooLogsReset: mustElement<HTMLButtonElement>("tapoo-logs-reset"),
+    tapooLogsDownload: mustElement<HTMLButtonElement>("tapoo-logs-download"),
     agentSeatRoster: mustElement<HTMLElement>("agent-seat-roster"),
     agentConfigForm: mustElement<HTMLFormElement>("agent-config-form"),
     agentConfigTitle: mustElement<HTMLElement>("agent-config-title"),
@@ -80,14 +83,14 @@ export function getTerminalSize(elements: Elements): BaseDimensions {
   const terminalRows = Math.floor(rect.height / terminalRowHeight)
 
   return {
-    length: Math.max(
+    numCols: Math.max(
       0,
       Math.floor(
         (terminalColumns - viewport.terminalHeightInset) /
           viewport.terminalHeightScale,
       ),
     ),
-    width: Math.max(
+    numRows: Math.max(
       0,
       Math.floor(
         (terminalRows - viewport.terminalWidthInset) / viewport.terminalWidthScale,

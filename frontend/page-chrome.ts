@@ -194,5 +194,5 @@ try {
   applyPageVersion()
   initTopMenus()
 } catch (error) {
-  showPlaceholderArt(error)
+  showPlaceholderArt(CONFIG.runtime.controlModes.interactive, error)
 }

@@ -8,6 +8,7 @@ import {
   disableAgentApiConfigForNetworkError,
   loadPersistedAgentApiConfigs,
   loadPersistedSnapshot,
+  recordAgentTurnStats,
   saveActiveRoundSnapshot,
   saveGameProgress,
   savePersistedAgentApiConfigs,
@@ -19,7 +20,7 @@ const AGENT_MODE = CONFIG.runtime.controlModes.agentApi
 const { agentConfigs, gameSetup, winMetrics } = CONFIG.runtime.storage.suffixes
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
 }
 
 // storageKey mirrors the production per-mode browser storage naming.
@@ -30,6 +31,10 @@ function storageKey(suffix: string): string {
 // agentStorageKey mirrors the separate agent-api storage namespace.
 function agentStorageKey(suffix: string): string {
   return `tapoo.v${CONFIG.runtime.storage.version}.${AGENT_MODE}.${suffix}`
+}
+
+function endpoint(path: string): URL {
+  return new URL(path, "https://agents.example")
 }
 
 // versionedStorageKey builds explicit namespaces for storage-version cleanup tests.
@@ -77,7 +82,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.interactive,
     level: 4,
-    mazeDimensions: { length: 5, width: 5, area: 25 },
+    mazeDimensions: { numCols: 5, numRows: 5, area: 25 },
     maze: [
       ["|", "---", "|"],
       ["|", "   ", "|"],
@@ -98,6 +103,7 @@ function createState(overrides: Partial<State> = {}): State {
     wallWeight: 2,
     scoreDecayUnits: 0,
     agentRequestCount: 0,
+    cumulativeRoundCount: 0,
     clock: null,
     ...overrides,
   }
@@ -155,14 +161,14 @@ describe("storage", () => {
         id: 1,
         playerName: "Agent A",
         model: "llama3.2",
-        endpoint: "/api/agents/a/move",
+        endpoint: endpoint("/api/agents/a/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Agent B",
         model: "gemma4",
-        endpoint: "/api/agents/b/move",
+        endpoint: endpoint("/api/agents/b/move"),
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_000,
@@ -180,14 +186,14 @@ describe("storage", () => {
         id: 1,
         playerName: "Agent A",
         model: "llama3.2",
-        endpoint: "/api/agents/a/move",
+        endpoint: endpoint("/api/agents/a/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Agent B",
         model: "gemma4",
-        endpoint: "/api/agents/b/move",
+        endpoint: endpoint("/api/agents/b/move"),
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_000,
@@ -207,42 +213,42 @@ describe("storage", () => {
         id: 1,
         playerName: "Aone",
         model: "llama3.2",
-        endpoint: "/api/agents/1/move",
+        endpoint: endpoint("/api/agents/1/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Atwo",
         model: "gemma4",
-        endpoint: "/api/agents/2/move",
+        endpoint: endpoint("/api/agents/2/move"),
         enabled: false,
       },
       {
         id: 3,
         playerName: "Athr",
         model: "qwen3",
-        endpoint: "/api/agents/3/move",
+        endpoint: endpoint("/api/agents/3/move"),
         enabled: true,
       },
       {
         id: 4,
         playerName: "Afou",
         model: "mistral",
-        endpoint: "/api/agents/4/move",
+        endpoint: endpoint("/api/agents/4/move"),
         enabled: true,
       },
       {
         id: 5,
         playerName: "Afiv",
         model: "deepseek",
-        endpoint: "/api/agents/5/move",
+        endpoint: endpoint("/api/agents/5/move"),
         enabled: true,
       },
       {
         id: 6,
         playerName: "Asix",
         model: "phi4",
-        endpoint: "/api/agents/6/move",
+        endpoint: endpoint("/api/agents/6/move"),
         enabled: true,
       },
     ])
@@ -269,7 +275,7 @@ describe("storage", () => {
         id: index + 1,
         playerName: `A${index + 1}bot`,
         model: "llama3.2",
-        endpoint: `/api/agents/${index + 1}/move`,
+        endpoint: endpoint(`/api/agents/${index + 1}/move`),
         enabled: true,
       })),
     )
@@ -317,14 +323,14 @@ describe("storage", () => {
         id: 1,
         playerName: "Agent A",
         model: "llama3.2",
-        endpoint: "/api/agents/a/move",
+        endpoint: endpoint("/api/agents/a/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Agent B",
         model: "gemma4",
-        endpoint: "/api/agents/b/move",
+        endpoint: endpoint("/api/agents/b/move"),
         enabled: true,
       },
     ])
@@ -333,7 +339,7 @@ describe("storage", () => {
       id: 2,
       playerName: "Agent B",
       model: "gemma4",
-      endpoint: "/api/agents/b/move",
+      endpoint: endpoint("/api/agents/b/move"),
       enabled: true,
     })
 
@@ -342,20 +348,105 @@ describe("storage", () => {
         id: 1,
         playerName: "Agent A",
         model: "llama3.2",
-        endpoint: "/api/agents/a/move",
+        endpoint: endpoint("/api/agents/a/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Agent B",
         model: "gemma4",
-        endpoint: "/api/agents/b/move",
+        endpoint: endpoint("/api/agents/b/move"),
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_001,
       },
     ])
     expect(loadPersistedAgentApiConfigs()).toEqual(nextConfigs)
+  })
+
+  it("tracks an agent's requestsCount across turns within the same level and round", () => {
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: endpoint("/api/agents/blue/move"),
+        enabled: true,
+      },
+    ])
+
+    const firstTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7)
+    expect(firstTurnAgent).toMatchObject({ gameLevel: 3, cumulativeRoundCount: 7, requestsCount: 1 })
+
+    const secondTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7)
+    expect(secondTurnAgent).toMatchObject({ gameLevel: 3, cumulativeRoundCount: 7, requestsCount: 2 })
+    expect(loadPersistedAgentApiConfigs()[0]).toMatchObject({ requestsCount: 2 })
+  })
+
+  it("resets requestsCount when the level changes", () => {
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: endpoint("/api/agents/blue/move"),
+        enabled: true,
+        gameLevel: 3,
+        cumulativeRoundCount: 7,
+        requestsCount: 5,
+      },
+    ])
+
+    const nextLevelAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 4, 7)
+
+    expect(nextLevelAgent).toMatchObject({ gameLevel: 4, cumulativeRoundCount: 7, requestsCount: 1 })
+  })
+
+  it("resets requestsCount when the level is retried in a new round (level unchanged, cumulativeRoundCount changed)", () => {
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: endpoint("/api/agents/blue/move"),
+        enabled: true,
+        gameLevel: 3,
+        cumulativeRoundCount: 7,
+        requestsCount: 5,
+      },
+    ])
+
+    const retryAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 8)
+
+    expect(retryAgent).toMatchObject({ gameLevel: 3, cumulativeRoundCount: 8, requestsCount: 1 })
+  })
+
+  it("resets requestsCount when a post-reset cumulativeRoundCount collides with a stale pre-reset value", () => {
+    // "Reset Progress" (clearPersistedSnapshot) never touches the agentConfigs storage
+    // namespace, so this agent's record survives untouched from a prior session where it
+    // last played level 5. state.cumulativeRoundCount restarts from 0 after the reset, so a
+    // later session can legitimately reach cumulativeRoundCount 12 again — the same value
+    // this stale record already holds, purely by coincidence.
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: endpoint("/api/agents/blue/move"),
+        enabled: true,
+        gameLevel: 5,
+        cumulativeRoundCount: 12,
+        requestsCount: 9,
+      },
+    ])
+
+    // New session, different level, but the round counter happens to collide.
+    const postResetAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 1, 12)
+
+    // Must NOT inherit the stale requestsCount: 9 — gameLevel differing (1 vs 5) is what
+    // catches this. If recordAgentTurnStats is ever "simplified" to compare only
+    // cumulativeRoundCount, this assertion will fail.
+    expect(postResetAgent).toMatchObject({ gameLevel: 1, cumulativeRoundCount: 12, requestsCount: 1 })
   })
 
   it("saves and reloads the active round state", () => {
@@ -370,7 +461,7 @@ describe("storage", () => {
 
     expect(snapshot.round).toEqual({
       level: 4,
-      mazeDimensions: { length: 5, width: 5, area: 25 },
+      mazeDimensions: { numCols: 5, numRows: 5, area: 25 },
       maze: state.maze,
       startCell: { row: 0, col: 0 },
       traversalHistory: [selfVisit(0, 0)],
@@ -384,6 +475,7 @@ describe("storage", () => {
       remainingMs: 25_000,
       scoreDecayUnits: 0,
       agentRequestCount: 0,
+      cumulativeRoundCount: 0,
     })
   })
 

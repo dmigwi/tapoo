@@ -5,67 +5,57 @@ import type {
   AgentApiConfig,
   MazeAction,
   MazeActionDispatch,
-  MazeActionState,
+  MazeActionResult,
+  State,
   TraversalHistoryEntry,
 } from "../types"
 import { handleAgentTurnLoop } from "./agent-api"
 
-const agentMovePollIntervalMs = CONFIG.timing.agentApiCoreDecayIntervalPerCellMs
-const expectedAgentPrompt = [
-  "Your name is Blue.",
-  `playerName ${CONFIG.runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
-  "Use currentCell as your current position and destinationCell as the target.",
-  "Use traversalHistory entries matching your playerName to review your past moves in order.",
-  "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
-  "Return only a JSON object matching expectedResponseSchema.",
-  "Moves replay in order until the destination or the first invalid move.",
-  "Every submitted move counts toward score decay, including moves after the first invalid move.",
-  "Stop predicting when lastMoveStatus is reached-target or status is won.",
-  "Choose the moves most likely to reach the destination with the fewest submitted moves.",
-].join(" ")
-
-const expectedResponseSchema: MazeActionState["expectedResponseSchema"] = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  type: "object",
-  additionalProperties: false,
-  required: ["moves"],
-  properties: {
-    moves: {
-      type: "array",
-      minItems: 1,
-      items: {
-        type: "string",
-        enum: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
-      },
-    },
-  },
-}
-
-
-function visit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Blue", row, col }
+const testAgentMovePollIntervalMs = 5
+const testAgentResponseTimeoutMs = 20
+const originalAgentResponseTimeoutMs = CONFIG.timing.agentApiResponseTimeoutMs
+type SerializedRequestBody = {
+  model: string
+  stream: false
+  think: false
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
 }
 
-function createActionState(
-  overrides: Partial<MazeActionState> = {},
-): MazeActionState {
+function createState(overrides: Partial<State> = {}): State {
   return {
-    currentCell: { row: 0, col: 0 },
-    destinationCell: { row: 0, col: 2 },
-    traversalHistory: [selfVisit(0, 0)],
+    agentRequestCount: 0,
+    cumulativeRoundCount: 0,
+    bestWinRequestCount: null,
+    bestWinRetentionUnits: null,
+    canResume: false,
+    clock: null,
+    controlMode: CONFIG.runtime.controlModes.agentApi,
+    finalPosition: { x: 5, y: 1 },
+    lastAttemptRetentionUnits: null,
+    lastRoundScore: 0,
+    lastWinRequestCount: null,
     level: 2,
+    maze: null,
+    mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
+    playerPosition: { x: 1, y: 1 },
     score: 600,
-    model: "llama3.2",
-    stream: false,
-    format: "json",
+    scoreDecayUnits: 0,
     status: "running",
-    recommendedAvgPredictionLimit: 18,
-    prompt: expectedAgentPrompt,
-    expectedResponseSchema,
+    traversalHistory: [selfVisit(0, 0)],
+    wallWeight: 1,
+    winSummary: "",
+    ...overrides,
+  }
+}
+
+function createActionResult(
+  overrides: Partial<MazeActionResult> = {},
+): MazeActionResult {
+  return {
+    lastPlayerName: "Blue",
     ...overrides,
   }
 }
@@ -76,7 +66,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
       id: 1,
       playerName: "Blue",
       model: "llama3.2",
-      endpoint: "https://agents.example/move",
+      endpoint: new URL("https://agents.example/move"),
       enabled: true,
     },
   ]
@@ -88,22 +78,30 @@ function createDisableAgentAfterNetworkError() {
   })
 }
 
+async function flushImmediateAgentTurn(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0)
+}
+
 describe("agent api turn loop", () => {
   beforeEach(() => {
+    CONFIG.timing.agentApiResponseTimeoutMs = testAgentResponseTimeoutMs
     vi.useFakeTimers()
   })
 
   afterEach(() => {
+    CONFIG.timing.agentApiResponseTimeoutMs = originalAgentResponseTimeoutMs
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
 
   it("polls only while attached to a running maze", async () => {
     const elements = { body: document.createElement("div") }
-    let actionState = createActionState({ status: "running" })
+    let state = createState({ status: "running" })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({ moves: ["MoveRight"] }),
+      json: vi.fn().mockResolvedValue({
+        message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+      }),
     })
     vi.stubGlobal("fetch", fetchMock)
 
@@ -111,29 +109,26 @@ describe("agent api turn loop", () => {
       __elements: elements,
       __dispatch: vi.fn() as MazeActionDispatch,
       __dispatchAgentAction: vi.fn(() =>
-        createActionState({ lastMoveStatus: "applied" }),
+        createActionResult({ lastMoveStatus: "applied" }),
       ),
-      __commitAgentTurn: vi.fn(() => createActionState()),
-      __onActionState: vi.fn(),
+      __commitAgentTurn: vi.fn(),
+      __onActionResult: vi.fn(),
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: enabledAgentConfigs,
-      __readActionState: () => actionState,
+      __readState: () => state,
     })
 
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     expect(fetchMock).not.toHaveBeenCalled()
 
     poller.__setAttached(true)
-    actionState = createActionState({ status: "paused" })
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    state = createState({ status: "paused" })
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     expect(fetchMock).not.toHaveBeenCalled()
 
-    actionState = createActionState({ status: "running" })
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-
+    state = createState({ status: "running" })
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(elements.body.dataset.agentControl).toBe("active")
   })
@@ -147,15 +142,15 @@ describe("agent api turn loop", () => {
       __elements: { body: document.createElement("div") },
       __dispatch: dispatch,
       __dispatchAgentAction: vi.fn(),
-      __commitAgentTurn: vi.fn(() => createActionState()),
-      __onActionState: vi.fn(),
+      __commitAgentTurn: vi.fn(),
+      __onActionResult: vi.fn(),
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: () => [],
-      __readActionState: () => createActionState(),
+      __readState: () => createState(),
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
 
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Self" })
     expect(fetchMock).not.toHaveBeenCalled()
@@ -173,75 +168,67 @@ describe("agent api turn loop", () => {
 
     const poller = handleAgentTurnLoop({
       __elements: { body: document.createElement("div") },
-      __commitAgentTurn: vi.fn(() => createActionState()),
+      __commitAgentTurn: vi.fn(),
       __dispatch: dispatch,
       __dispatchAgentAction: vi.fn(),
-      __onActionState: vi.fn(),
+      __onActionResult: vi.fn(),
       __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
       __readAgentConfigs: () => agentConfigs,
-      __readActionState: () => createActionState(),
+      __readState: () => createState(),
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
   })
 
-  it("replays valid predictions and decays score by every submitted move", async () => {
+  it("replays valid predictions and decays score by a flat valid-turn charge plus a flat mistake penalty", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
-        moves: ["MoveRight", "MoveDown", "MoveLeft"],
+        message: {
+          role: "assistant",
+          content: "{\"moves\":[\"MoveRight\",\"MoveDown\",\"MoveLeft\"]}",
+        },
       }),
     })
     vi.stubGlobal("fetch", fetchMock)
 
     const dispatch = vi.fn() as MazeActionDispatch
     const dispatchAgentAction = vi
-      .fn<(action: MazeAction) => MazeActionState>()
-      .mockReturnValueOnce(createActionState({
-        currentCell: { row: 0, col: 1 },
-        traversalHistory: [selfVisit(0, 0), visit(0, 1)],
+      .fn<(action: MazeAction) => MazeActionResult>()
+      .mockReturnValueOnce(createActionResult({
         lastMoveStatus: "applied",
         visitedBefore: false,
       }))
-      .mockReturnValueOnce(createActionState({
-        currentCell: { row: 1, col: 1 },
-        traversalHistory: [selfVisit(0, 0), visit(0, 1), visit(1, 1)],
+      .mockReturnValueOnce(createActionResult({
         lastMoveStatus: "applied",
         visitedBefore: false,
       }))
-      .mockReturnValueOnce(createActionState({
-        currentCell: { row: 1, col: 1 },
-        traversalHistory: [selfVisit(0, 0), visit(0, 1), visit(1, 1)],
+      .mockReturnValueOnce(createActionResult({
         lastMoveStatus: "invalid-move",
         visitedBefore: true,
       }))
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
-      createActionState({
-        currentCell: { row: 1, col: 1 },
-        score: 600 - decayedMovesCount * CONFIG.timing.scoreDecayRate,
-      }),
-    )
-    const onActionState = vi.fn()
+    const commitAgentTurn = vi.fn()
+    const onActionResult = vi.fn()
 
     const poller = handleAgentTurnLoop({
       __elements: { body: document.createElement("div") },
       __commitAgentTurn: commitAgentTurn,
       __dispatch: dispatch,
       __dispatchAgentAction: dispatchAgentAction,
-      __onActionState: onActionState,
+      __onActionResult: onActionResult,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: enabledAgentConfigs,
-      __readActionState: () => createActionState(),
+      __readState: () => createState(),
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(dispatchAgentAction).toHaveBeenCalledTimes(3)
 
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       1,
@@ -262,15 +249,59 @@ describe("agent api turn loop", () => {
       expect.objectContaining({ model: "llama3.2", playerName: "Blue" }),
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(3)
-    expect(onActionState).toHaveBeenCalledWith(
+    expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
-        currentCell: { row: 1, col: 1 },
         lastMoveStatus: "invalid-move",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
-        lastValidMoveIndex: 1,
-        decayedMovesCount: 3,
+        lastAppliedMoveIndex: 1,
+        chargedMovesCount: 3,
       }),
     )
+  })
+
+  it("releases the active seat when a turn ends the round (win or loss)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      }),
+    )
+
+    const dispatchAgentAction = vi.fn(() =>
+      createActionResult({ lastMoveStatus: "applied" }),
+    )
+    const onActiveAgentChange = vi.fn()
+    // commitAgentTurn stands in for game.ts committing the turn and flipping status to "lost"
+    // (e.g. via handleLoss) once the round's score is depleted mid-turn.
+    let roundStatus: State["status"] = "running"
+    const commitAgentTurn = vi.fn(() => {
+      roundStatus = "lost"
+    })
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionResult: vi.fn(),
+      __onActiveAgentChange: onActiveAgentChange,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState({ status: roundStatus }),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    expect(commitAgentTurn).toHaveBeenCalledTimes(1)
+    expect(onActiveAgentChange).toHaveBeenCalledWith(
+      expect.objectContaining({ playerName: "Blue" }),
+    )
+    expect(onActiveAgentChange).toHaveBeenLastCalledWith(null)
   })
 
   it("rotates through enabled agents configured for the shared maze", async () => {
@@ -279,78 +310,84 @@ describe("agent api turn loop", () => {
         id: 1,
         playerName: "Agent A",
         model: "llama3.2",
-        endpoint: "/api/agents/a/move",
+        endpoint: new URL("https://agents.example/api/agents/a/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Agent B",
         model: "gemma4",
-        endpoint: "/api/agents/b/move",
+        endpoint: new URL("https://agents.example/api/agents/b/move"),
         enabled: true,
       },
       {
         id: 3,
         playerName: "Disabled Agent",
         model: "disabled-model",
-        endpoint: "/api/agents/disabled/move",
+        endpoint: new URL("https://agents.example/api/agents/disabled/move"),
         enabled: false,
       },
       {
         id: 4,
         playerName: "Agent C",
         model: "qwen3",
-        endpoint: "/api/agents/c/move",
+        endpoint: new URL("https://agents.example/api/agents/c/move"),
         enabled: true,
       },
     ]
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({ moves: ["MoveRight"] }),
+      json: vi.fn().mockResolvedValue({
+        message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+      }),
     })
     vi.stubGlobal("fetch", fetchMock)
 
     const dispatch = vi.fn() as MazeActionDispatch
     const dispatchAgentAction = vi.fn(() =>
-      createActionState({
-        currentCell: { row: 0, col: 1 },
+      createActionResult({
         lastMoveStatus: "applied",
       }),
     )
-    const onActionState = vi.fn()
+    const onActionResult = vi.fn()
     const onActiveAgentChange = vi.fn()
 
     const poller = handleAgentTurnLoop({
       __elements: { body: document.createElement("div") },
-      __commitAgentTurn: vi.fn(() => createActionState()),
+      __commitAgentTurn: vi.fn(),
       __dispatch: dispatch,
       __dispatchAgentAction: dispatchAgentAction,
-      __onActionState: onActionState,
+      __onActionResult: onActionResult,
       __onActiveAgentChange: onActiveAgentChange,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: () => agentConfigs,
-      __readActionState: () => createActionState({ level: 2 }),
+      __readState: () => createState({ level: 2 }),
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "/api/agents/a/move",
+      new URL("https://agents.example/api/agents/a/move"),
       expect.objectContaining({ method: "POST" }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "/api/agents/b/move",
+      new URL("https://agents.example/api/agents/b/move"),
       expect.objectContaining({ method: "POST" }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "/api/agents/c/move",
+      new URL("https://agents.example/api/agents/c/move"),
       expect.objectContaining({ method: "POST" }),
     )
 
@@ -366,21 +403,25 @@ describe("agent api turn loop", () => {
       throw new Error("expected agent request bodies to be serialized json")
     }
 
-    const firstRequestBody = JSON.parse(firstRequest.body) as MazeActionState
-    const secondRequestBody = JSON.parse(secondRequest.body) as MazeActionState
-    const thirdRequestBody = JSON.parse(thirdRequest.body) as MazeActionState
+    const firstRequestBody = JSON.parse(firstRequest.body) as SerializedRequestBody
+    const secondRequestBody = JSON.parse(secondRequest.body) as SerializedRequestBody
+    const thirdRequestBody = JSON.parse(thirdRequest.body) as SerializedRequestBody
 
-    expect(firstRequestBody.prompt).toContain("Your name is Agent A.")
-    expect(firstRequestBody.model).toBe("llama3.2")
-    expect(firstRequestBody.stream).toBe(false)
-    expect(firstRequestBody.format).toBe("json")
-    expect(firstRequestBody.prompt).toContain("Your name is Agent A.")
-    expect(secondRequestBody.prompt).toContain("Your name is Agent B.")
-    expect(secondRequestBody.model).toBe("gemma4")
-    expect(secondRequestBody.prompt).toContain("Your name is Agent B.")
-    expect(thirdRequestBody.prompt).toContain("Your name is Agent C.")
-    expect(thirdRequestBody.model).toBe("qwen3")
-    expect(thirdRequestBody.prompt).toContain("Your name is Agent C.")
+    expect(firstRequestBody).toEqual(expect.objectContaining({
+      model: "llama3.2",
+      stream: false,
+      think: false,
+    }))
+    expect(secondRequestBody).toEqual(expect.objectContaining({
+      model: "gemma4",
+      stream: false,
+      think: false,
+    }))
+    expect(thirdRequestBody).toEqual(expect.objectContaining({
+      model: "qwen3",
+      stream: false,
+      think: false,
+    }))
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       1,
       { type: "MoveRight" },
@@ -399,7 +440,7 @@ describe("agent api turn loop", () => {
       dispatch,
       expect.objectContaining({ model: "qwen3", playerName: "Agent C" }),
     )
-    expect(onActionState).toHaveBeenLastCalledWith(
+    expect(onActionResult).toHaveBeenLastCalledWith(
       expect.objectContaining({ lastPlayerName: "Agent C" }),
     )
     expect(onActiveAgentChange).toHaveBeenNthCalledWith(1, agentConfigs[0])
@@ -413,51 +454,44 @@ describe("agent api turn loop", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         json: vi.fn().mockResolvedValue({
-          moves: ["MoveRight", "MoveDown"],
+          message: {
+            role: "assistant",
+            content: "{\"moves\":[\"MoveRight\",\"MoveDown\"]}",
+          },
         }),
       }),
     )
 
     const dispatchAgentAction = vi.fn(() =>
-      createActionState({
-        currentCell: { row: 0, col: 1 },
-        destinationCell: { row: 0, col: 1 },
+      createActionResult({
         lastMoveStatus: "reached-target",
-        status: "won",
       }),
     )
-    const onActionState = vi.fn()
+    const onActionResult = vi.fn()
 
     const poller = handleAgentTurnLoop({
       __elements: { body: document.createElement("div") },
-      __commitAgentTurn: vi.fn((decayedMovesCount: number) =>
-        createActionState({
-          currentCell: { row: 0, col: 1 },
-          destinationCell: { row: 0, col: 1 },
-          decayedMovesCount,
-          status: "won",
-        }),
-      ),
+      __commitAgentTurn: vi.fn(),
       __dispatch: vi.fn() as MazeActionDispatch,
       __dispatchAgentAction: dispatchAgentAction,
-      __onActionState: onActionState,
+      __onActionResult: onActionResult,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: enabledAgentConfigs,
-      __readActionState: () => createActionState(),
+      __readState: () => createState(),
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(dispatchAgentAction).toHaveBeenCalledTimes(1)
 
     expect(dispatchAgentAction).toHaveBeenCalledTimes(1)
-    expect(onActionState).toHaveBeenCalledWith(
+    expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "reached-target",
-        status: "won",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown"],
-        lastValidMoveIndex: 0,
-        decayedMovesCount: 2,
+        lastAppliedMoveIndex: 0,
+        chargedMovesCount: 1,
       }),
     )
   })
@@ -467,39 +501,39 @@ describe("agent api turn loop", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: vi.fn().mockResolvedValue({ moves: ["MoveSideways"] }),
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveSideways\"]}" },
+        }),
       }),
     )
 
     const dispatchAgentAction = vi.fn()
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
-      createActionState({ decayedMovesCount }),
-    )
-    const onActionState = vi.fn()
+    const commitAgentTurn = vi.fn()
+    const onActionResult = vi.fn()
 
     const poller = handleAgentTurnLoop({
       __elements: { body: document.createElement("div") },
       __commitAgentTurn: commitAgentTurn,
       __dispatch: vi.fn() as MazeActionDispatch,
       __dispatchAgentAction: dispatchAgentAction,
-      __onActionState: onActionState,
+      __onActionResult: onActionResult,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: enabledAgentConfigs,
-      __readActionState: () => createActionState(),
+      __readState: () => createState(),
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(commitAgentTurn).toHaveBeenCalledWith(
+      CONFIG.scoring.agentPenaltyDecayUnits,
+    )
 
     expect(dispatchAgentAction).not.toHaveBeenCalled()
-    expect(commitAgentTurn).toHaveBeenCalledWith(
-      CONFIG.runtime.agentApiMistakePenaltyMoves,
-    )
-    expect(onActionState).toHaveBeenCalledWith(
+    expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "malformed-response",
-        decayedMovesCount: CONFIG.runtime.agentApiMistakePenaltyMoves,
+        chargedMovesCount: CONFIG.scoring.agentPenaltyDecayUnits,
       }),
     )
   })
@@ -514,10 +548,8 @@ describe("agent api turn loop", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
-      createActionState({ decayedMovesCount }),
-    )
-    const onActionState = vi.fn()
+    const commitAgentTurn = vi.fn()
+    const onActionResult = vi.fn()
     const agentConfigs = enabledAgentConfigs()
     const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
 
@@ -527,21 +559,22 @@ describe("agent api turn loop", () => {
       __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
       __dispatch: vi.fn() as MazeActionDispatch,
       __dispatchAgentAction: vi.fn(),
-      __onActionState: onActionState,
+      __onActionResult: onActionResult,
       __readAgentConfigs: () => agentConfigs,
-      __readActionState: () => createActionState(),
+      __readState: () => createState(),
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-    await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiResponseTimeoutMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(testAgentResponseTimeoutMs)
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
-    expect(onActionState).toHaveBeenCalledWith(
+    expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
-        decayedMovesCount: 0,
+        chargedMovesCount: 0,
         lastMoveStatus: "network-error",
         lastPlayerName: "Blue",
       }),
@@ -557,10 +590,8 @@ describe("agent api turn loop", () => {
       }),
     )
 
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
-      createActionState({ decayedMovesCount }),
-    )
-    const onActionState = vi.fn()
+    const commitAgentTurn = vi.fn()
+    const onActionResult = vi.fn()
     const agentConfigs = enabledAgentConfigs()
     const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
 
@@ -570,20 +601,21 @@ describe("agent api turn loop", () => {
       __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
       __dispatch: vi.fn() as MazeActionDispatch,
       __dispatchAgentAction: vi.fn(),
-      __onActionState: onActionState,
+      __onActionResult: onActionResult,
       __readAgentConfigs: () => agentConfigs,
-      __readActionState: () => createActionState(),
+      __readState: () => createState(),
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
-    expect(onActionState).toHaveBeenCalledWith(
+    expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
-        decayedMovesCount: 0,
+        chargedMovesCount: 0,
         lastMoveStatus: "network-error",
         lastPlayerName: "Blue",
       }),
@@ -596,10 +628,8 @@ describe("agent api turn loop", () => {
       vi.fn().mockRejectedValue(new TypeError("network failed")),
     )
 
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
-      createActionState({ decayedMovesCount }),
-    )
-    const onActionState = vi.fn()
+    const commitAgentTurn = vi.fn()
+    const onActionResult = vi.fn()
     const agentConfigs = enabledAgentConfigs()
     const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
 
@@ -609,20 +639,21 @@ describe("agent api turn loop", () => {
       __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
       __dispatch: vi.fn() as MazeActionDispatch,
       __dispatchAgentAction: vi.fn(),
-      __onActionState: onActionState,
+      __onActionResult: onActionResult,
       __readAgentConfigs: () => agentConfigs,
-      __readActionState: () => createActionState(),
+      __readState: () => createState(),
     })
 
     poller.__setAttached(true)
-    poller.__scheduleNextAgentTurn()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
-    expect(onActionState).toHaveBeenCalledWith(
+    expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
-        decayedMovesCount: 0,
+        chargedMovesCount: 0,
         lastMoveStatus: "network-error",
         lastPlayerName: "Blue",
       }),

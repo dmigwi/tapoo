@@ -44,8 +44,8 @@ export function viewportFitStatus(
     return "too-small-all"
   }
 
-  const lengthTooSmall = dimensions.length > terminalSize.length
-  const widthTooSmall = dimensions.width > terminalSize.width
+  const lengthTooSmall = dimensions.numCols > terminalSize.numCols
+  const widthTooSmall = dimensions.numRows > terminalSize.numRows
 
   if (lengthTooSmall && widthTooSmall) {
     return "too-small-all"

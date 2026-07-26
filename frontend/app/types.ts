@@ -12,6 +12,9 @@ export type PersistedGameStatus =
 export type GameStatus = PersistedGameStatus | "boot" | "too-small"
 
 // CellCoordinate represents one logical cell position using zero-based row and column indexes.
+// It stays independent from RenderGridPoint because the two spaces scale differently: a single
+// logical cell spans multiple rendered grid points (walls plus path), so converting between them
+// requires an explicit multiply/divide by the cell span rather than a field rename.
 export type CellCoordinate = {
   row: number
   col: number
@@ -20,18 +23,21 @@ export type CellCoordinate = {
 // TraversalHistoryEntry records one chronological logical-cell visit for the named player.
 export type TraversalHistoryEntry = CellCoordinate & {
   playerName: string
+  openMoves: MoveAction[]
 }
 
 // RenderGridPoint represents one drawn maze-grid point using positive x/y coordinates.
+// It stays independent from CellCoordinate because it addresses the rendered maze grid (walls
+// and paths included), not logical cells; see CellCoordinate for why the two must not be merged.
 export type RenderGridPoint = {
   x: number
   y: number
 }
 
-// BaseDimensions captures raw length and width, including viewport or terminal room.
+// BaseDimensions captures raw numCols and numRows, including viewport or terminal room.
 export type BaseDimensions = {
-  length: number
-  width: number
+  numCols: number
+  numRows: number
 }
 
 // MazeDimensions captures a concrete maze shape and its logical cell area.
@@ -147,6 +153,7 @@ export type PersistedRound = {
   winSummary?: string
   scoreDecayUnits?: number
   agentRequestCount?: number
+  cumulativeRoundCount?: number
 }
 
 // PersistedGameSetup stores the progress fields usually loaded together before a round starts.
@@ -174,8 +181,8 @@ export type PersistedSnapshot = {
 
 // AgentExpectedResponseSchema documents the one supported prediction payload using JSON Schema.
 export type AgentExpectedResponseSchema = {
-  $schema: "https://json-schema.org/draft/2020-12/schema"
   type: "object"
+  description?: string
   additionalProperties: false
   required: ["moves"]
   properties: {
@@ -192,7 +199,6 @@ export type AgentExpectedResponseSchema = {
 
 // AgentSubmittedMovesSchema documents the replay records Tapoo returns after processing moves.
 export type AgentSubmittedMovesSchema = {
-  $schema: "https://json-schema.org/draft/2020-12/schema"
   type: "array"
   description: string
   items: {
@@ -207,10 +213,16 @@ export type AgentApiConfig = {
   id: number
   playerName: string
   model: string
-  endpoint: string
+  endpoint: URL
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number
+  // gameLevel and cumulativeRoundCount are the level and round requestsCount was last tracked against; a
+  // mismatch on either against the current round means the agent's efficiency tracking resets.
+  // Level alone can't tell a retry of the same level apart from continuing it, hence cumulativeRoundCount.
+  gameLevel?: number
+  cumulativeRoundCount?: number
+  requestsCount?: number
 }
 
 // AgentSeat represents one fixed roster slot; null means the seat is empty.
@@ -219,30 +231,16 @@ export type AgentSeat = {
   agent: AgentApiConfig | null
 }
 
-// MazeActionState is the flattened agent-api payload that combines live maze context with replay results.
-export type MazeActionState = {
-  level: number
-  status: GameStatus
-  score: number
-  model: string
-  stream: false
-  format: "json"
+// MazeActionResult stores only the previous command/replay outcome; live maze facts stay in State.
+export type MazeActionResult = {
   lastPlayerName?: string
-  currentCell: CellCoordinate | null
-  destinationCell: CellCoordinate | null
-  traversalHistory: TraversalHistoryEntry[]
-
-  prompt: string
-  recommendedAvgPredictionLimit: number
-  expectedResponseSchema: AgentExpectedResponseSchema
-
-  lastSubmittedMovesIndexBase?: 0
+  lastReplayStartIndex?: 0
   lastSubmittedMovesSchema?: AgentSubmittedMovesSchema
   lastSubmittedMoves?: string[]
   lastMoveStatus?: MoveStatus
-  lastValidMoveIndex?: number | null
+  lastAppliedMoveIndex?: number | null
   visitedBefore?: boolean
-  decayedMovesCount?: number
+  chargedMovesCount?: number
 }
 
 // MazeActionDispatchOptions lets each dispatched command opt into feedback when it needs it.
@@ -255,19 +253,19 @@ export type MazeActionDispatchOptions = {
 export type MazeActionDispatch = (
   action: MazeAction,
   options: MazeActionDispatchOptions,
-) => MazeActionState | null
+) => MazeActionResult | null
 
 // MazeActionControl defines the production contract that each browser action-control mode implements.
 export interface MazeActionControl {
   name: MazeControlModeName
   bindActionDispatch: (
     dispatch: MazeActionDispatch,
-    readActionState: () => MazeActionState,
-    commitAgentTurn: (decayedMovesCount: number) => MazeActionState,
+    readState: () => State,
+    commitAgentTurn: (chargedMovesCount: number) => void,
   ) => void
-  readLastActionState: () => MazeActionState | null
-  recordActionState: (actionState: MazeActionState) => void
-  clearActionState: () => void
+  readLastActionResult: () => MazeActionResult | null
+  recordActionResult: (actionResult: MazeActionResult) => void
+  clearActionResult: () => void
 }
 
 // State is the browser runtime's single source of truth for one session.
@@ -293,6 +291,10 @@ export type State = {
   winSummary: string
   scoreDecayUnits: number
   agentRequestCount: number
+  // cumulativeRoundCount is the total number of rounds played since the last progress reset —
+  // every level start and every retry counts once. It also lets recordAgentTurnStats tell a
+  // genuinely new attempt apart from a resumed one.
+  cumulativeRoundCount: number
 
   clock: GameClock | null
 }
@@ -324,6 +326,9 @@ export type TerminalElements = {
 
 // AgentElements are only used by the agent-api page overlays and seat roster.
 export type AgentElements = {
+  agentSeatsBody?: HTMLElement
+  tapooLogsReset?: HTMLButtonElement
+  tapooLogsDownload?: HTMLButtonElement
   agentSeatRoster?: HTMLElement
   agentConfigForm?: HTMLFormElement
   agentConfigTitle?: HTMLElement
@@ -358,6 +363,24 @@ export type SummaryComparisonTemplates = {
   newRecord: string
   matchedBest: string
   behindBest: string
+}
+
+// LogLevel classifies the severity of a Tapoo log entry for filtering and analysis.
+export type LogLevel = "error" | "info" | "warn"
+
+// LogEntry is one structured record in the Tapoo log buffer.
+// timestamp is Unix time in seconds — machine-readable and suitable for sorting or arithmetic.
+// time is the same instant expressed in local timezone as a human-readable string, so downloaded
+// logs are interpretable without UTC conversion.
+// payload is the human-readable description of what was logged.
+// details holds arbitrary context — request payloads, response bodies, error objects — and is
+// omitted when there is nothing beyond the payload to record.
+export type LogEntry = {
+  timestamp: number
+  time: string
+  type: LogLevel
+  payload: string
+  details?: unknown
 }
 
 // AppConfig gathers translatable copy and shared runtime constants.
@@ -430,6 +453,7 @@ export type AppConfig = {
     agentEnabledLabel: string
     agentDisabledLabel: string
     maxSeats: number
+    maxModelDisplayLength: number
     playerNameMinLength: number
     playerNameMaxLength: number
     playerNameLabel: string
@@ -474,6 +498,8 @@ export type AppConfig = {
     budgetMultiplier: number
     percentScale: number
     retentionFullScaleUnits: number
+    agentPenaltyDecayUnits: number
+    agentBaseDecayUnits: number
   }
   timing: {
     refreshInterval: number
@@ -502,9 +528,15 @@ export type AppConfig = {
         agentConfigs: string
         gameSetup: string
         winMetrics: string
+        tapooLog: string
       }
     }
-    agentApiMistakePenaltyMoves: number
     interactivePlayerName: string
+    modelConfig: {
+      contextWindowFloor: number
+      contextWindowAreaMultiplier: number
+      temperature: number
+      numPredict: number
+    }
   }
 }

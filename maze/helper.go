@@ -60,20 +60,20 @@ func (config *Dimensions) CreatePlayingField(weight WallWeight) ([][]string, err
 		return nil, err
 	}
 
-	rows := (cellSpan * config.Width) + 1
+	rows := (cellSpan * config.NumRows) + 1
 	data := make([][]string, 0, rows)
 	passage := strings.Repeat(" ", cellPathWidth)
-	rowCapacity := ((config.Length + 1) * cellSpan)
+	rowCapacity := ((config.NumCols + 1) * cellSpan)
 
 	for rowIndex := range rows {
 		row := make([]string, 0, rowCapacity)
 
-		for columnIndex := 0; columnIndex <= config.Length; columnIndex++ {
+		for columnIndex := 0; columnIndex <= config.NumCols; columnIndex++ {
 			row = append(row, chars[0])
 			switch {
-			case columnIndex != config.Length && rowIndex%2 == 0:
+			case columnIndex != config.NumCols && rowIndex%2 == 0:
 				row = append(row, chars[1])
-			case columnIndex != config.Length && rowIndex%2 != 0:
+			case columnIndex != config.NumCols && rowIndex%2 != 0:
 				row = append(row, passage)
 			default:
 				row = append(row, "\n")
@@ -90,13 +90,13 @@ func (config *Dimensions) CreatePlayingField(weight WallWeight) ([][]string, err
 // A cell address is defined by the nine coordinates, where each of them represents the
 // actual position of a terminal printable character that becomes a part of the maze.
 func (config *Dimensions) GetCellAddress(cellNo int) CellAddress {
-	if cellNo <= 0 || cellNo > (config.Length*config.Width) {
+	if cellNo <= 0 || cellNo > (config.NumCols*config.NumRows) {
 		return CellAddress{}
 	}
 
 	// Cells are numbered row by row, so zero-based integer division and remainder identify the cell slot.
-	row := (((cellNo - 1) / config.Length) + 1) * cellSpan
-	column := (((cellNo - 1) % config.Length) + 1) * cellSpan
+	row := (((cellNo - 1) / config.NumCols) + 1) * cellSpan
+	column := (((cellNo - 1) % config.NumCols) + 1) * cellSpan
 
 	return CellAddress{
 		BottomCenter: [2]int{row, column - 1},
@@ -113,21 +113,21 @@ func (config *Dimensions) GetCellAddress(cellNo int) CellAddress {
 
 // GetCellNeighbors fetches all the possible neighbors of the provided cell.
 func (config *Dimensions) GetCellNeighbors(cellNo int) CellNeighbors {
-	if cellNo <= 0 || cellNo > (config.Length*config.Width) {
+	if cellNo <= 0 || cellNo > (config.NumCols*config.NumRows) {
 		return CellNeighbors{}
 	}
 
 	// Neighbor numbering follows the same row-major layout as the generated maze cells.
-	column := (cellNo - 1) % config.Length
+	column := (cellNo - 1) % config.NumCols
 	var (
 		right     = cellNo + 1
 		left      = cellNo - 1
-		top       = cellNo - config.Length
-		bottom    = cellNo + config.Length
+		top       = cellNo - config.NumCols
+		bottom    = cellNo + config.NumCols
 		neighbors = CellNeighbors{}
 	)
 
-	if column < config.Length-1 {
+	if column < config.NumCols-1 {
 		neighbors.Right = right
 	}
 
@@ -139,7 +139,7 @@ func (config *Dimensions) GetCellNeighbors(cellNo int) CellNeighbors {
 		neighbors.Top = top
 	}
 
-	if bottom <= (config.Length * config.Width) {
+	if bottom <= (config.NumCols * config.NumRows) {
 		neighbors.Bottom = bottom
 	}
 

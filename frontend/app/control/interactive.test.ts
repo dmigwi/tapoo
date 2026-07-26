@@ -1,26 +1,8 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { CONFIG } from "../config"
 import { createInteractiveMode } from "./interactive"
-import type { MazeActionState } from "../types"
-
-const expectedResponseSchema: MazeActionState["expectedResponseSchema"] = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  type: "object",
-  additionalProperties: false,
-  required: ["moves"],
-  properties: {
-    moves: {
-      type: "array",
-      minItems: 1,
-      items: {
-        type: "string",
-        enum: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
-      },
-    },
-  },
-}
-
+import type { MazeActionResult, State } from "../types"
 
 // createButton reproduces the data attributes used by keyboard and touch controls.
 function createButton({
@@ -43,29 +25,48 @@ function createButton({
   return button
 }
 
-// createActionState supplies the shared flattened agent payload shape expected by the control contract.
-function createActionState(
-  overrides: Partial<MazeActionState> = {},
-): MazeActionState {
+// createActionResult supplies the small replay payload shape expected by the control contract.
+function createActionResult(
+  overrides: Partial<MazeActionResult> = {},
+): MazeActionResult {
   return {
-    currentCell: null,
-    destinationCell: null,
-    traversalHistory: [],
-    level: 1,
-    score: 0,
-    model: "",
-    stream: false,
-    format: "json",
-    status: "boot",
-    recommendedAvgPredictionLimit: 0,
-    prompt: "",
-    expectedResponseSchema,
     ...overrides,
+  }
+}
+
+function createState(): State {
+  return {
+    agentRequestCount: 0,
+    cumulativeRoundCount: 0,
+    bestWinRequestCount: null,
+    bestWinRetentionUnits: null,
+    canResume: false,
+    clock: null,
+    controlMode: CONFIG.runtime.controlModes.interactive,
+    finalPosition: null,
+    lastAttemptRetentionUnits: null,
+    lastRoundScore: 0,
+    lastWinRequestCount: null,
+    level: 1,
+    maze: null,
+    mazeDimensions: null,
+    playerPosition: null,
+    score: 0,
+    scoreDecayUnits: 0,
+    status: "boot",
+    traversalHistory: [],
+    wallWeight: 1,
+    winSummary: "",
   }
 }
 
 // These tests guard the interactive-mode translation layer and contract shape.
 describe("interactive control mode", () => {
+  afterEach(() => {
+    document.body.replaceChildren()
+    vi.restoreAllMocks()
+  })
+
   it("implements the shared control mode contract", () => {
     const elements = {
       app: document.createElement("div"),
@@ -82,9 +83,9 @@ describe("interactive control mode", () => {
     const mode = createInteractiveMode(elements)
 
     expect(mode.name).toBe(CONFIG.runtime.controlModes.interactive)
-    expect(mode.readLastActionState()).toBeNull()
+    expect(mode.readLastActionResult()).toBeNull()
 
-    mode.bindActionDispatch(dispatch, vi.fn(() => createActionState()), vi.fn(() => createActionState()))
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn())
     elements.controls[0].click()
     elements.touchButtons[0].click()
     window.dispatchEvent(
@@ -109,10 +110,10 @@ describe("interactive control mode", () => {
       type: "MoveUp",
     }, { playerName: "Self" })
 
-    mode.recordActionState(createActionState({
+    mode.recordActionResult(createActionResult({
       lastMoveStatus: "applied",
     }))
-    expect(mode.readLastActionState()).toBeNull()
+    expect(mode.readLastActionResult()).toBeNull()
   })
 
   it("ignores unsupported button and keyboard actions", () => {
@@ -130,7 +131,7 @@ describe("interactive control mode", () => {
 
     const mode = createInteractiveMode(elements)
 
-    mode.bindActionDispatch(dispatch, vi.fn(() => createActionState()), vi.fn(() => createActionState()))
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn())
     elements.controls[0].click()
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -140,6 +141,39 @@ describe("interactive control mode", () => {
     )
 
     expect(dispatch).not.toHaveBeenCalled()
+  })
+
+  it("handles human controls only while the terminal app is focused", () => {
+    const restartButton = createButton({ action: "restart" })
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [restartButton],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [],
+      touchControls: document.createElement("div"),
+    }
+    const outsideInput = document.createElement("input")
+    elements.app.tabIndex = 0
+    elements.app.append(restartButton)
+    document.body.append(elements.app, outsideInput)
+    const dispatch = vi.fn()
+
+    const mode = createInteractiveMode(elements)
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn())
+
+    outsideInput.focus()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
+
+    expect(dispatch).not.toHaveBeenCalled()
+
+    elements.app.focus()
+    restartButton.click()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
+
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "restart" }, { playerName: "Self" })
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: "pause" }, { playerName: "Self" })
   })
 
   it("rebinds controls without keeping stale listeners alive", () => {
@@ -158,10 +192,10 @@ describe("interactive control mode", () => {
 
     const mode = createInteractiveMode(elements)
 
-    const readActionState = vi.fn(() => createActionState())
+    const readState = vi.fn(() => createState())
 
-    mode.bindActionDispatch(firstDispatch, readActionState, vi.fn(() => createActionState()))
-    mode.bindActionDispatch(secondDispatch, readActionState, vi.fn(() => createActionState()))
+    mode.bindActionDispatch(firstDispatch, readState, vi.fn())
+    mode.bindActionDispatch(secondDispatch, readState, vi.fn())
     elements.controls[0].click()
 
     expect(firstDispatch).not.toHaveBeenCalled()

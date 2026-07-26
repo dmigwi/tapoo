@@ -3,6 +3,7 @@ import {
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
 } from "./config"
+import { normalizeAgentEndpoint } from "./agent/config"
 import { isAgentSeatId } from "./agent/seats"
 import { canPersistRoundStatus, isAgentApiMode } from "./status"
 import {
@@ -146,8 +147,8 @@ function hasValidAgentPlayerName(playerName: string): boolean {
   )
 }
 
-// isAgentApiConfig validates one persisted HTTP agent configuration.
-function isAgentApiConfig(value: unknown): value is AgentApiConfig {
+// normalizeAgentApiConfig validates persisted data and restores endpoint as a URL object.
+function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   if (
     typeof value !== "object" ||
     value === null ||
@@ -157,24 +158,52 @@ function isAgentApiConfig(value: unknown): value is AgentApiConfig {
     !("endpoint" in value) ||
     !("enabled" in value)
   ) {
-    return false
+    return null
   }
 
-  const disabledReason = "disabledReason" in value ? value.disabledReason : undefined
+  const disabledReasonValue = "disabledReason" in value ? value.disabledReason : undefined
   const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
+  const gameLevel = "gameLevel" in value ? value.gameLevel : undefined
+  const requestsCount = "requestsCount" in value ? value.requestsCount : undefined
+  const cumulativeRoundCount = "cumulativeRoundCount" in value ? value.cumulativeRoundCount : undefined
+  const endpointValue = value.endpoint
+  const endpoint =
+    endpointValue instanceof URL
+      ? normalizeAgentEndpoint(endpointValue.href)
+      : typeof endpointValue === "string"
+        ? normalizeAgentEndpoint(endpointValue)
+        : null
 
-  return (
+  if (
     typeof value.id === "number" &&
     Number.isInteger(value.id) && value.id >= 1 &&
     typeof value.playerName === "string" &&
     hasValidAgentPlayerName(value.playerName.trim()) &&
     typeof value.model === "string" && value.model.length > 0 &&
-    typeof value.endpoint === "string" && value.endpoint.length > 0 &&
-    typeof value.enabled === "boolean" &&
-    (disabledReason === undefined || disabledReason === "network-error") &&
-    (lastErrorAt === undefined ||
-      (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt)))
-  )
+    endpoint !== null && typeof value.enabled === "boolean" &&
+    (disabledReasonValue === undefined || disabledReasonValue === "network-error") &&
+    (lastErrorAt === undefined || (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt))) &&
+    (gameLevel === undefined || (typeof gameLevel === "number" && Number.isInteger(gameLevel) && gameLevel >= 0)) &&
+    (cumulativeRoundCount === undefined || (typeof cumulativeRoundCount === "number" && Number.isInteger(cumulativeRoundCount) && cumulativeRoundCount >= 0)) &&
+    (requestsCount === undefined || (typeof requestsCount === "number" && Number.isInteger(requestsCount) && requestsCount >= 0))
+  ) {
+    const disabledReason = disabledReasonValue === "network-error" ? disabledReasonValue : undefined
+
+    return {
+      id: value.id,
+      playerName: value.playerName.trim(),
+      model: value.model,
+      endpoint,
+      enabled: value.enabled,
+      ...(disabledReason ? { disabledReason } : {}),
+      ...(typeof gameLevel === "number" ? { gameLevel } : {}),
+      ...(typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
+      ...(typeof requestsCount === "number" ? { requestsCount } : {}),
+      ...(typeof cumulativeRoundCount === "number" ? { cumulativeRoundCount } : {}),
+    }
+  }
+
+  return null
 }
 
 // normalizeAgentApiConfigs keeps valid fixed-seat occupants without reassigning seat ids.
@@ -187,9 +216,10 @@ function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
   const seenPlayerNames = new Set<string>()
   const normalizedConfigs: AgentApiConfig[] = []
 
-  for (const config of configs) {
+  for (const rawConfig of configs) {
+    const config = normalizeAgentApiConfig(rawConfig)
     if (
-      !isAgentApiConfig(config) ||
+      !config ||
       !isAgentSeatId(config.id) ||
       seenIds.has(config.id)
     ) {
@@ -266,6 +296,52 @@ export function disableAgentApiConfigForNetworkError(
 
   savePersistedAgentApiConfigs(nextConfigs)
   return nextConfigs
+}
+
+// recordAgentTurnStats persists one agent's post-turn request count, resetting it when the
+// current level or round no longer matches what requestsCount was last tracked against.
+//
+// Both gameLevel and cumulativeRoundCount are required in the isSameAttempt check below — do
+// not simplify this to cumulativeRoundCount alone. Reasoning:
+//   - Level alone can't tell a retry of the same level apart from continuing it, hence
+//     cumulativeRoundCount.
+//   - cumulativeRoundCount alone looks sufficient (it's a strictly increasing, never-reused
+//     counter within one continuous session) but is NOT safe across a "Reset Progress":
+//     clearPersistedSnapshot never touches the separate agentConfigs storage namespace, so an
+//     agent's stored gameLevel/cumulativeRoundCount survive a reset untouched, while
+//     state.cumulativeRoundCount restarts from 0 on the next page load (no persisted round to
+//     restore it from). A later session can therefore legitimately reach the same
+//     cumulativeRoundCount value an old, unrelated agent record already holds. gameLevel is
+//     what catches that collision, since the new round's level will almost never match the
+//     stale record's level. Dropping gameLevel would let a post-reset session silently inherit
+//     a stale requestsCount from a prior session, corrupting the batchEfficiencyLevel an agent
+//     is scored against.
+export function recordAgentTurnStats(
+  turnAgent: AgentApiConfig,
+  level: number,
+  cumulativeRoundCount: number,
+): AgentApiConfig {
+  let updatedAgent: AgentApiConfig = turnAgent
+
+  const nextConfigs = loadPersistedAgentApiConfigs().map((agent) => {
+    if (agent.id !== turnAgent.id) {
+      return agent
+    }
+
+    const isSameAttempt = agent.gameLevel === level && agent.cumulativeRoundCount === cumulativeRoundCount
+    const priorRequestsCount = isSameAttempt ? (agent.requestsCount ?? 0) : 0
+    updatedAgent = {
+      ...agent,
+      gameLevel: level,
+      cumulativeRoundCount,
+      requestsCount: priorRequestsCount + 1,
+    }
+
+    return updatedAgent
+  })
+
+  savePersistedAgentApiConfigs(nextConfigs)
+  return updatedAgent
 }
 
 // Game progress preference persistence.
@@ -447,6 +523,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     winSummary: state.winSummary,
     scoreDecayUnits: state.scoreDecayUnits,
     agentRequestCount: state.agentRequestCount,
+    cumulativeRoundCount: state.cumulativeRoundCount,
   }
 }
 
@@ -528,6 +605,52 @@ export function loadPersistedSnapshot(
   }
 }
 
+// Tapoo log persistence. Logs are scoped to the browser tab session: they survive page reloads
+// within the same tab but are discarded when the tab closes or tapooResetLogs is called.
+
+// loadTapooLog restores buffered log entries that survived a page reload within the same tab.
+export function loadTapooLog<T>(modeName: MazeControlModeName): T[] {
+  try {
+    const stored = window.sessionStorage.getItem(
+      storageKey(modeName, storageConfig.suffixes.tapooLog),
+    )
+    return stored ? (decodeStoredPayload<T[]>(stored) ?? []) : []
+  } catch {
+    return []
+  }
+}
+
+// saveTapooLog writes an arbitrary set of log entries to sessionStorage; used internally and
+// when restoring a known snapshot (e.g. after filtering or migration).
+export function saveTapooLog(modeName: MazeControlModeName, entries: unknown[]): void {
+  try {
+    window.sessionStorage.setItem(
+      storageKey(modeName, storageConfig.suffixes.tapooLog),
+      encodeStoredPayload(entries),
+    )
+  } catch {
+    // Quota exceeded or storage unavailable — the in-memory count is still accurate.
+  }
+}
+
+// appendTapooLogEntry reads the existing persisted entries, appends one new entry, and writes
+// the result back. Only the count is kept in memory; the full payload lives in sessionStorage.
+export function appendTapooLogEntry(modeName: MazeControlModeName, entry: unknown): void {
+  saveTapooLog(modeName, [...loadTapooLog<unknown>(modeName), entry])
+}
+
+// clearTapooLog removes the persisted log snapshot from sessionStorage; called by tapooResetLogs
+// so a deliberate reset clears both the in-memory buffer and its sessionStorage copy.
+export function clearTapooLog(modeName: MazeControlModeName): void {
+  try {
+    window.sessionStorage.removeItem(
+      storageKey(modeName, storageConfig.suffixes.tapooLog),
+    )
+  } catch {
+    // ignore
+  }
+}
+
 // clearPersistedSnapshot clears both long-lived preferences and the active round.
 export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   try {
@@ -542,4 +665,5 @@ export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   }
 
   clearPersistedRound(modeName)
+  clearTapooLog(modeName)
 }

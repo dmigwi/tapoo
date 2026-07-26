@@ -4,7 +4,7 @@ import type {
   MazeAction,
   MazeActionControl,
   MazeActionDispatch,
-  MazeActionState,
+  MazeActionResult,
 } from "../types"
 import {
   agentConfigValidationError,
@@ -22,6 +22,7 @@ import {
 } from "../agent/seats"
 import {
   isFormControlTarget,
+  isMazeControlFocused,
   releaseAllActionBindings,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
@@ -32,6 +33,12 @@ import {
   savePersistedAgentApiConfigs,
 } from "../storage"
 import { CONFIG } from "../config"
+import {
+  subscribeTapooLogs,
+  tapooDownloadLogs,
+  tapooLogCount,
+  tapooResetLogs,
+} from "../logs"
 import { isRunningStatus } from "../status"
 
 const { agentConfig, runtime } = CONFIG
@@ -49,6 +56,7 @@ export function createAgentMode(
     disableAgentApiConfigForNetworkError(agent)
   },
 ): MazeActionControl {
+  // These fields track DOM bindings and overlay state for the currently mounted agent mode.
   let attached = false
   let agentMovePoller: AgentMovePoller | null = null
   let activeAgentId: number | null = null
@@ -63,9 +71,12 @@ export function createAgentMode(
   let agentFormCloseHandler: (() => void) | null = null
   let agentFormSubmitHandler: ((event: Event) => void) | null = null
   let agentFormOuterClickHandler: ((event: MouseEvent) => void) | null = null
-  let lastActionState: MazeActionState | null = null
+  let releaseLogSubscription: (() => void) | null = null
+  let lastActionResult: MazeActionResult | null = null
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null
   const buttonBindings: AgentButtonBinding[] = []
+
+  // Open overlays temporarily own focus, so normal app refocus should pause until they close.
   const isAgentConfigFormOpen = (): boolean => elements.agentConfigForm?.hidden === false
   const isAgentDeleteDialogOpen = (): boolean => elements.agentDeleteDialog?.hidden === false
   const focusCurrentApp = (): void => {
@@ -86,6 +97,11 @@ export function createAgentMode(
         agentMovePoller?.__setAttached(false)
         agentMovePoller?.__stopPolling()
         elements.body.classList.remove("terminal-body--agent-form-active")
+        if (elements.agentSeatsBody) {
+          elements.agentSeatsBody.hidden = true
+        }
+        releaseLogSubscription?.()
+        releaseLogSubscription = null
         if (elements.agentSeatRoster && agentRosterClickHandler) {
           elements.agentSeatRoster.removeEventListener("click", agentRosterClickHandler)
           agentRosterClickHandler = null
@@ -136,20 +152,20 @@ export function createAgentMode(
   }
 
   return {
-    // This MazeActionControl exposes the agent-api mode name, binds local session actions, and stores feedback for agents.
     // name lets the runtime identify which MazeActionControl implementation is active.
     name: runtime.controlModes.agentApi,
     // bindActionDispatch starts the HTTP-driven move loop while keeping session controls local.
     bindActionDispatch(
       dispatch: MazeActionDispatch,
-      readActionState,
+      readState,
       commitAgentTurn,
     ) {
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
 
-      const recordLastActionState = (actionState: MazeActionState): void => {
-        lastActionState = actionState
+      // recordLastActionResult captures the move outcome so agents and replays share one source of truth.
+      const recordLastActionResult = (actionResult: MazeActionResult): void => {
+        lastActionResult = actionResult
       }
 
       // Agent-owned moves always ask for feedback so the next API request has fresh context.
@@ -157,46 +173,68 @@ export function createAgentMode(
         action: MazeAction,
         nextDispatch: MazeActionDispatch,
         agent: AgentApiConfig,
-      ): MazeActionState => {
-        const actionState = nextDispatch(action, {
+      ): MazeActionResult => {
+        const actionResult = nextDispatch(action, {
           model: agent.model,
           wantFeedback: true,
           playerName: agent.playerName,
         })
-        if (!actionState) {
+        if (!actionResult) {
           throw new Error("agent move dispatch must return feedback")
         }
 
-        recordLastActionState(actionState)
-        return actionState
+        recordLastActionResult(actionResult)
+        return actionResult
       }
 
+      // The poller owns turn timing; this mode supplies UI/storage hooks and move dispatch.
       agentMovePoller = handleAgentTurnLoop({
         __commitAgentTurn: commitAgentTurn,
         __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
         __dispatch: dispatch,
         __dispatchAgentAction: dispatchAgentAction,
         __elements: elements,
-        __onActionState: recordLastActionState,
+        __onActionResult: recordLastActionResult,
         __onActiveAgentChange: (agent) => {
           activeAgentId = agent?.id ?? null
           renderAgentRoster()
         },
         __readAgentConfigs: readAgentConfigs,
-        __readActionState: readActionState,
+        __readState: readState,
       })
 
+      // currentPlayingAgentId returns the active agent only while the round is running; idle and paused sessions have none.
+      const currentPlayingAgentId = (): number | null =>
+        isRunningStatus(readState().status) ? activeAgentId : null
+
+      // renderAgentRoster repaints the seat list with the latest config and highlights the currently playing agent.
+      const renderAgentRoster = (): void => {
+        if (elements.agentSeatsBody) {
+          elements.agentSeatsBody.hidden = false
+        }
+        renderAgentSeatRoster(
+          elements.agentSeatRoster,
+          readAgentConfigs(),
+          currentPlayingAgentId(),
+          readState().traversalHistory,
+        )
+      }
+
+      // syncCurrentPoller restarts the turn cycle after any config or session state change.
       const syncCurrentPoller = (): void => {
         if (!agentMovePoller) {
           return
         }
 
         agentMovePoller.__stopPolling()
+        renderAgentRoster()
         if (agentMovePoller.__shouldPollAgent()) {
+          // Human-triggered start/resume paths poll immediately so agent play begins without a stale wait.
           agentMovePoller.__scheduleNextAgentTurn()
         }
       }
 
+      // syncOverlayState toggles the body class that dims the terminal while an overlay is open.
       const syncOverlayState = (): void => {
         elements.body.classList.toggle(
           "terminal-body--agent-form-active",
@@ -204,8 +242,9 @@ export function createAgentMode(
         )
       }
 
+      // Agent management is human-owned, so opening a form pauses active agent traversal.
       const pauseIfRunning = (): void => {
-        if (!isRunningStatus(readActionState().status)) {
+        if (!isRunningStatus(readState().status)) {
           return
         }
 
@@ -213,10 +252,7 @@ export function createAgentMode(
         syncCurrentPoller()
       }
 
-      const renderAgentRoster = (): void => {
-        renderAgentSeatRoster(elements.agentSeatRoster, readAgentConfigs(), activeAgentId)
-      }
-
+      // clearAgentConfigStatus wipes any previous validation message before the next submission attempt.
       const clearAgentConfigStatus = (): void => {
         if (elements.agentConfigStatus) {
           elements.agentConfigStatus.textContent = ""
@@ -224,6 +260,7 @@ export function createAgentMode(
         }
       }
 
+      // syncAgentEnabledToggle keeps the toggle label and CSS state aligned with the checkbox value.
       const syncAgentEnabledToggle = (
         input: HTMLInputElement | undefined,
         label: HTMLElement | undefined,
@@ -239,10 +276,12 @@ export function createAgentMode(
         }
       }
 
+      // syncAgentConfigEnabledToggle specializes syncAgentEnabledToggle for the add/edit form fields.
       const syncAgentConfigEnabledToggle = (): void => {
         syncAgentEnabledToggle(elements.agentConfigEnabled, elements.agentConfigEnabledLabel)
       }
 
+      // resetAgentConfigForm clears all fields and the seat selection so the form is ready for a fresh add.
       const resetAgentConfigForm = (): void => {
         elements.agentConfigForm?.reset()
         selectedSeatId = null
@@ -253,6 +292,7 @@ export function createAgentMode(
         clearAgentConfigStatus()
       }
 
+      // setAgentConfigError surfaces a validation failure inside the form without a separate modal.
       const setAgentConfigError = (message: string): void => {
         if (!elements.agentConfigStatus) {
           return
@@ -262,6 +302,7 @@ export function createAgentMode(
         elements.agentConfigStatus.classList.add("agent-config-form__status--error")
       }
 
+      // closeAgentConfigForm hides the form, resets its state, and restores the overlay class.
       const closeAgentConfigForm = (): void => {
         if (!elements.agentConfigForm) {
           return
@@ -272,6 +313,7 @@ export function createAgentMode(
         syncOverlayState()
       }
 
+      // openAgentConfigForm pauses an active round, sets the target seat, and shows the add/edit overlay.
       const openAgentConfigForm = (seatId: number): void => {
         if (!elements.agentConfigForm) {
           return
@@ -288,6 +330,7 @@ export function createAgentMode(
         elements.agentConfigPlayerName?.focus()
       }
 
+      // closeAgentDeleteDialog hides the delete/disable dialog and clears the pending seat id.
       const closeAgentDeleteDialog = (): void => {
         if (!elements.agentDeleteDialog) {
           return
@@ -298,6 +341,7 @@ export function createAgentMode(
         syncOverlayState()
       }
 
+      // syncAgentDeleteOptions disables the enable/disable toggle when the delete checkbox is checked.
       const syncAgentDeleteOptions = (): void => {
         const shouldDelete = elements.agentDeleteConfirm?.checked ?? false
         if (elements.agentDeleteEnabled) {
@@ -308,16 +352,17 @@ export function createAgentMode(
         syncAgentEnabledToggle(elements.agentDeleteEnabled, elements.agentDeleteEnabledLabel)
       }
 
+      // openAgentDeleteDialog pauses an active round and opens the manage/delete overlay for the chosen seat.
       const openAgentDeleteDialog = (seatId: number): void => {
         const agent = readAgentConfigs().find((config) => config.id === seatId)
-        if (!agent || agent.id === activeAgentId || !elements.agentDeleteDialog) {
+        if (!agent || agent.id === currentPlayingAgentId() || !elements.agentDeleteDialog) {
           return
         }
 
         pauseIfRunning()
         deleteSeatId = seatId
         if (elements.agentDeleteTitle) {
-          elements.agentDeleteTitle.textContent = agentSeatManageLabel(agent)
+          elements.agentDeleteTitle.textContent = agentSeatManageLabel(agent, readState().traversalHistory)
         }
         if (elements.agentDeleteTarget) {
           elements.agentDeleteTarget.textContent = agentConfig.deleteMessageTemplate
@@ -334,12 +379,14 @@ export function createAgentMode(
         elements.agentDeleteApply?.focus()
       }
 
+      // bindAgentRoster attaches a single delegated click handler to the seat roster container.
       const bindAgentRoster = (): void => {
         if (!elements.agentSeatRoster) {
           return
         }
 
         agentRosterClickHandler = (event: MouseEvent): void => {
+          // Seats use event delegation because the roster is re-rendered after every config change.
           const target = event.target
           if (!(target instanceof Element)) {
             return
@@ -356,9 +403,7 @@ export function createAgentMode(
             return
           }
 
-          const seatIdToDelete = agentSeatIdFromDataset(
-            button.dataset.agentSeatDelete,
-          )
+          const seatIdToDelete = agentSeatIdFromDataset(button.dataset.agentSeatDelete)
           if (seatIdToDelete !== null) {
             openAgentDeleteDialog(seatIdToDelete)
           }
@@ -368,6 +413,57 @@ export function createAgentMode(
         renderAgentRoster()
       }
 
+      // bindLogButtons wires the reset and download controls to the agent-api log store.
+      const bindLogButtons = (): void => {
+        // syncResetButton disables both log controls when there is nothing to act on.
+        const syncResetButton = (): void => {
+          const hasLogs = tapooLogCount() > 0
+          if (elements.tapooLogsReset) {
+            elements.tapooLogsReset.disabled = !hasLogs
+          }
+          if (elements.tapooLogsDownload) {
+            elements.tapooLogsDownload.disabled = !hasLogs
+          }
+        }
+
+        // showButtonFeedback briefly pulses the button's acknowledged CSS class for visual confirmation.
+        const showButtonFeedback = (button: HTMLButtonElement): void => {
+          button.classList.remove("tapoo-logs-control--acknowledged")
+          void button.offsetWidth
+          button.classList.add("tapoo-logs-control--acknowledged")
+          window.setTimeout(() => {
+            button.classList.remove("tapoo-logs-control--acknowledged")
+          }, 420)
+        }
+
+        if (elements.tapooLogsReset) {
+          const onClick = (): void => {
+            showButtonFeedback(elements.tapooLogsReset)
+            tapooResetLogs(runtime.controlModes.agentApi)
+          }
+          buttonBindings.push({
+            __button: elements.tapooLogsReset,
+            __onClick: onClick,
+          })
+          elements.tapooLogsReset.addEventListener("click", onClick)
+        }
+
+        if (elements.tapooLogsDownload) {
+          const onClick = (): void => {
+            showButtonFeedback(elements.tapooLogsDownload)
+            tapooDownloadLogs(runtime.controlModes.agentApi)
+          }
+          buttonBindings.push({
+            __button: elements.tapooLogsDownload,
+            __onClick: onClick,
+          })
+          elements.tapooLogsDownload.addEventListener("click", onClick)
+        }
+
+        releaseLogSubscription = subscribeTapooLogs(syncResetButton)
+      }
+
+      // bindAgentConfigForm attaches submit, close, toggle, and outer-click handlers to the add/edit overlay.
       const bindAgentConfigForm = (): void => {
         const form = elements.agentConfigForm
         if (
@@ -384,6 +480,7 @@ export function createAgentMode(
         }
 
         agentFormSubmitHandler = (event: Event): void => {
+          // Empty seats are the only valid add target; occupied seats are managed in the dialog.
           event.preventDefault()
 
           const model = elements.agentConfigModel?.value.trim() ?? ""
@@ -415,11 +512,17 @@ export function createAgentMode(
             return
           }
 
+          const normalizedEndpoint = normalizeAgentEndpoint(endpoint)
+          if (!normalizedEndpoint) {
+            setAgentConfigError(agentConfig.invalidEndpointMessage)
+            return
+          }
+
           const nextAgent: AgentApiConfig = {
             id: selectedSeatId,
             playerName,
             model,
-            endpoint: normalizeAgentEndpoint(endpoint) ?? endpoint,
+            endpoint: normalizedEndpoint,
             enabled,
           }
 
@@ -453,6 +556,7 @@ export function createAgentMode(
         elements.body.addEventListener("click", agentFormOuterClickHandler)
       }
 
+      // bindAgentDeleteDialog wires the confirm-delete, enable-toggle, apply, and close handlers.
       const bindAgentDeleteDialog = (): void => {
         if (
           !elements.agentDeleteClose ||
@@ -468,6 +572,7 @@ export function createAgentMode(
         agentDeleteConfirmChangeHandler = syncAgentDeleteOptions
         agentDeleteEnabledChangeHandler = syncAgentDeleteOptions
         agentDeleteApplyHandler = (): void => {
+          // Delete wins over enable/disable edits because the seat becomes empty.
           if (!deleteSeatId) {
             closeAgentDeleteDialog()
             return
@@ -492,6 +597,7 @@ export function createAgentMode(
         elements.agentDeleteApply.addEventListener("click", agentDeleteApplyHandler)
       }
 
+      // closeActiveAgentOverlay dismisses whichever overlay is open and returns true so callers can skip further handling.
       const closeActiveAgentOverlay = (): boolean => {
         if (isAgentConfigFormOpen()) {
           closeAgentConfigForm()
@@ -506,11 +612,13 @@ export function createAgentMode(
         return false
       }
 
+      // handleFormControlKeydown intercepts keys inside form fields, allowing Escape to close overlays.
       const handleFormControlKeydown = (event: KeyboardEvent): boolean => {
         if (!isFormControlTarget(event.target)) {
           return false
         }
 
+        // Form fields keep normal typing behavior; Escape is reserved for closing overlays.
         if (event.key === "Escape" && closeActiveAgentOverlay()) {
           event.preventDefault()
         }
@@ -522,6 +630,10 @@ export function createAgentMode(
       const bindSessionButtons = (buttons: HTMLButtonElement[]): void => {
         buttons.forEach((button) => {
           const onClick = (): void => {
+            if (!isMazeControlFocused(elements)) {
+              return
+            }
+
             const command = sessionActionFromButton(button.dataset)
             if (!command) {
               return
@@ -539,12 +651,19 @@ export function createAgentMode(
 
       bindSessionButtons(elements.controls)
       bindSessionButtons(elements.touchButtons)
+      bindLogButtons()
       bindAgentRoster()
       bindAgentConfigForm()
       bindAgentDeleteDialog()
 
+      // keydownHandler routes global keyboard shortcuts while yielding control to open overlays.
       keydownHandler = (event: KeyboardEvent): void => {
+        // Global shortcuts are ignored while the user is typing inside agent forms.
         if (handleFormControlKeydown(event)) {
+          return
+        }
+
+        if (!isMazeControlFocused(elements)) {
           return
         }
 
@@ -562,22 +681,22 @@ export function createAgentMode(
       elements.app.addEventListener("click", focusCurrentApp)
       attached = true
       agentMovePoller.__setAttached(true)
-      agentMovePoller.__setLastActionState(lastActionState)
+      agentMovePoller.__setLastActionResult(lastActionResult)
       syncCurrentPoller()
     },
-    // readLastActionState exposes the latest stored response state for agent-side consumers.
-    readLastActionState() {
-      return lastActionState
+    // readLastActionResult exposes the latest stored replay result for agent-side consumers.
+    readLastActionResult() {
+      return lastActionResult
     },
-    // recordActionState keeps the last response state available for the agent-api control flow.
-    recordActionState(actionState: MazeActionState) {
-      lastActionState = actionState
-      agentMovePoller?.__setLastActionState(actionState)
+    // recordActionResult keeps the last replay result available for the agent-api control flow.
+    recordActionResult(actionResult: MazeActionResult) {
+      lastActionResult = actionResult
+      agentMovePoller?.__setLastActionResult(actionResult)
     },
-    // clearActionState drops stale agent-facing context after full-session resets.
-    clearActionState() {
-      lastActionState = null
-      agentMovePoller?.__setLastActionState(null)
+    // clearActionResult drops stale agent-facing replay data after full-session resets.
+    clearActionResult() {
+      lastActionResult = null
+      agentMovePoller?.__setLastActionResult(null)
     },
   }
 }

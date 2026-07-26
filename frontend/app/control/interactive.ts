@@ -2,10 +2,11 @@ import type {
   Elements,
   MazeActionControl,
   MazeActionDispatch,
-  MazeActionState,
+  MazeActionResult,
   MoveAction,
 } from "../types"
 import {
+  isMazeControlFocused,
   releaseAllActionBindings,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
@@ -61,6 +62,10 @@ export function createInteractiveMode(
     button: HTMLButtonElement,
     dispatch: MazeActionDispatch,
   ): void => {
+    if (!isMazeControlFocused(elements)) {
+      return
+    }
+
     const action = button.dataset.move
       ? { type: button.dataset.move as MoveAction }
       : sessionActionFromButton(button.dataset)
@@ -78,6 +83,10 @@ export function createInteractiveMode(
     event: KeyboardEvent,
     dispatch: MazeActionDispatch,
   ): void => {
+    if (!isMazeControlFocused(elements)) {
+      return
+    }
+
     const moveAction = KEY_TO_MOVE_ACTION[event.key]
     const action = moveAction
       ? { type: moveAction }
@@ -111,8 +120,8 @@ export function createInteractiveMode(
     // name lets the runtime identify which MazeActionControl implementation is active.
     name: runtime.controlModes.interactive,
     // bindActionDispatch connects browser keyboard and button events to the shared action dispatcher.
-    bindActionDispatch(dispatch, readActionState, commitAgentTurn) {
-      void readActionState
+    bindActionDispatch(dispatch, readState, commitAgentTurn) {
+      void readState
       void commitAgentTurn
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
@@ -128,16 +137,16 @@ export function createInteractiveMode(
       elements.app.addEventListener("click", focusApp)
       attached = true
     },
-    // readLastActionState stays empty here because interactive users already get visual feedback.
-    readLastActionState() {
+    // readLastActionResult stays empty here because interactive users already get visual feedback.
+    readLastActionResult() {
       return null
     },
-    // recordActionState is a no-op because the interactive mode does not retain command states.
-    recordActionState(actionState: MazeActionState) {
+    // recordActionResult is a no-op because the interactive mode does not retain replay results.
+    recordActionResult(actionResult: MazeActionResult) {
       // Interactive controls already provide immediate visual feedback in the game view.
-      void actionState
+      void actionResult
     },
-    // clearActionState is a no-op because interactive mode never stores action states.
-    clearActionState() {},
+    // clearActionResult is a no-op because interactive mode never stores replay results.
+    clearActionResult() {},
   }
 }

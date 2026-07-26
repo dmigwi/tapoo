@@ -41,25 +41,25 @@ function generateMazeArea(level: number): number {
 // appendFittingDimensions records factor pairs that still fit the viewport.
 function appendFittingDimensions(
   candidates: BaseDimensions[],
-  length: number,
-  width: number,
+  numCols: number,
+  numRows: number,
   terminalSize: BaseDimensions,
 ): BaseDimensions[] {
   // Reject very skinny factor pairs even when they fit, because they make poor playable mazes.
-  if (length < mazeConfig.minMazeSideCells || width < mazeConfig.minMazeSideCells) {
+  if (numCols < mazeConfig.minMazeSideCells || numRows < mazeConfig.minMazeSideCells) {
     return candidates
   }
 
-  if (terminalSize.length >= length && terminalSize.width >= width) {
-    candidates.push({ length, width })
+  if (terminalSize.numCols >= numCols && terminalSize.numRows >= numRows) {
+    candidates.push({ numCols, numRows })
   }
 
-  const rotatedDimensions = { length: width, width: length }
-  // Also try the same factor pair rotated, because a wide viewport may fit width x length better.
+  const rotatedDimensions = { numCols: numRows, numRows: numCols }
+  // Also try the same factor pair rotated, because a wide viewport may fit numRows x numCols better.
   if (
-    length !== width &&
-    terminalSize.length >= rotatedDimensions.length &&
-    terminalSize.width >= rotatedDimensions.width
+    numCols !== numRows &&
+    terminalSize.numCols >= rotatedDimensions.numCols &&
+    terminalSize.numRows >= rotatedDimensions.numRows
   ) {
     candidates.push(rotatedDimensions)
   }
@@ -95,7 +95,7 @@ function aspectMismatchScore(
   terminalSize: BaseDimensions,
 ): number {
   return absInt(
-    candidate.length * terminalSize.width - candidate.width * terminalSize.length,
+    candidate.numCols * terminalSize.numRows - candidate.numRows * terminalSize.numCols,
   )
 }
 
@@ -106,8 +106,8 @@ function isPreferredMazeDimensions(
   terminalSize: BaseDimensions,
 ): boolean {
   // Prefer the less skewed (close to square) shape so the maze stays balanced and playable.
-  const candidateSkew = absInt(candidate.length - candidate.width)
-  const bestSkew = absInt(currentBest.length - currentBest.width)
+  const candidateSkew = absInt(candidate.numCols - candidate.numRows)
+  const bestSkew = absInt(currentBest.numCols - currentBest.numRows)
   if (candidateSkew !== bestSkew) {
     return candidateSkew < bestSkew
   }
@@ -147,7 +147,7 @@ function resolveMazeArea(
   // Each visible level owns the area band from its raw target up to the next level's target.
   const area = generateMazeArea(level)
   const areaLimit = generateMazeArea(level + 1)
-  const terminalArea = terminalSize.width * terminalSize.length
+  const terminalArea = terminalSize.numRows * terminalSize.numCols
   if (area > terminalArea) {
     return null
   }
@@ -199,7 +199,7 @@ function createPlayingField(
   weight: WallWeight,
 ): string[][] {
   const chars = getWallCharacters(weight)
-  const rows = mazeConfig.cellSpan * dimensions.width + 1
+  const rows = mazeConfig.cellSpan * dimensions.numRows + 1
   const path = " ".repeat(mazeConfig.cellPathWidth)
   const data: string[][] = []
 
@@ -208,14 +208,14 @@ function createPlayingField(
 
     for (
       let columnIndex = 0;
-      columnIndex <= dimensions.length;
+      columnIndex <= dimensions.numCols;
       columnIndex += 1
     ) {
       row.push(chars[0])
 
-      if (columnIndex !== dimensions.length && rowIndex % 2 === 0) {
+      if (columnIndex !== dimensions.numCols && rowIndex % 2 === 0) {
         row.push(chars[1])
-      } else if (columnIndex !== dimensions.length) {
+      } else if (columnIndex !== dimensions.numCols) {
         row.push(path)
       }
     }
@@ -231,13 +231,13 @@ function getCellAddress(
   dimensions: BaseDimensions,
   cellNo: number,
 ): CellAddress | null {
-  if (cellNo <= 0 || cellNo > dimensions.length * dimensions.width) {
+  if (cellNo <= 0 || cellNo > dimensions.numCols * dimensions.numRows) {
     return null
   }
 
   const row =
-    (Math.floor((cellNo - 1) / dimensions.length) + 1) * mazeConfig.cellSpan
-  const column = (((cellNo - 1) % dimensions.length) + 1) * mazeConfig.cellSpan
+    (Math.floor((cellNo - 1) / dimensions.numCols) + 1) * mazeConfig.cellSpan
+  const column = (((cellNo - 1) % dimensions.numCols) + 1) * mazeConfig.cellSpan
 
   return {
     __bottomCenter: { x: column - 1, y: row },
@@ -257,11 +257,11 @@ function getCellNeighbors(
   dimensions: BaseDimensions,
   cellNo: number,
 ): CellNeighbors {
-  if (cellNo <= 0 || cellNo > dimensions.length * dimensions.width) {
+  if (cellNo <= 0 || cellNo > dimensions.numCols * dimensions.numRows) {
     return { __bottom: 0, __left: 0, __right: 0, __top: 0 }
   }
 
-  const column = (cellNo - 1) % dimensions.length
+  const column = (cellNo - 1) % dimensions.numCols
   const neighbors: CellNeighbors = {
     __bottom: 0,
     __left: 0,
@@ -269,7 +269,7 @@ function getCellNeighbors(
     __top: 0,
   }
 
-  if (column < dimensions.length - 1) {
+  if (column < dimensions.numCols - 1) {
     neighbors.__right = cellNo + 1
   }
 
@@ -277,12 +277,12 @@ function getCellNeighbors(
     neighbors.__left = cellNo - 1
   }
 
-  if (cellNo - dimensions.length > 0) {
-    neighbors.__top = cellNo - dimensions.length
+  if (cellNo - dimensions.numCols > 0) {
+    neighbors.__top = cellNo - dimensions.numCols
   }
 
-  if (cellNo + dimensions.length <= dimensions.length * dimensions.width) {
-    neighbors.__bottom = cellNo + dimensions.length
+  if (cellNo + dimensions.numCols <= dimensions.numCols * dimensions.numRows) {
+    neighbors.__bottom = cellNo + dimensions.numCols
   }
 
   return neighbors
@@ -345,7 +345,7 @@ function getPresentNeighbors(
 export function getNavigationProfile(
   dimensions: BaseDimensions,
 ): NavigationProfile {
-  const area = dimensions.length * dimensions.width
+  const area = dimensions.numCols * dimensions.numRows
   const difficultyFactor = navigationDifficultyFactor(area)
 
   return {
@@ -496,7 +496,7 @@ function chooseNextCell(
 
 // getStartPosition prefers an edge cell so the opening feels less uniform.
 function getStartPosition(dimensions: BaseDimensions): number {
-  const totalCells = dimensions.length * dimensions.width
+  const totalCells = dimensions.numCols * dimensions.numRows
 
   while (true) {
     const randomCellNo = getRandomNo(totalCells) + 1
@@ -553,7 +553,7 @@ function replaceChar(
     hasTop = true
   }
 
-  if (point.y + 1 <= dimensions.width * mazeConfig.cellSpan) {
+  if (point.y + 1 <= dimensions.numRows * mazeConfig.cellSpan) {
     bottomItem = maze[point.y + 1][point.x]
     hasBottom = true
   }
@@ -583,7 +583,7 @@ function optimizeMaze(
 ): void {
   const chars = getWallCharacters(weight)
 
-  for (let cell = 1; cell <= dimensions.length * dimensions.width; cell += 1) {
+  for (let cell = 1; cell <= dimensions.numCols * dimensions.numRows; cell += 1) {
     const address = getCellAddress(dimensions, cell)
     if (!address) {
       continue
@@ -599,7 +599,7 @@ export function generateMaze(
   dimensions: BaseDimensions,
   weight: WallWeight,
 ): RoundState {
-  const totalCells = dimensions.length * dimensions.width
+  const totalCells = dimensions.numCols * dimensions.numRows
   const navigationProfile = getNavigationProfile(dimensions)
   const visited = new Array<boolean>(totalCells + 1).fill(false)
   const maze = createPlayingField(dimensions, weight)

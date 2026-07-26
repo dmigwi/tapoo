@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createAgentMode } from "./agent"
 import { CONFIG } from "../config"
+import { logTapooDiagnostic, tapooResetLogs } from "../logs"
 import {
   loadPersistedAgentApiConfigs,
   savePersistedAgentApiConfigs,
@@ -11,41 +12,11 @@ import type {
   Elements,
   MazeAction,
   MazeActionDispatchOptions,
-  MazeActionState,
+  MazeActionResult,
+  GameStatus,
+  State,
   TraversalHistoryEntry,
 } from "../types"
-
-const agentMovePollIntervalMs = CONFIG.timing.agentApiCoreDecayIntervalPerCellMs
-const expectedAgentPrompt = [
-  "Your name is Blue.",
-  `playerName ${CONFIG.runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
-  "Use currentCell as your current position and destinationCell as the target.",
-  "Use traversalHistory entries matching your playerName to review your past moves in order.",
-  "Explore carefully: prefer unvisited cells and submit shorter predictions when uncertain.",
-  "Return only a JSON object matching expectedResponseSchema.",
-  "Moves replay in order until the destination or the first invalid move.",
-  "Every submitted move counts toward score decay, including moves after the first invalid move.",
-  "Stop predicting when lastMoveStatus is reached-target or status is won.",
-  "Choose the moves most likely to reach the destination with the fewest submitted moves.",
-].join(" ")
-
-const expectedResponseSchema: MazeActionState["expectedResponseSchema"] = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  type: "object",
-  additionalProperties: false,
-  required: ["moves"],
-  properties: {
-    moves: {
-      type: "array",
-      minItems: 1,
-      items: {
-        type: "string",
-        enum: ["MoveUp", "MoveDown", "MoveLeft", "MoveRight"],
-      },
-    },
-  },
-}
-
 
 function enabledAgentConfigs(): AgentApiConfig[] {
   return [
@@ -53,7 +24,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
       id: 1,
       playerName: "Blue",
       model: "llama3.2",
-      endpoint: "/configured-agents/blue/move",
+      endpoint: new URL("https://agents.example/blue/move"),
       enabled: true,
     },
   ]
@@ -63,12 +34,16 @@ function createTestAgentMode(elements: Parameters<typeof createAgentMode>[0]) {
   return createAgentMode(elements, enabledAgentConfigs)
 }
 
+async function flushImmediateAgentTurn(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0)
+}
+
 function visit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Blue", row, col }
+  return { playerName: "Blue", row, col, openMoves: [] }
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
 }
 
 function createButton({
@@ -92,6 +67,9 @@ function createButton({
 }
 
 function createAgentFormElements(): Elements {
+  const agentSeatsBody = document.createElement("div")
+  const tapooLogsReset = document.createElement("button")
+  const tapooLogsDownload = document.createElement("button")
   const agentSeatRoster = document.createElement("div")
   const agentConfigForm = document.createElement("form")
   const agentConfigTitle = document.createElement("strong")
@@ -114,6 +92,7 @@ function createAgentFormElements(): Elements {
   const agentDeleteClose = document.createElement("button")
 
   agentSeatRoster.hidden = true
+  agentSeatsBody.hidden = true
   agentConfigForm.hidden = true
   agentConfigForm.noValidate = true
   agentDeleteDialog.hidden = true
@@ -145,7 +124,8 @@ function createAgentFormElements(): Elements {
     agentDeleteConfirm,
     agentDeleteClose,
   )
-  app.append(agentSeatRoster, agentConfigForm, agentDeleteDialog)
+  app.append(agentSeatsBody, agentConfigForm, agentDeleteDialog)
+  agentSeatsBody.append(tapooLogsReset, tapooLogsDownload, agentSeatRoster)
 
   return {
     app,
@@ -155,6 +135,9 @@ function createAgentFormElements(): Elements {
     screen: document.createElement("div"),
     touchButtons: [],
     touchControls: document.createElement("div"),
+    agentSeatsBody,
+    tapooLogsReset,
+    tapooLogsDownload,
     agentSeatRoster,
     agentConfigForm,
     agentConfigTitle,
@@ -219,22 +202,33 @@ function createMemoryStorage(): Storage {
   }
 }
 
-function createActionState(
-  overrides: Partial<MazeActionState> = {},
-): MazeActionState {
+type AgentControlFixture = State & MazeActionResult & Record<string, unknown>
+
+function createControlFixture(
+  overrides: Partial<AgentControlFixture> = {},
+): AgentControlFixture {
   return {
-    currentCell: { row: 0, col: 0 },
-    destinationCell: { row: 0, col: 2 },
-    traversalHistory: [selfVisit(0, 0)],
+    agentRequestCount: 0,
+    cumulativeRoundCount: 0,
+    bestWinRequestCount: null,
+    bestWinRetentionUnits: null,
+    canResume: false,
+    clock: null,
+    controlMode: CONFIG.runtime.controlModes.agentApi,
+    finalPosition: { x: 5, y: 1 },
+    lastAttemptRetentionUnits: null,
+    lastRoundScore: 0,
+    lastWinRequestCount: null,
     level: 4,
+    maze: null,
+    mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
+    playerPosition: { x: 1, y: 1 },
     score: 800,
-    model: "llama3.2",
-    stream: false,
-    format: "json",
+    scoreDecayUnits: 0,
     status: "running",
-    recommendedAvgPredictionLimit: 18,
-    prompt: expectedAgentPrompt,
-    expectedResponseSchema,
+    traversalHistory: [selfVisit(0, 0)],
+    wallWeight: 1,
+    winSummary: "",
     ...overrides,
   }
 }
@@ -248,6 +242,8 @@ describe("agent control mode", () => {
 
   afterEach(() => {
     window.localStorage.clear()
+    tapooResetLogs("agent-api")
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
@@ -266,48 +262,54 @@ describe("agent control mode", () => {
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({ moves: ["MoveRight", "MoveDown"] }),
+      json: vi.fn().mockResolvedValue({
+        message: {
+          role: "assistant",
+          content: "{\"moves\":[\"MoveRight\",\"MoveDown\"]}",
+        },
+      }),
     })
     vi.stubGlobal("fetch", fetchMock)
 
     const dispatch = vi
       .fn()
-      .mockReturnValueOnce(createActionState({
+      .mockReturnValueOnce(createControlFixture({
         currentCell: { row: 0, col: 1 },
         traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "applied",
         lastSubmittedMoves: ["0:MoveRight"],
-        lastValidMoveIndex: 0,
+        lastAppliedMoveIndex: 0,
         visitedBefore: false,
       }))
-      .mockReturnValueOnce(createActionState({
+      .mockReturnValueOnce(createControlFixture({
         currentCell: { row: 1, col: 1 },
         traversalHistory: [selfVisit(0, 0), visit(0, 1), visit(1, 1)],
         lastMoveStatus: "applied",
         lastSubmittedMoves: ["0:MoveDown"],
-        lastValidMoveIndex: 0,
+        lastAppliedMoveIndex: 0,
         visitedBefore: false,
       }))
 
-    const readActionState = vi.fn().mockReturnValue(createActionState())
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
-      createActionState({
+    const readState = vi.fn().mockReturnValue(createControlFixture())
+    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
+      createControlFixture({
         currentCell: { row: 1, col: 1 },
-        score: 800 - decayedMovesCount * 100,
+        score: 800 - chargedMovesCount * 100,
       }),
     )
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    await flushImmediateAgentTurn()
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalledWith(
-      "/configured-agents/blue/move",
+      new URL("https://agents.example/blue/move"),
       expect.objectContaining({
         method: "POST",
         headers: {
+          "Accept": "application/json",
           "Content-Type": "application/json",
         },
       }),
@@ -318,20 +320,11 @@ describe("agent control mode", () => {
       throw new Error("expected agent request body to be serialized json")
     }
 
-    expect(JSON.parse(request.body)).toEqual({
-      currentCell: { row: 0, col: 0 },
-      destinationCell: { row: 0, col: 2 },
-      level: 4,
-      score: 800,
+    expect(JSON.parse(request.body)).toEqual(expect.objectContaining({
       model: "llama3.2",
       stream: false,
-      format: "json",
-      status: "running",
-      traversalHistory: [selfVisit(0, 0)],
-      recommendedAvgPredictionLimit: 18,
-      prompt: expectedAgentPrompt,
-      expectedResponseSchema,
-    })
+      think: false,
+    }))
     expect(dispatch).toHaveBeenNthCalledWith(
       1,
       { type: "MoveRight" },
@@ -343,15 +336,15 @@ describe("agent control mode", () => {
       { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(
-      2,
+      1,
     )
     expect(commitAgentTurn).toHaveBeenCalledTimes(1)
-    expect(mode.readLastActionState()).toEqual(
+    expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 1, col: 1 },
         lastMoveStatus: "applied",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown"],
-        lastValidMoveIndex: 1,
+        lastAppliedMoveIndex: 1,
       }),
     )
   })
@@ -370,41 +363,43 @@ describe("agent control mode", () => {
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({ moves: ["MoveRight"] }),
+      json: vi.fn().mockResolvedValue({
+        message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+      }),
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const dispatch = vi.fn().mockReturnValueOnce(createActionState({
+    const dispatch = vi.fn().mockReturnValueOnce(createControlFixture({
       currentCell: { row: 0, col: 1 },
       traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "applied",
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
+      lastAppliedMoveIndex: 0,
       visitedBefore: false,
     }))
 
-    const readActionState = vi.fn().mockReturnValue(createActionState())
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
-      createActionState({
+    const readState = vi.fn().mockReturnValue(createControlFixture())
+    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
+      createControlFixture({
         currentCell: { row: 0, col: 1 },
-        score: 800 - decayedMovesCount * 100,
+        score: 800 - chargedMovesCount * 100,
       }),
     )
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(commitAgentTurn).toHaveBeenCalledWith(1)
-    expect(mode.readLastActionState()).toEqual(
+    expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
         lastMoveStatus: "applied",
         lastSubmittedMoves: ["0:MoveRight"],
-        lastValidMoveIndex: 0,
-        decayedMovesCount: 1,
+        lastAppliedMoveIndex: 0,
+        chargedMovesCount: 1,
       }),
     )
   })
@@ -424,54 +419,57 @@ describe("agent control mode", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
-        moves: ["MoveRight", "MoveDown", "MoveLeft"],
+        message: {
+          role: "assistant",
+          content: "{\"moves\":[\"MoveRight\",\"MoveDown\",\"MoveLeft\"]}",
+        },
       }),
     })
     vi.stubGlobal("fetch", fetchMock)
 
     const dispatch = vi
       .fn()
-      .mockReturnValueOnce(createActionState({
+      .mockReturnValueOnce(createControlFixture({
         currentCell: { row: 0, col: 1 },
         traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "applied",
         lastSubmittedMoves: ["0:MoveRight"],
-        lastValidMoveIndex: 0,
+        lastAppliedMoveIndex: 0,
         visitedBefore: false,
       }))
-      .mockReturnValueOnce(createActionState({
+      .mockReturnValueOnce(createControlFixture({
         currentCell: { row: 0, col: 1 },
         traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "invalid-move",
         lastSubmittedMoves: ["1:MoveDown"],
-        lastValidMoveIndex: 0,
+        lastAppliedMoveIndex: 0,
         visitedBefore: true,
       }))
 
-    const readActionState = vi.fn().mockReturnValue(createActionState())
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
-      createActionState({
+    const readState = vi.fn().mockReturnValue(createControlFixture())
+    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
+      createControlFixture({
         currentCell: { row: 0, col: 1 },
-        score: 800 - decayedMovesCount * 100,
+        score: 800 - chargedMovesCount * 100,
       }),
     )
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(2)
     expect(commitAgentTurn).toHaveBeenCalledWith(
       3,
     )
-    expect(mode.readLastActionState()).toEqual(
+    expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
         lastMoveStatus: "invalid-move",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
-        lastValidMoveIndex: 0,
-        decayedMovesCount: 3,
+        lastAppliedMoveIndex: 0,
+        chargedMovesCount: 3,
       }),
     )
   })
@@ -491,51 +489,54 @@ describe("agent control mode", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
-        moves: ["MoveRight", "MoveDown", "MoveLeft"],
+        message: {
+          role: "assistant",
+          content: "{\"moves\":[\"MoveRight\",\"MoveDown\",\"MoveLeft\"]}",
+        },
       }),
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const dispatch = vi.fn().mockReturnValueOnce(createActionState({
+    const dispatch = vi.fn().mockReturnValueOnce(createControlFixture({
       currentCell: { row: 0, col: 1 },
       destinationCell: { row: 0, col: 1 },
       traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "reached-target",
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
+      lastAppliedMoveIndex: 0,
       visitedBefore: false,
       status: "won",
     }))
 
-    const readActionState = vi.fn().mockReturnValue(createActionState())
-    const commitAgentTurn = vi.fn((decayedMovesCount: number) =>
-      createActionState({
+    const readState = vi.fn().mockReturnValue(createControlFixture())
+    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
+      createControlFixture({
         currentCell: { row: 0, col: 1 },
         destinationCell: { row: 0, col: 1 },
-        score: 800 - decayedMovesCount * 100,
+        score: 800 - chargedMovesCount * 100,
         status: "won",
       }),
     )
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith(
       { type: "MoveRight" },
       { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
-    expect(commitAgentTurn).toHaveBeenCalledWith(3)
-    expect(mode.readLastActionState()).toEqual(
+    expect(commitAgentTurn).toHaveBeenCalledWith(1)
+    expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
         destinationCell: { row: 0, col: 1 },
         lastMoveStatus: "reached-target",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
-        lastValidMoveIndex: 0,
-        decayedMovesCount: 3,
+        lastAppliedMoveIndex: 0,
+        chargedMovesCount: 1,
       }),
     )
   })
@@ -559,8 +560,8 @@ describe("agent control mode", () => {
     vi.stubGlobal("fetch", vi.fn())
 
     const dispatch = vi.fn()
-    const readActionState = vi.fn().mockReturnValue(
-      createActionState({
+    const readState = vi.fn().mockReturnValue(
+      createControlFixture({
         destinationCell: { row: 0, col: 1 },
         level: 1,
         score: 100,
@@ -570,7 +571,7 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readActionState, vi.fn(() => createActionState()))
+    mode.bindActionDispatch(dispatch, readState, vi.fn(() => createControlFixture()))
     elements.touchButtons[0].click()
     elements.touchButtons[1].click()
     elements.touchButtons[2].click()
@@ -607,7 +608,7 @@ describe("agent control mode", () => {
     expect(dispatch).toHaveBeenNthCalledWith(5, { type: "proceed" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenNthCalledWith(6, { type: "pause" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenCalledTimes(6)
-    expect(mode.readLastActionState()).toBeNull()
+    expect(mode.readLastActionResult()).toBeNull()
   })
 
   it("stops polling while the maze is not running and restarts after proceed", async () => {
@@ -622,10 +623,31 @@ describe("agent control mode", () => {
     }
     elements.app.focus = vi.fn()
 
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue({ moves: ["MoveRight"] }),
-    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: {
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              {
+                function: {
+	                  name: "get_maze_positions",
+                  arguments: {},
+                },
+              },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      })
     vi.stubGlobal("fetch", fetchMock)
 
     let status: "paused" | "running" = "paused"
@@ -637,12 +659,12 @@ describe("agent control mode", () => {
 
       if (options?.wantFeedback) {
         return {
-          ...createActionState({
+          ...createControlFixture({
             level: 1,
             score: 100,
             lastMoveStatus: "applied",
             lastSubmittedMoves: ["0:MoveRight"],
-            lastValidMoveIndex: 0,
+            lastAppliedMoveIndex: 0,
             visitedBefore: false,
           }),
         }
@@ -650,25 +672,25 @@ describe("agent control mode", () => {
 
       return null
     })
-    const readActionState = vi.fn(() =>
-      createActionState({
+    const readState = vi.fn(() =>
+      createControlFixture({
         level: 1,
         score: 100,
         status,
       }),
     )
-    const commitAgentTurn = vi.fn(() => createActionState({ level: 1, score: 100, status }))
+    const commitAgentTurn = vi.fn(() => createControlFixture({ level: 1, score: 100, status }))
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    await flushImmediateAgentTurn()
     expect(fetchMock).not.toHaveBeenCalled()
 
     elements.touchButtons[0].click()
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalled()
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: "proceed" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenNthCalledWith(
       2,
@@ -689,42 +711,70 @@ describe("agent control mode", () => {
     }
     elements.app.focus = vi.fn()
 
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue({ moves: ["MoveRight"] }),
-    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: {
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              {
+                function: {
+	                  name: "get_maze_positions",
+                  arguments: {},
+                },
+              },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      })
     vi.stubGlobal("fetch", fetchMock)
 
-    const dispatch = vi.fn().mockReturnValue(createActionState({
+    const dispatch = vi.fn().mockReturnValue(createControlFixture({
       currentCell: { row: 0, col: 1 },
       lastMoveStatus: "applied",
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
+      lastAppliedMoveIndex: 0,
     }))
-    const readActionState = vi.fn(() => createActionState({ level: 1 }))
-    const commitAgentTurn = vi.fn(() => createActionState({ level: 1 }))
+    const readState = vi.fn(() => createControlFixture({ level: 1 }))
+    const commitAgentTurn = vi.fn(() => createControlFixture({ level: 1 }))
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readActionState, commitAgentTurn)
-    mode.recordActionState(createActionState({
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.recordActionResult(createControlFixture({
       currentCell: { row: 9, col: 9 },
       level: 99,
       lastMoveStatus: "reached-target",
       lastSubmittedMoves: ["0:MoveRight"],
     }))
-    mode.clearActionState()
+    mode.clearActionResult()
 
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
 
-    const request = fetchMock.mock.calls[0][1] as RequestInit
+    const request = fetchMock.mock.calls[1][1] as RequestInit
     if (typeof request.body !== "string") {
       throw new Error("expected agent request body to be serialized json")
     }
 
-    expect(JSON.parse(request.body)).toEqual(expect.objectContaining({
+    const requestBody = JSON.parse(request.body) as { messages: { content?: string }[] }
+    const toolResult = JSON.parse(requestBody.messages.at(-1)?.content ?? "") as {
+      currentCell: { row: number; col: number }
+      destinationCell: { row: number; col: number }
+    }
+
+    expect(toolResult).toEqual({
       currentCell: { row: 0, col: 0 },
-      level: 1,
-    }))
+      destinationCell: { row: 0, col: 2 },
+    })
   })
 
   it("records a network-disabled agent without score decay", async () => {
@@ -750,18 +800,18 @@ describe("agent control mode", () => {
 
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState()),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture()),
+      vi.fn(() => createControlFixture()),
     )
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
 
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(
       enabledAgentConfigs()[0],
     )
-    expect(mode.readLastActionState()).toEqual(
+    expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         lastMoveStatus: "network-error",
-        decayedMovesCount: 0,
+        chargedMovesCount: 0,
       }),
     )
   })
@@ -772,14 +822,14 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Blue",
         model: "llama3.2",
-        endpoint: "/agents/blue/move",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Grey",
         model: "gemma4",
-        endpoint: "/agents/grey/move",
+        endpoint: new URL("https://agents.example/agents/grey/move"),
         enabled: false,
       },
     ])
@@ -789,8 +839,8 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     expect(elements.agentSeatRoster?.hidden).toBe(false)
@@ -801,12 +851,12 @@ describe("agent control mode", () => {
       elements.agentSeatRoster
         ?.querySelector('[data-agent-seat-id="1"]')
         ?.getAttribute("title"),
-    ).toBe("Blue")
+    ).toBe("Blue the Trailblazer")
     expect(
       elements.agentSeatRoster
         ?.querySelector('[data-agent-seat-id="2"]')
         ?.getAttribute("title"),
-    ).toBe("Grey")
+    ).toBe("Grey the Trailblazer")
     expect(
       elements.agentSeatRoster
         ?.querySelector('[data-agent-seat-id="2"]')
@@ -817,20 +867,80 @@ describe("agent control mode", () => {
     ).toHaveLength(CONFIG.agentConfig.maxSeats - 2)
   })
 
+  it("keeps log side buttons separate from maze actions", () => {
+    const elements = createAgentFormElements()
+    const dispatch = vi.fn()
+    const createObjectURL = vi.fn(() => "blob:tapoo-logs")
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL,
+      revokeObjectURL: vi.fn(),
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, () => [])
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    expect(elements.agentSeatsBody?.hidden).toBe(false)
+    expect(elements.tapooLogsReset?.disabled).toBe(true)
+    expect(elements.tapooLogsDownload?.disabled).toBe(true)
+    logTapooDiagnostic("agent-api", "info", "downloadable log")
+    expect(elements.tapooLogsDownload?.disabled).toBe(false)
+    elements.tapooLogsReset?.click()
+    logTapooDiagnostic("agent-api", "info", "downloadable log")
+    elements.tapooLogsDownload?.click()
+
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+  })
+
+  it("enables reset logs only while in-memory logs exist", () => {
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, () => [])
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    expect(elements.tapooLogsReset?.disabled).toBe(true)
+    expect(elements.tapooLogsDownload?.disabled).toBe(true)
+
+    logTapooDiagnostic("agent-api", "info", "agent request")
+
+    expect(elements.tapooLogsReset?.disabled).toBe(false)
+    expect(elements.tapooLogsDownload?.disabled).toBe(false)
+
+    elements.tapooLogsReset?.click()
+
+    expect(elements.tapooLogsReset?.disabled).toBe(true)
+    expect(elements.tapooLogsDownload?.disabled).toBe(true)
+    expect(
+      elements.tapooLogsReset?.classList.contains("tapoo-logs-control--acknowledged"),
+    ).toBe(true)
+  })
+
   it("opens delete confirmation for an inactive occupied seat", () => {
     savePersistedAgentApiConfigs([
       {
         id: 1,
         playerName: "Blue",
         model: "llama3.2",
-        endpoint: "/agents/blue/move",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Red",
         model: "gemma4",
-        endpoint: "/agents/red/move",
+        endpoint: new URL("https://agents.example/agents/red/move"),
         enabled: true,
       },
     ])
@@ -841,8 +951,8 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements)
     mode.bindActionDispatch(
       dispatch,
-      vi.fn(() => createActionState({ status: "running" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "running" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickDeleteSeat(elements, "2")
@@ -853,7 +963,7 @@ describe("agent control mode", () => {
     )
     expect(elements.agentDeleteDialog?.hidden).toBe(false)
     expect(elements.agentDeleteTitle?.textContent).toBe(
-      "Manage player Red in seat 02",
+      "Manage Red the Trailblazer (gemma4) in seat 02",
     )
     expect(elements.agentDeleteTarget?.textContent).toBe("Delete now?")
     expect(elements.agentDeleteConfirm?.checked).toBe(false)
@@ -878,14 +988,14 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Blue",
         model: "llama3.2",
-        endpoint: "/agents/blue/move",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Red",
         model: "gemma4",
-        endpoint: "/agents/red/move",
+        endpoint: new URL("https://agents.example/agents/red/move"),
         enabled: true,
       },
     ])
@@ -895,8 +1005,8 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickDeleteSeat(elements, "2")
@@ -915,7 +1025,7 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Blue",
         model: "llama3.2",
-        endpoint: "/agents/blue/move",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
         enabled: false,
       },
     ])
@@ -925,8 +1035,8 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickDeleteSeat(elements, "1")
@@ -959,33 +1069,34 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Blue",
         model: "llama3.2",
-        endpoint: "/agents/blue/move",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
         enabled: true,
       },
       {
         id: 2,
         playerName: "Red",
         model: "gemma4",
-        endpoint: "/agents/red/move",
+        endpoint: new URL("https://agents.example/agents/red/move"),
         enabled: true,
       },
     ])
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({ moves: ["MoveRight"] }),
+      json: vi.fn().mockResolvedValue({
+        message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+      }),
     })
     vi.stubGlobal("fetch", fetchMock)
     const elements = createAgentFormElements()
 
     const mode = createAgentMode(elements)
     mode.bindActionDispatch(
-      vi.fn(() => createActionState({ lastMoveStatus: "applied" })),
-      vi.fn(() => createActionState({ status: "running" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ lastMoveStatus: "applied" })),
+      vi.fn(() => createControlFixture({ status: "running" })),
+      vi.fn(() => createControlFixture()),
     )
 
-    await vi.advanceTimersByTimeAsync(agentMovePollIntervalMs)
-
+    await flushImmediateAgentTurn()
     expect(
       elements.agentSeatRoster
         ?.querySelector('[data-agent-seat-id="1"]')
@@ -1001,6 +1112,66 @@ describe("agent control mode", () => {
     ).toBe(true)
   })
 
+  it("clears the active agent seat when the maze stops running", async () => {
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
+        enabled: true,
+      },
+    ])
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+      }),
+    }))
+    const elements = createAgentFormElements()
+    elements.touchButtons = [createButton({ action: "pause" })]
+    let status: GameStatus = "running"
+
+    const mode = createAgentMode(elements)
+    const dispatch = vi.fn((action: { type: string }) => {
+      if (action.type === "pause") {
+        status = "paused"
+      }
+
+      return createControlFixture({ lastMoveStatus: "applied", status })
+    })
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createControlFixture({ status })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    await flushImmediateAgentTurn()
+    expect(
+      elements.agentSeatRoster
+        ?.querySelector('[data-agent-seat-id="1"]')
+        ?.classList.contains("agent-seat--active"),
+    ).toBe(true)
+
+    elements.touchButtons[0].click()
+
+    expect(
+      elements.agentSeatRoster
+        ?.querySelector('[data-agent-seat-id="1"]')
+        ?.classList.contains("agent-seat--active"),
+    ).toBe(false)
+    expect(
+      elements.agentSeatRoster?.querySelector('[data-agent-seat-delete="1"]'),
+    ).not.toBeNull()
+
+    clickDeleteSeat(elements, "1")
+
+    expect(elements.agentDeleteDialog?.hidden).toBe(false)
+    expect(elements.agentDeleteTitle?.textContent).toBe(
+      "Manage Blue the Backtracker (llama3.2) in seat 01",
+    )
+  })
+
   it("opens the agent configuration form from an empty seat", () => {
     const elements = createAgentFormElements()
     const focusPlayerName = vi.fn()
@@ -1010,8 +1181,8 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "2")
@@ -1048,8 +1219,8 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "2")
@@ -1069,8 +1240,8 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
     mode.bindActionDispatch(
       dispatch,
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "2")
@@ -1096,8 +1267,8 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
     mode.bindActionDispatch(
       dispatch,
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "2")
@@ -1121,8 +1292,8 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
     mode.bindActionDispatch(
       dispatch,
-      vi.fn(() => createActionState({ status: "running" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "running" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "2")
@@ -1146,8 +1317,8 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "2")
@@ -1169,8 +1340,8 @@ describe("agent control mode", () => {
     const mode = createTestAgentMode(elements)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "2")
@@ -1195,8 +1366,8 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements, readAgentConfigs)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "1")
@@ -1209,7 +1380,7 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Scout",
         model: "gemma4",
-        endpoint: "http://localhost:5000/",
+        endpoint: new URL("http://localhost:5000/"),
         enabled: true,
       }),
     ])
@@ -1218,7 +1389,7 @@ describe("agent control mode", () => {
     expect(
       elements.agentSeatRoster?.querySelector('[data-agent-seat-id="1"]')
         ?.getAttribute("title"),
-    ).toBe("Scout")
+    ).toBe("Scout the Trailblazer")
   })
 
   it("shows required-field errors at the bottom of the agent form", () => {
@@ -1232,8 +1403,8 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements, readAgentConfigs)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "1")
@@ -1260,8 +1431,8 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements, readAgentConfigs)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "1")
@@ -1291,8 +1462,8 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements, readAgentConfigs)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "1")
@@ -1322,8 +1493,8 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements, readAgentConfigs)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "1")
@@ -1349,7 +1520,7 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Scout",
         model: "llama3.2",
-        endpoint: "https://agents.example/scout/move",
+        endpoint: new URL("https://agents.example/scout/move"),
         enabled: true,
       },
     ])
@@ -1361,8 +1532,8 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements, readAgentConfigs)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "2")
@@ -1393,8 +1564,8 @@ describe("agent control mode", () => {
     const mode = createAgentMode(elements, readAgentConfigs)
     mode.bindActionDispatch(
       vi.fn(),
-      vi.fn(() => createActionState({ status: "await-agent" })),
-      vi.fn(() => createActionState()),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
     )
 
     clickAddSeat(elements, "1")
@@ -1427,8 +1598,8 @@ describe("agent control mode", () => {
 
     const firstDispatch = vi.fn()
     const secondDispatch = vi.fn()
-    const readActionState = vi.fn().mockReturnValue(
-      createActionState({
+    const readState = vi.fn().mockReturnValue(
+      createControlFixture({
         currentCell: null,
         destinationCell: null,
         level: 1,
@@ -1440,11 +1611,49 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(firstDispatch, readActionState, vi.fn(() => createActionState()))
-    mode.bindActionDispatch(secondDispatch, readActionState, vi.fn(() => createActionState()))
+    mode.bindActionDispatch(firstDispatch, readState, vi.fn(() => createControlFixture()))
+    mode.bindActionDispatch(secondDispatch, readState, vi.fn(() => createControlFixture()))
     elements.touchButtons[0].click()
 
     expect(firstDispatch).not.toHaveBeenCalled()
     expect(secondDispatch).toHaveBeenCalledWith({ type: "pause" }, { playerName: "Self" })
+  })
+
+  it("handles human session controls only while the terminal app is focused", () => {
+    const pauseButton = createButton({ action: "pause" })
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [pauseButton],
+      touchControls: document.createElement("div"),
+    }
+    const outsideInput = document.createElement("input")
+    elements.app.tabIndex = 0
+    elements.app.append(pauseButton)
+    document.body.append(elements.app, outsideInput)
+    vi.stubGlobal("fetch", vi.fn())
+    const dispatch = vi.fn()
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createControlFixture({ status: "running" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    outsideInput.focus()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
+
+    expect(dispatch).not.toHaveBeenCalled()
+
+    elements.app.focus()
+    pauseButton.click()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
+
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: "pause" }, { playerName: "Self" })
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: "pause" }, { playerName: "Self" })
   })
 })

@@ -1,3 +1,6 @@
+import { logTapooDiagnostic } from "./logs"
+import type { MazeControlModeName } from "./types"
+
 // PlaceholderArtErrorPolicy describes stable failures that should replace the terminal view.
 type PlaceholderArtErrorPolicy = {
   // messagePrefix matches developer/invariant errors without depending on full stack text.
@@ -39,9 +42,9 @@ function placeholderArtErrorPolicy(error: Error): PlaceholderArtErrorPolicy | nu
 }
 
 // logPlaceholderFallback records the original Error so production debugging keeps the stack trace.
-function logPlaceholderFallback(error: Error): void {
+function logPlaceholderFallback(modeName: MazeControlModeName, error: Error): void {
   const reason = placeholderArtErrorPolicy(error)?.reason ?? unknownFallbackReason
-  console.error(`[Tapoo] ${reason}`, error)
+  logTapooDiagnostic(modeName, "error", reason, error)
 }
 
 // showPageView keeps terminal and placeholder visibility mutually exclusive.
@@ -67,11 +70,11 @@ export function showTerminalApp(): void {
 }
 
 // showPlaceholderArt swaps the terminal for the generic fallback only after unrecoverable Errors.
-export function showPlaceholderArt(error: unknown): void {
+export function showPlaceholderArt(modeName: MazeControlModeName, error: unknown): void {
   if (!(error instanceof Error)) {
     return
   }
 
-  logPlaceholderFallback(error)
+  logPlaceholderFallback(modeName, error)
   showPageView("placeholder")
 }

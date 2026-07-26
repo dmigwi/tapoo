@@ -14,16 +14,20 @@ import {
   renderAgentSeatRoster,
 } from "./seats"
 import { CONFIG } from "../config"
-import type { AgentApiConfig } from "../types"
+import type { AgentApiConfig, TraversalHistoryEntry } from "../types"
 
-function agent(id: number, playerName: string): AgentApiConfig {
+function agent(id: number, playerName: string, model = "llama3.2"): AgentApiConfig {
   return {
     id,
     playerName,
-    model: "llama3.2",
-    endpoint: "https://example.test/move",
+    model,
+    endpoint: new URL("https://example.test/move"),
     enabled: true,
   }
+}
+
+function visit(playerName: string, row: number, col: number): TraversalHistoryEntry {
+  return { playerName, row, col, openMoves: [] }
 }
 
 // Agent-seat tests keep display labels, dataset ids, and fixed roster slots centralized.
@@ -58,10 +62,16 @@ describe("agent seats", () => {
   it("uses behavior-specific accessible labels for roster seats", () => {
     expect(agentSeatAddLabel(1)).toBe("Add agent to seat 01")
     expect(agentSeatManageLabel(agent(2, "Kora"))).toBe(
-      "Manage player Kora in seat 02",
+      "Manage Kora the Trailblazer (llama3.2) in seat 02",
     )
     expect(activeAgentSeatLabel(agent(3, "Mika"))).toBe(
-      "Player Mika is playing in seat 03",
+      "Player Mika the Trailblazer is playing in seat 03",
+    )
+  })
+
+  it("trims long model names in the middle for compact dialog titles", () => {
+    expect(agentSeatManageLabel(agent(2, "Kora", "qwen3.6-coder-ultra:32b"))).toBe(
+      "Manage Kora the Trailblazer (qwen3.6...ltra:32b) in seat 02",
     )
   })
 
@@ -91,11 +101,62 @@ describe("agent seats", () => {
     expect(seats[1].disabled).toBe(true)
     expect(seats[1].classList.contains("agent-seat--active")).toBe(true)
     expect(seats[1].getAttribute("aria-label")).toBe(
-      "Player Kora is playing in seat 02",
+      "Player Kora the Trailblazer is playing in seat 02",
     )
     expect(seats[2].textContent).toBe("03")
     expect(seats[2].dataset.agentSeatDelete).toBe("3")
     expect(seats[2].classList.contains("agent-seat--disabled")).toBe(true)
     expect(roster.hidden).toBe(false)
+  })
+
+  it("defaults an agent with no tracked stats yet to the Trailblazer rank in the seat tooltip", () => {
+    const roster = document.createElement("div")
+    renderAgentSeatRoster(roster, [agent(2, "Kora")], null)
+
+    const seats = Array.from(roster.querySelectorAll<HTMLButtonElement>(".agent-seat"))
+    expect(seats[1].title).toBe("Kora the Trailblazer")
+  })
+
+  it("names the seat tooltip after the agent's current efficiency rank, capitalized, once stats are tracked", () => {
+    const roster = document.createElement("div")
+
+    const backtrackerAgent = { ...agent(2, "Kora"), gameLevel: 4, requestsCount: 2 }
+    renderAgentSeatRoster(roster, [backtrackerAgent], null, [visit("Kora", 0, 0)])
+    let seats = Array.from(roster.querySelectorAll<HTMLButtonElement>(".agent-seat"))
+    expect(seats[1].title).toBe("Kora the Backtracker")
+
+    const navigatorAgent = { ...agent(2, "Kora"), gameLevel: 4, requestsCount: 1 }
+    renderAgentSeatRoster(roster, [navigatorAgent], null, [visit("Kora", 0, 0)])
+    seats = Array.from(roster.querySelectorAll<HTMLButtonElement>(".agent-seat"))
+    expect(seats[1].title).toBe("Kora the Navigator")
+
+    const trailblazerAgent = { ...agent(2, "Kora"), gameLevel: 4, requestsCount: 2 }
+    renderAgentSeatRoster(roster, [trailblazerAgent], null, [
+      visit("Kora", 0, 0),
+      visit("Kora", 0, 1),
+      visit("Kora", 0, 2),
+      visit("Kora", 0, 3),
+    ])
+    seats = Array.from(roster.querySelectorAll<HTMLButtonElement>(".agent-seat"))
+    expect(seats[1].title).toBe("Kora the Trailblazer")
+  })
+
+  it("includes the capitalized efficiency rank in the manage dialog title once stats are tracked", () => {
+    const trailblazerAgent = { ...agent(2, "Katara"), gameLevel: 5, requestsCount: 2 }
+    const label = agentSeatManageLabel(trailblazerAgent, [
+      visit("Katara", 0, 0),
+      visit("Katara", 0, 1),
+      visit("Katara", 0, 2),
+      visit("Katara", 0, 3),
+    ])
+
+    expect(label).toBe("Manage Katara the Trailblazer (llama3.2) in seat 02")
+  })
+
+  it("includes the capitalized efficiency rank in the active-player label once stats are tracked", () => {
+    const navigatorAgent = { ...agent(3, "Katara"), gameLevel: 5, requestsCount: 1 }
+    const label = activeAgentSeatLabel(navigatorAgent, [visit("Katara", 0, 0)])
+
+    expect(label).toBe("Player Katara the Navigator is playing in seat 03")
   })
 })

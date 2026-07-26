@@ -93,11 +93,11 @@ func (config *Dimensions) PlayerMovement(data [][]string, rowDelta, columnDelta 
 	probeRow := currentRow + rowDelta
 	probeColumn := currentColumn + columnDelta
 
-	if nextRow <= 0 || nextRow > config.Width*cellSpan {
+	if nextRow <= 0 || nextRow > config.NumRows*cellSpan {
 		return 0, false
 	}
 
-	if nextColumn <= 0 || nextColumn > config.Length*cellSpan {
+	if nextColumn <= 0 || nextColumn > config.NumCols*cellSpan {
 		return 0, false
 	}
 
@@ -250,8 +250,8 @@ func PlayPreparedGameWithStore(
 	defer keyboard.Close(ui)
 
 	state := gameState{
-		totalCells: val.Length * val.Width,
-		scores:     val.Length * val.Width * scoreMultiplier,
+		totalCells: val.NumCols * val.NumRows,
+		scores:     val.NumCols * val.NumRows * scoreMultiplier,
 		persisted:  persistedState,
 		store:      gameStore,
 	}
@@ -277,7 +277,7 @@ func PlayPreparedGameWithStore(
 func renderPreparedGameStart(
 	ui UI, state *gameState, clock *GameClock, val *Dimensions, data [][]string, timeout *time.Timer,
 ) error {
-	if val.Length <= 0 || val.Width <= 0 {
+	if val.NumCols <= 0 || val.NumRows <= 0 {
 		return nil
 	}
 
@@ -698,7 +698,7 @@ func (state *gameState) reloadLevel(
 	state.canResume = false
 	state.overlay = nil
 	state.persisted.State = GameProgressInProgress
-	state.totalCells = val.Length * val.Width
+	state.totalCells = val.NumCols * val.NumRows
 	state.scores = state.totalCells * scoreMultiplier
 	*clock = NewGameClock(time.Duration(state.totalCells) * time.Second)
 	stopTimer(timeout)

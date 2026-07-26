@@ -15,12 +15,8 @@ import type {
   TraversalHistoryEntry,
 } from "./types"
 
-function visit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Blue", row, col }
-}
-
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Self", row, col }
+  return { playerName: "Self", row, col, openMoves: [] }
 }
 
 function enabledAgentConfig(): AgentApiConfig {
@@ -28,7 +24,7 @@ function enabledAgentConfig(): AgentApiConfig {
     id: 1,
     playerName: "Blue",
     model: "llama3.2",
-    endpoint: "/configured-agents/blue/move",
+    endpoint: new URL("https://agents.example/blue/move"),
     enabled: true,
   }
 }
@@ -147,30 +143,89 @@ function createTraversalMock({
     row,
     col,
   })
+  const isCellCoordinate = (value: unknown): value is { row: number; col: number } => (
+    typeof value === "object" &&
+    value !== null &&
+    "row" in value &&
+    "col" in value &&
+    typeof value.row === "number" &&
+    typeof value.col === "number" &&
+    Number.isInteger(value.row) &&
+    Number.isInteger(value.col) &&
+    value.row >= 0 &&
+    value.col >= 0
+  )
+  const isTraversalHistoryEntry = (value: unknown): value is TraversalHistoryEntry => (
+    isCellCoordinate(value) &&
+    "playerName" in value &&
+    typeof value.playerName === "string" &&
+    value.playerName.length > 0 &&
+    "openMoves" in value &&
+    Array.isArray(value.openMoves)
+  )
+  const isTraversableGridPoint = (
+    data: string[][],
+    position: { x: number; y: number },
+  ) => data[position.y]?.[position.x] !== undefined && isSpaceFound(data[position.y][position.x])
 
   return {
     cellCoordinateFromGridPoint: vi.fn(cellCoordinateFromGridPoint),
-    createMazeDimensions: vi.fn(({ length, width }: { length: number; width: number }) => ({
-      length,
-      width,
-      area: length * width,
+    createMazeDimensions: vi.fn(({ numCols, numRows }: { numCols: number; numRows: number }) => ({
+      numCols,
+      numRows,
+      area: numCols * numRows,
     })),
-    cloneMazeDimensions: vi.fn(({ length, width }: { length: number; width: number }) => ({
-      length,
-      width,
-      area: length * width,
+    cloneMazeDimensions: vi.fn(({ numCols, numRows }: { numCols: number; numRows: number }) => ({
+      numCols,
+      numRows,
+      area: numCols * numRows,
     })),
     cloneCellCoordinate: vi.fn(cloneCellCoordinate),
     cloneMazeRows: vi.fn((mazeRows: string[][]) => mazeRows.map((row) => [...row])),
     cloneRenderGridPoint: vi.fn(({ x, y }: { x: number; y: number }) => ({ x, y })),
     cloneTraversalHistory: vi.fn((history: TraversalHistoryEntry[]) =>
-      history.map(({ playerName, row, col }) => ({ playerName, row, col })),
+      history.map(({ playerName, row, col, openMoves }) => ({ playerName, row, col, openMoves: [...openMoves] })),
     ),
     gridPointFromCellCoordinate: vi.fn(gridPointFromCellCoordinate),
     isMoveAction: vi.fn((action: { type: string }) =>
       ["MoveLeft", "MoveRight", "MoveUp", "MoveDown"].includes(action.type),
     ),
     isSpaceFound: vi.fn(isSpaceFound),
+    isValidPersistedRound: vi.fn((snapshot: PersistedRound) => {
+      if (
+        snapshot.level < 1 ||
+        snapshot.mazeDimensions.area !== snapshot.mazeDimensions.numCols * snapshot.mazeDimensions.numRows ||
+        !isTraversableGridPoint(snapshot.maze, snapshot.playerPosition) ||
+        !isTraversableGridPoint(snapshot.maze, snapshot.finalPosition) ||
+        !isCellCoordinate(snapshot.startCell) ||
+        snapshot.traversalHistory.length === 0
+      ) {
+        return false
+      }
+
+      const firstVisitedCell = snapshot.traversalHistory[0]
+      if (
+        !isTraversalHistoryEntry(firstVisitedCell) ||
+        mazeCellKey(firstVisitedCell) !== mazeCellKey(snapshot.startCell)
+      ) {
+        return false
+      }
+
+      const visitedCellKeys = new Set<string>()
+      return snapshot.traversalHistory.every((visitedCell) => {
+        if (!isTraversalHistoryEntry(visitedCell)) {
+          return false
+        }
+
+        const visitedCellKey = mazeCellKey(visitedCell)
+        if (visitedCellKeys.has(visitedCellKey)) {
+          return false
+        }
+
+        visitedCellKeys.add(visitedCellKey)
+        return isTraversableGridPoint(snapshot.maze, gridPointFromCellCoordinate(visitedCell))
+      })
+    }),
     isWallWeight: vi.fn((value: number) => value >= 1 && value <= 3),
     mazeCellKey: vi.fn(mazeCellKey),
     nextWallWeight: vi.fn(nextWallWeight),
@@ -196,11 +251,11 @@ function createTraversalMock({
       const probeY = state.playerPosition.y + rowDelta
       const probeX = state.playerPosition.x + columnDelta
 
-      if (nextY <= 0 || nextY > state.mazeDimensions.width * CONFIG.maze.cellSpan) {
+      if (nextY <= 0 || nextY > state.mazeDimensions.numRows * CONFIG.maze.cellSpan) {
         return { canMove: false }
       }
 
-      if (nextX <= 0 || nextX > state.mazeDimensions.length * CONFIG.maze.cellSpan) {
+      if (nextX <= 0 || nextX > state.mazeDimensions.numCols * CONFIG.maze.cellSpan) {
         return { canMove: false }
       }
 
@@ -221,12 +276,14 @@ function createTraversalMock({
     traversalHistoryEntry: vi.fn((cell: { row: number; col: number }, playerName: string) => ({
       ...cell,
       playerName,
+      openMoves: [],
     })),
     traversalHistoryIncludes: vi.fn(traversalHistoryIncludes),
     startCellFromTraversalHistory: vi.fn((history: TraversalHistoryEntry[]) => {
       const [startCell] = history
       return startCell ? cloneCellCoordinate(startCell) : null
     }),
+    MOVE_ACTIONS: ["MoveLeft", "MoveRight", "MoveUp", "MoveDown"],
   }
 }
 
@@ -234,7 +291,7 @@ function createTraversalMock({
 function createPersistedWonRound(): PersistedRound {
   return {
     level: 3,
-    mazeDimensions: { length: 1, width: 1, area: 1 },
+    mazeDimensions: { numCols: 1, numRows: 1, area: 1 },
     maze: [
       ["|", "---", "|"],
       ["|", "   ", "|"],
@@ -268,8 +325,8 @@ function latestRenderedState(
 
 type DimensionsResult = {
   level: number
-  length: number
-  width: number
+  numCols: number
+  numRows: number
   area?: number
 } | null
 
@@ -292,7 +349,7 @@ type GameHarness = {
 // bootstrapHarness wires a mocked runtime so high-level browser game flows stay testable.
 async function bootstrapHarness({
   agentConfigs = [],
-  dimensionsResults = [{ level: 1, length: 1, width: 1 }],
+  dimensionsResults = [{ level: 1, numCols: 1, numRows: 1 }],
   isSpaceFound = () => true,
   persistedSnapshots = [
     { preferences: { level: 1, wallWeight: 1 }, round: null },
@@ -300,7 +357,7 @@ async function bootstrapHarness({
   reweightedMaze,
   round = createRound(),
   mode = CONFIG.runtime.controlModes.interactive,
-  terminalSizes = [{ length: 20, width: 20 }],
+  terminalSizes = [{ numCols: 20, numRows: 20 }],
 }: {
   agentConfigs?: AgentApiConfig[]
   dimensionsResults?: DimensionsResult[]
@@ -312,7 +369,7 @@ async function bootstrapHarness({
   reweightedMaze?: string[][]
   round?: RoundState
   mode?: MazeControlModeName
-  terminalSizes?: Array<{ length: number; width: number }>
+  terminalSizes?: Array<{ numCols: number; numRows: number }>
 } = {}): Promise<GameHarness> {
   const elements = createElements()
   const render = vi.fn<(elements: Elements, state: State) => void>()
@@ -339,7 +396,7 @@ async function bootstrapHarness({
     const result =
       dimensionsResults[Math.min(dimensionsIndex, dimensionsResults.length - 1)]
     dimensionsIndex += 1
-    return result ? { ...result, area: result.area ?? result.length * result.width } : null
+    return result ? { ...result, area: result.area ?? result.numCols * result.numRows } : null
   })
 
   vi.doMock("./clock", () => {
@@ -399,6 +456,10 @@ async function bootstrapHarness({
     loadPersistedSnapshot,
     saveGameProgress,
     saveActiveRoundSnapshot,
+    loadTapooLog: vi.fn(() => []),
+    saveTapooLog: vi.fn(),
+    appendTapooLogEntry: vi.fn(),
+    clearTapooLog: vi.fn(),
   }))
   vi.spyOn(window, "setInterval").mockImplementation(
     (handler: TimerHandler) => {
@@ -460,13 +521,13 @@ describe("bootstrapGame", () => {
     const generateMaze = vi.fn(() => createRound())
     const getMazeDimensions = vi.fn(() => ({
       level: 2,
-      length: 1,
-      width: 1,
+      numCols: 1,
+      numRows: 1,
     }))
 
     vi.doMock("./dom", () => ({
       elements,
-      getTerminalSize: vi.fn(() => ({ length: 20, width: 20 })),
+      getTerminalSize: vi.fn(() => ({ numCols: 20, numRows: 20 })),
     }))
     vi.doMock("./maze", () => ({
       generateMaze,
@@ -488,6 +549,10 @@ describe("bootstrapGame", () => {
       loadPersistedSnapshot,
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
+      loadTapooLog: vi.fn(() => []),
+      saveTapooLog: vi.fn(),
+      appendTapooLogEntry: vi.fn(),
+      clearTapooLog: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
@@ -502,9 +567,9 @@ describe("bootstrapGame", () => {
       1,
       expect.any(Function),
     )
-    expect(getMazeDimensions).toHaveBeenCalledWith(2, { length: 20, width: 20 })
+    expect(getMazeDimensions).toHaveBeenCalledWith(2, { numCols: 20, numRows: 20 })
     expect(generateMaze).toHaveBeenCalledWith(
-      { level: 2, length: 1, width: 1 },
+      { level: 2, numCols: 1, numRows: 1 },
       1,
     )
     expect(render).toHaveBeenCalled()
@@ -530,14 +595,14 @@ describe("bootstrapGame", () => {
 
     vi.doMock("./dom", () => ({
       elements,
-      getTerminalSize: vi.fn(() => ({ length: 20, width: 20 })),
+      getTerminalSize: vi.fn(() => ({ numCols: 20, numRows: 20 })),
     }))
     vi.doMock("./maze", () => ({
       generateMaze: vi.fn(() => createRound()),
       getMazeDimensions: vi.fn(() => ({
         level: 1,
-        length: 1,
-        width: 1,
+        numCols: 1,
+        numRows: 1,
       })),
       getNavigationProfile: vi.fn(() => ({
         __softCorridorLimit: 8,
@@ -559,6 +624,10 @@ describe("bootstrapGame", () => {
       })),
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
+      loadTapooLog: vi.fn(() => []),
+      saveTapooLog: vi.fn(),
+      appendTapooLogEntry: vi.fn(),
+      clearTapooLog: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
@@ -582,12 +651,12 @@ describe("bootstrapGame", () => {
     }))
     const getMazeDimensions = vi
       .fn()
-      .mockReturnValueOnce({ level: 4, length: 1, width: 1 })
+      .mockReturnValueOnce({ level: 4, numCols: 1, numRows: 1 })
     const generateMaze = vi.fn(() => createRound())
 
     vi.doMock("./dom", () => ({
       elements,
-      getTerminalSize: vi.fn(() => ({ length: 20, width: 20 })),
+      getTerminalSize: vi.fn(() => ({ numCols: 20, numRows: 20 })),
     }))
     vi.doMock("./maze", () => ({
       generateMaze,
@@ -609,6 +678,10 @@ describe("bootstrapGame", () => {
       loadPersistedSnapshot,
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
+      loadTapooLog: vi.fn(() => []),
+      saveTapooLog: vi.fn(),
+      appendTapooLogEntry: vi.fn(),
+      clearTapooLog: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
@@ -623,9 +696,9 @@ describe("bootstrapGame", () => {
       }),
     )
 
-    expect(getMazeDimensions).toHaveBeenCalledWith(4, { length: 20, width: 20 })
+    expect(getMazeDimensions).toHaveBeenCalledWith(4, { numCols: 20, numRows: 20 })
     expect(generateMaze).toHaveBeenCalledWith(
-      { level: 4, length: 1, width: 1 },
+      { level: 4, numCols: 1, numRows: 1 },
       1,
     )
   })
@@ -642,11 +715,11 @@ describe("bootstrapGame", () => {
 
     vi.doMock("./dom", () => ({
       elements,
-      getTerminalSize: vi.fn(() => ({ length: 20, width: 20 })),
+      getTerminalSize: vi.fn(() => ({ numCols: 20, numRows: 20 })),
     }))
     vi.doMock("./maze", () => ({
       generateMaze: vi.fn(() => createRound()),
-      getMazeDimensions: vi.fn(() => ({ level: 1, length: 1, width: 1 })),
+      getMazeDimensions: vi.fn(() => ({ level: 1, numCols: 1, numRows: 1 })),
       getNavigationProfile: vi.fn(() => ({
         __softCorridorLimit: 8,
         __hardCorridorLimit: 10,
@@ -669,6 +742,10 @@ describe("bootstrapGame", () => {
       })),
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
+      loadTapooLog: vi.fn(() => []),
+      saveTapooLog: vi.fn(),
+      appendTapooLogEntry: vi.fn(),
+      clearTapooLog: vi.fn(),
     }))
     vi.spyOn(window, "setInterval").mockImplementation(() => 1)
 
@@ -711,8 +788,8 @@ describe("bootstrapGame", () => {
     expect(harness.clearPersistedSnapshot).toHaveBeenCalledTimes(1)
     expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(1)
     expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(1, {
-      length: 20,
-      width: 20,
+      numCols: 20,
+      numRows: 20,
     })
 
     const state = latestRenderedState(harness.render)
@@ -728,21 +805,21 @@ describe("bootstrapGame", () => {
   it("restarts agent-api game progress without deleting configured agents", async () => {
     const harness = await bootstrapHarness({
       agentConfigs: [enabledAgentConfig()],
-      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }],
       mode: CONFIG.runtime.controlModes.agentApi,
       round: createHorizontalRound(),
     })
 
-    const actionState = harness.runtime.dispatch(
+    const actionResult = harness.runtime.dispatch(
       { type: "MoveRight" },
       { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
-    expect(harness.mode.readLastActionState()).toEqual(actionState)
+    expect(harness.mode.readLastActionResult()).toEqual(actionResult)
 
     harness.elements.controls[0].click()
 
     expect(harness.clearPersistedSnapshot).toHaveBeenCalledTimes(1)
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
 
     const state = latestRenderedState(harness.render)
     expect(state.controlMode).toBe(CONFIG.runtime.controlModes.agentApi)
@@ -791,7 +868,7 @@ describe("bootstrapGame", () => {
 
   it("moves the player to the target and persists a win", async () => {
     const harness = await bootstrapHarness({
-      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }],
       round: createHorizontalRound(),
     })
 
@@ -818,7 +895,7 @@ describe("bootstrapGame", () => {
 
   it("builds a browser win summary from persisted timing history", async () => {
     const harness = await bootstrapHarness({
-      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }],
       round: createHorizontalRound(),
       persistedSnapshots: [
         {
@@ -871,7 +948,7 @@ describe("bootstrapGame", () => {
     }
 
     const harness = await bootstrapHarness({
-      dimensionsResults: [{ level: 1, length: 3, width: 1 }],
+      dimensionsResults: [{ level: 1, numCols: 3, numRows: 1 }],
       round: backtrackRound,
     })
 
@@ -889,7 +966,7 @@ describe("bootstrapGame", () => {
 
   it("marks the round as lost when the refresh callback depletes the score", async () => {
     const harness = await bootstrapHarness({
-      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }],
       round: createHorizontalRound(),
     })
 
@@ -918,7 +995,7 @@ describe("bootstrapGame", () => {
 
   it("re-renders a running round when only the blink phase changes", async () => {
     const harness = await bootstrapHarness({
-      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }],
       round: createHorizontalRound(),
     })
 
@@ -946,7 +1023,7 @@ describe("bootstrapGame", () => {
 
   it("updates the running score with sub-second precision on refresh ticks", async () => {
     const harness = await bootstrapHarness({
-      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }],
       round: createHorizontalRound(),
     })
 
@@ -975,14 +1052,14 @@ describe("bootstrapGame", () => {
   it("redraws the current level when an alternate maze shape still fits after resize", async () => {
     const harness = await bootstrapHarness({
       dimensionsResults: [
-        { level: 1, length: 4, width: 1 },
-        { level: 1, length: 1, width: 4 },
+        { level: 1, numCols: 4, numRows: 1 },
+        { level: 1, numCols: 1, numRows: 4 },
       ],
       round: createHorizontalRound(),
       terminalSizes: [
-        { length: 20, width: 20 },
-        { length: 1, width: 20 },
-        { length: 1, width: 20 },
+        { numCols: 20, numRows: 20 },
+        { numCols: 1, numRows: 20 },
+        { numCols: 1, numRows: 20 },
       ],
     })
 
@@ -991,21 +1068,21 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
     expect(state.level).toBe(1)
-    expect(state.mazeDimensions).toEqual({ length: 1, width: 4, area: 4 })
+    expect(state.mazeDimensions).toEqual({ numCols: 1, numRows: 4, area: 4 })
     expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
     expect(harness.generateMaze).toHaveBeenCalledTimes(2)
     expect(harness.generateMaze).toHaveBeenLastCalledWith(
-      { level: 1, length: 1, width: 4, area: 4 },
+      { level: 1, numCols: 1, numRows: 4, area: 4 },
       1,
     )
   })
 
   it("keeps the too-small flow when both maze axes exceed the resized viewport", async () => {
     const harness = await bootstrapHarness({
-      dimensionsResults: [{ level: 1, length: 4, width: 4 }],
+      dimensionsResults: [{ level: 1, numCols: 4, numRows: 4 }],
       terminalSizes: [
-        { length: 20, width: 20 },
-        { length: 1, width: 1 },
+        { numCols: 20, numRows: 20 },
+        { numCols: 1, numRows: 1 },
       ],
     })
 
@@ -1020,7 +1097,7 @@ describe("bootstrapGame", () => {
   it("restores a persisted round in paused mode once the viewport fits again", async () => {
     const persistedRound: PersistedRound = {
       level: 1,
-      mazeDimensions: { length: 2, width: 1, area: 2 },
+      mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
       maze: createHorizontalRound().maze,
       playerPosition: { x: 1, y: 1 },
       startCell: { row: 0, col: 0 },
@@ -1047,11 +1124,11 @@ describe("bootstrapGame", () => {
         },
       ],
       terminalSizes: [
-        { length: 20, width: 20 },
-        { length: 1, width: 1 },
-        { length: 1, width: 1 },
-        { length: 1, width: 1 },
-        { length: 20, width: 20 },
+        { numCols: 20, numRows: 20 },
+        { numCols: 1, numRows: 1 },
+        { numCols: 1, numRows: 1 },
+        { numCols: 1, numRows: 1 },
+        { numCols: 20, numRows: 20 },
       ],
     })
 
@@ -1072,7 +1149,7 @@ describe("bootstrapGame", () => {
   it("rejects malformed persisted traversal history and falls back to a fresh round", async () => {
     const invalidPersistedRound: PersistedRound = {
       level: 2,
-      mazeDimensions: { length: 2, width: 1, area: 2 },
+      mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
       maze: createHorizontalRound().maze,
       playerPosition: { x: 3, y: 1 },
       startCell: { row: 0, col: 0 },
@@ -1093,7 +1170,7 @@ describe("bootstrapGame", () => {
           round: invalidPersistedRound,
         },
       ],
-      dimensionsResults: [{ level: 2, length: 1, width: 1 }],
+      dimensionsResults: [{ level: 2, numCols: 1, numRows: 1 }],
     })
 
     const state = latestRenderedState(harness.render)
@@ -1107,14 +1184,14 @@ describe("bootstrapGame", () => {
     const harness = await bootstrapHarness({
       dimensionsResults: [
         null,
-        { level: 1, length: 2, width: 1 },
+        { level: 1, numCols: 2, numRows: 1 },
       ],
       persistedSnapshots: [
         { preferences: { level: 1, wallWeight: 1 }, round: null },
       ],
       terminalSizes: [
-        { length: 1, width: 1 },
-        { length: 20, width: 20 },
+        { numCols: 1, numRows: 1 },
+        { numCols: 20, numRows: 20 },
       ],
     })
 
@@ -1130,7 +1207,7 @@ describe("bootstrapGame", () => {
 
   it("handles touch controls and page lifecycle persistence", async () => {
     const harness = await bootstrapHarness({
-      dimensionsResults: [{ level: 1, length: 2, width: 1 }],
+      dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }],
       round: createHorizontalRound(),
     })
 
@@ -1153,8 +1230,8 @@ describe("bootstrapGame", () => {
     const harness = await bootstrapHarness({
       agentConfigs: [enabledAgentConfig()],
       dimensionsResults: [
-        { level: 1, length: 2, width: 1 },
-        { level: 2, length: 2, width: 1 },
+        { level: 1, numCols: 2, numRows: 1 },
+        { level: 2, numCols: 2, numRows: 1 },
       ],
       mode: CONFIG.runtime.controlModes.agentApi,
       round: createHorizontalRound(),
@@ -1171,9 +1248,9 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("running")
     expect(state.playerPosition).toEqual({ x: 1, y: 1 })
     expect(state.controlMode).toBe(CONFIG.runtime.controlModes.agentApi)
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
 
-    const actionState = harness.runtime.dispatch(
+    const actionResult = harness.runtime.dispatch(
       { type: "MoveRight" },
       { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
     )
@@ -1181,16 +1258,13 @@ describe("bootstrapGame", () => {
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("won")
     expect(state.playerPosition).toEqual({ x: 3, y: 1 })
-    expect(actionState).toEqual(expect.objectContaining({
-      currentCell: { row: 0, col: 1 },
-      destinationCell: { row: 0, col: 1 },
-      traversalHistory: [selfVisit(0, 0), visit(0, 1)],
+    expect(actionResult).toEqual(expect.objectContaining({
       lastMoveStatus: "reached-target",
       visitedBefore: false,
       lastSubmittedMoves: ["0:MoveRight"],
-      lastValidMoveIndex: 0,
+      lastAppliedMoveIndex: 0,
     }))
-    expect(harness.mode.readLastActionState()).toEqual(actionState)
+    expect(harness.mode.readLastActionResult()).toEqual(actionResult)
 
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -1203,7 +1277,7 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("running")
     expect(state.level).toBe(2)
     expect(state.playerPosition).toEqual({ x: 1, y: 1 })
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
   })
 
   it("keeps pause, proceed, and wall cycling human-driven in agent-api mode", async () => {
@@ -1217,16 +1291,16 @@ describe("bootstrapGame", () => {
     )
     let state = latestRenderedState(harness.render)
     expect(state.status).toBe("paused")
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
 
     harness.elements.touchButtons[0].click()
     state = latestRenderedState(harness.render)
     expect(state.wallWeight).toBe(2)
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
 
     harness.elements.touchButtons[2].click()
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
-    expect(harness.mode.readLastActionState()).toBeNull()
+    expect(harness.mode.readLastActionResult()).toBeNull()
   })
 })

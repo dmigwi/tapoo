@@ -13,8 +13,8 @@ func TestGenerateMaze(t *testing.T) {
 	t.Parallel()
 
 	config := &maze.Dimensions{
-		Length: 10,
-		Width:  10,
+		NumCols: 10,
+		NumRows: 10,
 	}
 
 	data, err := config.GenerateMaze(maze.WallWeight(-1))
@@ -38,7 +38,7 @@ func TestGenerateMaze(t *testing.T) {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 
-	singleCellConfig := &maze.Dimensions{Length: 1, Width: 1}
+	singleCellConfig := &maze.Dimensions{NumCols: 1, NumRows: 1}
 	data, err = singleCellConfig.GenerateMaze(maze.WallWeightRegular)
 	if err == nil {
 		t.Fatal("GenerateMaze() expected an error when the maze has fewer than two cells")
@@ -60,10 +60,10 @@ func TestGenerateMaze(t *testing.T) {
 	}
 
 	for _, invalidConfig := range []*maze.Dimensions{
-		{Length: 0, Width: 10},
-		{Length: 10, Width: 0},
-		{Length: -1, Width: 10},
-		{Length: 10, Width: -1},
+		{NumCols: 0, NumRows: 10},
+		{NumCols: 10, NumRows: 0},
+		{NumCols: -1, NumRows: 10},
+		{NumCols: 10, NumRows: -1},
 	} {
 		data, err = invalidConfig.GenerateMaze(maze.WallWeightRegular)
 		if err == nil {
@@ -132,12 +132,12 @@ func TestGenerateMazeRepeatable(t *testing.T) {
 		config maze.Dimensions
 		weight maze.WallWeight
 	}{
-		{config: maze.Dimensions{Length: 5, Width: 5}, weight: maze.WallWeightRegular},
-		{config: maze.Dimensions{Length: 5, Width: 5}, weight: maze.WallWeightMedium},
-		{config: maze.Dimensions{Length: 4, Width: 4}, weight: maze.WallWeightBold},
+		{config: maze.Dimensions{NumCols: 5, NumRows: 5}, weight: maze.WallWeightRegular},
+		{config: maze.Dimensions{NumCols: 5, NumRows: 5}, weight: maze.WallWeightMedium},
+		{config: maze.Dimensions{NumCols: 4, NumRows: 4}, weight: maze.WallWeightBold},
 	} {
 		config := testCase.config
-		t.Run(fmt.Sprintf("%dx%d-%s", config.Length, config.Width, testCase.weight), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%dx%d-%s", config.NumCols, config.NumRows, testCase.weight), func(t *testing.T) {
 			t.Parallel()
 
 			data, err := config.GenerateMaze(testCase.weight)
@@ -216,8 +216,8 @@ func mazeContainsWallWeight(data [][]string, weight maze.WallWeight) bool {
 }
 
 func isBoundaryPosition(config maze.Dimensions, position [2]int) bool {
-	maxRow := (config.Width * 2) - 1
-	maxColumn := (config.Length * 2) - 1
+	maxRow := (config.NumRows * 2) - 1
+	maxColumn := (config.NumCols * 2) - 1
 
 	return position[0] == 1 || position[0] == maxRow || position[1] == 1 || position[1] == maxColumn
 }

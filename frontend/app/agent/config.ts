@@ -11,7 +11,7 @@ type AgentConfigValidationInput = {
 }
 
 // normalizeAgentEndpoint makes host:port shorthand usable by browser fetch while keeping HTTP(S) explicit.
-export function normalizeAgentEndpoint(endpoint: string): string | null {
+export function normalizeAgentEndpoint(endpoint: string): URL | null {
   const trimmedEndpoint = endpoint.trim()
   const hostPortEndpoint =/^(localhost|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)(?:\/.*)?$/i.test(trimmedEndpoint)
   const hasProtocol = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmedEndpoint)
@@ -23,9 +23,7 @@ export function normalizeAgentEndpoint(endpoint: string): string | null {
 
   try {
     const url = new URL(endpointWithProtocol)
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.href
-      : null
+    return url.protocol === "http:" || url.protocol === "https:" ? url : null
   } catch {
     return null
   }

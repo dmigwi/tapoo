@@ -1,4 +1,4 @@
-import type { MazeAction, SessionAction } from "../types"
+import type { Elements, MazeAction, SessionAction } from "../types"
 
 // SessionMazeAction keeps the shared browser-only session actions grouped together.
 export type SessionMazeAction = Extract<MazeAction, { type: SessionAction }>
@@ -46,6 +46,16 @@ export function releaseAllActionBindings({
   __removeAppFocus()
   __setAttached(false)
   __onAfterRelease?.()
+}
+
+// isMazeControlFocused keeps human keyboard/button controls scoped to the terminal app.
+export function isMazeControlFocused(elements: Elements): boolean {
+  if (!elements.app.isConnected) {
+    return true
+  }
+
+  const activeElement = document.activeElement
+  return activeElement === elements.app || elements.app.contains(activeElement)
 }
 
 // sessionActionFromKeyboardEvent translates shared keyboard shortcuts into session actions.

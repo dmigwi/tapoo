@@ -1,7 +1,9 @@
 import { CONFIG } from "../config"
-import type { AgentApiConfig, AgentSeat } from "../types"
+import { resolveBatchEfficiencyRank } from "./efficiency"
+import type { AgentApiConfig, AgentSeat, TraversalHistoryEntry } from "../types"
 
 const { agentConfig } = CONFIG
+const middleTrimMarker = "..."
 export const emptyAgentSeatLabel = "+"
 
 // agentSeatIds lists every fixed numeric seat id in display order.
@@ -43,23 +45,63 @@ export function agentSeatAddLabel(id: number): string {
 }
 
 // agentSeatManageLabel describes the non-destructive edit dialog opened from an occupied seat.
-export function agentSeatManageLabel(agent: AgentApiConfig): string {
-  return seatTemplate(agentConfig.manageSeatLabelTemplate, agent)
+export function agentSeatManageLabel(
+  agent: AgentApiConfig,
+  traversalHistory: TraversalHistoryEntry[] = [],
+): string {
+  return seatTemplate(agentConfig.manageSeatLabelTemplate, agent, traversalHistory)
 }
 
 // activeAgentSeatLabel identifies the currently selected agent without implying it can be edited.
-export function activeAgentSeatLabel(agent: AgentApiConfig): string {
-  return seatTemplate(agentConfig.activeSeatLabelTemplate, agent)
+export function activeAgentSeatLabel(
+  agent: AgentApiConfig,
+  traversalHistory: TraversalHistoryEntry[] = [],
+): string {
+  return seatTemplate(agentConfig.activeSeatLabelTemplate, agent, traversalHistory)
 }
 
 // seatTemplate applies the shared seat placeholders while keeping user-facing copy in CONFIG.
-function seatTemplate(template: string, seat: AgentApiConfig | number): string {
+function seatTemplate(
+  template: string,
+  seat: AgentApiConfig | number,
+  traversalHistory: TraversalHistoryEntry[] = [],
+): string {
   const seatId = typeof seat === "number" ? seat : seat.id
-  const agentName = typeof seat === "number" ? "" : seat.playerName
+  const agentName = typeof seat === "number" ? "" : agentDisplayName(seat, traversalHistory)
+  const agentModel = typeof seat === "number" ? "" : compactAgentModelLabel(seat.model)
 
   return template
     .replace("{agent}", agentName)
+    .replace("{model}", agentModel)
     .replace("{seat}", agentSeatLabel(seatId))
+}
+
+// agentDisplayName names the agent after its current efficiency rank everywhere the UI shows it
+// — tooltips, dialog titles — so the identity the model is defending stays visible to a human
+// observer too, e.g. "Kora the Trailblazer". An agent with no tracked requests yet defaults to
+// Trailblazer, matching the rank stated in its very first prompt.
+function agentDisplayName(agent: AgentApiConfig, traversalHistory: TraversalHistoryEntry[]): string {
+  const rank = resolveBatchEfficiencyRank(traversalHistory, agent)
+  return `${agent.playerName} the ${capitalize(rank)}`
+}
+
+// capitalize renders lowercase rank identifiers (kept lowercase for model-facing JSON/prose)
+// as UI-facing title case.
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+// compactAgentModelLabel keeps long model names readable in tight dialog titles.
+function compactAgentModelLabel(model: string): string {
+  if (model.length <= agentConfig.maxModelDisplayLength) {
+    return model
+  }
+
+  const availableCharacters = agentConfig.maxModelDisplayLength - middleTrimMarker.length
+  const leadingCharacters = Math.floor(availableCharacters / 2)
+  const trailingCharacters = availableCharacters - leadingCharacters
+
+  return `${model.slice(0, leadingCharacters)}${middleTrimMarker}${model.slice(-trailingCharacters)}`
 }
 
 // buildAgentSeats returns fixed slots; occupied seats carry an agent, empty seats carry null.
@@ -77,6 +119,7 @@ export function renderAgentSeatRoster(
   roster: HTMLElement | undefined,
   agents: AgentApiConfig[],
   activeAgentId: number | null,
+  traversalHistory: TraversalHistoryEntry[] = [],
 ): void {
   if (!roster) {
     return
@@ -100,12 +143,12 @@ export function renderAgentSeatRoster(
 
     seat.classList.toggle("agent-seat--disabled", !agent.enabled)
     seat.classList.toggle("agent-seat--active", agent.id === activeAgentId)
-    seat.title = agent.playerName
-    seat.setAttribute("aria-label", agentSeatManageLabel(agent))
+    seat.title = agentDisplayName(agent, traversalHistory)
+    seat.setAttribute("aria-label", agentSeatManageLabel(agent, traversalHistory))
 
     if (agent.id === activeAgentId) {
       seat.disabled = true
-      seat.setAttribute("aria-label", activeAgentSeatLabel(agent))
+      seat.setAttribute("aria-label", activeAgentSeatLabel(agent, traversalHistory))
     } else {
       seat.dataset.agentSeatDelete = agentSeatDatasetValue(agent.id)
     }
