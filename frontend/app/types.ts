@@ -115,11 +115,16 @@ export type CellNeighbors = {
   __top: number
 }
 
-// NavigationProfile shapes corridor and turning behavior during maze generation.
+// NavigationProfile shapes corridor length and branching behavior during maze generation.
 export type NavigationProfile = {
-  __softCorridorLimit: number
-  __hardCorridorLimit: number
-  __preferTurnPercent: number
+  // __maxCorridorLength caps how many cells a straight run can span before being forced to bend.
+  __maxCorridorLength: number
+  // __leastNeighborsBias (0-100) is the percent chance, at any decision point with more than
+  // one unvisited neighbor, of preferring the candidate with the fewest unvisited neighbors of
+  // its own — this is what actually controls junction density. 100 minimizes branching (long,
+  // predictable corridors, bounded by __maxCorridorLength); 0 restores fully random neighbor
+  // selection (the original branching rate, ~10% junctions regardless of area).
+  __leastNeighborsBias: number
 }
 
 // PathStep tracks one generation step and its corridor history.

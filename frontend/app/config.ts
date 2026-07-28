@@ -6,18 +6,16 @@ import type {
 
 declare const __TAPOO_BUILD_YEAR__: number
 
-// NAVIGATION_FRIENDLY_PROFILE defines the easiest corridor settings for small mazes.
+// NAVIGATION_FRIENDLY_PROFILE defines the easiest, least-branching settings for small mazes.
 const NAVIGATION_FRIENDLY_PROFILE: NavigationProfile = {
-  __softCorridorLimit: 8,
-  __hardCorridorLimit: 10,
-  __preferTurnPercent: 90,
+  __maxCorridorLength: 10,
+  __leastNeighborsBias: 100,
 }
 
-// NAVIGATION_HARDEST_PROFILE defines the tightest supported corridor settings.
+// NAVIGATION_HARDEST_PROFILE defines the tightest, most-branching supported profile.
 const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
-  __softCorridorLimit: 2,
-  __hardCorridorLimit: 3,
-  __preferTurnPercent: 55,
+  __maxCorridorLength: 3,
+  __leastNeighborsBias: 0,
 }
 
 // VERSION_MAJOR is the semantic major version for the browser SPA runtime.

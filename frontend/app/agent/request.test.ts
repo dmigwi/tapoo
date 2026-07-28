@@ -484,7 +484,7 @@ describe("agent request service", () => {
         chargedMovesCount: 0,
       },
       {
-        suggestedMovesPerTurn: Math.min(getNavigationProfile(state.mazeDimensions).__hardCorridorLimit, 4),
+        suggestedMovesPerTurn: Math.min(getNavigationProfile(state.mazeDimensions).__maxCorridorLength, 4),
         uniqueCellsVisited: 0,
         requestsMade: 0,
         batchEfficiencyRank: "trailblazer",

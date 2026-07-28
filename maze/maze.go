@@ -72,7 +72,9 @@ func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
 		}
 
 		// Corridor shaping happens here; the returned cell still preserves DFS behavior.
-		nextChoice, nextChoiceErr := config.chooseNextCell(neighbors, cellsPath[len(cellsPath)-1], navigationProfile)
+		nextChoice, nextChoiceErr := config.chooseNextCell(
+			neighbors, cellsPath[len(cellsPath)-1], navigationProfile, visitedCells,
+		)
 		if nextChoiceErr != nil {
 			config.resetPositions()
 			return nil, fmt.Errorf("select next maze cell: %w", nextChoiceErr)
@@ -106,21 +108,19 @@ func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
 	return maze, nil
 }
 
-// chooseNextCell selects the next unvisited neighbor while applying the configured corridor limits.
-// The returned choice preserves the DFS spanning-tree behavior but can bias turns once a straight
-// run becomes long enough to make navigation feel too corridor-heavy.
+// chooseNextCell selects the next unvisited neighbor while applying the configured corridor
+// length cap and least-neighbors bias. The returned choice preserves the DFS spanning-tree
+// behavior.
 func (config *Dimensions) chooseNextCell(
-	neighbors []int, currentState pathStep, profile NavigationProfile,
+	neighbors []int, currentState pathStep, profile NavigationProfile, visitedCells []bool,
 ) (pathStep, error) {
 	var (
-		allCount  int
-		turnCount int
-		hardCount int
+		allCount    int
+		lengthCount int
 
 		// These fixed-size arrays avoid per-step heap growth while we score up to four neighbors.
-		allChoices      [mazeEdgeNeighborCount]pathStep
-		turnChoices     [mazeEdgeNeighborCount]pathStep
-		withinHardLimit [mazeEdgeNeighborCount]pathStep
+		allChoices        [mazeEdgeNeighborCount]pathStep
+		withinLengthLimit [mazeEdgeNeighborCount]pathStep
 	)
 
 	for _, neighbor := range neighbors {
@@ -139,36 +139,50 @@ func (config *Dimensions) chooseNextCell(
 		allChoices[allCount] = choice
 		allCount++
 
-		if nextDirection != currentState.moveDirection {
-			turnChoices[turnCount] = choice
-			turnCount++
-		}
-
-		if straightLength <= profile.HardCorridorLimit {
-			withinHardLimit[hardCount] = choice
-			hardCount++
+		// Caps how long a straight run can go before being forced to bend.
+		if straightLength <= profile.MaxCorridorLength {
+			withinLengthLimit[lengthCount] = choice
+			lengthCount++
 		}
 	}
 
 	// Start with every valid neighbor, then narrow down only if the profile says this corridor is too long.
 	choices := allChoices[:allCount]
-
-	if hardCount > 0 {
-		choices = withinHardLimit[:hardCount]
+	if lengthCount > 0 {
+		choices = withinLengthLimit[:lengthCount]
 	}
 
-	if currentState.moveDirection != directionNone && turnCount > 0 {
-		// Soft limits bias the choice toward a turn, while hard limits force one when available.
-		turnPreferenceRoll, err := secureRandomIndex(percentScale)
+	if len(choices) > 1 {
+		biasRoll, err := secureRandomIndex(percentScale)
 		if err != nil {
 			return pathStep{}, err
 		}
 
-		if currentState.corridorLength >= profile.HardCorridorLimit {
-			choices = turnChoices[:turnCount]
-		} else if currentState.corridorLength >= profile.SoftCorridorLimit &&
-			turnPreferenceRoll < profile.PreferTurnPercent {
-			choices = turnChoices[:turnCount]
+		if biasRoll < profile.LeastNeighborsBias {
+			// Prefer the candidate with the fewest remaining unvisited neighbors of its own. A
+			// low-neighbor-count cell gets "used up" cleanly by visiting it now, leaving nothing
+			// behind for some later, unrelated branch to claim and retroactively turn this cell
+			// into a junction. This is the mechanism that actually controls branching — unlike
+			// corridor length, neighbor count directly predicts whether a cell will be orphaned.
+			var (
+				leastPopulatedCount int
+				fewestRemaining     = mazeEdgeNeighborCount + 1
+				leastPopulated      [mazeEdgeNeighborCount]pathStep
+			)
+
+			for _, choice := range choices {
+				remaining := len(config.getPresentNeighbors(choice.cellNo, visitedCells))
+				switch {
+				case remaining < fewestRemaining:
+					fewestRemaining = remaining
+					leastPopulated[0] = choice
+					leastPopulatedCount = 1
+				case remaining == fewestRemaining:
+					leastPopulated[leastPopulatedCount] = choice
+					leastPopulatedCount++
+				}
+			}
+			choices = leastPopulated[:leastPopulatedCount]
 		}
 	}
 

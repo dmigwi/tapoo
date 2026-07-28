@@ -440,9 +440,8 @@ async function bootstrapHarness({
     generateMaze,
     getMazeDimensions,
     getNavigationProfile: vi.fn(() => ({
-      __softCorridorLimit: 8,
-      __hardCorridorLimit: 10,
-      __preferTurnPercent: 90,
+      __maxCorridorLength: 10,
+      __leastNeighborsBias: 100,
     })),
   }))
   vi.doMock("./traversal", () => createTraversalMock({ isSpaceFound, reweightMaze }))
@@ -533,9 +532,8 @@ describe("bootstrapGame", () => {
       generateMaze,
       getMazeDimensions,
       getNavigationProfile: vi.fn(() => ({
-        __softCorridorLimit: 8,
-        __hardCorridorLimit: 10,
-        __preferTurnPercent: 90,
+        __maxCorridorLength: 10,
+        __leastNeighborsBias: 100,
       })),
     }))
     vi.doMock("./traversal", () => createTraversalMock())
@@ -605,9 +603,8 @@ describe("bootstrapGame", () => {
         numRows: 1,
       })),
       getNavigationProfile: vi.fn(() => ({
-        __softCorridorLimit: 8,
-        __hardCorridorLimit: 10,
-        __preferTurnPercent: 90,
+        __maxCorridorLength: 10,
+        __leastNeighborsBias: 100,
       })),
     }))
     vi.doMock("./traversal", () => createTraversalMock())
@@ -662,9 +659,8 @@ describe("bootstrapGame", () => {
       generateMaze,
       getMazeDimensions,
       getNavigationProfile: vi.fn(() => ({
-        __softCorridorLimit: 8,
-        __hardCorridorLimit: 10,
-        __preferTurnPercent: 90,
+        __maxCorridorLength: 10,
+        __leastNeighborsBias: 100,
       })),
     }))
     vi.doMock("./traversal", () => createTraversalMock())
@@ -721,9 +717,8 @@ describe("bootstrapGame", () => {
       generateMaze: vi.fn(() => createRound()),
       getMazeDimensions: vi.fn(() => ({ level: 1, numCols: 1, numRows: 1 })),
       getNavigationProfile: vi.fn(() => ({
-        __softCorridorLimit: 8,
-        __hardCorridorLimit: 10,
-        __preferTurnPercent: 90,
+        __maxCorridorLength: 10,
+        __leastNeighborsBias: 100,
       })),
     }))
     vi.doMock("./traversal", () =>

@@ -349,19 +349,14 @@ export function getNavigationProfile(
   const difficultyFactor = navigationDifficultyFactor(area)
 
   return {
-    __softCorridorLimit: interpolateNavigationValue(
-      generation.navigation.friendlyProfile.__softCorridorLimit,
-      generation.navigation.hardestProfile.__softCorridorLimit,
+    __maxCorridorLength: interpolateNavigationValue(
+      generation.navigation.friendlyProfile.__maxCorridorLength,
+      generation.navigation.hardestProfile.__maxCorridorLength,
       difficultyFactor,
     ),
-    __hardCorridorLimit: interpolateNavigationValue(
-      generation.navigation.friendlyProfile.__hardCorridorLimit,
-      generation.navigation.hardestProfile.__hardCorridorLimit,
-      difficultyFactor,
-    ),
-    __preferTurnPercent: interpolateNavigationValue(
-      generation.navigation.friendlyProfile.__preferTurnPercent,
-      generation.navigation.hardestProfile.__preferTurnPercent,
+    __leastNeighborsBias: interpolateNavigationValue(
+      generation.navigation.friendlyProfile.__leastNeighborsBias,
+      generation.navigation.hardestProfile.__leastNeighborsBias,
       difficultyFactor,
     ),
   }
@@ -432,7 +427,7 @@ function backtrackToBranch(
     path.pop()
   }
 
-  throw new Error("failed to backtrack to a maze branch")
+  throw new Error("maze generation failed: no branch with unvisited neighbors found")
 }
 
 // chooseNextCell applies the navigation profile to the next branch decision.
@@ -441,19 +436,15 @@ function chooseNextCell(
   neighbors: number[],
   currentState: PathStep,
   profile: NavigationProfile,
+  visited: boolean[],
 ): PathStep {
   const allChoices: PathStep[] = []
-  const turnChoices: PathStep[] = []
-  const withinHardLimit: PathStep[] = []
+  const withinLengthLimit: PathStep[] = []
 
   for (const neighbor of neighbors) {
     const choice: PathStep = {
       __cellNo: neighbor,
-      __moveDirection: directionBetween(
-        dimensions,
-        currentState.__cellNo,
-        neighbor,
-      ),
+      __moveDirection: directionBetween(dimensions, currentState.__cellNo, neighbor),
       __corridorLength: 1,
     }
 
@@ -463,32 +454,32 @@ function chooseNextCell(
 
     allChoices.push(choice)
 
-    if (choice.__moveDirection !== currentState.__moveDirection) {
-      turnChoices.push(choice)
-    }
-
-    if (choice.__corridorLength <= profile.__hardCorridorLimit) {
-      withinHardLimit.push(choice)
+    // Caps how long a straight run can go before being forced to bend.
+    if (choice.__corridorLength <= profile.__maxCorridorLength) {
+      withinLengthLimit.push(choice)
     }
   }
 
-  let choices = allChoices
+  const choices = withinLengthLimit.length > 0 ? withinLengthLimit : allChoices
+  if (choices.length > 1 && getRandomNo(scoring.percentScale) < profile.__leastNeighborsBias) {
+    // Prefer the candidate with the fewest remaining unvisited neighbors of its own. A
+    // low-neighbor-count cell gets "used up" cleanly by visiting it now, leaving nothing behind
+    // for some later, unrelated branch to claim and retroactively turn this cell into a
+    // junction. This is the mechanism that actually controls branching — unlike corridor length
+    // or turn direction, neighbor count directly predicts whether a cell will be orphaned.
+    let leastPopulated: PathStep[] = []
+    let fewestRemaining = Infinity
 
-  if (withinHardLimit.length > 0) {
-    choices = withinHardLimit
-  }
-
-  if (currentState.__moveDirection !== "none" && turnChoices.length > 0) {
-    const turnPreferenceRoll = getRandomNo(scoring.percentScale)
-
-    if (currentState.__corridorLength >= profile.__hardCorridorLimit) {
-      choices = turnChoices
-    } else if (
-      currentState.__corridorLength >= profile.__softCorridorLimit &&
-      turnPreferenceRoll < profile.__preferTurnPercent
-    ) {
-      choices = turnChoices
+    for (const choice of choices) {
+      const remaining = getPresentNeighbors(dimensions, choice.__cellNo, visited).length
+      if (remaining < fewestRemaining) {
+        fewestRemaining = remaining
+        leastPopulated = [choice]
+      } else if (remaining === fewestRemaining) {
+        leastPopulated.push(choice)
+      }
     }
+    return leastPopulated[getRandomNo(leastPopulated.length)]
   }
 
   return choices[getRandomNo(choices.length)]
@@ -629,6 +620,7 @@ export function generateMaze(
       backtrackedState.neighbors,
       path[path.length - 1],
       navigationProfile,
+      visited,
     )
 
     if (visited[nextChoice.__cellNo]) {
