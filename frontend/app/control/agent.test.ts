@@ -1284,6 +1284,45 @@ describe("agent control mode", () => {
     elements.app.remove()
   })
 
+  it("closes the manage/delete dialog with Escape without dispatching pause", () => {
+    // The delete dialog focuses a <button> (agentDeleteApply), unlike the add/edit form which
+    // focuses an <input>. Escape must still close it rather than falling through to the global
+    // session shortcut, regardless of which element type currently holds focus.
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
+        enabled: true,
+      },
+    ])
+    const elements = createAgentFormElements()
+    const dispatch = vi.fn()
+    vi.stubGlobal("fetch", vi.fn())
+    document.body.append(elements.app)
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickDeleteSeat(elements, "1")
+    dispatch.mockClear()
+    elements.agentDeleteApply?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    )
+
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(elements.agentDeleteDialog?.hidden).toBe(true)
+    expect(
+      elements.body.classList.contains("terminal-body--agent-form-active"),
+    ).toBe(false)
+    elements.app.remove()
+  })
+
   it("pauses a running agent game before opening the add form", () => {
     const elements = createAgentFormElements()
     const dispatch = vi.fn()

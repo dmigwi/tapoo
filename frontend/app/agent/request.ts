@@ -173,6 +173,47 @@ function serializeToolResult(result: unknown): string {
   return typeof result === "string" ? result : JSON.stringify(result)
 }
 
+// loggedDescriptionPreviewLength caps how much of a known long/repeated description field
+// survives into the log when the full text isn't needed.
+const loggedDescriptionPreviewLength = 50
+
+// trimLoggedDescription is the single place every long, repeated description field goes through
+// before being logged. Passing keepFull lets each call site decide once whether this entry needs
+// the real text (e.g. the level's first request) or just a short, recognizable preview.
+function trimLoggedDescription(
+  description: string | undefined,
+  keepFull: boolean,
+): string | undefined {
+  if (keepFull || !description || description.length <= loggedDescriptionPreviewLength) {
+    return description
+  }
+
+  return `${description.slice(0, loggedDescriptionPreviewLength)}.....`
+}
+
+// previewLoggedMessage trims content only for the system/user roles, the two known static,
+// repeated-every-turn prompt messages. Assistant/tool messages are always turn-unique content
+// (tool-call results), so they're left untouched regardless of keepFull — gating by role here,
+// not by round, keeps every message's treatment consistent across every round of a turn.
+function previewLoggedMessage(message: AgentChatMessage, keepFull: boolean): AgentChatMessage {
+  if (message.role !== "system" && message.role !== "user") {
+    return message
+  }
+
+  return { ...message, content: trimLoggedDescription(message.content, keepFull) }
+}
+
+// previewLoggedTool applies trimLoggedDescription to a tool's function.description, the other
+// field known to carry long, repeated text (the same 5 static schemas resent every round).
+// Name is kept as-is regardless — it's short and still tells you which tools were on offer.
+function previewLoggedTool(
+  tool: object,
+  keepFull: boolean,
+): { name: string; description: string | undefined } {
+  const { function: fn } = tool as AgentToolDefinition
+  return { name: fn.name, description: trimLoggedDescription(fn.description, keepFull) }
+}
+
 // buildToolResultMessages executes requested tools and converts their values into chat messages.
 async function buildToolResultMessages(
   toolCalls: AgentToolCall[],
@@ -242,8 +283,10 @@ async function requestChatTurn(
   messages: AgentChatMessage[],
   tools: object[],
   signal: AbortSignal,
-  mazeArea?: number,
-  format?: Record<string, unknown>,
+  mazeArea: number | undefined,
+  format: Record<string, unknown> | undefined,
+  reqTurn: number,
+  isFirstRequestOfLevel: boolean,
 ): Promise<AgentChatResponse | null> {
 
   const msgBody = {
@@ -261,13 +304,13 @@ async function requestChatTurn(
   }
 
   const endpointLabel = `${endpoint.origin}${endpoint.pathname}`
-  // Snapshot messages at log time: chatMessages is mutated by push() after each tool round,
-  // so storing the live reference would cause all log entries to reflect the final state.
   const agentApiModeName = CONFIG.runtime.controlModes.agentApi
-  
   logTapooDiagnostic(agentApiModeName, "info", "Agent request.", {
     endpoint: endpointLabel,
-    payload: { ...msgBody, messages: [...messages] },
+    requestTurn: reqTurn,
+    mode: format !== undefined ? "predict" : "tools",
+    tools: tools.map((tool) => previewLoggedTool(tool, isFirstRequestOfLevel)),
+    newMessages: messages.map((msg) => previewLoggedMessage(msg, isFirstRequestOfLevel)),
   })
 
   const response = await fetch(endpoint, {
@@ -311,11 +354,16 @@ export function requestPredictionWithAbort({
   let activeController: AbortController | null = null
   let wasAborted = false
 
+  // A level's first agent-api request is the only one that needs the full system/user prompt
+  // and tool descriptions logged; every later turn repeats that same static content.
+  const isFirstRequestOfLevel = state.agentRequestCount === 0
+
   // requestChatTurnWithTimeout gives each provider HTTP request its own timeout window.
   const requestChatTurnWithTimeout = async (
     messages: AgentChatMessage[],
     tools: object[],
-    format?: Record<string, unknown>,
+    format: Record<string, unknown> | undefined,
+    reqTurn: number,
   ): Promise<AgentChatResponse | null> => {
     const controller = new AbortController()
     activeController = controller
@@ -325,7 +373,8 @@ export function requestPredictionWithAbort({
 
     try {
       return await requestChatTurn(
-        agent.endpoint, agent.model, messages, tools, controller.signal, state.mazeDimensions?.area, format,
+        agent.endpoint, agent.model, messages, tools, controller.signal,
+        state.mazeDimensions?.area, format, reqTurn, isFirstRequestOfLevel,
       )
     } finally {
       window.clearTimeout(requestTimeout)
@@ -389,7 +438,7 @@ export function requestPredictionWithAbort({
         // or availableTools was explicitly cleared (max-rounds), switching to prediction mode.
         const toolsToSend = compactToolsPayload(availableTools, calledToolNames, toolRounds)
         const format = toolsToSend.length === 0 ? PREDICTION_FORMAT : undefined
-        const response = await requestChatTurnWithTimeout(messages, toolsToSend, format)
+        const response = await requestChatTurnWithTimeout(messages, toolsToSend, format, requestTurns)
         if (!response?.message) {
           return fail("network-error")
         }

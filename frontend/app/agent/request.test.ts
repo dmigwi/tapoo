@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { EXPECTED_RESPONSE_SCHEMA, PREDICTION_FORMAT } from "./context"
 import { requestPredictionWithAbort } from "./request"
 import { CONFIG } from "../config"
+import { tapooResetLogs } from "../logs"
 import { getNavigationProfile } from "../maze"
+import { loadTapooLog } from "../storage"
 import type {
   AgentApiConfig,
   MazeActionResult,
@@ -89,6 +91,23 @@ function compactedTools(calledNames: string[]) {
   return agentContextTools.map(({ type, function: fn }) =>
     called.has(fn.name) ? { type, function: { name: fn.name } } : { type, function: fn }
   )
+}
+
+// expectedLoggedTools mirrors previewLoggedTool: same name, description full or truncated
+// depending on keepFull, and absent altogether for already-compacted (called) tools.
+function expectedLoggedTools(
+  wireTools: ReturnType<typeof compactedTools>,
+  keepFull: boolean,
+): { name: string; description?: string }[] {
+  return wireTools.map(({ function: fn }) => ({
+    name: fn.name,
+    description:
+      "description" in fn
+        ? keepFull
+          ? fn.description
+          : `${fn.description.slice(0, 50)}.....`
+        : undefined,
+  }))
 }
 
 const agent: AgentApiConfig = {
@@ -288,6 +307,166 @@ describe("agent request service", () => {
 
     const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
     expect(JSON.parse(secondRequest.body as string)).toEqual(expectedJsonInput)
+  })
+
+  it("logs full tools and the full accumulated messages every round, in full for the level's first request", async () => {
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        toolCallResponse([
+          {
+            id: "call_positions",
+            function: { index: 0, name: "get_maze_positions", arguments: {} },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        successfulResponse(JSON.stringify({ moves: ["MoveRight", "MoveDown"] })),
+      )
+    vi.stubGlobal("fetch", fetchMock)
+
+    await requestPrediction(requestInput())
+
+    const requestEntries = loadTapooLog<{
+      payload: string
+      details?: {
+        requestTurn: number
+        mode: "predict" | "tools"
+        tools: { name: string; description?: string }[]
+        newMessages: unknown[]
+      }
+    }>(CONFIG.runtime.controlModes.agentApi).filter(
+      (entry) => entry.payload === "Agent request.",
+    )
+
+    expect(requestEntries).toHaveLength(2)
+
+    // agentRequestCount defaults to 0, so this is the level's first request: everything logs
+    // in full, including the system/user prompt and tool descriptions.
+    expect(requestEntries[0].details).toEqual({
+      endpoint,
+      requestTurn: 1,
+      mode: "tools",
+      tools: expectedLoggedTools(compactedTools([]), true),
+      newMessages: [
+        { role: "system", content: developerMessage },
+        { role: "user", content: userMessage },
+      ],
+    })
+
+    // Round 2 logs the full accumulated history (system+user+assistant+tool), not just the new
+    // assistant/tool-result messages — no delta tracking, every entry stands on its own. Not
+    // every tool has been called yet, so compactToolsPayload keeps all 5 names (one now
+    // name-only), and full descriptions still log since this is still the level's first request.
+    expect(requestEntries[1].details).toEqual({
+      endpoint,
+      requestTurn: 2,
+      mode: "tools",
+      tools: expectedLoggedTools(compactedTools(["get_maze_positions"]), true),
+      newMessages: [
+        { role: "system", content: developerMessage },
+        { role: "user", content: userMessage },
+        {
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            {
+              id: "call_positions",
+              function: { index: 0, name: "get_maze_positions", arguments: {} },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_positions",
+          tool_name: "get_maze_positions",
+          content:
+            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7}}",
+        },
+      ],
+    })
+  })
+
+  it("previews the repeated system/user prompt and tool descriptions in a later turn, every round", async () => {
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        toolCallResponse([
+          {
+            id: "call_positions",
+            function: { index: 0, name: "get_maze_positions", arguments: {} },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        successfulResponse(JSON.stringify({ moves: ["MoveRight", "MoveDown"] })),
+      )
+    vi.stubGlobal("fetch", fetchMock)
+
+    // agentRequestCount > 0 means this is not the level's first agent-api request.
+    await requestPrediction(requestInput({ agentRequestCount: 1 }))
+
+    const requestEntries = loadTapooLog<{
+      payload: string
+      details?: {
+        requestTurn: number
+        mode: "predict" | "tools"
+        tools: { name: string; description?: string }[]
+        newMessages: unknown[]
+      }
+    }>(CONFIG.runtime.controlModes.agentApi).filter(
+      (entry) => entry.payload === "Agent request.",
+    )
+
+    expect(requestEntries).toHaveLength(2)
+
+    // Round 1: the static system/user prompt is previewed (role intact, content shortened),
+    // and tool descriptions are previewed too, since both repeat verbatim every turn.
+    expect(requestEntries[0].details).toEqual({
+      endpoint,
+      requestTurn: 1,
+      mode: "tools",
+      tools: expectedLoggedTools(compactedTools([]), false),
+      newMessages: [
+        { role: "system", content: `${developerMessage.slice(0, 50)}.....` },
+        { role: "user", content: `${userMessage.slice(0, 50)}.....` },
+      ],
+    })
+
+    // Round 2 logs the full accumulated history too — the previewed system/user messages stay
+    // previewed (gated by role, not round, so this stays consistent with round 1), while the
+    // assistant/tool-call messages are turn-unique and always log in full.
+    expect(requestEntries[1].details).toEqual({
+      endpoint,
+      requestTurn: 2,
+      mode: "tools",
+      tools: expectedLoggedTools(compactedTools(["get_maze_positions"]), false),
+      newMessages: [
+        { role: "system", content: `${developerMessage.slice(0, 50)}.....` },
+        { role: "user", content: `${userMessage.slice(0, 50)}.....` },
+        {
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            {
+              id: "call_positions",
+              function: { index: 0, name: "get_maze_positions", arguments: {} },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_positions",
+          tool_name: "get_maze_positions",
+          content:
+            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7}}",
+        },
+      ],
+    })
   })
 
   it("sends the initial chat payload and returns final movement predictions", async () => {

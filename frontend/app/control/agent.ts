@@ -612,18 +612,10 @@ export function createAgentMode(
         return false
       }
 
-      // handleFormControlKeydown intercepts keys inside form fields, allowing Escape to close overlays.
+      // handleFormControlKeydown intercepts keys inside form fields so they keep normal typing
+      // behavior instead of falling through to global session shortcuts.
       const handleFormControlKeydown = (event: KeyboardEvent): boolean => {
-        if (!isFormControlTarget(event.target)) {
-          return false
-        }
-
-        // Form fields keep normal typing behavior; Escape is reserved for closing overlays.
-        if (event.key === "Escape" && closeActiveAgentOverlay()) {
-          event.preventDefault()
-        }
-
-        return true
+        return isFormControlTarget(event.target)
       }
 
       // Human-owned session controls stay on the no-feedback path in agent-api mode.
@@ -658,6 +650,13 @@ export function createAgentMode(
 
       // keydownHandler routes global keyboard shortcuts while yielding control to open overlays.
       keydownHandler = (event: KeyboardEvent): void => {
+        // Escape closes whichever agent overlay is open, regardless of which element inside it
+        // currently holds focus (an input, a button, or otherwise).
+        if (event.key === "Escape" && closeActiveAgentOverlay()) {
+          event.preventDefault()
+          return
+        }
+
         // Global shortcuts are ignored while the user is typing inside agent forms.
         if (handleFormControlKeydown(event)) {
           return
