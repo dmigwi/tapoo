@@ -240,7 +240,7 @@ export const CONFIG: AppConfig = {
     scoreDecayRate: 100,
     interactiveCoreDecayIntervalPerCellMs: 1_000, // Translates to 1sec
     agentApiCoreDecayIntervalPerCellMs: 30_000,   // Translates to 30sec
-    agentApiResponseTimeoutMs: 180_000,           // Translates to 3min
+    agentApiResponseTimeoutMs: 300_000,           // Translates to 5smin
   },
   // Viewport thresholds translate measured DOM space into logical maze room.
   viewport: {
@@ -269,10 +269,10 @@ export const CONFIG: AppConfig = {
     },
     interactivePlayerName: "Self",
     modelConfig: {
-      contextWindowFloor: 2500,       // Floor above Ollama's 2048 default; avoids 500 errors on long histories
+      contextWindowFloor: 3000,       // Floor above Ollama's 2048 default; avoids 500 errors on long histories
       contextWindowAreaMultiplier: 5, // Tokens-per-cell scaling factor; grows context with maze area
       temperature: 0.5,               // Lower than 0.8 default; favors format-compliant over creative replies
-      numPredict: 3000,               // Caps total output (thinking + content); thinking models consume ~1000-2000 tokens before emitting the JSON
+      numPredict: 4000,               // Caps total output (thinking + content); thinking models consume ~1000-2000 tokens before emitting the JSON
     },
   },
 }

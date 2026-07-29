@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CONFIG } from "../config"
+import { tapooResetLogs } from "../logs"
+import { loadTapooLog } from "../storage"
 import type {
   AgentApiConfig,
   MazeAction,
@@ -623,6 +625,7 @@ describe("agent api turn loop", () => {
   })
 
   it("disables the agent after fetch failures without score decay", async () => {
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockRejectedValue(new TypeError("network failed")),
@@ -658,5 +661,13 @@ describe("agent api turn loop", () => {
         lastPlayerName: "Blue",
       }),
     )
+    expect(
+      loadTapooLog<{ payload: string; details?: { endpoint: string } }>(
+        CONFIG.runtime.controlModes.agentApi,
+      ).find(
+        (entry) =>
+          entry.payload === "Request failed before a valid response.",
+      )?.details,
+    ).toEqual({ endpoint: "https://agents.example/move" })
   })
 })

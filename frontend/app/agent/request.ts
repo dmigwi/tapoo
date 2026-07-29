@@ -82,7 +82,23 @@ type AgentPredictionPayload = { moves?: unknown }
 // AgentPredictionResult is the only outcome surface exposed to agent-api.ts.
 export type AgentPredictionResult =
   | { ok: true; moves: MoveAction[] }
-  | { ok: false; reason: "malformed-response" | "network-error" }
+  | AgentPredictionFailure
+
+export type AgentPredictionFailureReason =
+  | "caller-abort"
+  | "malformed-response"
+  | "network-error"
+
+export type AgentPredictionDiagnostic = {
+  message: string
+  details?: Record<string, unknown>
+}
+
+export type AgentPredictionFailure = {
+  ok: false
+  reason: AgentPredictionFailureReason
+  diagnostic?: AgentPredictionDiagnostic
+}
 
 // AgentPredictionRequest lets the caller stop polling without learning HTTP/tool-call details.
 export type AgentPredictionRequest = {
@@ -97,9 +113,11 @@ type RequestAgentPredictionInput = {
     agent: AgentApiConfig
     maxToolRounds?: number
     lastActionResult: MazeActionResult | null
-    onNetworkError?: (agent: AgentApiConfig) => void
-    onMalformedResponse?: (agent: AgentApiConfig) => void
 }
+
+type AgentChatTurnResult =
+  | { ok: true; response: AgentChatResponse }
+  | AgentPredictionFailure
 
 // defaultMaxToolRounds caps context-gathering rounds per prediction turn. The higher limit
 // reserves capacity for future multi-agent levels; duplicate-call detection (below) prevents
@@ -276,6 +294,10 @@ function contextWindowForArea(area: number): number {
   return Math.max(contextWindowFloor, area * contextWindowAreaMultiplier)
 }
 
+function endpointLabel(endpoint: URL): string {
+  return `${endpoint.origin}${endpoint.pathname}`
+}
+
 // requestChatTurn sends one provider-compatible chat request while keeping wire details local.
 async function requestChatTurn(
   endpoint: URL,
@@ -287,7 +309,7 @@ async function requestChatTurn(
   format: Record<string, unknown> | undefined,
   reqTurn: number,
   isFirstRequestOfLevel: boolean,
-): Promise<AgentChatResponse | null> {
+): Promise<AgentChatTurnResult> {
 
   const msgBody = {
     model,
@@ -303,14 +325,16 @@ async function requestChatTurn(
     stream: false,
   }
 
-  const endpointLabel = `${endpoint.origin}${endpoint.pathname}`
+  const endpointDisplay = endpointLabel(endpoint)
   const agentApiModeName = CONFIG.runtime.controlModes.agentApi
+  const keepFull = isFirstRequestOfLevel && reqTurn <= 1
+  
   logTapooDiagnostic(agentApiModeName, "info", "Agent request.", {
-    endpoint: endpointLabel,
+    endpoint: endpointDisplay,
     requestTurn: reqTurn,
     mode: format !== undefined ? "predict" : "tools",
-    tools: tools.map((tool) => previewLoggedTool(tool, isFirstRequestOfLevel)),
-    newMessages: messages.map((msg) => previewLoggedMessage(msg, isFirstRequestOfLevel)),
+    tools: tools.map((tool) => previewLoggedTool(tool, keepFull)),
+    newMessages: messages.map((msg) => previewLoggedMessage(msg, keepFull)),
   })
 
   const response = await fetch(endpoint, {
@@ -324,20 +348,26 @@ async function requestChatTurn(
   })
 
   if (!response.ok) {
-    logTapooDiagnostic(agentApiModeName, "warn", "Agent HTTP response failed.", {
-      endpoint: endpointLabel,
-      status: response.status,
-      statusText: response.statusText,
-    })
-    return null
+    return {
+      ok: false,
+      reason: "network-error",
+      diagnostic: {
+        message: "Provider HTTP response failed.",
+        details: {
+          endpoint: endpointDisplay,
+          status: response.status,
+          statusText: response.statusText,
+        },
+      },
+    }
   }
 
   const responseBody = (await response.json()) as AgentChatResponse
   logTapooDiagnostic(agentApiModeName, "info", "Agent response.", {
-    endpoint: endpointLabel,
+    endpoint: endpointDisplay,
     payload: responseBody,
   })
-  return responseBody
+  return { ok: true, response: responseBody }
 }
 
 // requestPredictionWithAbort hides request construction, timeout control, and tool-call servicing.
@@ -346,13 +376,11 @@ export function requestPredictionWithAbort({
   state,
   agent,
   maxToolRounds = defaultMaxToolRounds,
-  onMalformedResponse,
-  onNetworkError,
   timeoutMs,
 }: RequestAgentPredictionInput): AgentPredictionRequest {
-  // Manual aborts are caller-owned cleanup; timeout aborts remain provider/network failures.
+  // Expected aborts are lifecycle cleanup; timeout aborts remain provider/network failures.
   let activeController: AbortController | null = null
-  let wasAborted = false
+  let wasExpectedAbort = false
 
   // A level's first agent-api request is the only one that needs the full system/user prompt
   // and tool descriptions logged; every later turn repeats that same static content.
@@ -364,7 +392,7 @@ export function requestPredictionWithAbort({
     tools: object[],
     format: Record<string, unknown> | undefined,
     reqTurn: number,
-  ): Promise<AgentChatResponse | null> => {
+  ): Promise<AgentChatTurnResult> => {
     const controller = new AbortController()
     activeController = controller
     const requestTimeout = window.setTimeout(() => {
@@ -384,34 +412,9 @@ export function requestPredictionWithAbort({
     }
   }
 
-  // notifyFailure centralizes side effects so callers see one classified result path.
-  const notifyFailure = (
-    reason: Extract<AgentPredictionResult, { ok: false }>["reason"],
-  ): void => {
-    if (wasAborted) {
-      return
-    }
-
-    try {
-      if (reason === "network-error") {
-        onNetworkError?.(agent)
-        return
-      }
-
-      onMalformedResponse?.(agent)
-    } catch {
-      // Failure handlers update local game state; they should not recategorize provider results.
-    }
-  }
-
   const promise = (async (): Promise<AgentPredictionResult> => {
     try {
-      const fail = (
-        reason: Extract<AgentPredictionResult, { ok: false }>["reason"],
-      ): AgentPredictionResult => {
-        notifyFailure(reason)
-        return { ok: false, reason }
-      }
+      const endpointDisplay = endpointLabel(agent.endpoint)
 
       // Tool handlers close over the current State snapshot and last replay metadata for this turn.
       const toolHandlers = buildAgentToolHandlers(state, lastActionResult, agent)
@@ -428,9 +431,27 @@ export function requestPredictionWithAbort({
       const calledToolNames = new Set<string>()
 
       while (true) {
+        // Guards the window between rounds where activeController is briefly null (after one
+        // round's cleanup, before the next round's fetch starts) — without this, an abort() call
+        // landing in that window would otherwise be silently dropped and the next round would
+        // fire anyway, ignoring the caller's request to stop.
+        if (wasExpectedAbort) {
+          return { ok: false, reason: "caller-abort" }
+        }
+
         requestTurns += 1
         if (requestTurns > maxRequestTurns) {
-          return fail("network-error")
+          // Failing to converge on a final prediction within the round budget is the agent's own
+          // behavior, not an external failure — the same bucket as a malformed response, so it
+          // gets the mistake penalty and keeps playing rather than being disabled for investigation.
+          return {
+            ok: false,
+            reason: "malformed-response",
+            diagnostic: {
+              message: "Agent request exceeded provider turn limit.",
+              details: { endpoint: endpointDisplay, maxRequestTurns, requestTurns },
+            },
+          }
         }
 
         // compactToolsPayload owns all follow-up tool payload decisions: compacts called tools,
@@ -438,9 +459,21 @@ export function requestPredictionWithAbort({
         // or availableTools was explicitly cleared (max-rounds), switching to prediction mode.
         const toolsToSend = compactToolsPayload(availableTools, calledToolNames, toolRounds)
         const format = toolsToSend.length === 0 ? PREDICTION_FORMAT : undefined
-        const response = await requestChatTurnWithTimeout(messages, toolsToSend, format, requestTurns)
-        if (!response?.message) {
-          return fail("network-error")
+        const chatTurn = await requestChatTurnWithTimeout(messages, toolsToSend, format, requestTurns)
+        if (chatTurn.ok === false) {
+          return chatTurn
+        }
+
+        const { response } = chatTurn
+        if (!response.message) {
+          return {
+            ok: false,
+            reason: "network-error",
+            diagnostic: {
+              message: "Provider response did not include a message.",
+              details: { endpoint: endpointDisplay, requestTurn: requestTurns },
+            },
+          }
         }
 
         const toolCalls = response.message.tool_calls ?? []
@@ -449,10 +482,14 @@ export function requestPredictionWithAbort({
           const moves = parseAgentPrediction(response.message.content)
           if (!moves) {
             // The full response payload is already in the preceding "Agent response." info log.
-            logTapooDiagnostic(CONFIG.runtime.controlModes.agentApi, "warn", "Malformed response.", {
-              endpoint: `${agent.endpoint.origin}${agent.endpoint.pathname}`,
-            })
-            return fail("malformed-response")
+            return {
+              ok: false,
+              reason: "malformed-response",
+              diagnostic: {
+                message: "Malformed agent prediction response.",
+                details: { endpoint: endpointDisplay, requestTurn: requestTurns },
+              },
+            }
           }
           return { ok: true, moves }
         }
@@ -472,7 +509,18 @@ export function requestPredictionWithAbort({
 
         const toolMessages = await buildToolResultMessages(toolCalls, toolHandlers)
         if (!toolMessages) {
-          return fail("network-error")
+          return {
+            ok: false,
+            reason: "network-error",
+            diagnostic: {
+              message: "Tool request could not be serviced.",
+              details: {
+                endpoint: endpointDisplay,
+                requestTurn: requestTurns,
+                toolNames: requestedNames,
+              },
+            },
+          }
         }
 
         // Build a fresh messages array for the next request so each turn's log entry captures
@@ -491,26 +539,32 @@ export function requestPredictionWithAbort({
       }
     } catch {
       // Fetch failures, timeout aborts, and tool-service failures share one network bucket.
-      // Caller-initiated aborts (wasAborted) are silent; all other failures are logged.
-      if (!wasAborted) {
-        logTapooDiagnostic(CONFIG.runtime.controlModes.agentApi, "warn", "Network error.", {
-          endpoint: `${agent.endpoint.origin}${agent.endpoint.pathname}`,
-        })
+      // Caller aborts are expected lifecycle cleanup, so this catch does not log them as
+      // network failures or run failure callbacks. Timeout aborts do not set that flag.
+      if (wasExpectedAbort) {
+        return { ok: false, reason: "caller-abort" }
       }
-      notifyFailure("network-error")
-      return { ok: false, reason: "network-error" }
+
+      return {
+        ok: false,
+        reason: "network-error",
+        diagnostic: {
+          message: "Request failed before a valid response.",
+          details: { endpoint: endpointLabel(agent.endpoint) },
+        },
+      }
     }
   })()
 
   return {
     abort() {
       // Caller aborts are silent; they should not disable agents or spend score.
-      wasAborted = true
+      wasExpectedAbort = true
       activeController?.abort()
       activeController = null
     },
     isAborted() {
-      return wasAborted
+      return wasExpectedAbort
     },
     promise,
   }

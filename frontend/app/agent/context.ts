@@ -2,8 +2,10 @@ import { AGENT_MOVES_PER_TURN_CAP, CONFIG } from "../config"
 import { getNavigationProfile } from "../maze"
 import {
   MOVE_ACTIONS,
+  MOVE_DELTAS,
   cellCoordinateFromGridPoint,
   cloneTraversalHistory,
+  mazeCellKey,
 } from "../traversal"
 import {
   getBatchEfficiencyMetrics,
@@ -14,8 +16,10 @@ import type {
   AgentApiConfig,
   AgentExpectedResponseSchema,
   AgentSubmittedMovesSchema,
+  CellCoordinate,
   MazeActionResult,
   State,
+  TraversalHistoryEntry,
 } from "../types"
 import type {
   AgentChatMessage,
@@ -97,10 +101,12 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyRank: B
     `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
     "currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level",
     "with exactly one path to the destination. traversalHistory entries matching your playerName record your past",
-    "moves in chronological order. Each entry includes openMoves — the open exits from that cell are fixed since",
-    "creation — helping you reconstruct the maze's path flow; so entries recorded by other players are just as",
-    "trustworthy as your own. openMoves count reveals the physical maze structure at that cell: one open move is a",
-    "dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction.",
+    "moves in chronological order. Each entry's openMoves maps every open exit from that cell directly to the",
+    "neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since",
+    "creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries",
+    "recorded by other players are just as trustworthy as your own. openMoves key count reveals the physical maze",
+    "structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a",
+    "corridor; three or more is a junction.",
     "traversalHistory only records the first visit to each cell; cells revisited during backtracking are not",
     "duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once",
     "the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way",
@@ -197,9 +203,10 @@ const mazePositionsTool: AgentToolDefinition = {
   function: {
     name: "get_maze_positions",
     description: [
-      "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp and MoveDown",
-      "change row by ±1; MoveLeft and MoveRight change col by ±1. Use get_traversal_history to find which moves are",
-      "open from the current cell. Returns JSON: {\"currentCell\":{\"row\":number, \"col\":number}|null,",
+      "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp decreases",
+      "row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. Use",
+      "get_traversal_history to find which moves are open from the current cell. Returns JSON:",
+      "{\"currentCell\":{\"row\":number, \"col\":number}|null,",
       "\"destinationCell\":{\"row\":number, \"col\":number}|null}.",
     ].join(" "),
     parameters: emptyToolParameters,
@@ -207,16 +214,22 @@ const mazePositionsTool: AgentToolDefinition = {
 }
 
 // traversalHistoryTool lets agents avoid repeating explored logical cells across turns.
-// Each entry includes openMoves so the model can reconstruct dead ends and junctions.
+// Each entry's openMoves resolves every open exit directly to the neighboring cell it leads to
+// and whether that neighbor is already visited, so the model can reconstruct dead ends,
+// corridors, and junctions without computing adjacency from row/col itself.
 const traversalHistoryTool: AgentToolDefinition = {
   type: "function",
   function: {
     name: "get_traversal_history",
     description: [
-      "Get all players' visit records in chronological order. Each entry includes openMoves — the open exits from that",
-      "cell — so you can reconstruct the physical maze structure you have already explored. Returns JSON:",
-      "{\"traversalHistory\":[{\"playerName\":string, \"row\":number, \"col\":number, \"openMoves\":[\"MoveLeft\",",
-      "...]}]}. Filter by playerName to review a specific player's visit sequence.",
+      "Get all players' visit records in chronological order, structured as an adjacency list. cell is that entry's",
+      "position. openMoves maps each open exit directly to the neighboring cell it leads to and whether that neighbor",
+      "has already been visited — the exits from a cell are fixed since creation, so this lets you reconstruct the",
+      "physical maze structure you have already explored without computing adjacency from row/col yourself. Use the",
+      "full, unfiltered list for maze-structure reconstruction — every player's openMoves data is equally trustworthy;",
+      "filter by playerName only when you specifically want one player's own chronological move sequence. Returns JSON:",
+      "{\"traversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number},",
+      "\"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
     ].join(" "),
     parameters: emptyToolParameters,
   },
@@ -256,20 +269,37 @@ export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
 // --- 3. Tool handlers ---
 // Handlers execute when the model calls a tool and produce the tool result messages.
 
+// resolvedOpenMoves maps each of an entry's open exits to its neighboring cell (using the same
+// row/col deltas mazePositionsTool documents) and whether that neighbor is already visited, using
+// a precomputed key set so every lookup stays O(1) rather than rescanning traversalHistory per
+// neighbor per entry. Precomputing the neighbor cells here spares the model from re-deriving
+// adjacency via coordinate arithmetic itself across dozens of traversalHistory entries.
+function resolvedOpenMoves(
+  entry: TraversalHistoryEntry,
+  visitedCellKeys: Set<string>,
+): Record<string, CellCoordinate & { visited: boolean }> {
+  return Object.fromEntries(
+    entry.openMoves.map((move) => {
+      const [rowDelta, colDelta] = MOVE_DELTAS[move]
+      const neighbor = { row: entry.row + rowDelta, col: entry.col + colDelta }
+      return [move, { ...neighbor, visited: visitedCellKeys.has(mazeCellKey(neighbor)) }]
+    }),
+  )
+}
+
 // buildAgentToolHandlers binds the latest state snapshot to the context tools for this request.
 export function buildAgentToolHandlers(
   state: State,
   lastActionResult: MazeActionResult | null,
   agent: AgentApiConfig,
 ): AgentToolHandlers {
-  // The hard corridor limit governs DFS maze carving, not player path planning.
-  // AGENT_MOVES_PER_TURN_CAP (p95 of actual run lengths) is the tighter bound for predictions.
-  const suggestedMovesPerTurn = state.mazeDimensions
-    ? Math.min(getNavigationProfile(state.mazeDimensions).__maxCorridorLength, AGENT_MOVES_PER_TURN_CAP)
-    : 0
-
   return {
     get_prediction_rules() {
+      // The hard corridor limit governs DFS maze carving, not player path planning.
+      // AGENT_MOVES_PER_TURN_CAP (p95 of actual run lengths) is the tighter bound for predictions.
+      const maxCorridor = getNavigationProfile(state.mazeDimensions).__maxCorridorLength
+      const suggestedMovesPerTurn = state.mazeDimensions ? Math.min(maxCorridor, AGENT_MOVES_PER_TURN_CAP) : 0
+
       // Raw counts are exposed instead of the derived rate so the model can compute and verify the
       // rank itself; both are always concrete numbers (0 is a valid count), never null, so there is
       // nothing ambiguous for the model to puzzle over before its first request.
@@ -298,8 +328,15 @@ export function buildAgentToolHandlers(
       }
     },
     get_traversal_history() {
+      const history = cloneTraversalHistory(state.traversalHistory)
+      const visitedCellKeys = new Set(history.map((entry) => mazeCellKey(entry)))
+
       return {
-        traversalHistory: cloneTraversalHistory(state.traversalHistory),
+        traversalHistory: history.map((entry) => ({
+          playerName: entry.playerName,
+          cell: { row: entry.row, col: entry.col },
+          openMoves: resolvedOpenMoves(entry, visitedCellKeys),
+        })),
       }
     },
     get_last_replay_result() {

@@ -44,8 +44,8 @@ const expectedAgentPrompt = [
   "currentCell is your current position; destinationCell is the target.",
   "The maze is randomly generated at each level with exactly one path to the destination.",
   "traversalHistory entries matching your playerName record your past moves in chronological order.",
-  "Each entry includes openMoves — the open exits from that cell are fixed since creation — helping you reconstruct the maze's path flow; so entries recorded by other players are just as trustworthy as your own.",
-  "openMoves count reveals the physical maze structure at that cell: one open move is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction.",
+  "Each entry's openMoves maps every open exit from that cell directly to the neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries recorded by other players are just as trustworthy as your own.",
+  "openMoves key count reveals the physical maze structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction.",
   "traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected.",
   "Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination.",
   "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
@@ -140,7 +140,18 @@ describe("agent context", () => {
       destinationCell: { row: 0, col: 1 },
     })
     expect(toolHandlers.get_traversal_history({})).toEqual({
-      traversalHistory: [selfVisit(0, 0, ["MoveRight"]), agentVisit(0, 1, "Blue", ["MoveRight"])],
+      traversalHistory: [
+        {
+          playerName: "Self",
+          cell: { row: 0, col: 0 },
+          openMoves: { MoveRight: { row: 0, col: 1, visited: true } },
+        },
+        {
+          playerName: "Blue",
+          cell: { row: 0, col: 1 },
+          openMoves: { MoveRight: { row: 0, col: 2, visited: false } },
+        },
+      ],
     })
     expect(toolHandlers.get_prediction_rules({})).toEqual({
       suggestedMovesPerTurn: 4,

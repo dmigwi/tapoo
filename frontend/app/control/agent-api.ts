@@ -1,6 +1,7 @@
 import { CONFIG } from "../config"
 import { mergeMazeActionResult } from "../control"
 import { requestPredictionWithAbort } from "../agent/request"
+import { logTapooDiagnostic } from "../logs"
 import { recordAgentTurnStats } from "../storage"
 import { isRunningStatus } from "../status"
 import type {
@@ -10,7 +11,7 @@ import type {
   MazeActionResult,
   State,
 } from "../types"
-import type { AgentPredictionRequest } from "../agent/request"
+import type { AgentPredictionFailure, AgentPredictionRequest } from "../agent/request"
 
 const { runtime, scoring, timing } = CONFIG
 const { agentBaseDecayUnits, agentPenaltyDecayUnits } = scoring
@@ -144,6 +145,32 @@ export function handleAgentTurnLoop({
     __onActionResult(nextResult)
   }
 
+  // recordPredictionFailure is the single bridge from provider/request failures to game effects.
+  const recordPredictionFailure = (
+    agent: AgentApiConfig,
+    failure: AgentPredictionFailure,
+  ): void => {
+    if (failure.reason === "caller-abort") {
+      return
+    }
+
+    if (failure.diagnostic) {
+      logTapooDiagnostic(
+        runtime.controlModes.agentApi,
+        "warn",
+        failure.diagnostic.message,
+        failure.diagnostic.details,
+      )
+    }
+
+    if (failure.reason === "malformed-response") {
+      recordMalformedAgentResponse(agent)
+      return
+    }
+
+    recordAgentNetworkError(agent)
+  }
+
   // scheduleNextAgentTurn starts/resumes immediately, then delays internal loop continuations.
   const scheduleNextAgentTurn = (
     delayMs = timing.agentApiCoreDecayIntervalPerCellMs,
@@ -197,14 +224,13 @@ export function handleAgentTurnLoop({
         lastActionResult: activeActionResult(),
         state: __readState(),
         timeoutMs: timing.agentApiResponseTimeoutMs,
-        onMalformedResponse: recordMalformedAgentResponse,
-        onNetworkError: recordAgentNetworkError,
       })
 
       activeRequest = predictionRequest
       const prediction = await predictionRequest.promise
-      // Manual aborts and classified failures have already been handled by request.ts callbacks.
-      if (predictionRequest.isAborted() || prediction.ok === false) {
+      // Request service returns structured failures; game consequences stay centralized here.
+      if (prediction.ok === false) {
+        recordPredictionFailure(selectedAgent, prediction)
         return
       }
 
@@ -234,6 +260,9 @@ export function handleAgentTurnLoop({
         break
       }
 
+      // Unreachable in practice — parseAgentPrediction guarantees a non-empty submittedMoves, so
+      // the loop above always runs at least once and sets lastReplayResult. This check exists
+      // only to satisfy TypeScript's control-flow analysis on the nullable `let` declaration.
       if (!lastReplayResult) {
         return
       }

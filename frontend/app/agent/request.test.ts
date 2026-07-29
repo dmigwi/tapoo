@@ -15,7 +15,7 @@ import type {
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt =
-  `You are Blue and currently hold the most coveted rank of trailblazer. Work smarter to maintain it. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry includes openMoves — the open exits from that cell are fixed since creation — helping you reconstruct the maze's path flow; so entries recorded by other players are just as trustworthy as your own. openMoves count reveals the physical maze structure at that cell: one open move is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction. traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units. get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Longer, well-reasoned predictions are strictly cheaper per move than single-stepping — a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
+  `You are Blue and currently hold the most coveted rank of trailblazer. Work smarter to maintain it. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry's openMoves maps every open exit from that cell directly to the neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries recorded by other players are just as trustworthy as your own. openMoves key count reveals the physical maze structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction. traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units. get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Longer, well-reasoned predictions are strictly cheaper per move than single-stepping — a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
 const developerMessage = prompt
 const userMessage = `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state.`
 const agentContextTools = [
@@ -50,7 +50,7 @@ const agentContextTools = [
     function: {
       name: "get_maze_positions",
       description:
-        "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp and MoveDown change row by ±1; MoveLeft and MoveRight change col by ±1. Use get_traversal_history to find which moves are open from the current cell. Returns JSON: {\"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null}.",
+        "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. Use get_traversal_history to find which moves are open from the current cell. Returns JSON: {\"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null}.",
       parameters: {
         type: "object",
         properties: {},
@@ -63,7 +63,7 @@ const agentContextTools = [
     function: {
       name: "get_traversal_history",
       description:
-        "Get all players' visit records in chronological order. Each entry includes openMoves — the open exits from that cell — so you can reconstruct the physical maze structure you have already explored. Returns JSON: {\"traversalHistory\":[{\"playerName\":string, \"row\":number, \"col\":number, \"openMoves\":[\"MoveLeft\", ...]}]}. Filter by playerName to review a specific player's visit sequence.",
+        "Get all players' visit records in chronological order, structured as an adjacency list. cell is that entry's position. openMoves maps each open exit directly to the neighboring cell it leads to and whether that neighbor has already been visited — the exits from a cell are fixed since creation, so this lets you reconstruct the physical maze structure you have already explored without computing adjacency from row/col yourself. Use the full, unfiltered list for maze-structure reconstruction — every player's openMoves data is equally trustworthy; filter by playerName only when you specifically want one player's own chronological move sequence. Returns JSON: {\"traversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
       parameters: {
         type: "object",
         properties: {},
@@ -309,7 +309,7 @@ describe("agent request service", () => {
     expect(JSON.parse(secondRequest.body as string)).toEqual(expectedJsonInput)
   })
 
-  it("logs full tools and the full accumulated messages every round, in full for the level's first request", async () => {
+  it("logs the level's first request in full at round 1 only, previewing later rounds", async () => {
     tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const fetchMock = vi
@@ -359,15 +359,17 @@ describe("agent request service", () => {
     // Round 2 logs the full accumulated history (system+user+assistant+tool), not just the new
     // assistant/tool-result messages — no delta tracking, every entry stands on its own. Not
     // every tool has been called yet, so compactToolsPayload keeps all 5 names (one now
-    // name-only), and full descriptions still log since this is still the level's first request.
+    // name-only). keepFull only covers round 1 (isFirstRequestOfLevel && reqTurn <= 1), so by
+    // round 2 the system/user prompt and tool descriptions are previewed even within the
+    // level's first turn — further limiting duplication across a single turn's tool-call rounds.
     expect(requestEntries[1].details).toEqual({
       endpoint,
       requestTurn: 2,
       mode: "tools",
-      tools: expectedLoggedTools(compactedTools(["get_maze_positions"]), true),
+      tools: expectedLoggedTools(compactedTools(["get_maze_positions"]), false),
       newMessages: [
-        { role: "system", content: developerMessage },
-        { role: "user", content: userMessage },
+        { role: "system", content: `${developerMessage.slice(0, 50)}.....` },
+        { role: "user", content: `${userMessage.slice(0, 50)}.....` },
         {
           role: "assistant",
           content: "",
@@ -587,7 +589,11 @@ describe("agent request service", () => {
         role: "tool",
         tool_name: "get_traversal_history",
         content: JSON.stringify({
-          traversalHistory: state.traversalHistory,
+          traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
+            playerName,
+            cell: { row, col },
+            openMoves: {},
+          })),
         }),
       },
     ])
@@ -652,7 +658,13 @@ describe("agent request service", () => {
         mazeDimensions: state.mazeDimensions,
       },
       JSON.parse(positionsContent()) as unknown,
-      { traversalHistory: state.traversalHistory.map((entry) => ({ ...entry, openMoves: [] })) },
+      {
+        traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
+          playerName,
+          cell: { row, col },
+          openMoves: {},
+        })),
+      },
       {
         lastPlayerName: null,
         lastMoveStatus: null,
@@ -732,21 +744,52 @@ describe("agent request service", () => {
   ])("returns malformed-response for %s", async (_caseName, content) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(successfulResponse(content)))
 
-    await expect(requestPrediction(requestInput())).resolves.toEqual({
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
       ok: false,
       reason: "malformed-response",
+      diagnostic: {
+        message: "Malformed agent prediction response.",
+        details: { endpoint, requestTurn: 1 },
+      },
     })
   })
 
   it.each([
-    ["non-ok response", vi.fn().mockResolvedValue({ ok: false })],
-    ["fetch failure", vi.fn().mockRejectedValue(new TypeError("failed"))],
-  ])("returns network-error for %s", async (_caseName, fetchMock) => {
+    [
+      "non-ok response",
+      vi.fn().mockResolvedValue({ ok: false, status: 503, statusText: "Unavailable" }),
+      "Provider HTTP response failed.",
+      { endpoint, status: 503, statusText: "Unavailable" },
+    ],
+    [
+      "fetch failure",
+      vi.fn().mockRejectedValue(new TypeError("failed")),
+      "Request failed before a valid response.",
+      { endpoint },
+    ],
+  ])("returns network-error for %s", async (_caseName, fetchMock, expectedMessage, expectedDetails) => {
     vi.stubGlobal("fetch", fetchMock)
 
-    await expect(requestPrediction(requestInput())).resolves.toEqual({
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
       ok: false,
       reason: "network-error",
+      diagnostic: {
+        message: expectedMessage,
+        details: expectedDetails,
+      },
+    })
+  })
+
+  it("returns provider request failures with actionable diagnostic context", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("failed")))
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "network-error",
+      diagnostic: {
+        message: "Request failed before a valid response.",
+        details: { endpoint },
+      },
     })
   })
 
@@ -764,10 +807,41 @@ describe("agent request service", () => {
     const result = requestPrediction({ ...requestInput(), timeoutMs: 1000 })
     await vi.advanceTimersByTimeAsync(1000)
 
-    await expect(result).resolves.toEqual({
+    await expect(result).resolves.toMatchObject({
       ok: false,
       reason: "network-error",
+      diagnostic: {
+        message: "Request failed before a valid response.",
+        details: { endpoint },
+      },
     })
+  })
+
+  it("stops before the next round when aborted in the gap between rounds", async () => {
+    // activeController is briefly null between one round's cleanup and the next round's fetch —
+    // aborting in that exact window must still stop the loop rather than silently proceeding to
+    // fire another request, which is what the wasExpectedAbort guard at the top of the loop is for.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        toolCallResponse([
+          { function: { name: "get_maze_positions", arguments: {} } },
+        ]),
+      )
+      .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const request = requestPredictionWithAbort(requestInput())
+
+    // Let round 1's fetch resolve and the tool-call handling begin before aborting, landing this
+    // call in the gap where activeController is momentarily null between rounds.
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    request.abort()
+
+    await expect(request.promise).resolves.toEqual({ ok: false, reason: "caller-abort" })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it("marks manually aborted requests without throwing provider details", async () => {
@@ -786,7 +860,7 @@ describe("agent request service", () => {
     expect(request.isAborted()).toBe(true)
     await expect(request.promise).resolves.toEqual({
       ok: false,
-      reason: "network-error",
+      reason: "caller-abort",
     })
   })
 
@@ -801,9 +875,17 @@ describe("agent request service", () => {
       ),
     )
 
-    await expect(requestPrediction(requestInput())).resolves.toEqual({
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
       ok: false,
       reason: "network-error",
+      diagnostic: {
+        message: "Tool request could not be serviced.",
+        details: {
+          endpoint,
+          requestTurn: 1,
+          toolNames: name === undefined ? [] : [name],
+        },
+      },
     })
   })
 
@@ -891,7 +973,10 @@ describe("agent request service", () => {
     expect(thirdBody.messages).toEqual(secondBody.messages)
   })
 
-  it("returns network-error when the hard request turn limit is exceeded", async () => {
+  it("returns malformed-response when the hard request turn limit is exceeded", async () => {
+    // Failing to converge on a final prediction within the round budget is the agent's own
+    // behavior, not an external failure — same bucket as a malformed response (penalty charged,
+    // agent keeps playing) rather than network-error (agent disabled for investigation).
     const fetchMock = vi.fn().mockResolvedValue(
       toolCallResponse([
         { function: { name: "get_maze_positions", arguments: {} } },
@@ -904,7 +989,14 @@ describe("agent request service", () => {
         ...requestInput(),
         maxToolRounds: 1,
       }),
-    ).resolves.toEqual({ ok: false, reason: "network-error" })
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: "malformed-response",
+      diagnostic: {
+        message: "Agent request exceeded provider turn limit.",
+        details: { endpoint, maxRequestTurns: 3, requestTurns: 4 },
+      },
+    })
 
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
