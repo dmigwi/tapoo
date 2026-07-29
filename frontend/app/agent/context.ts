@@ -23,6 +23,7 @@ import type {
 } from "../types"
 import type {
   AgentChatMessage,
+  AgentToolCall,
   AgentToolDefinition,
   AgentToolHandlers,
 } from "./request"
@@ -36,7 +37,9 @@ const { agentBaseDecayUnits, agentPenaltyDecayUnits } = scoring
 // EXPECTED_RESPONSE_SCHEMA documents the exact JSON shape returned by prediction sources.
 export const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
   type: "object",
-  description: "The only accepted response format. Return this exact JSON object with no surrounding text or markdown fences.",
+  description:
+    "The only accepted response format. Return this exact " +
+    "JSON object with no surrounding text or markdown fences.",
   additionalProperties: false,
   required: ["moves"],
   properties: {
@@ -115,8 +118,9 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyRank: B
     "results reflect the maze state at the time of each call — a repeat call may return updated or identical data",
     "depending on what has changed. get_last_replay_result reflects the most recent replay across all agents;",
     "lastPlayerName identifies whose outcome it is. lastMoveStatus being null means no moves have been made yet;",
-    "invalid-move means the last prediction hit a wall; malformed-response means",
-    `the previous response was not valid JSON and a penalty of ${agentPenaltyDecayUnits} decay units was charged;`,
+    "invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid",
+    "JSON, or a duplicate tool call warning was ignored — in both cases a penalty of",
+    `${agentPenaltyDecayUnits} decay units was charged;`,
     `applied means it succeeded. A turn with any valid moves costs a constant ${agentBaseDecayUnits} decay units`,
     "regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a",
     `further penalty of ${agentPenaltyDecayUnits} decay units on top — the maximum possible in a turn is`,
@@ -139,9 +143,29 @@ export function buildAgentMessages(playerName: string, batchEfficiencyRank: Batc
     },
     {
       role: "user",
-      content: `It is ${playerName}'s turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state.`,
+      content: `It is ${playerName}'s turn to predict next moves. Use the available tools to see the maze state.`,
     },
   ]
+}
+
+// buildDuplicateToolCallMessage names exactly which tool call(s) already have results, rather
+// than claiming no tool call can return anything new — other tools may still be genuinely
+// uncalled, and the model remains free to request those. It is explicitly labeled "Warning:" and
+// uses the same "duplicate tool call warning" phrase as buildMazeActionPrompt's malformed-response
+// explanation, so a model that ignores it can tie the resulting penalty back to this message.
+// describeToolCall renders each call as "name (id)", falling back to placeholders for the rare
+// case a provider omits either field.
+export function buildDuplicateToolCallMessage(duplicateToolCalls: AgentToolCall[]): AgentChatMessage {
+  const describeToolCall = (toolCall: AgentToolCall) =>
+    `${toolCall.function?.name ?? "unknown"} (${toolCall.id ?? "no id"})`
+
+  return {
+    role: "user",
+    content:
+      `Warning: ${duplicateToolCalls.map(describeToolCall).join(", ")} won't yield any new information. ` +
+      "You may still call any tools you haven't used yet, or respond now with only the moves JSON. Requesting " +
+      "these tool call(s) once again will be treated as a malformed-response.",
+  }
 }
 
 // --- 2. Tool definitions ---
@@ -227,8 +251,8 @@ const traversalHistoryTool: AgentToolDefinition = {
       "has already been visited — the exits from a cell are fixed since creation, so this lets you reconstruct the",
       "physical maze structure you have already explored without computing adjacency from row/col yourself. Use the",
       "full, unfiltered list for maze-structure reconstruction — every player's openMoves data is equally trustworthy;",
-      "filter by playerName only when you specifically want one player's own chronological move sequence. Returns JSON:",
-      "{\"traversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number},",
+      "filter by playerName only when you specifically want one player's own chronological move sequence.",
+      "Returns JSON: {\"traversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number},",
       "\"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
     ].join(" "),
     parameters: emptyToolParameters,
@@ -243,8 +267,9 @@ const lastReplayResultTool: AgentToolDefinition = {
     description: [
       "Get the previous turn replay result. lastMoveStatus values: null=first turn, no history yet; applied=move",
       "executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move",
-      "hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, no moves were",
-      "replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged.",
+      "hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, or a duplicate",
+      "tool call warning was ignored — in both cases no moves were replayed and a fixed score penalty was charged;",
+      "network-error=HTTP failure, no score charged.",
       "lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is",
       "their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within",
       "lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore",

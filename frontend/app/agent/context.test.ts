@@ -5,6 +5,7 @@ import {
   AGENT_CONTEXT_TOOLS,
   buildAgentMessages,
   buildAgentToolHandlers,
+  buildDuplicateToolCallMessage,
   describeAgentRankIdentity,
 } from "./context"
 import {
@@ -51,7 +52,7 @@ const expectedAgentPrompt = [
   "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
   "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
   "get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is.",
-  "lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units.",
+  "lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON, or a duplicate tool call warning was ignored — in both cases a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units.",
   "get_prediction_rules provides the required response format and move count guidance.",
   "Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
   "Longer, well-reasoned predictions are strictly cheaper per move than single-stepping — a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course.",
@@ -192,11 +193,44 @@ describe("agent context", () => {
       },
       {
         role: "user",
-        content: `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state.`,
+        content: `It is Blue's turn to predict next moves. Use the available tools to see the maze state.`,
       },
     ])
   })
 
+})
+
+describe("buildDuplicateToolCallMessage", () => {
+  it("names a single duplicate call as an explicit warning tied to malformed-response", () => {
+    const message = buildDuplicateToolCallMessage([
+      { id: "call_2", function: { name: "get_game_status", arguments: {} } },
+    ])
+
+    expect(message).toEqual({
+      role: "user",
+      content:
+        "Warning: get_game_status (call_2) won't yield any new information. " +
+        "You may still call any tools you haven't used yet, or respond now with only the moves JSON. " +
+        "Requesting these tool call(s) once again will be treated as a malformed-response.",
+    })
+  })
+
+  it("lists multiple duplicate calls together, in order", () => {
+    const message = buildDuplicateToolCallMessage([
+      { id: "call_2", function: { name: "get_game_status", arguments: {} } },
+      { id: "call_3", function: { name: "get_maze_positions", arguments: {} } },
+    ])
+
+    expect(message.content).toContain(
+      "get_game_status (call_2), get_maze_positions (call_3) won't yield any new information.",
+    )
+  })
+
+  it("falls back to placeholders when a call is missing its name or id", () => {
+    const message = buildDuplicateToolCallMessage([{ function: { arguments: {} } }])
+
+    expect(message.content).toContain("unknown (no id)")
+  })
 })
 
 describe("describeAgentRankIdentity", () => {

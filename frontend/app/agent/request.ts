@@ -1,11 +1,12 @@
 import { isMoveAction } from "../traversal"
-import { logTapooDiagnostic } from "../logs"
+import { logTapooDiagnostic, trimLoggedDescription } from "../logs"
 import { CONFIG } from "../config"
 import {
   AGENT_CONTEXT_TOOLS,
   PREDICTION_FORMAT,
   buildAgentMessages,
   buildAgentToolHandlers,
+  buildDuplicateToolCallMessage,
 } from "./context"
 import { resolveBatchEfficiencyRank } from "./efficiency"
 import type {
@@ -49,7 +50,7 @@ export type AgentToolResult =
   | unknown[]
 
 // AgentToolCall is intentionally permissive because providers vary slightly in tool-call shape.
-type AgentToolCall = {
+export type AgentToolCall = {
   id?: string
   type?: "function"
   function?: {
@@ -111,7 +112,6 @@ type RequestAgentPredictionInput = {
     state: State
     timeoutMs: number
     agent: AgentApiConfig
-    maxToolRounds?: number
     lastActionResult: MazeActionResult | null
 }
 
@@ -119,10 +119,10 @@ type AgentChatTurnResult =
   | { ok: true; response: AgentChatResponse }
   | AgentPredictionFailure
 
-// defaultMaxToolRounds caps context-gathering rounds per prediction turn. The higher limit
-// reserves capacity for future multi-agent levels; duplicate-call detection (below) prevents
-// the model from wasting rounds by calling the same tool more than once per turn.
-const defaultMaxToolRounds = 4
+// AgentRequestMode labels each request for logging: "tools" while gathering context, "predict"
+// on the first request that offers no tools, and "warned" on any predict-mode request that
+// follows a round where the agent ignored PREDICTION_ONLY_MESSAGE and called a tool anyway.
+type AgentRequestMode = "predict" | "tools" | "warned"
 
 // stripMarkdownFence removes optional ```json or ``` wrappers that models add despite instructions.
 function stripMarkdownFence(content: string): string {
@@ -189,24 +189,6 @@ function normalizeToolArguments(args: unknown): unknown {
 // serializeToolResult keeps all tool responses in the string form expected by chat APIs.
 function serializeToolResult(result: unknown): string {
   return typeof result === "string" ? result : JSON.stringify(result)
-}
-
-// loggedDescriptionPreviewLength caps how much of a known long/repeated description field
-// survives into the log when the full text isn't needed.
-const loggedDescriptionPreviewLength = 50
-
-// trimLoggedDescription is the single place every long, repeated description field goes through
-// before being logged. Passing keepFull lets each call site decide once whether this entry needs
-// the real text (e.g. the level's first request) or just a short, recognizable preview.
-function trimLoggedDescription(
-  description: string | undefined,
-  keepFull: boolean,
-): string | undefined {
-  if (keepFull || !description || description.length <= loggedDescriptionPreviewLength) {
-    return description
-  }
-
-  return `${description.slice(0, loggedDescriptionPreviewLength)}.....`
 }
 
 // previewLoggedMessage trims content only for the system/user roles, the two known static,
@@ -309,6 +291,7 @@ async function requestChatTurn(
   format: Record<string, unknown> | undefined,
   reqTurn: number,
   isFirstRequestOfLevel: boolean,
+  mode: AgentRequestMode,
 ): Promise<AgentChatTurnResult> {
 
   const msgBody = {
@@ -328,11 +311,11 @@ async function requestChatTurn(
   const endpointDisplay = endpointLabel(endpoint)
   const agentApiModeName = CONFIG.runtime.controlModes.agentApi
   const keepFull = isFirstRequestOfLevel && reqTurn <= 1
-  
+
   logTapooDiagnostic(agentApiModeName, "info", "Agent request.", {
     endpoint: endpointDisplay,
     requestTurn: reqTurn,
-    mode: format !== undefined ? "predict" : "tools",
+    mode,
     tools: tools.map((tool) => previewLoggedTool(tool, keepFull)),
     newMessages: messages.map((msg) => previewLoggedMessage(msg, keepFull)),
   })
@@ -375,7 +358,6 @@ export function requestPredictionWithAbort({
   lastActionResult,
   state,
   agent,
-  maxToolRounds = defaultMaxToolRounds,
   timeoutMs,
 }: RequestAgentPredictionInput): AgentPredictionRequest {
   // Expected aborts are lifecycle cleanup; timeout aborts remain provider/network failures.
@@ -392,6 +374,7 @@ export function requestPredictionWithAbort({
     tools: object[],
     format: Record<string, unknown> | undefined,
     reqTurn: number,
+    mode: AgentRequestMode,
   ): Promise<AgentChatTurnResult> => {
     const controller = new AbortController()
     activeController = controller
@@ -402,7 +385,7 @@ export function requestPredictionWithAbort({
     try {
       return await requestChatTurn(
         agent.endpoint, agent.model, messages, tools, controller.signal,
-        state.mazeDimensions?.area, format, reqTurn, isFirstRequestOfLevel,
+        state.mazeDimensions?.area, format, reqTurn, isFirstRequestOfLevel, mode,
       )
     } finally {
       window.clearTimeout(requestTimeout)
@@ -422,13 +405,18 @@ export function requestPredictionWithAbort({
       // not only when the model chooses to call get_prediction_rules.
       const batchEfficiencyRank = resolveBatchEfficiencyRank(state.traversalHistory, agent)
       let messages = buildAgentMessages(agent.playerName, batchEfficiencyRank)
-      let availableTools = AGENT_CONTEXT_TOOLS
-      // Allow configured tool rounds plus two final no-tools requests for the actual prediction.
-      const maxRequestTurns = maxToolRounds + 2
       let requestTurns = 0
       let toolRounds = 0
-      // Track which tools have already been called this turn so duplicate-only rounds are skipped.
+      // Track which tools have already been called this turn so duplicate requests can be
+      // filtered out of what gets serviced, rather than either serving stale results again or
+      // discarding the whole round when only some of its calls are duplicates.
       const calledToolNames = new Set<string>()
+      // True once a round produced zero new tool calls (i.e. every requested tool was already
+      // called) and got a reminder naming those specific duplicates. A second such round in a
+      // row ends the turn instead of reminding indefinitely — there is no other round-count
+      // ceiling, since the tool-gathering phase is otherwise bounded only by the tool inventory
+      // itself (every tool called) or this repeat-duplicate rule.
+      let duplicateWarningIssued = false
 
       while (true) {
         // Guards the window between rounds where activeController is briefly null (after one
@@ -436,36 +424,29 @@ export function requestPredictionWithAbort({
         // landing in that window would otherwise be silently dropped and the next round would
         // fire anyway, ignoring the caller's request to stop.
         if (wasExpectedAbort) {
+          // Exit 1: caller aborted between rounds.
           return { ok: false, reason: "caller-abort" }
         }
 
         requestTurns += 1
-        if (requestTurns > maxRequestTurns) {
-          // Failing to converge on a final prediction within the round budget is the agent's own
-          // behavior, not an external failure — the same bucket as a malformed response, so it
-          // gets the mistake penalty and keeps playing rather than being disabled for investigation.
-          return {
-            ok: false,
-            reason: "malformed-response",
-            diagnostic: {
-              message: "Agent request exceeded provider turn limit.",
-              details: { endpoint: endpointDisplay, maxRequestTurns, requestTurns },
-            },
-          }
-        }
 
         // compactToolsPayload owns all follow-up tool payload decisions: compacts called tools,
-        // keeps full definitions for uncalled ones, and returns [] when all tools are exhausted
-        // or availableTools was explicitly cleared (max-rounds), switching to prediction mode.
-        const toolsToSend = compactToolsPayload(availableTools, calledToolNames, toolRounds)
+        // keeps full definitions for uncalled ones, and returns [] only once every tool has
+        // genuinely been called (calledToolNames only grows from serviced, non-duplicate calls).
+        const toolsToSend = compactToolsPayload(AGENT_CONTEXT_TOOLS, calledToolNames, toolRounds)
         const format = toolsToSend.length === 0 ? PREDICTION_FORMAT : undefined
-        const chatTurn = await requestChatTurnWithTimeout(messages, toolsToSend, format, requestTurns)
+        const mode = duplicateWarningIssued ? "warned" : (format === undefined ? "tools" : "predict")
+
+        const chatTurn = await requestChatTurnWithTimeout(messages, toolsToSend, format, requestTurns, mode)
         if (chatTurn.ok === false) {
+          // Exit 2: the HTTP request itself failed (network-error) or a timeout/abort fired
+          // mid-request (chatTurn already carries the right failure shape).
           return chatTurn
         }
 
         const { response } = chatTurn
         if (!response.message) {
+          // Exit 3: provider responded 200 OK but with no message body.
           return {
             ok: false,
             reason: "network-error",
@@ -481,6 +462,7 @@ export function requestPredictionWithAbort({
           // Final assistant content must be the compact JSON prediction payload.
           const moves = parseAgentPrediction(response.message.content)
           if (!moves) {
+            // Exit 4: no tool calls and the content isn't a valid moves payload either.
             // The full response payload is already in the preceding "Agent response." info log.
             return {
               ok: false,
@@ -491,24 +473,57 @@ export function requestPredictionWithAbort({
               },
             }
           }
+          // Exit 5: the success path — a valid moves prediction.
           return { ok: true, moves }
         }
 
-        // If every requested tool was already called this turn, skip appending duplicate messages
-        // to keep the context window bounded. Clear availableTools so compactToolsPayload returns []
-        // on the next iteration, switching to prediction mode regardless of how many tools remain.
-        // (compactToolsPayload alone only clears when every *available* tool is exhausted; the model
-        // could otherwise keep requesting the same subset of duplicates until maxRequestTurns.)
-        const requestedNames = toolCalls.map((tc) => tc.function?.name)
-          .filter((name): name is string => name !== undefined)
-        if (requestedNames.length > 0 && requestedNames.every((name) => calledToolNames.has(name))) {
-          availableTools = []
+        // Split this round's requests into calls that actually need servicing and calls that
+        // already have results, so only genuinely new work gets a payload — duplicates get a
+        // reminder naming them instead, without blocking whatever new calls came with them.
+        // Calls with an unrecognized or missing name are treated as "new" (not a known
+        // duplicate) so buildToolResultMessages still surfaces them as a servicing failure
+        // rather than letting them vanish from both buckets.
+        const isKnownDuplicate = (tc: AgentToolCall) =>
+          tc.function?.name !== undefined && calledToolNames.has(tc.function.name)
+        
+        const duplicateToolCalls = toolCalls.filter(isKnownDuplicate)
+        const newToolCalls = toolCalls.filter((tc) => !isKnownDuplicate(tc))
+
+        if (newToolCalls.length === 0) {
+          // Every requested tool this round was already called — no new work to service.
+          if (duplicateWarningIssued) {
+            // Exit 6: second all-duplicate round in a row despite the reminder — end the turn
+            // rather than reminding indefinitely.
+            return {
+              ok: false,
+              reason: "malformed-response",
+              diagnostic: {
+                message: "Agent kept re-requesting already-called tools after being told so.",
+                details: { endpoint: endpointDisplay, requestTurn: requestTurns },
+              },
+            }
+          }
+
+          messages = [
+            ...messages,
+            { role: "assistant", content: response.message.content ?? "", tool_calls: toolCalls },
+            buildDuplicateToolCallMessage(duplicateToolCalls),
+          ]
+          duplicateWarningIssued = true
+          // Loop back: not an exit — a reminder was appended, the turn continues.
           continue
         }
-        requestedNames.forEach((name) => calledToolNames.add(name))
 
-        const toolMessages = await buildToolResultMessages(toolCalls, toolHandlers)
+        // Record only the names actually serviced this round, so a later round's duplicate
+        // check is judged against real progress, not against calls that were requested but
+        // whose name was missing (those fall through to buildToolResultMessages's own failure).
+        newToolCalls.forEach((tc) => {
+          if (tc.function?.name) calledToolNames.add(tc.function.name)
+        })
+
+        const toolMessages = await buildToolResultMessages(newToolCalls, toolHandlers)
         if (!toolMessages) {
+          // Exit 7: a requested tool was unknown, unnamed, or its handler threw.
           return {
             ok: false,
             reason: "network-error",
@@ -517,7 +532,9 @@ export function requestPredictionWithAbort({
               details: {
                 endpoint: endpointDisplay,
                 requestTurn: requestTurns,
-                toolNames: requestedNames,
+                toolNames: newToolCalls
+                  .map((tc) => tc.function?.name)
+                  .filter((name): name is string => name !== undefined),
               },
             },
           }
@@ -525,17 +542,18 @@ export function requestPredictionWithAbort({
 
         // Build a fresh messages array for the next request so each turn's log entry captures
         // only the messages that were actually sent in that turn, not the accumulated history.
+        // Any duplicates mixed in with genuinely new calls still get named, but don't block or
+        // reset progress the way an all-duplicate round does.
         messages = [
           ...messages,
           { role: "assistant", content: response.message.content ?? "", tool_calls: toolCalls },
           ...toolMessages,
+          ...(duplicateToolCalls.length > 0 ? [buildDuplicateToolCallMessage(duplicateToolCalls)] : []),
         ]
+        duplicateWarningIssued = false
 
         toolRounds += 1
-        if (toolRounds >= maxToolRounds) {
-          // After enough context rounds, remove tools to nudge the model into a final prediction.
-          availableTools = []
-        }
+        // Loop back: not an exit — new tool results were serviced, the turn continues.
       }
     } catch {
       // Fetch failures, timeout aborts, and tool-service failures share one network bucket.

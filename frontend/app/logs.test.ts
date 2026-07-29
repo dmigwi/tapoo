@@ -8,6 +8,7 @@ import {
   tapooDownloadLogs,
   tapooLogCount,
   tapooResetLogs,
+  trimLoggedDescription,
 } from "./logs"
 
 // These tests keep the in-memory Tapoo log export/reset behavior intentionally small.
@@ -99,5 +100,30 @@ describe("tapoo logs", () => {
     logTapooDiagnostic("interactive", "info", "after unsubscribe")
 
     expect(listener).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe("trimLoggedDescription", () => {
+  it("returns the full text when keepFull is true, regardless of length", () => {
+    const long = "x".repeat(50)
+    expect(trimLoggedDescription(long, true)).toBe(long)
+  })
+
+  it("returns undefined unchanged", () => {
+    expect(trimLoggedDescription(undefined, false)).toBeUndefined()
+  })
+
+  it("returns short text unchanged even when keepFull is false", () => {
+    expect(trimLoggedDescription("short text", false)).toBe("short text")
+  })
+
+  it("truncates text longer than the preview length and appends an ellipsis", () => {
+    const long = "This description is definitely longer than the preview length allows."
+    expect(trimLoggedDescription(long, false)).toBe(`${long.slice(0, 25)}...`)
+  })
+
+  it("leaves text exactly at the preview length untouched", () => {
+    const exact = "x".repeat(25)
+    expect(trimLoggedDescription(exact, false)).toBe(exact)
   })
 })
