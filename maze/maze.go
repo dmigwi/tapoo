@@ -249,7 +249,7 @@ func (config *Dimensions) createPath(maze [][]string, currentCellNo, newCellNo i
 
 	switch newCellNo {
 	case neighbors.Bottom:
-		maze[addr.BottomCenter[0]][addr.BottomCenter[1]] = "   "
+		maze[addr.BottomCenter[0]][addr.BottomCenter[1]] = passageGlyph(0)
 
 	case neighbors.Left:
 		maze[addr.MiddleLeft[0]][addr.MiddleLeft[1]] = " "
@@ -258,7 +258,7 @@ func (config *Dimensions) createPath(maze [][]string, currentCellNo, newCellNo i
 		maze[addr.MiddleRight[0]][addr.MiddleRight[1]] = " "
 
 	case neighbors.Top:
-		maze[addr.TopCenter[0]][addr.TopCenter[1]] = "   "
+		maze[addr.TopCenter[0]][addr.TopCenter[1]] = passageGlyph(0)
 	}
 }
 
@@ -378,13 +378,13 @@ func (config *Dimensions) replaceChar(point [2]int, replChar string, maze [][]st
 
 	x, y := point[0], point[1]
 	switch {
-	case !lenTop && lenBottom && isSpaceFound(elemBottom):
+	case !lenTop && lenBottom && isTraversable(elemBottom):
 		maze[x][y] = replChar
 
-	case lenTop && !lenBottom && isSpaceFound(elemTop):
+	case lenTop && !lenBottom && isTraversable(elemTop):
 		maze[x][y] = replChar
 
-	case lenTop && lenBottom && isSpaceFound(elemBottom) && isSpaceFound(elemTop):
+	case lenTop && lenBottom && isTraversable(elemBottom) && isTraversable(elemTop):
 		maze[x][y] = replChar
 	}
 }

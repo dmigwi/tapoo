@@ -101,10 +101,11 @@ func (config *Dimensions) PlayerMovement(data [][]string, rowDelta, columnDelta 
 		return 0, false
 	}
 
-	if !isSpaceFound(data[probeRow][probeColumn]) {
+	if !isTraversable(data[probeRow][probeColumn]) {
 		return 0, false
 	}
 
+	data[currentRow][currentColumn] = passageGlyph(visitedCellMarker)
 	config.StartPosition[0] = nextRow
 	config.StartPosition[1] = nextColumn
 	return 0, false

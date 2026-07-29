@@ -62,7 +62,7 @@ func (config *Dimensions) CreatePlayingField(weight WallWeight) ([][]string, err
 
 	rows := (cellSpan * config.NumRows) + 1
 	data := make([][]string, 0, rows)
-	passage := strings.Repeat(" ", cellPathWidth)
+	passage := passageGlyph(0)
 	rowCapacity := ((config.NumCols + 1) * cellSpan)
 
 	for rowIndex := range rows {
@@ -197,8 +197,22 @@ func reweightMaze(data [][]string, currentWeight WallWeight) ([][]string, error)
 	return translated, nil
 }
 
-// isSpaceFound reports whether the segment is a traversable passage.
-// All open path segments in the maze begin with a leading space, so a single-byte check is enough.
-func isSpaceFound(item string) bool {
-	return len(item) > 0 && item[0] == ' '
+// passageGlyph returns a cellPathWidth-wide passage segment: blank when marker is zero, or with
+// marker centered between single-space padding otherwise. Every writable maze cell slot goes
+// through this so its width stays consistent regardless of whether it is blank or visited.
+func passageGlyph(marker rune) string {
+	if marker == 0 {
+		return strings.Repeat(" ", cellPathWidth)
+	}
+
+	return " " + string(marker) + " "
+}
+
+// isTraversable returns true when the segment is an open path or an already-visited cell.
+func isTraversable(item string) bool {
+	if len(item) > 0 && item[0] == ' ' {
+		return true
+	}
+
+	return strings.ContainsRune(item, visitedCellMarker)
 }

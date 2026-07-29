@@ -481,6 +481,7 @@ export type AppConfig = {
   }
   maze: {
     playerMarker: string
+    visitedCellMarker: string
     destinationMarker: string
     walls: Record<WallWeight, [string, string, string]>
     cellSpan: number

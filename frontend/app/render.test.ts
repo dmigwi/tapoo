@@ -222,6 +222,39 @@ describe("render", () => {
     ])
   })
 
+  it("renders a visited-cell trail for history entries other than the current position", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        traversalHistory: [selfVisit(0, 0), selfVisit(0, 1)],
+      }),
+    )
+
+    // selfVisit(0, 1) maps to a different rendered point than the default playerPosition
+    // {x: 1, y: 1}, so it should be drawn as a visited-trail cell, not overwritten by the
+    // player marker.
+    expect(elements.screen.innerHTML).toContain('class="maze-cell visited"')
+    expect(elements.screen.innerHTML).toContain('class="maze-cell player"')
+  })
+
+  it("does not draw a visited marker over the player's own current cell", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        traversalHistory: [selfVisit(0, 0)],
+      }),
+    )
+
+    // selfVisit(0, 0) maps to the same rendered point as the default playerPosition
+    // {x: 1, y: 1}, so the player marker must win there instead of a visited marker.
+    expect(elements.screen.innerHTML).not.toContain('class="maze-cell visited"')
+    expect(elements.screen.innerHTML).toContain('class="maze-cell player"')
+  })
+
   it("shows only local action touch controls when the agent-api mode is active", () => {
     const elements = createElements()
 

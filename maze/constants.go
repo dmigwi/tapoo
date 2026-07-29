@@ -8,9 +8,21 @@ import (
 	termbox "github.com/nsf/termbox-go"
 )
 
-// coldef maintains the original color used on the
-// background or the foreground depending on its usage.
-const coldef = termbox.ColorDefault
+const (
+	// coldef maintains the original color used on the
+	// background or the foreground depending on its usage.
+	coldef = termbox.ColorDefault
+
+	// playerColor renders both the player marker and the visited-cell trail it leaves behind.
+	playerColor = termbox.ColorCyan
+
+	// targetColor renders the goal marker the player is trying to reach.
+	targetColor = termbox.ColorRed
+
+	// visitedCellMarker replaces a cell's blank path glyph once the player has moved through it,
+	// leaving a visible trail while still counting as traversable so backtracking stays possible.
+	visitedCellMarker = '░'
+)
 
 const (
 	// Maze cells are rendered on a doubled grid so walls and passages can occupy separate slots.

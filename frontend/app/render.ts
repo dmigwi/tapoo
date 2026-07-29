@@ -15,6 +15,7 @@ import {
   isTooSmallStatus,
   isWonStatus,
 } from "./status"
+import { gridPointFromCellCoordinate } from "./traversal"
 import type { DisplayMsg, Elements, ScreenLine, State } from "./types"
 
 const { maze, messages, viewport } = CONFIG
@@ -166,13 +167,24 @@ function shouldDrawDestination(state: State): boolean {
   return state.clock.blink()
 }
 
-// buildMazeLines merges the maze grid with the current player and target markers.
+// buildMazeLines merges the maze grid with the visited trail, current player, and target markers.
 function buildMazeLines(state: State): string[] {
   if (!state.maze) {
     return []
   }
 
   const lines = state.maze.map((row) => row.join(""))
+
+  // The trail is drawn first so the player and destination markers always take precedence
+  // over it at their own cell, matching the draw order below.
+  for (const visitedCell of state.traversalHistory) {
+    const point = gridPointFromCellCoordinate(visitedCell)
+    if (state.playerPosition && point.x === state.playerPosition.x && point.y === state.playerPosition.y) {
+      continue
+    }
+
+    lines[point.y] = replaceAt(lines[point.y], point.x * maze.cellSpan, maze.visitedCellMarker)
+  }
 
   if (state.finalPosition && shouldDrawDestination(state)) {
     lines[state.finalPosition.y] = replaceAt(
@@ -204,6 +216,8 @@ function renderMarkedLine(rawLine: string): string {
       html += `<span class="maze-cell player">${value}</span>`
     } else if (char === maze.destinationMarker) {
       html += `<span class="maze-cell target">${value}</span>`
+    } else if (char === maze.visitedCellMarker) {
+      html += `<span class="maze-cell visited">${value}</span>`
     } else {
       html += `<span class="maze-cell walls">${value}</span>`
     }

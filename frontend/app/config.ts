@@ -22,7 +22,7 @@ const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
 const VERSION_MAJOR = 2
 
 // VERSION_MINOR is the semantic minor version for the browser SPA runtime.
-const VERSION_MINOR = 1
+const VERSION_MINOR = 2
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
 const VERSION_PATCH = 0
@@ -202,6 +202,7 @@ export const CONFIG: AppConfig = {
   // Maze glyphs and geometry shared by generation, traversal, and rendering.
   maze: {
     playerMarker: "▓",
+    visitedCellMarker: "░",
     destinationMarker: "█",
     walls: {
       1: ["|", "---", "-"],
