@@ -119,6 +119,14 @@ type AgentChatTurnResult =
   | { ok: true; response: AgentChatResponse }
   | AgentPredictionFailure
 
+// ToolServicingResult distinguishes a hallucinated/unknown tool call — the model's own fault,
+// reported as malformed-response — from a handler throwing, which is a bug in our own tool
+// implementation and stays a network-error.
+type ToolServicingResult =
+  | { ok: true; messages: AgentChatMessage[] }
+  | { ok: false; reason: "unknown-tool" | "handler-error" }
+
+
 // AgentRequestMode labels each request for logging: "tools" while gathering context, "predict"
 // on the first request that offers no tools, and "warned" on any predict-mode request that
 // follows a round where the agent ignored PREDICTION_ONLY_MESSAGE and called a tool anyway.
@@ -218,19 +226,16 @@ function previewLoggedTool(
 async function buildToolResultMessages(
   toolCalls: AgentToolCall[],
   toolHandlers: AgentToolHandlers,
-): Promise<AgentChatMessage[] | null> {
+): Promise<ToolServicingResult> {
   const toolMessages: AgentChatMessage[] = []
 
   for (const toolCall of toolCalls) {
-    // Unknown or unnamed tools are treated as provider/request failures, not agent mistakes.
+    // A missing or unrecognized tool name means the model asked for something that was never
+    // offered — most likely a hallucinated call — so it is the model's own fault, not ours.
     const toolName = toolCall.function?.name
-    if (!toolName) {
-      return null
-    }
-
-    const handler = toolHandlers[toolName]
-    if (!handler) {
-      return null
+    const handler = toolName ? toolHandlers[toolName] : undefined
+    if (!toolName || !handler) {
+      return { ok: false, reason: "unknown-tool" }
     }
 
     try {
@@ -239,15 +244,15 @@ async function buildToolResultMessages(
       toolMessages.push({
         role: "tool",
         tool_call_id: toolCall.id,
-        tool_name: toolCall.function?.name,
+        tool_name: toolName,
         content: serializeToolResult(result),
       })
     } catch {
-      return null
+      return { ok: false, reason: "handler-error" }
     }
   }
 
-  return toolMessages
+  return { ok: true, messages: toolMessages }
 }
 
 // compactToolsPayload manages the follow-up tool payload in one place:
@@ -521,21 +526,33 @@ export function requestPredictionWithAbort({
           if (tc.function?.name) calledToolNames.add(tc.function.name)
         })
 
-        const toolMessages = await buildToolResultMessages(newToolCalls, toolHandlers)
-        if (!toolMessages) {
-          // Exit 7: a requested tool was unknown, unnamed, or its handler threw.
+        const toolResult = await buildToolResultMessages(newToolCalls, toolHandlers)
+        if (toolResult.ok === false) {
+          const toolNames = newToolCalls
+            .map((tc) => tc.function?.name)
+            .filter((name): name is string => name !== undefined)
+
+          if (toolResult.reason === "unknown-tool") {
+            // Exit 7: the model requested a tool that doesn't exist — most likely a
+            // hallucinated call — which is the model's own fault, not an infrastructure issue.
+            return {
+              ok: false,
+              reason: "malformed-response",
+              diagnostic: {
+                message: "Agent requested an unknown or hallucinated tool.",
+                details: { endpoint: endpointDisplay, requestTurn: requestTurns, toolNames },
+              },
+            }
+          }
+
+          // Exit 8: a recognized tool's own handler threw — a bug in our implementation, not
+          // something the model did wrong.
           return {
             ok: false,
             reason: "network-error",
             diagnostic: {
               message: "Tool request could not be serviced.",
-              details: {
-                endpoint: endpointDisplay,
-                requestTurn: requestTurns,
-                toolNames: newToolCalls
-                  .map((tc) => tc.function?.name)
-                  .filter((name): name is string => name !== undefined),
-              },
+              details: { endpoint: endpointDisplay, requestTurn: requestTurns, toolNames },
             },
           }
         }
@@ -547,7 +564,7 @@ export function requestPredictionWithAbort({
         messages = [
           ...messages,
           { role: "assistant", content: response.message.content ?? "", tool_calls: toolCalls },
-          ...toolMessages,
+          ...toolResult.messages,
           ...(duplicateToolCalls.length > 0 ? [buildDuplicateToolCallMessage(duplicateToolCalls)] : []),
         ]
         duplicateWarningIssued = false

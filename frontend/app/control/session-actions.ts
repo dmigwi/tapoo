@@ -60,8 +60,7 @@ export function isMazeControlFocused(elements: Elements): boolean {
 
 // sessionActionFromKeyboardEvent translates shared keyboard shortcuts into session actions.
 export function sessionActionFromKeyboardEvent(
-  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey"> &
-    Partial<Pick<KeyboardEvent, "altKey">>,
+  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey"> & Partial<Pick<KeyboardEvent, "altKey">>,
 ): SessionMazeAction | null {
   const lowerKey = event.key.toLowerCase()
   const controlCombo = event.ctrlKey || event.metaKey
