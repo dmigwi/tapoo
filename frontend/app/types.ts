@@ -124,6 +124,15 @@ export type NavigationProfile = {
   // its own — this is what actually controls junction density. 100 minimizes branching (long,
   // predictable corridors, bounded by __maxCorridorLength); 0 restores fully random neighbor
   // selection (the original branching rate, ~10% junctions regardless of area).
+  //
+  // Junction density also controls how much of the maze the solution path covers, since
+  // generateMaze always connects start to the single farthest cell from it (see its comment).
+  // A tree's longest path is a bigger share of its cells the less it branches — near 100 the
+  // maze is almost one long corridor, so the path can cover 90-100% of all cells; near 0, more
+  // cells get spent on short junction side-branches instead, so the path covers less of the
+  // maze. In other words: higher values make the route straighter and easier to predict from
+  // any single glance, but the player has to walk more of the maze's cells to reach the goal;
+  // lower values make the route harder to read at a glance, but it can be a shorter walk.
   __leastNeighborsBias: number
 }
 

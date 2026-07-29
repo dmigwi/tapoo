@@ -137,7 +137,12 @@ describe("maze", () => {
   })
 
   it("generates a deterministic maze layout for a fixed random source", () => {
-    vi.spyOn(Math, "random").mockReturnValue(0)
+    vi.spyOn(crypto, "getRandomValues").mockImplementation((array) => {
+      if (array instanceof Uint32Array) {
+        array.fill(0)
+      }
+      return array
+    })
 
     const round = generateMaze({ numCols: 5, numRows: 5 }, 1)
 

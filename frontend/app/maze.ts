@@ -15,12 +15,29 @@ import type {
 
 const { generation, maze: mazeConfig, scoring } = CONFIG
 
-// getRandomNo returns a bounded pseudo-random index for maze generation.
+// getRandomNo returns a bounded, cryptographically random index for maze generation. Using
+// crypto.getRandomValues rather than Math.random keeps maze layouts genuinely unpredictable —
+// worthwhile even for a game, since a guessable layout would blunt the challenge, and it means
+// no swap is needed later if the project grows into a context where that unpredictability
+// becomes a real security property rather than just a gameplay one.
 function getRandomNo(limit: number): number {
   if (limit <= 0) {
     return 0
   }
-  return Math.floor(Math.random() * limit)
+
+  // Rejection sampling avoids modulo bias: values landing in the partial final range above the
+  // largest multiple of `limit` are discarded and re-rolled rather than folded in unevenly.
+  const range = 2 ** 32
+  const rejectionThreshold = range - (range % limit)
+  const buffer = new Uint32Array(1)
+
+  let value: number
+  do {
+    crypto.getRandomValues(buffer)
+    value = buffer[0]
+  } while (value >= rejectionThreshold)
+
+  return value % limit
 }
 
 // absInt normalizes signed values when comparing candidate dimensions.
@@ -586,6 +603,16 @@ function optimizeMaze(
 }
 
 // generateMaze carves the maze, then returns the grid plus start and target positions.
+//
+// The target is deliberately chosen as the single farthest cell from the start, by tree
+// distance, across the entire maze — not an arbitrary or independently-random pick. Because a
+// perfect maze is a spanning tree, and `path` here always mirrors the exact tree-path from
+// `startCell` to whichever cell the DFS currently stands on, tracking `path.length`'s running
+// maximum re-derives every cell's true distance from the start as it's first visited. The
+// classic graph-theory guarantee for trees is that the farthest node from any fixed point is
+// always an endpoint of the tree's longest possible path (its diameter) — so `startCell` and
+// `finalCell` are always as far apart as the maze's shape allows, regardless of where the
+// randomly-chosen `startCell` happens to land.
 export function generateMaze(
   dimensions: BaseDimensions,
   weight: WallWeight,

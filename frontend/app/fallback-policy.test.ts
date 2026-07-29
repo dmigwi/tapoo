@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { showPlaceholderArt, showTerminalApp } from "./fallback-policy"
+import { prepareTerminalAppForBootstrap, showPlaceholderArt } from "./fallback-policy"
 
 // These tests lock down the fallback behavior and its console diagnostics.
 describe("fallback policy", () => {
@@ -40,7 +40,7 @@ describe("fallback policy", () => {
     const terminalApp = document.getElementById("terminal-app")
     const placeholder = document.getElementById("placeholder-art")
 
-    showTerminalApp()
+    prepareTerminalAppForBootstrap()
 
     expect(terminalApp).toHaveProperty("hidden", false)
     expect(terminalApp?.getAttribute("aria-hidden")).toBe("false")

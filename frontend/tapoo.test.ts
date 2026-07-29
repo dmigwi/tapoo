@@ -18,6 +18,7 @@ describe("tapoo entrypoint", () => {
     const bootstrapGame = vi.fn(() => runtime)
     const getGameElements = vi.fn(() => ({ app: {} }))
     const showPlaceholderArt = vi.fn()
+    const prepareTerminalAppForBootstrap = vi.fn()
     const interactiveMode = {
       bindActionDispatch: vi.fn(),
       clearActionState: vi.fn(),
@@ -31,7 +32,7 @@ describe("tapoo entrypoint", () => {
     vi.doMock("./app/dom", () => ({ getGameElements }))
     vi.doMock("./app/fallback-policy", async () => {
       const actual = await vi.importActual<typeof FallbackPolicy>("./app/fallback-policy")
-      return { ...actual, showPlaceholderArt }
+      return { ...actual, prepareTerminalAppForBootstrap, showPlaceholderArt }
     })
     vi.doMock("./app/control/interactive", () => ({
       createInteractiveMode: vi.fn(() => interactiveMode),
@@ -45,6 +46,9 @@ describe("tapoo entrypoint", () => {
 
     expect(bootstrapGame).toHaveBeenCalledTimes(1)
     expect(bootstrapGame).toHaveBeenCalledWith(interactiveMode, { app: {} })
+    expect(prepareTerminalAppForBootstrap.mock.invocationCallOrder[0]).toBeLessThan(
+      bootstrapGame.mock.invocationCallOrder[0],
+    )
     expect(showPlaceholderArt).not.toHaveBeenCalled()
   })
 
