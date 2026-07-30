@@ -38,7 +38,7 @@ function createState(): State {
   return {
     agentRequestCount: 0,
     cumulativeRoundCount: 0,
-    bestWinRequestCount: null,
+    bestWinTraversalSpeedUnits: null,
     bestWinRetentionUnits: null,
     canResume: false,
     clock: null,
@@ -46,7 +46,7 @@ function createState(): State {
     finalPosition: null,
     lastAttemptRetentionUnits: null,
     lastRoundScore: 0,
-    lastWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
     level: 1,
     maze: null,
     mazeDimensions: null,

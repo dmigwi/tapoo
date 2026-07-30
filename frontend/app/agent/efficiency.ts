@@ -1,18 +1,23 @@
 import type { AgentApiConfig, TraversalHistoryEntry } from "../types"
 
-// BATCH_EFFICIENCY_BASELINE_RATE is the one-move-per-turn neutral point: matching it means the
-// agent is behaving exactly like the conservative single-step strategy, no better and no worse.
+// BATCH_EFFICIENCY_BASELINE_RATE is the break-even traversal speed: one new cell reached for every
+// decay unit spent. A maze's entire budget is one decay unit per cell, so an agent holding exactly
+// this pace arrives with nothing to spare — below it the score runs out before the destination
+// does, above it there is margin left for mistakes.
 export const BATCH_EFFICIENCY_BASELINE_RATE = 1
 
 // BatchEfficiencyRank names the traversal behavior the rate measures, not just a grade, so the
 // rank itself carries the corrective instruction: climb out of backtracker, defend trailblazer.
 export type BatchEfficiencyRank = "backtracker" | "navigator" | "trailblazer"
 
-// BatchEfficiencyMetrics are the raw counts behind batchEfficiencyRate, exposed to the model
+// BatchEfficiencyMetrics are the raw counts behind the traversal speed, exposed to the model
 // directly so it can compute and verify the rate/rank itself instead of treating the rank as an
-// unexplained label.
+// unexplained label. requestsMade rides along as context but deliberately does not feed the rate:
+// a turn is charged the same decay whether it carried one move or many, so dividing by requests
+// would leave the rate blind to the batching it is meant to reward.
 export type BatchEfficiencyMetrics = {
   uniqueCellsVisited: number
+  decayUnitsCharged: number
   requestsMade: number
 }
 
@@ -33,40 +38,47 @@ export function getBatchEfficiencyMetrics(
 ): BatchEfficiencyMetrics {
   return {
     uniqueCellsVisited: countDistinctCellsForAgent(traversalHistory, agent),
+    decayUnitsCharged: agent.decayUnitsCharged ?? 0,
     requestsMade: agent.requestsCount ?? 0,
   }
 }
 
-// resolveBatchEfficiencyRank is the single source of truth for an agent's current rank,
-// everywhere one is shown or sent. An agent with no tracked requests yet defaults to
-// trailblazer — not the neutral baseline — so it starts already primed to predict multi-move
-// sequences, matching the identity stated in its very first prompt. traversalHistory only
-// records the first visit to each cell, so oscillation or wasted requests grow requestsCount
-// without growing the agent's distinct-cell count, pulling the rate below the baseline.
+// resolveBatchEfficiencyRank is the single source of truth for an agent's current rank, everywhere
+// one is shown or sent. An agent that has not been charged anything yet defaults to trailblazer —
+// not the neutral baseline — so it starts already primed to predict multi-move sequences, matching
+// the identity stated in its very first prompt. That same guard is what keeps the rate below from
+// dividing by zero. traversalHistory only records the first visit to each cell, so oscillation
+// between known cells spends decay without growing the distinct-cell count, pulling the rate down.
 export function resolveBatchEfficiencyRank(
   traversalHistory: TraversalHistoryEntry[],
   agent: AgentApiConfig,
 ): BatchEfficiencyRank {
-  // Fresh agent, no track record yet — grant trailblazer rather than the neutral baseline.
-  if (!agent.requestsCount) {
+  // Fresh agent, nothing charged yet — grant trailblazer rather than the neutral baseline.
+  if (!agent.decayUnitsCharged) {
     return "trailblazer"
   }
 
-  // Distinct cells reached per request made; requestsMade is guaranteed > 0 here since the
-  // fresh-agent case above already returned for a falsy requestsCount.
-  const { uniqueCellsVisited, requestsMade } = getBatchEfficiencyMetrics(traversalHistory, agent)
-  const rate = uniqueCellsVisited / requestsMade
+  // New cells reached per decay unit spent; decayUnitsCharged is guaranteed > 0 here since the
+  // fresh-agent case above already returned for a falsy count.
+  const { uniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(traversalHistory, agent)
+  return resolveTraversalSpeedRank(uniqueCellsVisited / decayUnitsCharged)
+}
 
-  // Below baseline: requests are being wasted on invalid moves or oscillation between cells.
-  if (rate < BATCH_EFFICIENCY_BASELINE_RATE) {
+// resolveTraversalSpeedRank is the single place the rate thresholds live. The win summary scores a
+// completed round's speed and the prompt scores an agent's running speed; both come through here so
+// the two can never disagree about where a rank boundary sits.
+export function resolveTraversalSpeedRank(traversalSpeed: number): BatchEfficiencyRank {
+  // Below baseline: score is draining faster than new ground is being covered, whether spent on
+  // invalid moves, malformed responses, or oscillation between already-visited cells.
+  if (traversalSpeed < BATCH_EFFICIENCY_BASELINE_RATE) {
     return "backtracker"
   }
 
-  // Above baseline: multi-move batches are paying off with more than one cell per request.
-  if (rate > BATCH_EFFICIENCY_BASELINE_RATE) {
+  // Above baseline: batched multi-move turns are covering more than one new cell per decay unit.
+  if (traversalSpeed > BATCH_EFFICIENCY_BASELINE_RATE) {
     return "trailblazer"
   }
 
-  // Exactly at baseline: matching one move per request, no better and no worse.
+  // Exactly at baseline: one new cell per decay unit, break-even with nothing to spare.
   return "navigator"
 }

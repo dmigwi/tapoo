@@ -14,6 +14,7 @@ import {
   calculateElapsedScore,
   calculateMaxScore,
   calculateScoreAfterDecay,
+  calculateTraversalSpeedUnits,
   resolveWinScore,
 } from "./scoring"
 import {
@@ -94,8 +95,8 @@ const state: State = {
   lastRoundScore: 0,
   lastAttemptRetentionUnits: null,
   bestWinRetentionUnits: null,
-  lastWinRequestCount: null,
-  bestWinRequestCount: null,
+  lastWinTraversalSpeedUnits: null,
+  bestWinTraversalSpeedUnits: null,
   winSummary: "",
   canResume: false,
   wallWeight: WALL_WEIGHTS[0],
@@ -242,22 +243,27 @@ function renderState(): void {
 
 // applyWinSummary delegates post-win scoring details and stores the resolved result.
 function applyWinSummary(totalCells: number): void {
+  // Only cells the agents actually reached count as progress; the start cell is seeded under the
+  // interactive player name and was never earned, so it must not inflate the round's speed.
+  const agentCellsVisited = state.traversalHistory.filter(
+    (entry) => entry.playerName !== runtime.interactivePlayerName,
+  ).length
   const winScore = resolveWinScore({
-    agentRequestCount: state.agentRequestCount,
-    bestWinRequestCount: state.bestWinRequestCount,
     bestWinRetentionUnits: state.bestWinRetentionUnits,
+    bestWinTraversalSpeedUnits: state.bestWinTraversalSpeedUnits,
     controlMode: state.controlMode,
     lastAttemptRetentionUnits: state.lastAttemptRetentionUnits,
-    lastWinRequestCount: state.lastWinRequestCount,
+    lastWinTraversalSpeedUnits: state.lastWinTraversalSpeedUnits,
     score: state.score,
     totalCells,
+    traversalSpeedUnits: calculateTraversalSpeedUnits(agentCellsVisited, state.scoreDecayUnits),
   })
 
   state.winSummary = winScore.winSummary
   state.lastAttemptRetentionUnits = winScore.lastAttemptRetentionUnits
   state.bestWinRetentionUnits = winScore.bestWinRetentionUnits
-  state.lastWinRequestCount = winScore.lastWinRequestCount
-  state.bestWinRequestCount = winScore.bestWinRequestCount
+  state.lastWinTraversalSpeedUnits = winScore.lastWinTraversalSpeedUnits
+  state.bestWinTraversalSpeedUnits = winScore.bestWinTraversalSpeedUnits
 }
 
 // commitAgentTurn is the only place agent-api spends decay units after one resolved request.
@@ -451,8 +457,8 @@ function restartGame(): void {
   state.wallWeight = WALL_WEIGHTS[0]
   state.lastAttemptRetentionUnits = null
   state.bestWinRetentionUnits = null
-  state.lastWinRequestCount = null
-  state.bestWinRequestCount = null
+  state.lastWinTraversalSpeedUnits = null
+  state.bestWinTraversalSpeedUnits = null
   state.lastRoundScore = 0
   state.winSummary = ""
   startRound(1, false)
@@ -703,8 +709,8 @@ export function bootstrapGame(
   state.level = persistedSnapshot.preferences.level
   state.lastAttemptRetentionUnits = persistedSnapshot.preferences.lastAttemptRetentionUnits ?? null
   state.bestWinRetentionUnits = persistedSnapshot.preferences.bestWinRetentionUnits ?? null
-  state.lastWinRequestCount = persistedSnapshot.preferences.lastWinRequestCount ?? null
-  state.bestWinRequestCount = persistedSnapshot.preferences.bestWinRequestCount ?? null
+  state.lastWinTraversalSpeedUnits = persistedSnapshot.preferences.lastWinTraversalSpeedUnits ?? null
+  state.bestWinTraversalSpeedUnits = persistedSnapshot.preferences.bestWinTraversalSpeedUnits ?? null
 
   // If no valid persisted round exists, create a fresh maze for the current level.
   if (noValidRoundExists(persistedSnapshot.round)) {

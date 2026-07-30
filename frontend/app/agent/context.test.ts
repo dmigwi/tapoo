@@ -35,6 +35,7 @@ function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
     enabled: true,
     gameLevel: 4,
     requestsCount: 2,
+    decayUnitsCharged: 2,
     ...overrides,
   }
 }
@@ -55,7 +56,7 @@ const expectedAgentPrompt = [
   "lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units.",
   "get_prediction_rules provides the required response format and move count guidance.",
   "Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
-  "Longer, well-reasoned predictions are strictly cheaper per move than single-stepping — a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course.",
+  "Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more new cells for the same decay — that ratio is your traversal speed, and it is the rank you carry: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course.",
   "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
 ].join(" ")
 
@@ -96,8 +97,8 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 0,
     lastAttemptRetentionUnits: null,
     bestWinRetentionUnits: null,
-    lastWinRequestCount: null,
-    bestWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
+    bestWinTraversalSpeedUnits: null,
     winSummary: "",
     canResume: false,
     wallWeight: 1,
@@ -157,6 +158,7 @@ describe("agent context", () => {
     expect(toolHandlers.get_prediction_rules({})).toEqual({
       suggestedMovesPerTurn: 4,
       uniqueCellsVisited: 1,
+      decayUnitsCharged: 2,
       requestsMade: 2,
       batchEfficiencyRank: "backtracker",
       expectedResponseSchema,
@@ -173,12 +175,13 @@ describe("agent context", () => {
   })
 
   it("defaults a fresh agent's prediction rules to a trailblazer level regardless of raw counts", () => {
-    const freshAgent = createAgent({ requestsCount: undefined })
+    const freshAgent = createAgent({ requestsCount: undefined, decayUnitsCharged: undefined })
     const toolHandlers = buildAgentToolHandlers(createState(), null, freshAgent)
 
     expect(toolHandlers.get_prediction_rules({})).toEqual({
       suggestedMovesPerTurn: 4,
       uniqueCellsVisited: 1,
+      decayUnitsCharged: 0,
       requestsMade: 0,
       batchEfficiencyRank: "trailblazer",
       expectedResponseSchema,

@@ -127,10 +127,11 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyRank: B
     `${maxTurnCost} decay units.`,
     "get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted",
     "order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
-    "Longer, well-reasoned predictions are strictly cheaper per move than single-stepping — a trailblazer can set a",
-    "new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain",
-    "to fail unless it corrects course. lastMoveStatus reached-target or status won means the game is complete —",
-    "stop predicting.",
+    "Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more",
+    "new cells for the same decay — that ratio is your traversal speed, and it is the rank you carry: a trailblazer",
+    "can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost",
+    "certain to fail unless it corrects course. lastMoveStatus reached-target or status won means the game is",
+    "complete — stop predicting.",
   ].join(" ")
 }
 
@@ -179,27 +180,30 @@ const emptyToolParameters: AgentToolDefinition["function"]["parameters"] = {
 }
 
 // predictionRulesTool documents the only accepted move response and the suggested batch size.
+// It deliberately does not restate the charging model: buildMazeActionPrompt already carries that,
+// with the actual unit counts, and is sent as the system message on every single turn. The split is
+// that the prompt owns the durable rules — what a turn costs and what each rank implies — while this
+// tool owns the live numbers and how to read them: the raw metrics, the division that yields
+// traversal speed, the thresholds it is scored against, and where to find the resulting retention.
 const predictionRulesTool: AgentToolDefinition = {
   type: "function",
   function: {
     name: "get_prediction_rules",
     description: [
       "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions",
-      "response per turn. All correct predictions per turn cost a constant number of decay units regardless of how",
-      "many moves you included, and all wrong predictions per turn cost a further penalty in decay units on top —",
-      "so predicting many moves at once costs nothing extra if you are wrong but advances further, more cheaply, if",
-      "you are right. Each turn's decay units are subtracted immediately; the resulting score retention is visible",
-      "via get_game_status.",
-      "uniqueCellsVisited and requestsMade are the raw metrics behind batchEfficiencyRank, which shows your",
-      "likelihood of finishing the game — obtained by dividing uniqueCellsVisited by requestsMade. It is set to",
-      "backtracker rank when that rate is below 1.0 (requests being wasted on invalid moves or oscillation between",
-      "cells), navigator rank at 1.0 (matching one move per turn), or trailblazer rank above 1.0 (multi-move guesses",
-      "are paying off).",
-      "Before making any requests on this level, batchEfficiencyRank defaults to trailblazer regardless of these",
+      "response per turn. uniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the",
+      "progress per decay unit spent — a scale grouped by batchEfficiencyRank. Only a cell's first visit counts as",
+      "progress. The higher the traversal speed, the higher the likelihood of finding the target on time.",
+      "batchEfficiencyRank is set to backtracker rank when the speed is below 1.0 (units wasted on invalid moves or",
+      "oscillation between visited cells), navigator rank at 1.0 (one new cell move per decay unit),",
+      "or trailblazer rank above 1.0 (valid multi-move guesses are paying off — the only rank that can set a new",
+      "score retention record). requestsMade is reported for context and does not affect your speed, rank or scores",
+      "Each turn's decay units are subtracted immediately; the resulting score retention is visible via",
+      "get_game_status.",
+      "Before anything is charged on this level, batchEfficiencyRank defaults to trailblazer regardless of these",
       "counts, so you start already primed to predict multi-move sequences. Returns JSON:",
-      "{\"suggestedMovesPerTurn\":number,",
-      "\"uniqueCellsVisited\":number, \"requestsMade\":number, \"batchEfficiencyRank\":string,",
-      "\"expectedResponseSchema\":object}.",
+      "{\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number,",
+      "\"requestsMade\":number, \"batchEfficiencyRank\":string,\"expectedResponseSchema\":object}.",
     ].join(" "),
     parameters: emptyToolParameters,
   },
@@ -328,13 +332,15 @@ export function buildAgentToolHandlers(
         : 0
 
       // Raw counts are exposed instead of the derived rate so the model can compute and verify the
-      // rank itself; both are always concrete numbers (0 is a valid count), never null, so there is
+      // rank itself; all are always concrete numbers (0 is a valid count), never null, so there is
       // nothing ambiguous for the model to puzzle over before its first request.
       const batchEfficiencyRank = resolveBatchEfficiencyRank(state.traversalHistory, agent)
-      const { uniqueCellsVisited, requestsMade } = getBatchEfficiencyMetrics(state.traversalHistory, agent)
+      const { uniqueCellsVisited, decayUnitsCharged, requestsMade } =
+        getBatchEfficiencyMetrics(state.traversalHistory, agent)
       return {
         suggestedMovesPerTurn,
         uniqueCellsVisited,
+        decayUnitsCharged,
         requestsMade,
         batchEfficiencyRank,
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,

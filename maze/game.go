@@ -469,10 +469,7 @@ func BuildWinSummary(current uint32, lastAttempt, best *uint32, levelDuration ti
 
 	switch previousCmp {
 	case winSummaryPreviousNone:
-		// First stored wins never mention a previous attempt, so only the best delta can be injected.
-		if bestCmp == winSummaryBestBehind {
-			return fmt.Sprintf(template, bestDelta)
-		}
+		// First stored clears carry no deltas at all: nothing earlier exists to measure against.
 		return template
 	case winSummaryPreviousFaster, winSummaryPreviousSlower:
 		// Faster/slower templates always carry the previous-attempt delta and optionally the best delta too.
@@ -544,15 +541,8 @@ func selectWinSummaryTemplate(
 ) string {
 	switch previousCmp {
 	case winSummaryPreviousNone:
-		// First stored win: only the relationship to the best clear matters.
-		switch bestCmp {
-		case winSummaryBestNewRecord:
-			return winNoPrevNewRecord
-		case winSummaryBestMatched:
-			return winNoPrevMatchedBest
-		case winSummaryBestBehind:
-			return winNoPrevBehindBest
-		}
+		// First stored clear: with no previous attempt there is no best to trail, so this is a record.
+		return winNoPrev
 	case winSummaryPreviousFaster:
 		// Faster reruns always include the improvement over the previous attempt.
 		switch bestCmp {

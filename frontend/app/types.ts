@@ -88,11 +88,11 @@ export type WinSummaryPreviousComparison = "none" | "faster" | "slower" | "match
 // WinSummaryBestComparison describes how the current win compares to the best stored win.
 export type WinSummaryBestComparison = "new-record" | "matched-best" | "behind-best"
 
-// AgentRequestPreviousComparison compares the current agent-api win request count to the last win.
-export type AgentRequestPreviousComparison = "none" | "fewer" | "more" | "matched"
+// AgentSpeedPreviousComparison compares the current agent-api win traversal speed to the last win.
+export type AgentSpeedPreviousComparison = "none" | "faster" | "slower" | "matched"
 
-// AgentRequestBestComparison compares the current agent-api win request count to the best win.
-export type AgentRequestBestComparison = "new-record" | "matched-best" | "behind-best"
+// AgentSpeedBestComparison compares the current agent-api win traversal speed to the best win.
+export type AgentSpeedBestComparison = "new-record" | "matched-best" | "behind-best"
 
 // CellAddress records the render-grid coordinates around a logical maze cell.
 export type CellAddress = {
@@ -180,8 +180,8 @@ export type PersistedGameSetup = {
 export type PersistedWinMetrics = {
   lastAttemptRetentionUnits: number | null
   bestWinRetentionUnits: number | null
-  lastWinRequestCount: number | null
-  bestWinRequestCount: number | null
+  lastWinTraversalSpeedUnits: number | null
+  bestWinTraversalSpeedUnits: number | null
 }
 
 // PersistedPreferences combines setup with optional metrics because old/missing storage can lack either bucket.
@@ -231,12 +231,16 @@ export type AgentApiConfig = {
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number
-  // gameLevel and cumulativeRoundCount are the level and round requestsCount was last tracked against; a
-  // mismatch on either against the current round means the agent's efficiency tracking resets.
+  // gameLevel and cumulativeRoundCount are the level and round the counters below were last tracked
+  // against; a mismatch on either against the current round means the agent's efficiency tracking resets.
   // Level alone can't tell a retry of the same level apart from continuing it, hence cumulativeRoundCount.
   gameLevel?: number
   cumulativeRoundCount?: number
   requestsCount?: number
+  // decayUnitsCharged is this agent's own share of the round's score decay, and is what its traversal
+  // speed is measured against. state.scoreDecayUnits cannot serve here: it is shared by every seat,
+  // so it attributes no spend to any individual agent.
+  decayUnitsCharged?: number
 }
 
 // AgentSeat represents one fixed roster slot; null means the seat is empty.
@@ -300,8 +304,8 @@ export type State = {
   lastRoundScore: number
   lastAttemptRetentionUnits: number | null
   bestWinRetentionUnits: number | null
-  lastWinRequestCount: number | null
-  bestWinRequestCount: number | null
+  lastWinTraversalSpeedUnits: number | null
+  bestWinTraversalSpeedUnits: number | null
   winSummary: string
   scoreDecayUnits: number
   agentRequestCount: number
@@ -440,16 +444,18 @@ export type AppConfig = {
     tooSmallActionMessage: string
     runningStatus: DisplayMsg
     highScoreTemplate: string
+    // noPrevious is a single line rather than a comparison group: with no previous record there is
+    // no best record either, so the result can only ever be a new record.
     winSummary: {
-      noPrevious: SummaryComparisonTemplates
+      noPrevious: string
       fasterPrevious: SummaryComparisonTemplates
       slowerPrevious: SummaryComparisonTemplates
       matchedPrevious: SummaryComparisonTemplates
     }
     agentWinSummary: {
-      noPrevious: SummaryComparisonTemplates
-      fewerPrevious: SummaryComparisonTemplates
-      morePrevious: SummaryComparisonTemplates
+      noPrevious: string
+      fasterPrevious: SummaryComparisonTemplates
+      slowerPrevious: SummaryComparisonTemplates
       matchedPrevious: SummaryComparisonTemplates
     }
   }
@@ -515,6 +521,7 @@ export type AppConfig = {
     retentionFullScaleUnits: number
     agentPenaltyDecayUnits: number
     agentBaseDecayUnits: number
+    traversalSpeedScaleUnits: number
   }
   timing: {
     refreshInterval: number

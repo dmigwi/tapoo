@@ -166,7 +166,7 @@ export function handleAgentTurnLoop({
   const recordMalformedAgentResponse = (agent: AgentApiConfig): void => {
     const chargedMovesCount = agentPenaltyDecayUnits
     __commitAgentTurn(chargedMovesCount)
-    recordAgentTurnStats(agent, __readState().level, __readState().cumulativeRoundCount)
+    recordAgentTurnStats(agent, __readState().level, __readState().cumulativeRoundCount, chargedMovesCount)
 
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
@@ -313,7 +313,9 @@ export function handleAgentTurnLoop({
         (appliedMoveCount > 0 ? agentBaseDecayUnits : 0) + (hasInvalidMove ? agentPenaltyDecayUnits : 0)
 
       __commitAgentTurn(chargedMovesCount)
-      recordAgentTurnStats(selectedAgent, __readState().level, __readState().cumulativeRoundCount)
+      recordAgentTurnStats(
+        selectedAgent, __readState().level, __readState().cumulativeRoundCount, chargedMovesCount,
+      )
 
       const nextResult = mergeReplayResult(lastReplayResult, {
         lastPlayerName: selectedAgent.playerName,

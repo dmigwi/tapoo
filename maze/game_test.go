@@ -222,7 +222,7 @@ func TestBuildWinSummary(t *testing.T) {
 			want:        "               1.20s faster than previous (new record)                      ",
 		},
 		{
-			name:        "falls back to the best summary when no last attempt is stored",
+			name:        "reports a first stored clear as a new record",
 			current:     660000,
 			lastAttempt: nil,
 			best:        nil,
@@ -230,12 +230,16 @@ func TestBuildWinSummary(t *testing.T) {
 			want:        "               New scores retention record                               ",
 		},
 		{
-			name:        "reports a first stored run that matches the best clear",
+			name: "still reports a new record when a stray best survives without a last attempt",
+			// loadStoredGameState drops the retention pair unless both halves are present, so this
+			// combination cannot reach BuildWinSummary from a real save. It is pinned here because
+			// the summary has no wording for trailing a best clear that no attempt was measured
+			// against — with nothing previous recorded, the clear is a record by definition.
 			current:     660000,
 			lastAttempt: nil,
-			best:        uint32Ptr(660000),
+			best:        uint32Ptr(740000),
 			duration:    10 * time.Second,
-			want:        "               Matched best scores retention                             ",
+			want:        "               New scores retention record                               ",
 		},
 		{
 			name:        "reports a matched previous run that is still behind the best",

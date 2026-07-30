@@ -279,6 +279,7 @@ export function createAgentMode(
           return
         }
 
+        console.log(">>>>>><<<<<< 3 ")
         dispatch({ type: "pause" }, { playerName: runtime.interactivePlayerName })
         syncCurrentPoller()
       }

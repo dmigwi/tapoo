@@ -114,7 +114,7 @@ export function tapooDownloadLogs(modeName: MazeControlModeName): void {
   const payload = {
     name: "tapoo",
     version: APP_VERSION,
-    modeName,
+    mode: modeName,
     downloadedAt: getLocalTimestamp(),
     entries,
   }

@@ -120,17 +120,17 @@ describe("agent seats", () => {
   it("names the seat tooltip after the agent's current efficiency rank, capitalized, once stats are tracked", () => {
     const roster = document.createElement("div")
 
-    const backtrackerAgent = { ...agent(2, "Kora"), gameLevel: 4, requestsCount: 2 }
+    const backtrackerAgent = { ...agent(2, "Kora"), gameLevel: 4, requestsCount: 2, decayUnitsCharged: 2 }
     renderAgentSeatRoster(roster, [backtrackerAgent], null, [visit("Kora", 0, 0)])
     let seats = Array.from(roster.querySelectorAll<HTMLButtonElement>(".agent-seat"))
     expect(seats[1].title).toBe("Kora the Backtracker")
 
-    const navigatorAgent = { ...agent(2, "Kora"), gameLevel: 4, requestsCount: 1 }
+    const navigatorAgent = { ...agent(2, "Kora"), gameLevel: 4, requestsCount: 1, decayUnitsCharged: 1 }
     renderAgentSeatRoster(roster, [navigatorAgent], null, [visit("Kora", 0, 0)])
     seats = Array.from(roster.querySelectorAll<HTMLButtonElement>(".agent-seat"))
     expect(seats[1].title).toBe("Kora the Navigator")
 
-    const trailblazerAgent = { ...agent(2, "Kora"), gameLevel: 4, requestsCount: 2 }
+    const trailblazerAgent = { ...agent(2, "Kora"), gameLevel: 4, requestsCount: 2, decayUnitsCharged: 2 }
     renderAgentSeatRoster(roster, [trailblazerAgent], null, [
       visit("Kora", 0, 0),
       visit("Kora", 0, 1),
@@ -142,7 +142,7 @@ describe("agent seats", () => {
   })
 
   it("includes the capitalized efficiency rank in the manage dialog title once stats are tracked", () => {
-    const trailblazerAgent = { ...agent(2, "Katara"), gameLevel: 5, requestsCount: 2 }
+    const trailblazerAgent = { ...agent(2, "Katara"), gameLevel: 5, requestsCount: 2, decayUnitsCharged: 2 }
     const label = agentSeatManageLabel(trailblazerAgent, [
       visit("Katara", 0, 0),
       visit("Katara", 0, 1),
@@ -154,7 +154,7 @@ describe("agent seats", () => {
   })
 
   it("includes the capitalized efficiency rank in the active-player label once stats are tracked", () => {
-    const navigatorAgent = { ...agent(3, "Katara"), gameLevel: 5, requestsCount: 1 }
+    const navigatorAgent = { ...agent(3, "Katara"), gameLevel: 5, requestsCount: 1, decayUnitsCharged: 1 }
     const label = activeAgentSeatLabel(navigatorAgent, [visit("Katara", 0, 0)])
 
     expect(label).toBe("Player Katara the Navigator is playing in seat 03")

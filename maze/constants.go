@@ -101,10 +101,11 @@ const (
 	gameOverNavigation = "              Press Ctrl+C to quit.     Press Enter to Proceed           "
 	tooSmallMazeFormat = "   level %d needs more screen room; enlarge the window to keep playing   "
 
-	highScores               = "               Final Level %d Scores:  %d (%d%% retention)               "
-	winNoPrevNewRecord       = "               New scores retention record                               "
-	winNoPrevMatchedBest     = "               Matched best scores retention                             "
-	winNoPrevBehindBest      = "               %s behind best scores retention                           "
+	highScores = "               Final Level %d Scores:  %d (%d%% retention)               "
+	// winNoPrev needs no best-clear variants: with no previous attempt there is no stored best
+	// either (loadStoredGameState drops the pair unless both halves are present), so a first
+	// recorded clear can only ever be a new record.
+	winNoPrev                = "               New scores retention record                               "
 	winFasterPrevNewRecord   = "               %s faster than previous (new record)                      "
 	winFasterPrevMatchedBest = "               %s faster than previous (matched best)                    "
 	winFasterPrevBehindBest  = "               %s faster than previous (%s behind best)                  "

@@ -62,13 +62,13 @@ describe("tapoo logs", () => {
     const downloadedPayload = JSON.parse(downloadedText) as {
       downloadedAt: string
       entries: unknown[]
-      modeName: string
+      mode: string
       name: string
       version: string
     }
     expect(downloadedPayload.name).toBe("tapoo")
     expect(downloadedPayload.version).toBe(APP_VERSION)
-    expect(downloadedPayload.modeName).toBe("interactive")
+    expect(downloadedPayload.mode).toBe("interactive")
     expect(downloadedPayload.entries).toHaveLength(1)
     expect(downloadedText).toContain("before reset")
     expect(downloadedText).toMatch(/"timestamp": \d+(\.\d+)?/)
@@ -89,13 +89,13 @@ describe("tapoo logs", () => {
     }
     const resetPayload = JSON.parse(await resetDownload.text()) as {
       entries: unknown[]
-      modeName: string
+      mode: string
       name: string
       version: string
     }
     expect(resetPayload.name).toBe("tapoo")
     expect(resetPayload.version).toBe(APP_VERSION)
-    expect(resetPayload.modeName).toBe("interactive")
+    expect(resetPayload.mode).toBe("interactive")
     expect(resetPayload.entries).toEqual([])
   })
 

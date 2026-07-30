@@ -1,7 +1,8 @@
 import { CONFIG } from "./config"
+import { resolveTraversalSpeedRank } from "./agent/efficiency"
 import type {
-  AgentRequestBestComparison,
-  AgentRequestPreviousComparison,
+  AgentSpeedBestComparison,
+  AgentSpeedPreviousComparison,
   MazeControlModeName,
   SummaryComparisonTemplates,
   WinSummaryBestComparison,
@@ -11,21 +12,21 @@ import type {
 const { messages, runtime, scoring, timing } = CONFIG
 
 type WinScoreInput = {
-  agentRequestCount: number
-  bestWinRequestCount: number | null
   bestWinRetentionUnits: number | null
+  bestWinTraversalSpeedUnits: number | null
   controlMode: MazeControlModeName
   lastAttemptRetentionUnits: number | null
-  lastWinRequestCount: number | null
+  lastWinTraversalSpeedUnits: number | null
   score: number
   totalCells: number
+  traversalSpeedUnits: number
 }
 
 type WinScoreResult = {
-  bestWinRequestCount: number | null
   bestWinRetentionUnits: number
+  bestWinTraversalSpeedUnits: number | null
   lastAttemptRetentionUnits: number
-  lastWinRequestCount: number | null
+  lastWinTraversalSpeedUnits: number | null
   winSummary: string
 }
 
@@ -76,6 +77,45 @@ export function calculateScoreRetentionUnits(
   return clampRetentionUnits(roundedRetentionUnits)
 }
 
+// calculateTraversalSpeedUnits normalizes one round's progress-per-decay-unit into fixed-point
+// units. This is the round's speed, not one agent's: every seat shares the same maze and the same
+// score, so the completed round is what a stored record can meaningfully compare against.
+export function calculateTraversalSpeedUnits(
+  uniqueCellsVisited: number,
+  scoreDecayUnits: number,
+): number {
+  if (scoreDecayUnits <= 0) {
+    return 0
+  }
+
+  const halfDecayRoundingOffset = Math.floor(scoreDecayUnits / 2)
+  const scaledSpeedUnits =
+    uniqueCellsVisited * scoring.traversalSpeedScaleUnits + halfDecayRoundingOffset
+
+  return Math.max(0, Math.floor(scaledSpeedUnits / scoreDecayUnits))
+}
+
+// traversalSpeedUnitsToDisplay renders fixed-point speed units as the plain ratio players read.
+// The decimal count matches traversalSpeedScaleUnits exactly, so display is lossless: two rounds
+// that stored different speeds can never render as the same number and look like a false match.
+export function traversalSpeedUnitsToDisplay(traversalSpeedUnits: number): string {
+  return (traversalSpeedUnits / scoring.traversalSpeedScaleUnits).toFixed(
+    String(scoring.traversalSpeedScaleUnits).length - 1,
+  )
+}
+
+// formatTraversalSpeedLabel renders the speed a round actually achieved together with the rank it
+// earned, e.g. "3.123 (Trailblazer)". Only an achieved speed carries a rank — a delta between two
+// rounds is a difference, not a pace, so deltas stay bare numbers.
+function formatTraversalSpeedLabel(traversalSpeedUnits: number): string {
+  const rank = resolveTraversalSpeedRank(traversalSpeedUnits / scoring.traversalSpeedScaleUnits)
+
+  return [
+    traversalSpeedUnitsToDisplay(traversalSpeedUnits),
+    ` (${rank.charAt(0).toUpperCase()}${rank.slice(1)})`,
+  ].join("")
+}
+
 // retentionUnitsToDisplayPercent converts fixed-point retention units into UI percentage text.
 export function retentionUnitsToDisplayPercent(retentionUnits: number): number {
   const displayedPercent = Math.round(
@@ -122,17 +162,20 @@ export function buildWinSummary(
   return replaceWinSummaryDelta(template, previous.delta, best.delta)
 }
 
-// buildAgentWinSummary assembles the request-count summary shown after an agent-api win.
+// buildAgentWinSummary assembles the traversal-speed summary shown after an agent-api win.
 export function buildAgentWinSummary(
-  currentRequests: number,
-  lastWinRequestCount: number | null,
-  bestWinRequestCount: number | null,
+  currentSpeedUnits: number,
+  lastWinTraversalSpeedUnits: number | null,
+  bestWinTraversalSpeedUnits: number | null,
 ): string {
-  const previous = compareAgentRequestsPrevious(currentRequests, lastWinRequestCount)
-  const best = compareAgentRequestsBest(currentRequests, bestWinRequestCount)
+  const previous = compareAgentSpeedPrevious(currentSpeedUnits, lastWinTraversalSpeedUnits)
+  const best = compareAgentSpeedBest(currentSpeedUnits, bestWinTraversalSpeedUnits)
   const template = selectAgentWinSummaryTemplate(previous.comparison, best.comparison)
+  const comparison = replaceWinSummaryDelta(template, previous.delta, best.delta)
 
-  return replaceWinSummaryDelta(template, previous.delta, best.delta)
+  // Lead with the pace actually achieved so the headline number is comparable across every maze
+  // size, then follow it with how that pace stacks up against the stored records.
+  return `${formatTraversalSpeedLabel(currentSpeedUnits)} — ${comparison}`
 }
 
 // resolveWinScore converts one completed round into the summary and stored win metrics.
@@ -145,10 +188,10 @@ export function resolveWinScore(input: WinScoreInput): WinScoreResult {
   if (input.controlMode === runtime.controlModes.interactive) {
     // Interactive wins translate retention deltas back into time-like progress messages.
     return {
-      bestWinRequestCount: input.bestWinRequestCount,
       bestWinRetentionUnits,
+      bestWinTraversalSpeedUnits: input.bestWinTraversalSpeedUnits,
       lastAttemptRetentionUnits: currentRetentionUnits,
-      lastWinRequestCount: input.lastWinRequestCount,
+      lastWinTraversalSpeedUnits: input.lastWinTraversalSpeedUnits,
       winSummary: buildWinSummary(
         currentRetentionUnits,
         input.lastAttemptRetentionUnits,
@@ -158,19 +201,25 @@ export function resolveWinScore(input: WinScoreInput): WinScoreResult {
     }
   }
 
-  // Agent-api wins report request efficiency because agents can submit batched predictions.
+  // Agent-api wins report traversal speed rather than the request count they used to. These
+  // records survive level progression, and maze area grows with every level, so request counts
+  // from two different levels were never comparable — a bigger maze needs more requests no matter
+  // how well it was played, which made "new record" partly a measure of maze size. Speed is a
+  // rate, so growing the maze grows both the cells reached and the units spent and leaves the
+  // comparison intact. It also separates a batching run from a single-stepping one that happened
+  // to need the same number of turns.
   return {
-    bestWinRequestCount: selectBestAgentRequestCount(
-      input.agentRequestCount,
-      input.bestWinRequestCount,
-    ),
     bestWinRetentionUnits,
+    bestWinTraversalSpeedUnits: selectBestAgentSpeedUnits(
+      input.traversalSpeedUnits,
+      input.bestWinTraversalSpeedUnits,
+    ),
     lastAttemptRetentionUnits: currentRetentionUnits,
-    lastWinRequestCount: input.agentRequestCount,
+    lastWinTraversalSpeedUnits: input.traversalSpeedUnits,
     winSummary: buildAgentWinSummary(
-      input.agentRequestCount,
-      input.lastWinRequestCount,
-      input.bestWinRequestCount,
+      input.traversalSpeedUnits,
+      input.lastWinTraversalSpeedUnits,
+      input.bestWinTraversalSpeedUnits,
     ),
   }
 }
@@ -192,16 +241,17 @@ function selectBestRetentionUnits(
   return bestWinRetentionUnits
 }
 
-// selectBestAgentRequestCount preserves the lowest solved request count seen so far.
-function selectBestAgentRequestCount(
-  currentRequests: number,
-  bestWinRequestCount: number | null,
+// selectBestAgentSpeedUnits preserves the highest solved traversal speed seen so far. Note the
+// direction: the request count this replaced was better when lower, speed is better when higher.
+function selectBestAgentSpeedUnits(
+  currentSpeedUnits: number,
+  bestWinTraversalSpeedUnits: number | null,
 ): number {
-  if (bestWinRequestCount === null || currentRequests < bestWinRequestCount) {
-    return currentRequests
+  if (bestWinTraversalSpeedUnits === null || currentSpeedUnits > bestWinTraversalSpeedUnits) {
+    return currentSpeedUnits
   }
 
-  return bestWinRequestCount
+  return bestWinTraversalSpeedUnits
 }
 
 // formatWinSummaryDuration renders elapsed deltas with compact time units.
@@ -299,12 +349,15 @@ function selectWinSummaryTemplate(
   previousComparison: WinSummaryPreviousComparison,
   bestComparison: WinSummaryBestComparison,
 ): string {
+  // No previous record means no best record either — restore keeps the pair atomic — so the only
+  // reachable outcome is a new record, with no delta to compare against.
+  if (previousComparison === "none") {
+    return messages.winSummary.noPrevious
+  }
+
   let templates: SummaryComparisonTemplates
 
   switch (previousComparison) {
-    case "none":
-      templates = messages.winSummary.noPrevious
-      break
     case "faster":
       templates = messages.winSummary.fasterPrevious
       break
@@ -319,45 +372,45 @@ function selectWinSummaryTemplate(
   return selectBestComparisonTemplate(templates, bestComparison)
 }
 
-// compareAgentRequestsPrevious compares the current solved round against the previous solved request count.
-function compareAgentRequestsPrevious(
-  currentRequests: number,
-  lastWinRequestCount: number | null,
-): { comparison: AgentRequestPreviousComparison; delta: string } {
-  if (lastWinRequestCount === null) {
+// compareAgentSpeedPrevious compares the current solved round against the previous solved speed.
+function compareAgentSpeedPrevious(
+  currentSpeedUnits: number,
+  lastWinTraversalSpeedUnits: number | null,
+): { comparison: AgentSpeedPreviousComparison; delta: string } {
+  if (lastWinTraversalSpeedUnits === null) {
     return { comparison: "none", delta: "" }
   }
 
-  if (currentRequests < lastWinRequestCount) {
+  if (currentSpeedUnits > lastWinTraversalSpeedUnits) {
     return {
-      comparison: "fewer",
-      delta: String(lastWinRequestCount - currentRequests),
+      comparison: "faster",
+      delta: traversalSpeedUnitsToDisplay(currentSpeedUnits - lastWinTraversalSpeedUnits),
     }
   }
 
-  if (currentRequests > lastWinRequestCount) {
+  if (currentSpeedUnits < lastWinTraversalSpeedUnits) {
     return {
-      comparison: "more",
-      delta: String(currentRequests - lastWinRequestCount),
+      comparison: "slower",
+      delta: traversalSpeedUnitsToDisplay(lastWinTraversalSpeedUnits - currentSpeedUnits),
     }
   }
 
   return { comparison: "matched", delta: "" }
 }
 
-// compareAgentRequestsBest compares the current solved round against the best solved request count.
-function compareAgentRequestsBest(
-  currentRequests: number,
-  bestWinRequestCount: number | null,
-): { comparison: AgentRequestBestComparison; delta: string } {
-  if (bestWinRequestCount === null || currentRequests < bestWinRequestCount) {
+// compareAgentSpeedBest compares the current solved round against the best solved speed.
+function compareAgentSpeedBest(
+  currentSpeedUnits: number,
+  bestWinTraversalSpeedUnits: number | null,
+): { comparison: AgentSpeedBestComparison; delta: string } {
+  if (bestWinTraversalSpeedUnits === null || currentSpeedUnits > bestWinTraversalSpeedUnits) {
     return { comparison: "new-record", delta: "" }
   }
 
-  if (currentRequests > bestWinRequestCount) {
+  if (currentSpeedUnits < bestWinTraversalSpeedUnits) {
     return {
       comparison: "behind-best",
-      delta: String(currentRequests - bestWinRequestCount),
+      delta: traversalSpeedUnitsToDisplay(bestWinTraversalSpeedUnits - currentSpeedUnits),
     }
   }
 
@@ -366,20 +419,22 @@ function compareAgentRequestsBest(
 
 // selectAgentWinSummaryTemplate chooses the request-count summary shown after an agent-api win.
 function selectAgentWinSummaryTemplate(
-  previousComparison: AgentRequestPreviousComparison,
-  bestComparison: AgentRequestBestComparison,
+  previousComparison: AgentSpeedPreviousComparison,
+  bestComparison: AgentSpeedBestComparison,
 ): string {
+  // Same as the interactive path: a first result has nothing to be behind.
+  if (previousComparison === "none") {
+    return messages.agentWinSummary.noPrevious
+  }
+
   let templates: SummaryComparisonTemplates
 
   switch (previousComparison) {
-    case "none":
-      templates = messages.agentWinSummary.noPrevious
+    case "faster":
+      templates = messages.agentWinSummary.fasterPrevious
       break
-    case "fewer":
-      templates = messages.agentWinSummary.fewerPrevious
-      break
-    case "more":
-      templates = messages.agentWinSummary.morePrevious
+    case "slower":
+      templates = messages.agentWinSummary.slowerPrevious
       break
     case "matched":
       templates = messages.agentWinSummary.matchedPrevious
@@ -392,7 +447,7 @@ function selectAgentWinSummaryTemplate(
 // selectBestComparisonTemplate resolves the shared new/matched/behind-best template group.
 function selectBestComparisonTemplate(
   templates: SummaryComparisonTemplates,
-  bestComparison: WinSummaryBestComparison | AgentRequestBestComparison,
+  bestComparison: WinSummaryBestComparison | AgentSpeedBestComparison,
 ): string {
   if (bestComparison === "new-record") {
     return templates.newRecord

@@ -117,19 +117,15 @@ export const CONFIG: AppConfig = {
       "Final Level {level} Scores:  {score} ({percent}% retention)",
     // Win-summary variants are selected from scoring.ts after comparing retention metrics.
     winSummary: {
-      noPrevious: {
-        newRecord: "New scores retention record",
-        matchedBest: "Matched best scores retention",
-        behindBest: "{delta} behind best scores retention",
-      },
+      noPrevious: "New scores retention record",
       fasterPrevious: {
         newRecord: "{delta} faster than previous (new record)",
-        matchedBest: "{delta} faster than previous (matched best)",
+        matchedBest: "{delta} faster than previous (matched as best)",
         behindBest: "{delta} faster than previous ({bestDelta} behind best)",
       },
       slowerPrevious: {
         newRecord: "{delta} slower than previous (new record)",
-        matchedBest: "{delta} slower than previous (matched best)",
+        matchedBest: "{delta} slower than previous (matched as best)",
         behindBest: "{delta} slower than previous ({bestDelta} behind best)",
       },
       matchedPrevious: {
@@ -139,25 +135,21 @@ export const CONFIG: AppConfig = {
       },
     },
     agentWinSummary: {
-      noPrevious: {
-        newRecord: "New lowest request count",
-        matchedBest: "Matched best request count",
-        behindBest: "{delta} requests behind best",
+      noPrevious: "new traversal speed record",
+      fasterPrevious: {
+        newRecord: "{delta} faster than previous (new record)",
+        matchedBest: "{delta} faster than previous (matched as best)",
+        behindBest: "{delta} faster than previous ({bestDelta} behind best)",
       },
-      fewerPrevious: {
-        newRecord: "{delta} fewer requests than previous (new record)",
-        matchedBest: "{delta} fewer requests than previous (matched best)",
-        behindBest: "{delta} fewer requests than previous ({bestDelta} behind best)",
-      },
-      morePrevious: {
-        newRecord: "{delta} more requests than previous (new record)",
-        matchedBest: "{delta} more requests than previous (matched best)",
-        behindBest: "{delta} more requests than previous ({bestDelta} behind best)",
+      slowerPrevious: {
+        newRecord: "{delta} slower than previous (new record)",
+        matchedBest: "{delta} slower than previous (matched as best)",
+        behindBest: "{delta} slower than previous ({bestDelta} behind best)",
       },
       matchedPrevious: {
-        newRecord: "Matched previous request count (new record)",
-        matchedBest: "Matched previous request count (matched best)",
-        behindBest: "Matched previous request count ({bestDelta} behind best)",
+        newRecord: "matched previous traversal speed (new record)",
+        matchedBest: "matched previous traversal speed (matched as best)",
+        behindBest: "matched previous traversal speed ({bestDelta} behind best)",
       },
     },
   },
@@ -233,6 +225,7 @@ export const CONFIG: AppConfig = {
     retentionFullScaleUnits: 1_000_000, // Represents 100% scores retention without using floating-point percentages.
     agentPenaltyDecayUnits: 2, // Penalty for any agent mistake (invalid move or malformed error).
     agentBaseDecayUnits: 1,    // Constant decay for a turn that applied any valid moves.
+    traversalSpeedScaleUnits: 100, // Scales the traversal speed ratio as its display precision.
   },
   // Timing values drive refresh cadence, score decay, and the slower agent-api pacing.
   timing: {
@@ -262,7 +255,7 @@ export const CONFIG: AppConfig = {
       interactive: "interactive",
     },
     storage: {
-      version: 4,
+      version: 4.1,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",

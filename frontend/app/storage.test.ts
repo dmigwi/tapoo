@@ -96,8 +96,8 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 700,
     lastAttemptRetentionUnits: 700000,
     bestWinRetentionUnits: 820000,
-    lastWinRequestCount: null,
-    bestWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
+    bestWinTraversalSpeedUnits: null,
     winSummary: "",
     canResume: false,
     wallWeight: 2,
@@ -132,8 +132,8 @@ describe("storage", () => {
       wallWeight: 3,
       lastAttemptRetentionUnits: 710000,
       bestWinRetentionUnits: 840000,
-      lastWinRequestCount: null,
-      bestWinRequestCount: null,
+      lastWinTraversalSpeedUnits: null,
+      bestWinTraversalSpeedUnits: null,
     })
 
     const storedGameSetup = window.localStorage.getItem(storageKey(gameSetup))
@@ -150,8 +150,8 @@ describe("storage", () => {
       wallWeight: 3,
       lastAttemptRetentionUnits: 710000,
       bestWinRetentionUnits: 840000,
-      lastWinRequestCount: null,
-      bestWinRequestCount: null,
+      lastWinTraversalSpeedUnits: null,
+      bestWinTraversalSpeedUnits: null,
     })
   })
 
@@ -295,8 +295,8 @@ describe("storage", () => {
       wallWeight: 2,
       lastAttemptRetentionUnits: 640000,
       bestWinRetentionUnits: 760000,
-      lastWinRequestCount: 8,
-      bestWinRequestCount: 5,
+      lastWinTraversalSpeedUnits: 8,
+      bestWinTraversalSpeedUnits: 5,
     })
 
     expect(window.localStorage.getItem(agentStorageKey(gameSetup))).toContain(
@@ -311,8 +311,8 @@ describe("storage", () => {
       wallWeight: 2,
       lastAttemptRetentionUnits: 640000,
       bestWinRetentionUnits: 760000,
-      lastWinRequestCount: 8,
-      bestWinRequestCount: 5,
+      lastWinTraversalSpeedUnits: 8,
+      bestWinTraversalSpeedUnits: 5,
     })
   })
 
@@ -364,7 +364,7 @@ describe("storage", () => {
     expect(loadPersistedAgentApiConfigs()).toEqual(nextConfigs)
   })
 
-  it("tracks an agent's requestsCount across turns within the same level and round", () => {
+  it("accumulates an agent's requestsCount and decayUnitsCharged across turns within the same level and round", () => {
     savePersistedAgentApiConfigs([
       {
         id: 1,
@@ -375,34 +375,21 @@ describe("storage", () => {
       },
     ])
 
-    const firstTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7)
-    expect(firstTurnAgent).toMatchObject({ gameLevel: 3, cumulativeRoundCount: 7, requestsCount: 1 })
+    // A clean turn costs 1 decay unit; a turn that hit an invalid move costs 3. Requests count
+    // one per turn either way, so the two counters deliberately diverge.
+    const firstTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 1)
+    expect(firstTurnAgent).toMatchObject({
+      gameLevel: 3, cumulativeRoundCount: 7, requestsCount: 1, decayUnitsCharged: 1,
+    })
 
-    const secondTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7)
-    expect(secondTurnAgent).toMatchObject({ gameLevel: 3, cumulativeRoundCount: 7, requestsCount: 2 })
-    expect(loadPersistedAgentApiConfigs()[0]).toMatchObject({ requestsCount: 2 })
+    const secondTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 3)
+    expect(secondTurnAgent).toMatchObject({
+      gameLevel: 3, cumulativeRoundCount: 7, requestsCount: 2, decayUnitsCharged: 4,
+    })
+    expect(loadPersistedAgentApiConfigs()[0]).toMatchObject({ requestsCount: 2, decayUnitsCharged: 4 })
   })
 
-  it("resets requestsCount when the level changes", () => {
-    savePersistedAgentApiConfigs([
-      {
-        id: 1,
-        playerName: "Blue",
-        model: "llama3.2",
-        endpoint: endpoint("/api/agents/blue/move"),
-        enabled: true,
-        gameLevel: 3,
-        cumulativeRoundCount: 7,
-        requestsCount: 5,
-      },
-    ])
-
-    const nextLevelAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 4, 7)
-
-    expect(nextLevelAgent).toMatchObject({ gameLevel: 4, cumulativeRoundCount: 7, requestsCount: 1 })
-  })
-
-  it("resets requestsCount when the level is retried in a new round (level unchanged, cumulativeRoundCount changed)", () => {
+  it("resets both counters when the level changes", () => {
     savePersistedAgentApiConfigs([
       {
         id: 1,
@@ -413,15 +400,40 @@ describe("storage", () => {
         gameLevel: 3,
         cumulativeRoundCount: 7,
         requestsCount: 5,
+        decayUnitsCharged: 12,
       },
     ])
 
-    const retryAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 8)
+    const nextLevelAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 4, 7, 1)
 
-    expect(retryAgent).toMatchObject({ gameLevel: 3, cumulativeRoundCount: 8, requestsCount: 1 })
+    expect(nextLevelAgent).toMatchObject({
+      gameLevel: 4, cumulativeRoundCount: 7, requestsCount: 1, decayUnitsCharged: 1,
+    })
   })
 
-  it("resets requestsCount when a post-reset cumulativeRoundCount collides with a stale pre-reset value", () => {
+  it("resets both counters when the level is retried in a new round (level unchanged, cumulativeRoundCount changed)", () => {
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: endpoint("/api/agents/blue/move"),
+        enabled: true,
+        gameLevel: 3,
+        cumulativeRoundCount: 7,
+        requestsCount: 5,
+        decayUnitsCharged: 12,
+      },
+    ])
+
+    const retryAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 8, 1)
+
+    expect(retryAgent).toMatchObject({
+      gameLevel: 3, cumulativeRoundCount: 8, requestsCount: 1, decayUnitsCharged: 1,
+    })
+  })
+
+  it("resets both counters when a post-reset cumulativeRoundCount collides with a stale pre-reset value", () => {
     // "Reset Progress" (clearPersistedSnapshot) never touches the agentConfigs storage
     // namespace, so this agent's record survives untouched from a prior session where it
     // last played level 5. state.cumulativeRoundCount restarts from 0 after the reset, so a
@@ -437,16 +449,19 @@ describe("storage", () => {
         gameLevel: 5,
         cumulativeRoundCount: 12,
         requestsCount: 9,
+        decayUnitsCharged: 25,
       },
     ])
 
     // New session, different level, but the round counter happens to collide.
-    const postResetAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 1, 12)
+    const postResetAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 1, 12, 1)
 
-    // Must NOT inherit the stale requestsCount: 9 — gameLevel differing (1 vs 5) is what
-    // catches this. If recordAgentTurnStats is ever "simplified" to compare only
-    // cumulativeRoundCount, this assertion will fail.
-    expect(postResetAgent).toMatchObject({ gameLevel: 1, cumulativeRoundCount: 12, requestsCount: 1 })
+    // Must NOT inherit the stale requestsCount: 9 or decayUnitsCharged: 25 — gameLevel differing
+    // (1 vs 5) is what catches this. If recordAgentTurnStats is ever "simplified" to compare only
+    // cumulativeRoundCount, these assertions will fail.
+    expect(postResetAgent).toMatchObject({
+      gameLevel: 1, cumulativeRoundCount: 12, requestsCount: 1, decayUnitsCharged: 1,
+    })
   })
 
   it("saves and reloads the active round state", () => {
@@ -491,11 +506,56 @@ describe("storage", () => {
       wallWeight: 1,
       lastAttemptRetentionUnits: null,
       bestWinRetentionUnits: null,
-      lastWinRequestCount: null,
-      bestWinRequestCount: null,
+      lastWinTraversalSpeedUnits: null,
+      bestWinTraversalSpeedUnits: null,
     })
     expect(snapshot.round).toBeNull()
     expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
+  })
+
+  it("drops a win metric pair when only one half survives validation", () => {
+    // Gameplay never produces a half-set pair: resolveWinScore writes both, a reset clears both.
+    // A pair can only arrive split from corrupted storage, and restoring it split would resurrect
+    // the impossible "no previous attempt, but a stored best" state the win summary has no wording
+    // for — with no previous record, any result is by definition a new record.
+    // Written through the real encoder so the test exercises production decoding; the values are
+    // out of range rather than the wrong type, which is what a tampered record looks like.
+    saveGameProgress(MODE, {
+      level: 2,
+      wallWeight: 1,
+      lastAttemptRetentionUnits: -1, // below zero, so it fails validation
+      bestWinRetentionUnits: 840000, // valid on its own
+      lastWinTraversalSpeedUnits: 2_000, // valid on its own
+      bestWinTraversalSpeedUnits: -5, // below zero, so it fails validation
+    })
+
+    const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
+
+    // Each pair is discarded as a unit: the valid half is dropped alongside the invalid one.
+    expect(snapshot.preferences.bestWinRetentionUnits).toBeNull()
+    expect(snapshot.preferences.lastAttemptRetentionUnits).toBeNull()
+    expect(snapshot.preferences.lastWinTraversalSpeedUnits).toBeNull()
+    expect(snapshot.preferences.bestWinTraversalSpeedUnits).toBeNull()
+  })
+
+  it("restores a win metric pair when both halves are valid", () => {
+    saveGameProgress(MODE, {
+      level: 2,
+      wallWeight: 1,
+      lastAttemptRetentionUnits: 710000,
+      bestWinRetentionUnits: 840000,
+      lastWinTraversalSpeedUnits: 1_500,
+      bestWinTraversalSpeedUnits: 2_500,
+    })
+
+    const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
+
+    expect(snapshot.preferences).toMatchObject({
+      lastAttemptRetentionUnits: 710000,
+      bestWinRetentionUnits: 840000,
+      lastWinTraversalSpeedUnits: 1_500,
+      bestWinTraversalSpeedUnits: 2_500,
+    })
   })
 
   it("clears stale browser storage versions without touching the current version", () => {
@@ -511,8 +571,8 @@ describe("storage", () => {
       wallWeight: 3,
       lastAttemptRetentionUnits: 710000,
       bestWinRetentionUnits: 840000,
-      lastWinRequestCount: 6,
-      bestWinRequestCount: 4,
+      lastWinTraversalSpeedUnits: 6,
+      bestWinTraversalSpeedUnits: 4,
     })
     saveActiveRoundSnapshot(
       MODE,
@@ -574,8 +634,8 @@ describe("storage", () => {
       wallWeight: 3,
       lastAttemptRetentionUnits: 710000,
       bestWinRetentionUnits: 840000,
-      lastWinRequestCount: null,
-      bestWinRequestCount: null,
+      lastWinTraversalSpeedUnits: null,
+      bestWinTraversalSpeedUnits: null,
     })
     saveActiveRoundSnapshot(
       MODE,

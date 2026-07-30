@@ -238,7 +238,7 @@ function createControlFixture(
   return {
     agentRequestCount: 0,
     cumulativeRoundCount: 0,
-    bestWinRequestCount: null,
+    bestWinTraversalSpeedUnits: null,
     bestWinRetentionUnits: null,
     canResume: false,
     clock: null,
@@ -246,7 +246,7 @@ function createControlFixture(
     finalPosition: { x: 5, y: 1 },
     lastAttemptRetentionUnits: null,
     lastRoundScore: 0,
-    lastWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
     level: 4,
     maze: null,
     mazeDimensions: { numCols: 3, numRows: 1, area: 3 },

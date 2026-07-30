@@ -115,6 +115,16 @@ func (stateStore *Store) Load() (*StoredGameState, error) {
 		return nil, fmt.Errorf("invalid stored best win retention: %d", *state.BestWinRetention)
 	}
 
+	// The retention pair is only meaningful together, and gameplay always moves both at once: a win
+	// records the attempt and may raise the best, a loss records a zero attempt. A file carrying one
+	// without the other therefore came from outside the game, and restoring it split would leave the
+	// win summary describing a best clear with no previous attempt to compare against. Drop both so
+	// "no previous record" always means "no records at all", which the summary reports as a first win.
+	if (state.LastAttemptRetention == nil) != (state.BestWinRetention == nil) {
+		state.LastAttemptRetention = nil
+		state.BestWinRetention = nil
+	}
+
 	return &state, nil
 }
 
