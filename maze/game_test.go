@@ -13,6 +13,14 @@ import (
 	"github.com/dmigwi/tapoo/maze"
 )
 
+func cloneGrid(data [][]string) [][]string {
+	cloned := make([][]string, len(data))
+	for row := range data {
+		cloned[row] = slices.Clone(data[row])
+	}
+	return cloned
+}
+
 func TestPlayerMovement(t *testing.T) {
 	t.Parallel()
 
@@ -53,7 +61,7 @@ func TestPlayerMovement(t *testing.T) {
 				StartPosition: testCase.startPos,
 			}
 
-			dimensions.PlayerMovement(data, testCase.rowDelta, testCase.colDelta)
+			dimensions.PlayerMovement(cloneGrid(data), testCase.rowDelta, testCase.colDelta)
 			if !slices.Equal(dimensions.StartPosition[:], testCase.wantPos[:]) {
 				t.Fatalf(
 					"unexpected position after delta (%d,%d): got %v want %v",
@@ -105,7 +113,7 @@ func TestHandlePlayerMovement(t *testing.T) {
 					StartPosition: testCase.startPos,
 				}
 
-				status, ok := dimensions.HandlePlayerMovement(testCase.key, data)
+				status, ok := dimensions.HandlePlayerMovement(testCase.key, cloneGrid(data))
 				if ok {
 					t.Fatalf("expected no status for arrow key %v, got %d", testCase.key, status)
 				}
@@ -146,7 +154,7 @@ func TestHandlePlayerMovement(t *testing.T) {
 				t.Parallel()
 
 				dimensions := maze.Dimensions{NumCols: 3, NumRows: 3}
-				got, ok := dimensions.HandlePlayerMovement(testCase.key, data)
+				got, ok := dimensions.HandlePlayerMovement(testCase.key, cloneGrid(data))
 				if !ok {
 					t.Fatalf("expected a status for key %v", testCase.key)
 				}
