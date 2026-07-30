@@ -13,7 +13,7 @@ import {
 import {
   handleAgentTurnLoop,
 } from "./agent-api"
-import type { AgentMovePoller } from "./agent-api"
+import type { AgentMovePoller, AgentRoundState } from "./agent-api"
 import {
   agentSeatAddLabel,
   agentSeatIdFromDataset,
@@ -35,6 +35,7 @@ import {
 import { CONFIG } from "../config"
 import {
   subscribeTapooLogs,
+  logTapooDiagnostic,
   tapooDownloadLogs,
   tapooLogCount,
   tapooResetLogs,
@@ -46,6 +47,35 @@ const { agentConfig, runtime } = CONFIG
 type AgentButtonBinding = {
   __button: HTMLButtonElement
   __onClick: () => void
+}
+
+// logAgentRoundCompletion captures the final agent-api round state without serializing the live
+// clock or maze grid, keeping diagnostics useful while avoiding large circular-ish payloads.
+function logAgentRoundCompletion({ __actionResult, __state, __agent }: AgentRoundState): void {
+  const outcome = __state.status
+  logTapooDiagnostic(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
+    outcome,
+    agent: {
+      id: __agent.id,
+      playerName: __agent.playerName,
+      model: __agent.model,
+      enabled: __agent.enabled,
+    },
+    level: __state.level,
+    score: __state.score,
+    lastRoundScore: __state.lastRoundScore,
+    winSummary: __state.winSummary,
+    agentRequestCount: __state.agentRequestCount,
+    cumulativeRoundCount: __state.cumulativeRoundCount,
+    mazeDimensions: __state.mazeDimensions,
+    playerPosition: __state.playerPosition,
+    finalPosition: __state.finalPosition,
+    // Only the count: an entry per visited cell is the largest thing in State, and it grew again
+    // when openMoves became a resolved adjacency map. Paired with agentRequestCount it still gives
+    // the cells-per-request efficiency these entries are read for.
+    uniqueCellsVisited: __state.traversalHistory.length,
+    lastActionResult: __actionResult,
+  })
 }
 
 // createAgentMode builds the agent-api MazeActionControl while transport wiring is still pending.
@@ -199,6 +229,7 @@ export function createAgentMode(
           activeAgentId = agent?.id ?? null
           renderAgentRoster()
         },
+        __onRoundOutcome: logAgentRoundCompletion,
         __readAgentConfigs: readAgentConfigs,
         __readState: readState,
       })

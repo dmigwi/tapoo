@@ -3,7 +3,7 @@ import { mergeMazeActionResult } from "../control"
 import { requestPredictionWithAbort } from "../agent/request"
 import { logTapooDiagnostic } from "../logs"
 import { recordAgentTurnStats } from "../storage"
-import { isRunningStatus } from "../status"
+import { isLostStatus, isRunningStatus, isWonStatus } from "../status"
 import type {
   AgentApiConfig,
   MazeAction,
@@ -43,16 +43,30 @@ type HandleAgentTurnLoopOptions = {
   ) => MazeActionResult
   __disableAgentAfterNetworkError: (agent: AgentApiConfig) => void
   __onActiveAgentChange?: (agent: AgentApiConfig | null) => void
+  __onRoundOutcome: (event: AgentRoundState) => void
   __readAgentConfigs: () => AgentApiConfig[]
   __onActionResult: (actionResult: MazeActionResult) => void
   __readState: () => State
 }
 
+export type AgentRoundState = {
+  __agent: AgentApiConfig
+  __state: State
+  __actionResult: MazeActionResult
+}
+
 // handleAgentTurnLoop owns the HTTP polling cycle used by the agent-api control mode.
 export function handleAgentTurnLoop({
-  __commitAgentTurn, __disableAgentAfterNetworkError, __dispatch,
-  __dispatchAgentAction, __elements, __onActionResult, __onActiveAgentChange,
-  __readState, __readAgentConfigs,
+  __elements,
+  __commitAgentTurn,
+  __dispatch,
+  __dispatchAgentAction,
+  __disableAgentAfterNetworkError,
+  __onActiveAgentChange,
+  __onRoundOutcome,
+  __readAgentConfigs,
+  __onActionResult,
+  __readState,
 }: HandleAgentTurnLoopOptions): AgentMovePoller {
   let attached = false
   let scheduledTurn: number | null = null
@@ -112,6 +126,23 @@ export function handleAgentTurnLoop({
   // shouldPollAgent only keeps the replay loop alive while the live round is actively running.
   const shouldPollAgent = (): boolean => attached && isRunningStatus(__readState().status)
 
+  // notifyRoundCompletion invokes final-state callbacks only after score decay and replay metadata
+  // have been committed, so diagnostics receive the same state the UI is about to show.
+  const notifyRoundCompletion = (
+    agent: AgentApiConfig,
+    actionResult: MazeActionResult,
+  ): void => {
+    const currentState = __readState()
+
+    if (isWonStatus(currentState.status) || isLostStatus(currentState.status)) {
+      __onRoundOutcome({
+        __agent: agent,
+        __state: currentState,
+        __actionResult: actionResult,
+      })
+    }
+  }
+
   // recordAgentNetworkError disables failed agents and records the no-score-decay network state.
   const recordAgentNetworkError = (agent: AgentApiConfig | null): void => {
     if (!agent) {
@@ -136,13 +167,16 @@ export function handleAgentTurnLoop({
     const chargedMovesCount = agentPenaltyDecayUnits
     __commitAgentTurn(chargedMovesCount)
     recordAgentTurnStats(agent, __readState().level, __readState().cumulativeRoundCount)
+
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
       lastMoveStatus: "malformed-response",
       chargedMovesCount,
     })
     lastActionResult = nextResult
+
     __onActionResult(nextResult)
+    notifyRoundCompletion(agent, nextResult)
   }
 
   // recordPredictionFailure is the single bridge from provider/request failures to game effects.
@@ -292,6 +326,7 @@ export function handleAgentTurnLoop({
 
       lastActionResult = nextResult
       __onActionResult(nextResult)
+      notifyRoundCompletion(selectedAgent, nextResult)
     } finally {
       activeRequest = null
       if (shouldPollAgent()) {

@@ -4,6 +4,7 @@ import { createAgentMode } from "./agent"
 import { CONFIG } from "../config"
 import { logTapooDiagnostic, tapooResetLogs } from "../logs"
 import {
+  loadTapooLog,
   loadPersistedAgentApiConfigs,
   savePersistedAgentApiConfigs,
 } from "../storage"
@@ -211,6 +212,26 @@ function createMemoryStorage(): Storage {
 
 type AgentControlFixture = State & MazeActionResult & Record<string, unknown>
 
+type AgentRoundLogDetails = {
+  agent: {
+    model: string
+    playerName: string
+  }
+  lastActionResult: Pick<MazeActionResult, "lastMoveStatus">
+  lastRoundScore: number
+  level: number
+  outcome: "won" | "lost"
+  score: number
+  uniqueCellsVisited: number
+  winSummary: string
+}
+
+type AgentRoundLogEntry = {
+  details: AgentRoundLogDetails
+  payload: string
+  type: string
+}
+
 function createControlFixture(
   overrides: Partial<AgentControlFixture> = {},
 ): AgentControlFixture {
@@ -409,6 +430,58 @@ describe("agent control mode", () => {
         chargedMovesCount: 1,
       }),
     )
+  })
+
+  it("logs final round payload when an agent wins the level", async () => {
+    const elements = createAgentFormElements()
+    savePersistedAgentApiConfigs(enabledAgentConfigs())
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      }),
+    )
+
+    let state = createControlFixture({ status: "running", score: 800 })
+    const dispatch = vi.fn(() =>
+      createControlFixture({
+        currentCell: { row: 0, col: 1 },
+        lastMoveStatus: "reached-target",
+      }),
+    )
+    const commitAgentTurn = vi.fn(() => {
+      state = createControlFixture({
+        agentRequestCount: 1,
+        cumulativeRoundCount: 1,
+        lastRoundScore: 700,
+        score: 700,
+        status: "won",
+        winSummary: "New record",
+      })
+    })
+
+    const mode = createAgentMode(elements)
+    mode.bindActionDispatch(dispatch, () => state, commitAgentTurn)
+    await flushImmediateAgentTurn()
+
+    const logEntries = loadTapooLog<AgentRoundLogEntry>(CONFIG.runtime.controlModes.agentApi)
+    const lastEntry = logEntries[logEntries.length - 1]
+    expect(lastEntry.payload).toBe("Agent level won.")
+    expect(lastEntry.type).toBe("info")
+    expect(lastEntry.details.outcome).toBe("won")
+    expect(lastEntry.details.level).toBe(4)
+    expect(lastEntry.details.score).toBe(700)
+    expect(lastEntry.details.lastRoundScore).toBe(700)
+    expect(lastEntry.details.winSummary).toBe("New record")
+    expect(lastEntry.details.agent.playerName).toBe("Blue")
+    expect(lastEntry.details.agent.model).toBe("llama3.2")
+    expect(lastEntry.details.lastActionResult.lastMoveStatus).toBe("reached-target")
+    // Summarised rather than embedded: the entry carries the visited-cell count, not the trail.
+    // The fixture records only the start cell, so the count is 1.
+    expect(lastEntry.details.uniqueCellsVisited).toBe(1)
   })
 
   it("applies score decay to every submitted move in a valid prediction batch even when replay stops early", async () => {
