@@ -1,5 +1,6 @@
 import { appendTapooLogEntry, clearTapooLog, loadTapooLog } from "./storage"
 import type { LogEntry, LogLevel, MazeControlModeName } from "./types"
+import { APP_VERSION } from "./config"
 
 type LogStateListener = (logCount: number) => void
 
@@ -40,12 +41,6 @@ function localTimestampParts(): [string, string, string] {
 // getLocalTimestamp formats local timezone debugging time in a filename-safe form.
 function getLocalTimestamp(): string {
   return localTimestampParts().join("")
-}
-
-// getDownloadTimestamp keeps downloaded filenames shorter while log entries retain timezone data.
-function getDownloadTimestamp(): string {
-  const [localDate, localTime] = localTimestampParts()
-  return `${localDate}${localTime}`
 }
 
 // trimLoggedDescription is the single place every long, repeated description field goes through
@@ -116,13 +111,20 @@ export function subscribeTapooLogs(listener: LogStateListener): () => void {
 // Attach to window in the page entry point so it survives property mangling and tree-shaking.
 export function tapooDownloadLogs(modeName: MazeControlModeName): void {
   const entries = loadTapooLog<LogEntry>(modeName)
-  const blob = new Blob([JSON.stringify(entries, null, 2)], {
+  const payload = {
+    name: "tapoo",
+    version: APP_VERSION,
+    modeName,
+    downloadedAt: getLocalTimestamp(),
+    entries,
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json",
   })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement("a")
   anchor.href = url
-  anchor.download = `tapoo-${modeName}-logs-${getDownloadTimestamp()}.json`
+  anchor.download = `${payload.name}-v${payload.version}-${modeName}-logs-${Date.now()}.json`
   anchor.hidden = true
   document.body.append(anchor)
   anchor.click()

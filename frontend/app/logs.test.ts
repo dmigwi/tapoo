@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { loadTapooLog } from "./storage"
+import { APP_VERSION } from "./config"
 import {
   initTapooLogs,
   logTapooDiagnostic,
@@ -53,13 +54,29 @@ describe("tapoo logs", () => {
       throw new Error("expected log download blob")
     }
     expect(downloadedFilename).toMatch(
-      /^tapoo-interactive-logs-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/,
+      new RegExp(
+        `^tapoo-v${APP_VERSION.replaceAll(".", "\\.")}-interactive-logs-\\d+\\.json$`,
+      ),
     )
     const downloadedText = await firstDownload.text()
+    const downloadedPayload = JSON.parse(downloadedText) as {
+      downloadedAt: string
+      entries: unknown[]
+      modeName: string
+      name: string
+      version: string
+    }
+    expect(downloadedPayload.name).toBe("tapoo")
+    expect(downloadedPayload.version).toBe(APP_VERSION)
+    expect(downloadedPayload.modeName).toBe("interactive")
+    expect(downloadedPayload.entries).toHaveLength(1)
     expect(downloadedText).toContain("before reset")
     expect(downloadedText).toMatch(/"timestamp": \d+(\.\d+)?/)
     expect(downloadedText).toMatch(
       /"time": "\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}[+-]\d{2}-\d{2}"/,
+    )
+    expect(downloadedPayload.downloadedAt).toMatch(
+      /\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}[+-]\d{2}-\d{2}/,
     )
 
     tapooResetLogs("interactive")
@@ -70,7 +87,16 @@ describe("tapoo logs", () => {
     if (!resetDownload) {
       throw new Error("expected reset log download blob")
     }
-    await expect(resetDownload.text()).resolves.toBe("[]")
+    const resetPayload = JSON.parse(await resetDownload.text()) as {
+      entries: unknown[]
+      modeName: string
+      name: string
+      version: string
+    }
+    expect(resetPayload.name).toBe("tapoo")
+    expect(resetPayload.version).toBe(APP_VERSION)
+    expect(resetPayload.modeName).toBe("interactive")
+    expect(resetPayload.entries).toEqual([])
   })
 
   it("persists log entries to sessionStorage and clears them on reset", () => {
