@@ -31,7 +31,7 @@ type UIOverlay struct {
 // fill prints a string to the termbox view box on the given coordinates.
 func fill(ui UI, x, y int, val string, foreground termbox.Attribute) int {
 	width := 0
-	if isTraversable(val) {
+	if strings.ContainsRune(val, visitedCellMarker) {
 		foreground = playerColor
 	}
 

@@ -197,22 +197,25 @@ func reweightMaze(data [][]string, currentWeight WallWeight) ([][]string, error)
 	return translated, nil
 }
 
-// passageGlyph returns a cellPathWidth-wide passage segment: blank when marker is zero, or with
-// marker centered between single-space padding otherwise. Every writable maze cell slot goes
-// through this so its width stays consistent regardless of whether it is blank or visited.
+// passageGlyph returns a cellPathWidth-wide passage segment: blank when marker is zero, or the
+// marker surrounded by space padding otherwise. Every writable maze cell slot goes through this so
+// its width stays consistent regardless of whether it is blank or visited. The padding is derived
+// from cellPathWidth rather than hardcoded, so a marker glyph always keeps a leading space — the
+// invariant isTraversable relies on.
 func passageGlyph(marker rune) string {
 	if marker == 0 {
 		return strings.Repeat(" ", cellPathWidth)
 	}
 
-	return " " + string(marker) + " "
+	leading := (cellPathWidth - 1) / glyphPaddingSides
+	return strings.Repeat(" ", leading) + string(marker) + strings.Repeat(" ", cellPathWidth-1-leading)
 }
 
-// isTraversable returns true when the segment is an open path or an already-visited cell.
+// isTraversable returns true when the segment is an open passage rather than a wall. Callers only
+// ever pass the slot between two cells — PlayerMovement's probe, and replaceChar's neighbours during
+// generation — never a cell centre, so it never sees a visited marker and the leading-space check is
+// enough. The name reads as broader than that on purpose: what a caller wants to know is whether it
+// may move through the segment.
 func isTraversable(item string) bool {
-	if len(item) > 0 && item[0] == ' ' {
-		return true
-	}
-
-	return strings.ContainsRune(item, visitedCellMarker)
+	return len(item) > 0 && item[0] == ' '
 }

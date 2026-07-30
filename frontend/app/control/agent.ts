@@ -436,28 +436,33 @@ export function createAgentMode(
           }, 420)
         }
 
-        if (elements.tapooLogsReset) {
+        // Each button is bound to a const local so the deferred onClick closure keeps the
+        // narrowed non-optional type; reading elements.<button> inside the closure would widen
+        // it back to possibly-undefined, since the property could in principle change later.
+        const resetButton = elements.tapooLogsReset
+        if (resetButton) {
           const onClick = (): void => {
-            showButtonFeedback(elements.tapooLogsReset)
+            showButtonFeedback(resetButton)
             tapooResetLogs(runtime.controlModes.agentApi)
           }
           buttonBindings.push({
-            __button: elements.tapooLogsReset,
+            __button: resetButton,
             __onClick: onClick,
           })
-          elements.tapooLogsReset.addEventListener("click", onClick)
+          resetButton.addEventListener("click", onClick)
         }
 
-        if (elements.tapooLogsDownload) {
+        const downloadButton = elements.tapooLogsDownload
+        if (downloadButton) {
           const onClick = (): void => {
-            showButtonFeedback(elements.tapooLogsDownload)
+            showButtonFeedback(downloadButton)
             tapooDownloadLogs(runtime.controlModes.agentApi)
           }
           buttonBindings.push({
-            __button: elements.tapooLogsDownload,
+            __button: downloadButton,
             __onClick: onClick,
           })
-          elements.tapooLogsDownload.addEventListener("click", onClick)
+          downloadButton.addEventListener("click", onClick)
         }
 
         releaseLogSubscription = subscribeTapooLogs(syncResetButton)

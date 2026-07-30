@@ -9,6 +9,7 @@ import {
 } from "../storage"
 import type {
   AgentApiConfig,
+  AgentElements,
   Elements,
   MazeAction,
   MazeActionDispatchOptions,
@@ -66,7 +67,13 @@ function createButton({
   return button
 }
 
-function createAgentFormElements(): Elements {
+// AgentFormElements is the return shape of createAgentFormElements: every agent-api overlay
+// handle is populated, so tests can address them without re-checking each optional ref. Declaring
+// it as Required<AgentElements> rather than Elements also makes the fixture fail to compile if a
+// new agent handle is added to the type without being built here.
+type AgentFormElements = Elements & Required<AgentElements>
+
+function createAgentFormElements(): AgentFormElements {
   const agentSeatsBody = document.createElement("div")
   const tapooLogsReset = document.createElement("button")
   const tapooLogsDownload = document.createElement("button")

@@ -60,14 +60,18 @@ func TestPlayerMovement(t *testing.T) {
 				NumRows:       3,
 				StartPosition: testCase.startPos,
 			}
+			grid := maze.NewRuntimeMaze(&dimensions, cloneGrid(data))
 
-			dimensions.PlayerMovement(cloneGrid(data), testCase.rowDelta, testCase.colDelta)
-			if !slices.Equal(dimensions.StartPosition[:], testCase.wantPos[:]) {
+			dimensions.PlayerMovement(grid, testCase.rowDelta, testCase.colDelta)
+			// Dimensions.StartPosition stays put at the level's start cell; the live position the
+			// move updates lives on the RuntimeMaze.
+			livePos := grid.PlayerPosition()
+			if !slices.Equal(livePos[:], testCase.wantPos[:]) {
 				t.Fatalf(
 					"unexpected position after delta (%d,%d): got %v want %v",
 					testCase.rowDelta,
 					testCase.colDelta,
-					dimensions.StartPosition,
+					livePos,
 					testCase.wantPos,
 				)
 			}
@@ -113,7 +117,8 @@ func TestHandlePlayerMovement(t *testing.T) {
 					StartPosition: testCase.startPos,
 				}
 
-				status, ok := dimensions.HandlePlayerMovement(testCase.key, cloneGrid(data))
+				grid := maze.NewRuntimeMaze(&dimensions, cloneGrid(data))
+				status, ok := dimensions.HandlePlayerMovement(testCase.key, grid)
 				if ok {
 					t.Fatalf("expected no status for arrow key %v, got %d", testCase.key, status)
 				}
@@ -122,11 +127,14 @@ func TestHandlePlayerMovement(t *testing.T) {
 					t.Fatalf("expected zero status for arrow key %v, got %d", testCase.key, status)
 				}
 
-				if !slices.Equal(dimensions.StartPosition[:], testCase.wantPos[:]) {
+				// StartPosition is the level's fixed start cell, so the move is observed on the
+				// RuntimeMaze's live position instead.
+				livePos := grid.PlayerPosition()
+				if !slices.Equal(livePos[:], testCase.wantPos[:]) {
 					t.Fatalf(
 						"unexpected position for key %v: got %v want %v",
 						testCase.key,
-						dimensions.StartPosition,
+						livePos,
 						testCase.wantPos,
 					)
 				}
@@ -154,7 +162,8 @@ func TestHandlePlayerMovement(t *testing.T) {
 				t.Parallel()
 
 				dimensions := maze.Dimensions{NumCols: 3, NumRows: 3}
-				got, ok := dimensions.HandlePlayerMovement(testCase.key, cloneGrid(data))
+				grid := maze.NewRuntimeMaze(&dimensions, cloneGrid(data))
+				got, ok := dimensions.HandlePlayerMovement(testCase.key, grid)
 				if !ok {
 					t.Fatalf("expected a status for key %v", testCase.key)
 				}

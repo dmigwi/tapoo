@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { GameClock } from "./clock"
 import { CONFIG } from "./config"
 import { render } from "./render"
-import type { Elements, State, TraversalHistoryEntry } from "./types"
+import type { AgentElements, Elements, State, TraversalHistoryEntry } from "./types"
 
 const { messages } = CONFIG
 
@@ -39,7 +39,12 @@ function createButton({
 }
 
 // createElements assembles the DOM shell consumed by the renderer during tests.
-function createElements(): Elements {
+// RenderElements narrows Elements to the two agent overlays these render tests toggle; the rest
+// of AgentElements stays optional because the renderer never reads it.
+type RenderElements = Elements &
+  Required<Pick<AgentElements, "agentConfigForm" | "agentDeleteDialog">>
+
+function createElements(): RenderElements {
   const screen = document.createElement("div")
   const touchControls = document.createElement("div")
   const agentConfigForm = document.createElement("form")

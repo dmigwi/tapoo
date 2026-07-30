@@ -9,6 +9,7 @@ import { loadTapooLog } from "../storage"
 import type {
   AgentApiConfig,
   MazeActionResult,
+  MazeDimensions,
   State,
 } from "../types"
 
@@ -85,28 +86,23 @@ const agentContextTools = [
     },
   },
 ]
-// compactedTools builds the mixed follow-up payload: called tools are name-only; uncalled keep full definitions.
-function compactedTools(calledNames: string[]) {
+// uncalledTools builds the follow-up payload: already-called tools are dropped outright, and the
+// rest keep their full definitions. Nothing is ever sent name-only, so a definition-less entry can
+// never be mistaken for a newly declared tool.
+function uncalledTools(calledNames: string[]) {
   const called = new Set(calledNames)
-  return agentContextTools.map(({ type, function: fn }) =>
-    called.has(fn.name) ? { type, function: { name: fn.name } } : { type, function: fn }
-  )
+  return agentContextTools.filter(({ function: fn }) => !called.has(fn.name))
 }
 
-// expectedLoggedTools mirrors previewLoggedTool: same name, description full or truncated
-// depending on keepFull, and absent altogether for already-compacted (called) tools.
+// expectedLoggedTools mirrors previewLoggedTool: same name, description full or truncated depending
+// on keepFull. Every tool on the wire now carries a description, since partial entries are gone.
 function expectedLoggedTools(
-  wireTools: ReturnType<typeof compactedTools>,
+  wireTools: ReturnType<typeof uncalledTools>,
   keepFull: boolean,
-): { name: string; description?: string }[] {
+): { name: string; description: string }[] {
   return wireTools.map(({ function: fn }) => ({
     name: fn.name,
-    description:
-      "description" in fn
-        ? keepFull
-          ? fn.description
-          : `${fn.description.slice(0, 25)}...`
-        : undefined,
+    description: keepFull ? fn.description : `${fn.description.slice(0, 25)}...`,
   }))
 }
 
@@ -117,6 +113,10 @@ const agent: AgentApiConfig = {
   endpoint: new URL(endpoint),
   enabled: true,
 }
+
+// Held separately from state so expectations can derive the navigation profile without
+// re-narrowing State's nullable mazeDimensions at every assertion site.
+const mazeDimensions: MazeDimensions = { numCols: 10, numRows: 10, area: 100 }
 
 const state: State = {
   agentRequestCount: 0,
@@ -132,7 +132,7 @@ const state: State = {
   lastWinRequestCount: null,
   level: 1,
   maze: null,
-  mazeDimensions: { numCols: 10, numRows: 10, area: 100 },
+  mazeDimensions,
   playerPosition: { x: 1, y: 1 },
   score: 10000,
   scoreDecayUnits: 0,
@@ -273,7 +273,7 @@ describe("agent request service", () => {
             "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7}}",
         },
       ],
-      tools: compactedTools(["get_maze_positions"]),
+      tools: uncalledTools(["get_maze_positions"]),
       options: { num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict },
       think: false,
       stream: false,
@@ -335,7 +335,7 @@ describe("agent request service", () => {
         requestTurn: number
         mode: "predict" | "tools"
         tools: { name: string; description?: string }[]
-        newMessages: unknown[]
+        messages: unknown[]
       }
     }>(CONFIG.runtime.controlModes.agentApi).filter(
       (entry) => entry.payload === "Agent request.",
@@ -349,8 +349,8 @@ describe("agent request service", () => {
       endpoint,
       requestTurn: 1,
       mode: "tools",
-      tools: expectedLoggedTools(compactedTools([]), true),
-      newMessages: [
+      tools: expectedLoggedTools(uncalledTools([]), true),
+      messages: [
         { role: "system", content: developerMessage },
         { role: "user", content: userMessage },
       ],
@@ -358,16 +358,16 @@ describe("agent request service", () => {
 
     // Round 2 logs the full accumulated history (system+user+assistant+tool), not just the new
     // assistant/tool-result messages — no delta tracking, every entry stands on its own. Not
-    // every tool has been called yet, so compactToolsPayload keeps all 5 names (one now
-    // name-only). keepFull only covers round 1 (isFirstRequestOfLevel && reqTurn <= 1), so by
-    // round 2 the system/user prompt and tool descriptions are previewed even within the
+    // every tool has been called yet, so only the still-uncalled tools remain on the wire, all
+    // with full definitions. keepFull only covers round 1 (isFirstRequestOfLevel && reqTurn <= 1),
+    // so by round 2 the system/user prompt and tool descriptions are previewed even within the
     // level's first turn — further limiting duplication across a single turn's tool-call rounds.
     expect(requestEntries[1].details).toEqual({
       endpoint,
       requestTurn: 2,
       mode: "tools",
-      tools: expectedLoggedTools(compactedTools(["get_maze_positions"]), false),
-      newMessages: [
+      tools: expectedLoggedTools(uncalledTools(["get_maze_positions"]), false),
+      messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
         { role: "user", content: `${userMessage.slice(0, 25)}...` },
         {
@@ -418,7 +418,7 @@ describe("agent request service", () => {
         requestTurn: number
         mode: "predict" | "tools"
         tools: { name: string; description?: string }[]
-        newMessages: unknown[]
+        messages: unknown[]
       }
     }>(CONFIG.runtime.controlModes.agentApi).filter(
       (entry) => entry.payload === "Agent request.",
@@ -432,8 +432,8 @@ describe("agent request service", () => {
       endpoint,
       requestTurn: 1,
       mode: "tools",
-      tools: expectedLoggedTools(compactedTools([]), false),
-      newMessages: [
+      tools: expectedLoggedTools(uncalledTools([]), false),
+      messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
         { role: "user", content: `${userMessage.slice(0, 25)}...` },
       ],
@@ -446,8 +446,8 @@ describe("agent request service", () => {
       endpoint,
       requestTurn: 2,
       mode: "tools",
-      tools: expectedLoggedTools(compactedTools(["get_maze_positions"]), false),
-      newMessages: [
+      tools: expectedLoggedTools(uncalledTools(["get_maze_positions"]), false),
+      messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
         { role: "user", content: `${userMessage.slice(0, 25)}...` },
         {
@@ -675,7 +675,7 @@ describe("agent request service", () => {
         chargedMovesCount: 0,
       },
       {
-        suggestedMovesPerTurn: Math.min(getNavigationProfile(state.mazeDimensions).__maxCorridorLength, 4),
+        suggestedMovesPerTurn: Math.min(getNavigationProfile(mazeDimensions).__maxCorridorLength, 4),
         uniqueCellsVisited: 0,
         requestsMade: 0,
         batchEfficiencyRank: "trailblazer",
@@ -941,9 +941,9 @@ describe("agent request service", () => {
     const thirdRequest = fetchMock.mock.calls[2][1] as RequestInit
     const thirdBody = JSON.parse(thirdRequest.body as string) as SerializedRequestBody
 
-    // Round 3 still offers the 4 tools genuinely never called (get_game_status compacted to
-    // name-only) — no early forcing into prediction mode.
-    expect(thirdBody.tools).toEqual(compactedTools(["get_game_status"]))
+    // Round 3 still offers the 4 tools genuinely never called, at full definition, with
+    // get_game_status dropped entirely — no early forcing into prediction mode.
+    expect(thirdBody.tools).toEqual(uncalledTools(["get_game_status"]))
     expect(thirdBody.format).toBeUndefined()
 
     // The duplicate reminder names the specific repeated call, not a blanket "no tools left" claim.

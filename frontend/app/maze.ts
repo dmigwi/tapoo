@@ -356,6 +356,36 @@ function getPresentNeighbors(
   return present
 }
 
+// countPresentNeighbors reports how many of a cell's neighbors are still unvisited. The
+// least-neighbors bias calls this once per candidate on every generation step and only needs the
+// count, so it avoids the intermediate array getPresentNeighbors would allocate.
+function countPresentNeighbors(
+  dimensions: BaseDimensions,
+  cellNo: number,
+  visited: boolean[],
+): number {
+  const neighbors = getCellNeighbors(dimensions, cellNo)
+  let count = 0
+
+  if (neighbors.__bottom !== 0 && !visited[neighbors.__bottom]) {
+    count += 1
+  }
+
+  if (neighbors.__left !== 0 && !visited[neighbors.__left]) {
+    count += 1
+  }
+
+  if (neighbors.__right !== 0 && !visited[neighbors.__right]) {
+    count += 1
+  }
+
+  if (neighbors.__top !== 0 && !visited[neighbors.__top]) {
+    count += 1
+  }
+
+  return count
+}
+
 // getNavigationProfile maps maze area into the same smooth difficulty curve used
 // by the Go runtime. Smaller mazes keep longer corridors, while larger mazes
 // tighten the limits until they reach the hardest supported profile.
@@ -488,7 +518,7 @@ function chooseNextCell(
     let fewestRemaining = Infinity
 
     for (const choice of choices) {
-      const remaining = getPresentNeighbors(dimensions, choice.__cellNo, visited).length
+      const remaining = countPresentNeighbors(dimensions, choice.__cellNo, visited)
       if (remaining < fewestRemaining) {
         fewestRemaining = remaining
         leastPopulated = [choice]

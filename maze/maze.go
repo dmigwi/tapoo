@@ -171,7 +171,7 @@ func (config *Dimensions) chooseNextCell(
 			)
 
 			for _, choice := range choices {
-				remaining := len(config.getPresentNeighbors(choice.cellNo, visitedCells))
+				remaining := config.countPresentNeighbors(choice.cellNo, visitedCells)
 				switch {
 				case remaining < fewestRemaining:
 					fewestRemaining = remaining
@@ -286,6 +286,32 @@ func (config *Dimensions) getPresentNeighbors(cellNo int, visitedCells []bool) [
 	}
 
 	return presentCells
+}
+
+// countPresentNeighbors reports how many of a cell's neighbors are still unvisited. The
+// least-neighbors bias calls this once per candidate on every generation step and only needs the
+// count, so it avoids the slice getPresentNeighbors would allocate.
+func (config *Dimensions) countPresentNeighbors(cellNo int, visitedCells []bool) int {
+	neighbors := config.GetCellNeighbors(cellNo)
+	count := 0
+
+	if neighbors.Bottom != 0 && !visitedCells[neighbors.Bottom] {
+		count++
+	}
+
+	if neighbors.Left != 0 && !visitedCells[neighbors.Left] {
+		count++
+	}
+
+	if neighbors.Right != 0 && !visitedCells[neighbors.Right] {
+		count++
+	}
+
+	if neighbors.Top != 0 && !visitedCells[neighbors.Top] {
+		count++
+	}
+
+	return count
 }
 
 // backtrackToBranch rewinds the DFS stack until it finds a cell with at least one unvisited neighbor.

@@ -24,10 +24,13 @@ describe("tapoo logs", () => {
   })
 
   it("resets in-memory logs before downloading them", async () => {
-    let downloadedBlob: Blob | null = null
+    // The blob is captured on a holder object rather than in a `let`. TypeScript cannot see the
+    // mock body run, so a `let` initialized to null stays narrowed to `null` at every later read
+    // and guarding it collapses to `never`; a property read uses its declared type instead.
+    const captured: { blob: Blob | null } = { blob: null }
     let downloadedFilename = ""
     const createObjectURL = vi.fn((blob: Blob) => {
-      downloadedBlob = blob
+      captured.blob = blob
       return "blob:tapoo-logs"
     })
     vi.stubGlobal("URL", {
@@ -45,13 +48,14 @@ describe("tapoo logs", () => {
     tapooDownloadLogs("interactive")
 
     expect(createObjectURL).toHaveBeenCalledTimes(1)
-    if (!downloadedBlob) {
+    const firstDownload = captured.blob
+    if (!firstDownload) {
       throw new Error("expected log download blob")
     }
     expect(downloadedFilename).toMatch(
       /^tapoo-interactive-logs-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/,
     )
-    const downloadedText = await downloadedBlob.text()
+    const downloadedText = await firstDownload.text()
     expect(downloadedText).toContain("before reset")
     expect(downloadedText).toMatch(/"timestamp": \d+(\.\d+)?/)
     expect(downloadedText).toMatch(
@@ -62,10 +66,11 @@ describe("tapoo logs", () => {
     tapooDownloadLogs("interactive")
 
     expect(createObjectURL).toHaveBeenCalledTimes(2)
-    if (!downloadedBlob) {
+    const resetDownload = captured.blob
+    if (!resetDownload) {
       throw new Error("expected reset log download blob")
     }
-    await expect(downloadedBlob.text()).resolves.toBe("[]")
+    await expect(resetDownload.text()).resolves.toBe("[]")
   })
 
   it("persists log entries to sessionStorage and clears them on reset", () => {

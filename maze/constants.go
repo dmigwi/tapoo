@@ -29,6 +29,10 @@ const (
 
 	cellSpan      = 2
 	cellPathWidth = 3
+
+	// glyphPaddingSides is the number of sides a centered cell glyph is padded on, so passageGlyph
+	// derives its padding from cellPathWidth instead of assuming a particular width.
+	glyphPaddingSides = 2
 )
 
 const (

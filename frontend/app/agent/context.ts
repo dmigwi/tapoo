@@ -320,10 +320,12 @@ export function buildAgentToolHandlers(
 ): AgentToolHandlers {
   return {
     get_prediction_rules() {
-      // The hard corridor limit governs DFS maze carving, not player path planning.
+      // The max corridor length governs DFS maze carving, not player path planning.
       // AGENT_MOVES_PER_TURN_CAP (p95 of actual run lengths) is the tighter bound for predictions.
-      const maxCorridor = getNavigationProfile(state.mazeDimensions).__maxCorridorLength
-      const suggestedMovesPerTurn = state.mazeDimensions ? Math.min(maxCorridor, AGENT_MOVES_PER_TURN_CAP) : 0
+      // getNavigationProfile dereferences the dimensions, so it stays inside the null branch.
+      const suggestedMovesPerTurn = state.mazeDimensions
+        ? Math.min(getNavigationProfile(state.mazeDimensions).__maxCorridorLength, AGENT_MOVES_PER_TURN_CAP)
+        : 0
 
       // Raw counts are exposed instead of the derived rate so the model can compute and verify the
       // rank itself; both are always concrete numbers (0 is a valid count), never null, so there is

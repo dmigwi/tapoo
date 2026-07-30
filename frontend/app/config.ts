@@ -240,7 +240,10 @@ export const CONFIG: AppConfig = {
     scoreDecayRate: 100,
     interactiveCoreDecayIntervalPerCellMs: 1_000, // Translates to 1sec
     agentApiCoreDecayIntervalPerCellMs: 30_000,   // Translates to 30sec
-    agentApiResponseTimeoutMs: 300_000,           // Translates to 5smin
+    // Per provider request, not per turn: a turn issues several rounds, so a whole turn can take a
+    // multiple of this (see the request-count derivation in agent/request.ts). Per-request by
+    // design — a provider that stops responding is caught on the first round regardless.
+    agentApiResponseTimeoutMs: 300_000,           // Translates to 5min
   },
   // Viewport thresholds translate measured DOM space into logical maze room.
   viewport: {
@@ -268,11 +271,23 @@ export const CONFIG: AppConfig = {
       },
     },
     interactivePlayerName: "Self",
+    // Ollama's num_ctx, temperature and num_predict (see requestChatTurn in agent/request.ts),
+    // tuned for parseable moves over good prose. Only the prompt can overrun, so num_ctx is the
+    // one knob worth tuning: num_ctx = max(floor, mazeArea * multiplier).
+    // Known limit: the multiplier budgets fewer tokens per cell than get_traversal_history spends per
+    // visited cell, so large mazes overrun it — the fix is to bound that tool rather than raise this.
     modelConfig: {
-      contextWindowFloor: 3000,       // Floor above Ollama's 2048 default; avoids 500 errors on long histories
-      contextWindowAreaMultiplier: 5, // Tokens-per-cell scaling factor; grows context with maze area
-      temperature: 0.5,               // Lower than 0.8 default; favors format-compliant over creative replies
-      numPredict: 4000,               // Caps total output (thinking + content); thinking models consume ~1000-2000 tokens before emitting the JSON
+      // Ollama's default is too small for the prompt, and it answers 500 rather than truncating.
+      // Also the value used before generation, while area is still unknown.
+      contextWindowFloor: 3000,
+      // Tokens per cell: history grows with the maze, and every round resends the conversation.
+      contextWindowAreaMultiplier: 5,
+      // Under Ollama's default: an unparseable reply is charged malformed-response, so format
+      // compliance beats creativity.
+      temperature: 0.5,
+      // Counts thinking, hence think: false — with it on, models hit the cap before emitting any
+      // JSON. Sized well above what a compliant reply needs, so it is not a working limit.
+      numPredict: 4000,
     },
   },
 }
