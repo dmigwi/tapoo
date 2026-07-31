@@ -99,7 +99,6 @@ function createState(overrides: Partial<State> = {}): State {
     lastWinTraversalSpeedUnits: null,
     bestWinTraversalSpeedUnits: null,
     winSummary: "",
-    canResume: false,
     wallWeight: 1,
     scoreDecayUnits: 0,
     agentRequestCount: 0,
@@ -399,7 +398,6 @@ describe("render", () => {
       elements,
       createState({
         status: "paused",
-        canResume: true,
       }),
     )
 
@@ -473,7 +471,6 @@ describe("render", () => {
       elements,
       createState({
         status: "paused",
-        canResume: true,
       }),
     )
 

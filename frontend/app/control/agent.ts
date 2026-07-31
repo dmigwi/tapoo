@@ -53,6 +53,12 @@ type AgentButtonBinding = {
 // clock or maze grid, keeping diagnostics useful while avoiding large circular-ish payloads.
 function logAgentRoundCompletion({ __actionResult, __state, __agent }: AgentRoundState): void {
   const outcome = __state.status
+  // lastSubmittedMovesSchema is a fixed JSON Schema, byte-identical on every result, so it is
+  // dropped from the entry. Copied rather than cleared in place: __actionResult is the same object
+  // agent-api.ts holds as lastActionResult and hands to the context tools, so clearing the field
+  // here would strip it from live game state as a side effect of logging.
+  const result: MazeActionResult = { ...__actionResult, lastSubmittedMovesSchema: undefined }
+
   logTapooDiagnostic(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
     outcome,
     agent: {
@@ -74,7 +80,7 @@ function logAgentRoundCompletion({ __actionResult, __state, __agent }: AgentRoun
     // when openMoves became a resolved adjacency map. Paired with agentRequestCount it still gives
     // the cells-per-request efficiency these entries are read for.
     uniqueCellsVisited: __state.traversalHistory.length,
-    lastActionResult: __actionResult,
+    lastActionResult: result,
   })
 }
 
@@ -279,7 +285,6 @@ export function createAgentMode(
           return
         }
 
-        console.log(">>>>>><<<<<< 3 ")
         dispatch({ type: "pause" }, { playerName: runtime.interactivePlayerName })
         syncCurrentPoller()
       }

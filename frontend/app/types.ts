@@ -291,7 +291,6 @@ export type State = {
   controlMode: MazeControlModeName
   level: number
   status: GameStatus
-  canResume: boolean
 
   maze: string[][] | null
   mazeDimensions: MazeDimensions | null

@@ -62,6 +62,7 @@ import type {
   MazeControlModeName,
   MazeDimensions,
   MoveAction,
+  PersistedGameStatus,
   PersistedRound,
   PersistedSnapshot,
   RenderGridPoint,
@@ -98,7 +99,6 @@ const state: State = {
   lastWinTraversalSpeedUnits: null,
   bestWinTraversalSpeedUnits: null,
   winSummary: "",
-  canResume: false,
   wallWeight: WALL_WEIGHTS[0],
   scoreDecayUnits: 0,
   agentRequestCount: 0,
@@ -175,7 +175,6 @@ function applyTooSmallState(level: number): void {
   state.agentRequestCount = 0
   state.cumulativeRoundCount += 1
   state.winSummary = ""
-  state.canResume = false
   state.clock = null
 }
 
@@ -352,7 +351,6 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
   state.agentRequestCount = snapshot.agentRequestCount ?? 0
   state.cumulativeRoundCount = snapshot.cumulativeRoundCount ?? 0
   state.winSummary = snapshot.winSummary ?? ""
-  state.canResume = false
 
   if (isFinishedStatus(snapshot.status)) {
     state.status = snapshot.status
@@ -363,18 +361,30 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
 
   const totalCells = snapshot.mazeDimensions.area
   state.clock = restoreClock(totalCells, snapshot.remainingMs)
-  state.clock.pause()
-  if (isAwaitAgentStatus(snapshot.status)) {
-    state.status = "await-agent"
-    state.winSummary = ""
-    state.canResume = false
-    renderState()
-    return
+
+  // A reload only interrupts a round a human was actively playing. Interactive score decays with
+  // elapsed time, so resuming a round nobody is watching would silently burn it — the pause waits
+  // for the player to resume deliberately. Every other combination keeps the status it was saved
+  // with: an agent-api round is charged per request rather than per second and has no human present
+  // to press resume, so pausing it only strands the run, while a round already paused or awaiting
+  // an agent has nothing to change. A restored running agent round resumes on its own because
+  // bindActionDispatch calls syncCurrentPoller after this, which schedules the next turn as soon
+  // as the status reads running.
+  const restoredStatus: PersistedGameStatus =
+    isInteractiveMode(state.controlMode) && isRunningStatus(snapshot.status)
+      ? "paused"
+      : snapshot.status
+
+  // restoreClock hands back an already-running clock, so only a status that must not advance needs
+  // stopping: a paused round waiting on the player, or one awaiting an agent. A restored running
+  // round is left ticking, which keeps the destination blink animating.
+  if (!isRunningStatus(restoredStatus)) {
+    state.clock.pause()
   }
 
-  state.status = "paused"
+  state.status = restoredStatus
   state.winSummary = ""
-  state.canResume = true
+  // Only a paused round offers a resume; running needs none and await-agent has its own path.
   renderState()
 }
 
@@ -395,7 +405,6 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
     finalPosition: round.finalPosition,
   })
   state.status = "running"
-  state.canResume = false
   state.lastRoundScore = 0
   state.scoreDecayUnits = 0
   state.agentRequestCount = 0
@@ -469,16 +478,14 @@ function resumeOrProceed(): void {
   if (isAwaitAgentStatus(state.status) && isAgentApiMode(state.controlMode)) {
     state.clock?.resume()
     state.status = "running"
-    state.canResume = false
     persistNow("state")
     renderState()
     return
   }
 
-  if (isPausedStatus(state.status) && state.canResume && state.clock) {
+  if (isPausedStatus(state.status) && state.clock) {
     state.clock.resume()
     state.status = "running"
-    state.canResume = false
     persistNow("round")
     renderState()
     return
@@ -503,7 +510,6 @@ function awaitAgent(): void {
 
   state.clock?.pause()
   state.status = "await-agent"
-  state.canResume = false
   persistNow("state")
   renderState()
 }
@@ -516,7 +522,6 @@ function pauseGame(): void {
 
   state.clock.pause()
   state.status = "paused"
-  state.canResume = true
   persistNow("state")
   renderState()
 }
@@ -553,7 +558,6 @@ function handleWinCheck(): boolean {
     applyWinSummary(totalCells)
   }
   state.status = "won"
-  state.canResume = false
   state.lastRoundScore = state.score
   return true
 }
@@ -599,7 +603,6 @@ function handleLoss(): void {
   state.score = calculateRoundScore(totalCells)
 
   state.status = "lost"
-  state.canResume = false
   state.lastRoundScore = state.score
   state.lastAttemptRetentionUnits = 0
   state.winSummary = ""

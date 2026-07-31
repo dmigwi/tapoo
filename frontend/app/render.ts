@@ -5,6 +5,7 @@ import {
 } from "./scoring"
 import {
   canProceedStatus,
+  canShowRestart,
   canShowWallsStatus,
   isAgentApiMode,
   isAwaitAgentStatus,
@@ -364,38 +365,23 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
 
 // updateTouchControls shows only the touch controls that make sense for the current state.
 function updateTouchControls(elements: Elements, state: State): void {
-  const canProceed = state.canResume
-    ? canProceedStatus(state.status)
-    : isAwaitAgentStatus(state.status) || isWonStatus(state.status) || isLostStatus(state.status)
-  const showMoveControls =
-    isInteractiveMode(state.controlMode) && isRunningStatus(state.status)
-  const showPause = isRunningStatus(state.status)
-  const showWalls = canShowWallsStatus(state.status)
-  const showRestart =
-    isAwaitAgentStatus(state.status) ||
-    isPausedStatus(state.status) ||
-    isWonStatus(state.status) ||
-    isLostStatus(state.status) ||
-    isTooSmallStatus(state.status)
+  const showMoveControls = isInteractiveMode(state.controlMode) && isRunningStatus(state.status)
+  // Keyed by data-action so adding a control is one entry here rather than another branch. The
+  // lookup deliberately fails closed: an action with no entry stays hidden, so a button wired into
+  // the markup but not into this map disappears instead of sitting clickable in every state.
+  const actionIsVisible: Record<string, boolean> = {
+    pause: isRunningStatus(state.status),
+    walls: canShowWallsStatus(state.status),
+    proceed: canProceedStatus(state.status),
+    restart: canShowRestart(state.status),
+  }
   let visibleButtons = 0
 
   elements.touchButtons.forEach((button) => {
-    const action = button.dataset.action
-    const move = button.dataset.move
-    const hidden = move
+    const { action, move } = button.dataset
+    button.hidden = move
       ? !showMoveControls
-      : action === "pause"
-        ? !showPause
-        : action === "walls"
-          ? !showWalls
-          : action === "proceed"
-            ? !canProceed
-            : action === "restart"
-              ? !showRestart
-              : false
-
-    button.hidden = hidden
-    button.disabled = false
+      : !(actionIsVisible[action ?? ""] ?? false)
 
     if (!button.hidden) {
       visibleButtons += 1

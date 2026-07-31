@@ -50,7 +50,6 @@ function createState(overrides: Partial<State> = {}): State {
     lastWinTraversalSpeedUnits: null,
     bestWinTraversalSpeedUnits: null,
     winSummary: "",
-    canResume: false,
     wallWeight: 1,
     scoreDecayUnits: 0,
     agentRequestCount: 0,

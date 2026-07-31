@@ -40,7 +40,6 @@ function createState(): State {
     cumulativeRoundCount: 0,
     bestWinTraversalSpeedUnits: null,
     bestWinRetentionUnits: null,
-    canResume: false,
     clock: null,
     controlMode: CONFIG.runtime.controlModes.interactive,
     finalPosition: null,

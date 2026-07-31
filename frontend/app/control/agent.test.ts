@@ -240,7 +240,6 @@ function createControlFixture(
     cumulativeRoundCount: 0,
     bestWinTraversalSpeedUnits: null,
     bestWinRetentionUnits: null,
-    canResume: false,
     clock: null,
     controlMode: CONFIG.runtime.controlModes.agentApi,
     finalPosition: { x: 5, y: 1 },

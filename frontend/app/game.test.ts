@@ -833,7 +833,6 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.controlMode).toBe(CONFIG.runtime.controlModes.agentApi)
     expect(state.status).toBe("await-agent")
-    expect(state.canResume).toBe(false)
   })
 
   it("pauses and resumes a running round through interactive controls", async () => {
@@ -845,7 +844,6 @@ describe("bootstrapGame", () => {
 
     let state = latestRenderedState(harness.render)
     expect(state.status).toBe("paused")
-    expect(state.canResume).toBe(true)
     expect(harness.saveGameProgress).toHaveBeenCalled()
     expect(harness.saveActiveRoundSnapshot).toHaveBeenCalled()
 
@@ -858,7 +856,6 @@ describe("bootstrapGame", () => {
 
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
-    expect(state.canResume).toBe(false)
   })
 
   it("moves the player to the target and persists a win", async () => {
@@ -1136,10 +1133,76 @@ describe("bootstrapGame", () => {
 
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("paused")
-    expect(state.canResume).toBe(true)
     expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
     expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(3)
   })
+
+  it.each([
+    {
+      name: "pauses a running interactive round so the human resumes deliberately",
+      mode: CONFIG.runtime.controlModes.interactive,
+      persistedStatus: "running" as const,
+      expectedStatus: "paused",
+    },
+    {
+      name: "keeps a running agent-api round running so the poller picks it back up",
+      mode: CONFIG.runtime.controlModes.agentApi,
+      // Without an enabled seat the mode drops to await-agent on its own, so the running case
+      // needs a live agent for the restored status to be observable at all.
+      agentConfigs: [enabledAgentConfig()],
+      persistedStatus: "running" as const,
+      expectedStatus: "running",
+    },
+    {
+      name: "leaves an already paused agent-api round paused",
+      mode: CONFIG.runtime.controlModes.agentApi,
+      persistedStatus: "paused" as const,
+      expectedStatus: "paused",
+    },
+    {
+      name: "leaves an awaiting agent-api round awaiting",
+      mode: CONFIG.runtime.controlModes.agentApi,
+      persistedStatus: "await-agent" as const,
+      expectedStatus: "await-agent",
+    },
+  ])(
+    "restore $name",
+    async ({ mode, agentConfigs = [], persistedStatus, expectedStatus }) => {
+      // Only an interactive round that was mid-play gets paused on reload: its score decays with
+      // elapsed time, so resuming unattended would burn it. Every other combination keeps whatever
+      // status was saved.
+      const persistedRound: PersistedRound = {
+        level: 1,
+        mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
+        maze: createHorizontalRound().maze,
+        playerPosition: { x: 1, y: 1 },
+        startCell: { row: 0, col: 0 },
+        traversalHistory: [selfVisit(0, 0)],
+        finalPosition: { x: 3, y: 1 },
+        wallWeight: 1,
+        status: persistedStatus,
+        score: 200,
+        lastRoundScore: 0,
+        remainingMs: 1500,
+        winSummary: "",
+      }
+
+      const harness = await bootstrapHarness({
+        agentConfigs,
+        mode,
+        round: createHorizontalRound(),
+        persistedSnapshots: [
+          {
+            preferences: { level: 1, wallWeight: 1 },
+            round: persistedRound,
+          },
+        ],
+      })
+
+      const state = latestRenderedState(harness.render)
+      expect(state.status).toBe(expectedStatus)
+    },
+  )
 
   it("rejects malformed persisted traversal history and falls back to a fresh round", async () => {
     const invalidPersistedRound: PersistedRound = {

@@ -112,20 +112,9 @@ export function isFinishedStatus(
   return isWonStatus(status) || isLostStatus(status)
 }
 
-// canPersistRoundStatus limits persistence to round states that can be restored later.
-export function canPersistRoundStatus(
-  status: GameStatus,
-): status is PersistedGameStatus {
-  return (
-    isRunningStatus(status) ||
-    isPausedStatus(status) ||
-    isWonStatus(status) ||
-    isLostStatus(status) ||
-    isAwaitAgentStatus(status)
-  )
-}
-
-// canProceedStatus marks states that accept the proceed action.
+// canProceedStatus marks a settled round: a maze exists but is not advancing, so the player owes
+// it a decision. The three compound checks below are each written as this set plus or minus what
+// makes them differ, so the shared membership is stated once here — widening this widens them all.
 export function canProceedStatus(status: GameStatus): boolean {
   return (
     isAwaitAgentStatus(status) ||
@@ -134,11 +123,28 @@ export function canProceedStatus(status: GameStatus): boolean {
   )
 }
 
-// canShowWallsStatus marks states where wall reweighting remains safe to expose.
-export function canShowWallsStatus(status: GameStatus): boolean {
+// canPersistRoundStatus accepts everything canProceedStatus does, plus running, since a live round
+// has to survive a reload too. Its return type claims every status it accepts is a
+// PersistedGameStatus, and that claim is only true while canProceedStatus itself stays within that
+// union. TypeScript never checks a type predicate's body, so status.test.ts enforces the claim.
+export function canPersistRoundStatus(
+  status: GameStatus,
+): status is PersistedGameStatus {
   return (
-    isAwaitAgentStatus(status) || 
-    isPausedStatus(status) || 
-    isFinishedStatus(status)
+    isRunningStatus(status) || canProceedStatus(status)
+  )
+}
+
+// canShowWallsStatus accepts exactly what canProceedStatus does: reweighting redraws the maze,
+// which is only safe while nothing is moving through it.
+export function canShowWallsStatus(status: GameStatus): boolean {
+  return canProceedStatus(status)
+}
+
+// canShowRestart accepts everything canProceedStatus does, plus too-small — the one state with no
+// drawable maze to proceed from, and so no way out except starting over.
+export function canShowRestart(status: GameStatus): boolean {
+  return (
+    canProceedStatus(status) || isTooSmallStatus(status)
   )
 }

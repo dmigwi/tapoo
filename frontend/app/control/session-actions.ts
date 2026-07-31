@@ -78,7 +78,6 @@ export function sessionActionFromKeyboardEvent(
   }
 
   if (event.key === " " || event.key === "Escape") {
-    console.log(">>>>>><<<<<< 1 ")
     return { type: "pause" }
   }
 
@@ -91,7 +90,6 @@ export function sessionActionFromButton(
 ): SessionMazeAction | null {
   switch (dataset.action) {
     case "pause":
-      console.log(">>>>>><<<<<< 2 ")
       return { type: "pause" }
     case "proceed":
       return { type: "proceed" }

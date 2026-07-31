@@ -123,7 +123,6 @@ const state: State = {
     cumulativeRoundCount: 0,
   bestWinTraversalSpeedUnits: null,
   bestWinRetentionUnits: null,
-  canResume: false,
   clock: null,
   controlMode: "agent-api",
   finalPosition: { x: 15, y: 17 },
