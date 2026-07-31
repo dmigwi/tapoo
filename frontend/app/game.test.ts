@@ -332,6 +332,7 @@ type DimensionsResult = {
 } | null
 
 type GameHarness = {
+  appendTapooLogEntry: ReturnType<typeof vi.fn>
   clearPersistedSnapshot: ReturnType<typeof vi.fn>
   clearPersistedRound: ReturnType<typeof vi.fn>
   elements: Elements
@@ -378,6 +379,7 @@ async function bootstrapHarness({
   const saveActiveRoundSnapshot = vi.fn()
   const clearPersistedSnapshot = vi.fn()
   const clearPersistedRound = vi.fn()
+  const appendTapooLogEntry = vi.fn()
   const generateMaze = vi.fn(() => round)
   const reweightMaze = vi.fn(() => reweightedMaze ?? round.maze)
 
@@ -462,7 +464,7 @@ async function bootstrapHarness({
     saveActiveRoundSnapshot,
     loadTapooLog: vi.fn(() => []),
     saveTapooLog: vi.fn(),
-    appendTapooLogEntry: vi.fn(),
+    appendTapooLogEntry,
     clearTapooLog: vi.fn(),
   }))
   vi.spyOn(window, "setInterval").mockImplementation(
@@ -486,6 +488,7 @@ async function bootstrapHarness({
   const runtime = bootstrapGame(controlMode, elements)
 
   return {
+    appendTapooLogEntry,
     clearPersistedSnapshot,
     clearPersistedRound,
     elements,
@@ -1368,5 +1371,53 @@ describe("bootstrapGame", () => {
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
     expect(harness.mode.readLastActionResult()).toBeNull()
+  })
+
+  // No public call sequence can produce an inconsistent state — restore matches the clock to the
+  // status it restores, and every transition sets the clock before the status. These tests inject
+  // the violation directly onto the live state instead, which is the only way to reach the reporting
+  // path. cycle-walls is the render trigger because it is the one action that redraws without
+  // touching either the status or the clock, so it cannot repair the violation under test.
+  it("logs an inconsistent state instead of throwing out of the render path", async () => {
+    const harness = await bootstrapHarness()
+    const state = latestRenderedState(harness.render)
+
+    // Paused status while the clock still runs. Throwing here used to reach the global handler in
+    // tapoo.ts and replace the whole game with placeholder art, losing a recoverable round.
+    state.status = "paused"
+    const rendersBeforeViolation = harness.render.mock.calls.length
+
+    harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
+
+    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(1)
+    const [, entry] = harness.appendTapooLogEntry.mock.calls[0] as [string, { type: string; payload: string }]
+    expect(entry.type).toBe("error")
+    expect(entry.payload).toBe("invalid game state: paused status requires a paused clock")
+    // The round keeps playing: rendering continued past the violation rather than aborting.
+    expect(harness.render.mock.calls.length).toBeGreaterThan(rendersBeforeViolation)
+    expect(latestRenderedState(harness.render).wallWeight).toBe(2)
+  })
+
+  it("reports a repeated violation once but still reports a different one", async () => {
+    const harness = await bootstrapHarness()
+    const state = latestRenderedState(harness.render)
+
+    state.status = "paused"
+    harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
+    harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
+
+    // renderState runs on the blink cadence, so an unfixed violation would append entries several
+    // times a second and bury the gameplay history it sits beside.
+    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(1)
+
+    // Suppression is keyed on the message, not on having reported once: a violation that changes
+    // into a different one is still news, so it has to appear.
+    state.status = "running"
+    state.clock?.pause()
+    harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
+
+    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(2)
+    const [, entry] = harness.appendTapooLogEntry.mock.calls[1] as [string, { payload: string }]
+    expect(entry.payload).toBe("invalid game state: running status requires an active clock")
   })
 })

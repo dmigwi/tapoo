@@ -641,11 +641,16 @@ function optimizeMaze(
 // always an endpoint of the tree's longest possible path (its diameter) — so `startCell` and
 // `finalCell` are always as far apart as the maze's shape allows, regardless of where the
 // randomly-chosen `startCell` happens to land.
+// profileOverride carves under a caller-supplied profile instead of the one getNavigationProfile
+// derives from area. Gameplay always omits it; it exists for measurement, since the profile is a
+// pure function of area and nothing else can hold the grid fixed while moving a knob — which is what
+// separates a knob's effect from the grid's own.
 export function generateMaze(
   dimensions: LevelDimensions,
   weight: WallWeight,
+  profileOverride?: NavigationProfile,
 ): RoundState {
-  const navigationProfile = getNavigationProfile(dimensions)
+  const navigationProfile = profileOverride ?? getNavigationProfile(dimensions)
   const visited = new Array<boolean>(dimensions.area + 1).fill(false)
   const maze = createPlayingField(dimensions, weight)
   const startCell = getStartPosition(dimensions)

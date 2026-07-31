@@ -103,9 +103,45 @@ describe("maze", () => {
     })
   })
 
-  it("uses __leastNeighborsBias to cut junction density for small mazes versus large ones", () => {
-    // junctionFraction generates one maze and returns the share of cells with 3+ open exits.
-    // Verifies the real chooseNextCell wiring, not just the simulation the bias was derived from.
+  it("cuts junction density as __leastNeighborsBias rises, with the grid held fixed", () => {
+    // The test below varies bias and area together, because getNavigationProfile derives the
+    // profile from area alone — so on its own it cannot say whether the bias or the size did the
+    // work. Overriding the profile pins one 20x14 grid and moves only the bias, which is the one
+    // arrangement that attributes the change to the knob.
+    const junctionFraction = (bias: number): number => {
+      const dimensions = createLevelDimensions(1, { numCols: 20, numRows: 14 })
+      const { maze } = generateMaze(dimensions, 1, {
+        __maxCorridorLength: 8,
+        __leastNeighborsBias: bias,
+      })
+      let junctions = 0
+
+      for (let row = 0; row < dimensions.numRows; row += 1) {
+        for (let col = 0; col < dimensions.numCols; col += 1) {
+          if (openMovesFromCell(maze, { row, col }).length >= 3) {
+            junctions += 1
+          }
+        }
+      }
+
+      return junctions / dimensions.area
+    }
+
+    const average = (bias: number): number =>
+      Array.from({ length: 20 }, () => junctionFraction(bias)).reduce(
+        (sum, value) => sum + value,
+        0,
+      ) / 20
+
+    // Generation is random, so this asserts a wide separation rather than an exact figure. The
+    // benchmark in maze/levels_bench_test.go reports the full distribution behind these means.
+    expect(average(100)).toBeLessThan(average(0) / 2)
+  })
+
+  it("cuts junction density for small mazes versus large ones", () => {
+    // Covers the wiring players actually get, where the profile is derived rather than supplied.
+    // Area and bias move together here by design, so this pins the end-to-end outcome without
+    // attributing it — the test above is what isolates the knob.
     const junctionFraction = (dimensions: BaseDimensions): number => {
       const { maze } = generateMaze(createLevelDimensions(1, dimensions), 1)
       let junctions = 0
@@ -135,8 +171,8 @@ describe("maze", () => {
       Array.from({ length: 20 }, () => junctionFraction({ numCols: 40, numRows: 40 })),
     )
 
-    // The bias should cut junction density substantially, not just nudge it — the simulation
-    // this was derived from measured roughly a 10x reduction at full bias strength.
+    // The gap should be substantial, not a nudge: BenchmarkMazeBranching measures roughly 0.002
+    // junctions per cell at area 70 against 0.10 at area 1600.
     expect(smallMazeJunctionFraction).toBeLessThan(largeMazeJunctionFraction / 2)
   })
 

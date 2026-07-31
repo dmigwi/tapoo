@@ -27,16 +27,24 @@ type pathStep struct {
 
 // GenerateMaze converts the created grid view playing field into a series on paths and walls.
 // The Maze is created such that only a single path can exists between the starting point and
-// and the goal.
+// and the goal. Maze size controls how strongly generation should resist long straight corridors.
 func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
+	return config.GenerateMazeWithProfile(weight, GetNavigationProfile(*config))
+}
+
+// GenerateMazeWithProfile carves a maze under a caller-supplied navigation profile instead of the
+// one GetNavigationProfile derives from area. Gameplay always wants the derived profile, so this
+// exists for measurement: because the profile is a pure function of area, nothing else can hold the
+// grid fixed while moving a knob, which is what separates a knob's effect from the grid's own.
+func (config *Dimensions) GenerateMazeWithProfile(
+	weight WallWeight,
+	navigationProfile NavigationProfile,
+) ([][]string, error) {
 	totalCells, errValidate := config.validateMazeGenerationInputs(weight)
 	if errValidate != nil {
 		config.resetPositions()
 		return nil, errValidate
 	}
-
-	// Maze size controls how strongly generation should resist long straight corridors.
-	navigationProfile := GetNavigationProfile(*config)
 
 	// The visited set is scoped to a single generation so repeated runs do not leak traversal state.
 	visitedCells := make([]bool, totalCells+1)

@@ -132,10 +132,53 @@ func countOpenExits(config maze.Dimensions, grid [][]string, cellNo int) int {
 	return open
 }
 
-// TestLeastNeighborsBiasCutsJunctionDensity verifies the real GenerateMaze wiring, not
-// just the simulation the bias was derived from: small mazes (LeastNeighborsBias=100)
-// should produce far fewer junction cells (3+ open exits) than large ones (bias=0).
+// TestLeastNeighborsBiasCutsJunctionDensity pins one grid and moves only the bias. Because
+// GetNavigationProfile derives the profile from area alone, the area-based test below cannot say
+// whether the bias or the size did the work; overriding the profile is what attributes the change
+// to the knob. BenchmarkMazeBranching reports the distribution behind these means.
 func TestLeastNeighborsBiasCutsJunctionDensity(t *testing.T) {
+	t.Parallel()
+
+	config := maze.Dimensions{NumCols: 20, NumRows: 14}
+	totalCells := config.NumCols * config.NumRows
+
+	average := func(bias int, samples int) float64 {
+		var sum float64
+		for range samples {
+			grid, err := config.GenerateMazeWithProfile(maze.WallWeightRegular, maze.NavigationProfile{
+				MaxCorridorLength:  8,
+				LeastNeighborsBias: bias,
+			})
+			if err != nil {
+				t.Fatalf("GenerateMazeWithProfile returned error: %v", err)
+			}
+
+			junctions := 0
+			for cellNo := 1; cellNo <= totalCells; cellNo++ {
+				if countOpenExits(config, grid, cellNo) >= 3 {
+					junctions++
+				}
+			}
+			sum += float64(junctions) / float64(totalCells)
+		}
+		return sum / float64(samples)
+	}
+
+	// Generation is random, so this asserts a wide separation rather than an exact figure.
+	biasedJunctionFraction, unbiasedJunctionFraction := average(100, 20), average(0, 20)
+	if biasedJunctionFraction >= unbiasedJunctionFraction/2 {
+		t.Fatalf(
+			"expected full bias to more than halve junction density at a fixed grid: biased=%v unbiased=%v",
+			biasedJunctionFraction,
+			unbiasedJunctionFraction,
+		)
+	}
+}
+
+// TestJunctionDensityRisesWithMazeArea covers the wiring players actually get, where the profile is
+// derived rather than supplied. Area and bias move together here by design, so this pins the
+// end-to-end outcome without attributing it — the test above is what isolates the knob.
+func TestJunctionDensityRisesWithMazeArea(t *testing.T) {
 	t.Parallel()
 
 	junctionFraction := func(config maze.Dimensions) float64 {
@@ -167,8 +210,8 @@ func TestLeastNeighborsBiasCutsJunctionDensity(t *testing.T) {
 	// Large maze: area at/above hardestArea, so LeastNeighborsBias resolves to 0.
 	largeMazeJunctionFraction := average(maze.Dimensions{NumCols: 40, NumRows: 40}, 20)
 
-	// The bias should cut junction density substantially, not just nudge it — the simulation
-	// this was derived from measured roughly a 10x reduction at full bias strength.
+	// The gap should be substantial, not a nudge: BenchmarkMazeBranching measures roughly 0.002
+	// junctions per cell at area 70 against 0.10 at area 1600.
 	if smallMazeJunctionFraction >= largeMazeJunctionFraction/2 {
 		t.Fatalf(
 			"expected small-maze junction density to be less than half of large-maze density: small=%v large=%v",
