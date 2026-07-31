@@ -1,5 +1,5 @@
 import { CONFIG, WALL_WEIGHTS } from "./config"
-import { isRunningStatus } from "./status"
+import { hasActiveRoundState, isRunningStatus } from "./status"
 import type {
   BaseDimensions,
   CellCoordinate,
@@ -252,12 +252,7 @@ export function resolvePlayerMove(
   state: State,
   action: MoveAction,
 ): ResolvedPlayerMove {
-  if (
-    !isRunningStatus(state.status) ||
-    !state.maze ||
-    !state.mazeDimensions ||
-    !state.playerPosition
-  ) {
+  if (!isRunningStatus(state.status) || !hasActiveRoundState(state)) {
     return { canMove: false }
   }
 

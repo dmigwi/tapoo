@@ -3,7 +3,9 @@ import type {
   BaseDimensions,
   GameStatus,
   MazeControlModeName,
+  MazeDimensions,
   PersistedGameStatus,
+  RenderGridPoint,
   State,
 } from "./types"
 
@@ -150,7 +152,19 @@ export function canShowRestart(status: GameStatus): boolean {
   )
 }
 
-function hasActiveRoundState(state: State): boolean {
+// ActiveRoundState is State with every field a live round needs proven present, so callers guarded by
+// hasActiveRoundState can read them without repeating the null checks. traversalHistory stays a plain
+// array here: a type cannot express "non-empty", so that half of the guard is a runtime claim only.
+export type ActiveRoundState = State & {
+  mazeDimensions: MazeDimensions
+  maze: string[][]
+  startPosition: RenderGridPoint
+  playerPosition: RenderGridPoint
+  finalPosition: RenderGridPoint
+}
+
+// hasActiveRoundState reports whether a round holds enough state to be drawn, moved through, or saved.
+export function hasActiveRoundState(state: State): state is ActiveRoundState {
   return (
     state.mazeDimensions !== null &&
     state.maze !== null &&

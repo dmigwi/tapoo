@@ -5,31 +5,61 @@ import {
   canProceedStatus,
   canShowRestart,
   canShowWallsStatus,
+  hasActiveRoundState,
+  isTooSmallStatus,
   stateInvariantError,
 } from "./status"
+import type { TooSmallStatus, ViewportFitStatus } from "./status"
 import type { GameStatus, PersistedGameStatus, State } from "./types"
+
+// valuesOf turns an exhaustive record into the runtime list the tables below iterate. The record is
+// what does the work: annotating a plain array as Status[] only asks that each element belong to the
+// union, so a stale list stays valid when the union grows and every table silently keeps its old
+// coverage. Requiring a key per member instead makes a widened union a compile error here.
+function valuesOf<T extends string>(members: Record<T, true>): T[] {
+  return Object.keys(members) as T[]
+}
 
 // ALL_STATUSES is every value GameStatus can take. Driving the tables off it means a new status
 // added to the union has to be given an expected answer here rather than silently defaulting.
-const ALL_STATUSES: GameStatus[] = [
-  "boot",
-  "running",
-  "paused",
-  "won",
-  "lost",
-  "await-agent",
-  "too-small",
-]
+const ALL_STATUSES = valuesOf<GameStatus>({
+  "boot": true,
+  "running": true,
+  "paused": true,
+  "won": true,
+  "lost": true,
+  "await-agent": true,
+  "too-small": true,
+})
 
 // PERSISTABLE_STATUSES mirrors PersistedGameStatus as runtime values, so the guard below can check
 // a type-level claim that the compiler cannot verify on its own.
-const PERSISTABLE_STATUSES: PersistedGameStatus[] = [
-  "running",
-  "paused",
-  "won",
-  "lost",
-  "await-agent",
-]
+const PERSISTABLE_STATUSES = valuesOf<PersistedGameStatus>({
+  "running": true,
+  "paused": true,
+  "won": true,
+  "lost": true,
+  "await-agent": true,
+})
+
+// ALL_VIEWPORT_FIT_STATUSES completes the input union isTooSmallStatus accepts, since it takes
+// GameStatus | ViewportFitStatus and the two overlap only in meaning, never in values.
+const ALL_VIEWPORT_FIT_STATUSES = valuesOf<ViewportFitStatus>({
+  "fits": true,
+  "too-small-length": true,
+  "too-small-width": true,
+  "too-small-all": true,
+})
+
+// TOO_SMALL_STATUSES mirrors TooSmallStatus as runtime values. That type is computed rather than
+// written out — "too-small" | Exclude<ViewportFitStatus, "fits"> — so a new ViewportFitStatus member
+// widens it with nothing written down changing. The missing key here is what surfaces that.
+const TOO_SMALL_STATUSES = valuesOf<TooSmallStatus>({
+  "too-small": true,
+  "too-small-length": true,
+  "too-small-width": true,
+  "too-small-all": true,
+})
 
 function createClock(isPaused: boolean): State["clock"] {
   return {
@@ -72,6 +102,75 @@ function createState(overrides: Partial<State> = {}): State {
     ...overrides,
   }
 }
+
+describe("hasActiveRoundState", () => {
+  it("accepts a round holding every field needed to draw, move, or save it", () => {
+    expect(hasActiveRoundState(createState())).toBe(true)
+  })
+
+  // Each field is dropped on its own so a guard that stops checking one is caught here rather than
+  // surfacing later as a null dereference in the render or persistence path.
+  it.each([
+    ["mazeDimensions", { mazeDimensions: null }],
+    ["maze", { maze: null }],
+    ["startPosition", { startPosition: null }],
+    ["playerPosition", { playerPosition: null }],
+    ["finalPosition", { finalPosition: null }],
+    ["traversalHistory", { traversalHistory: [] }],
+  ] as [string, Partial<State>][])("rejects a round missing %s", (_label, missing) => {
+    expect(hasActiveRoundState(createState(missing))).toBe(false)
+  })
+
+  // The narrowing hasActiveRoundState claims is a type predicate, which the compiler takes on trust.
+  // Reading each field back proves the runtime check actually covers everything the type promises.
+  it("proves every field the predicate narrows is really present", () => {
+    const state = createState()
+    if (!hasActiveRoundState(state)) {
+      throw new Error("fixture should satisfy hasActiveRoundState")
+    }
+
+    expect(state.mazeDimensions.area).toBe(1)
+    expect(state.maze.length).toBeGreaterThan(0)
+    expect(state.startPosition.x).toBe(1)
+    expect(state.playerPosition.x).toBe(1)
+    expect(state.finalPosition.x).toBe(1)
+  })
+})
+
+describe("isTooSmallStatus", () => {
+  it.each<[GameStatus | ViewportFitStatus, boolean]>([
+    // The rendered state, plus the three internal measurements naming the axis that blocked the maze.
+    ["too-small", true],
+    ["too-small-length", true],
+    ["too-small-width", true],
+    ["too-small-all", true],
+    // fits is the other half of ViewportFitStatus and the one case that must not be swept in.
+    ["fits", false],
+    // No game status other than too-small describes a viewport that cannot hold the maze.
+    ["boot", false],
+    ["running", false],
+    ["paused", false],
+    ["won", false],
+    ["lost", false],
+    ["await-agent", false],
+  ])("returns %s for the %s status", (status, expected) => {
+    expect(isTooSmallStatus(status)).toBe(expected)
+  })
+
+  it("only ever accepts statuses that TooSmallStatus can hold", () => {
+    // isTooSmallStatus asserts `status is TooSmallStatus`, and TypeScript never checks a predicate
+    // body against that claim. TooSmallStatus is derived from ViewportFitStatus, so adding a member
+    // there widens the promised type while this four-way body keeps checking the old values —
+    // callers would then narrow to a status the function never actually verified. Filtering both
+    // input unions and matching the result against TOO_SMALL_STATUSES is what catches that.
+    const inputs = [...ALL_STATUSES, ...ALL_VIEWPORT_FIT_STATUSES]
+    const accepted = inputs.filter(isTooSmallStatus)
+    accepted.forEach((status) => {
+      expect(TOO_SMALL_STATUSES).toContain(status)
+    })
+    expect(accepted).toHaveLength(TOO_SMALL_STATUSES.length)
+  })
+})
 
 describe("canProceedStatus", () => {
   it.each<[GameStatus, boolean]>([

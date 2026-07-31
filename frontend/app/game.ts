@@ -1,4 +1,5 @@
 import { GameClock } from "./clock"
+import { logTapooDiagnostic } from "./logs"
 import {
   CONFIG,
   WALL_WEIGHTS,
@@ -234,17 +235,40 @@ function currentBlinkVisible(): boolean | null {
   return state.clock.blink()
 }
 
+// lastReportedInvariant suppresses repeat entries: renderState runs on the blink cadence, so an
+// unfixed violation would otherwise append several entries a second and bury the gameplay history
+// it sits beside.
+let lastReportedInvariant: string | null = null
+
+// reportStateInvariant records an impossible status/state combination without interrupting play.
+// Throwing was the alternative, but renderState runs on the blink interval and nothing in game.ts
+// catches, so the error would reach the global handler in tapoo.ts and swap the whole game for
+// placeholder art — turning a recoverable inconsistency into a lost round, which matters most
+// during unattended agent runs. Logging instead keeps the violation beside the gameplay it came
+// from in the downloadable log, and stateInvariantError stays directly asserted in status.test.ts.
+function reportStateInvariant(): void {
+  const invariantError = stateInvariantError(state)
+  if (invariantError === lastReportedInvariant) {
+    return
+  }
+
+  lastReportedInvariant = invariantError
+  if (invariantError) {
+    logTapooDiagnostic(state.controlMode, "error", invariantError, {
+      status: state.status,
+      clockPaused: state.clock?.isPaused ?? null,
+      level: state.level,
+    })
+  }
+}
+
 // renderState pushes the current game state into the terminal-like renderer.
 function renderState(): void {
   if (!runtimeElements) {
     return
   }
 
-  const invariantError = stateInvariantError(state)
-  if (invariantError) {
-    throw new Error(invariantError)
-  }
-
+  reportStateInvariant()
   lastBlinkVisible = currentBlinkVisible()
   render(runtimeElements, state)
 }

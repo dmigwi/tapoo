@@ -5,7 +5,7 @@ import {
 } from "./config"
 import { normalizeAgentEndpoint } from "./agent/config"
 import { isAgentSeatId } from "./agent/seats"
-import { canPersistRoundStatus, isAgentApiMode, stateInvariantError } from "./status"
+import { canPersistRoundStatus, hasActiveRoundState, isAgentApiMode } from "./status"
 import {
   cloneMazeDimensions,
   cloneMazeRows,
@@ -518,15 +518,7 @@ export function saveGameProgress(
 
 // buildRoundSnapshot extracts the restorable round state from the live runtime.
 function buildRoundSnapshot(state: State): PersistedRound | null {
-  if (
-    !state.mazeDimensions ||
-    !state.maze ||
-    !state.startPosition ||
-    !state.playerPosition ||
-    state.traversalHistory.length === 0 ||
-    !state.finalPosition ||
-    !canPersistRoundStatus(state.status)
-  ) {
+  if (!hasActiveRoundState(state) || !canPersistRoundStatus(state.status)) {
     return null
   }
 
@@ -612,11 +604,9 @@ export function saveActiveRoundSnapshot(
   modeName: MazeControlModeName,
   state: State,
 ): void {
-  const invariantError = stateInvariantError(state)
-  if (invariantError) {
-    throw new Error(invariantError)
-  }
-
+  // No invariant check here: buildRoundSnapshot already refuses a round missing any of the fields
+  // hasActiveRoundState requires, and storage cannot report one anyway — logs.ts imports storage,
+  // so importing it back would be circular. game.ts owns the state and does the reporting.
   saveRound(modeName, buildRoundSnapshot(state))
 }
 

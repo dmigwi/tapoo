@@ -13,6 +13,9 @@ import {
   saveGameProgress,
   savePersistedAgentApiConfigs,
 } from "./storage"
+// The real guard rather than a local copy: loadPersistedSnapshot takes it from its caller, so a copy
+// here would let these tests keep accepting weights production had already stopped accepting.
+import { isWallWeight } from "./traversal"
 import type { State, TraversalHistoryEntry } from "./types"
 
 const MODE = CONFIG.runtime.controlModes.interactive
@@ -44,11 +47,6 @@ function versionedStorageKey(
   suffix: string,
 ): string {
   return `tapoo.v${version}.${mode}.${suffix}`
-}
-
-// isWallWeight mirrors the production wall-weight guard for persistence tests.
-function isWallWeight(value: number): value is 1 | 2 | 3 {
-  return value === 1 || value === 2 || value === 3
 }
 
 // createMemoryStorage provides a minimal Storage implementation for browser persistence tests.
@@ -615,10 +613,20 @@ describe("storage", () => {
     expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })
 
-  it("rejects internally inconsistent state before saving the active round", () => {
-    expect(() => {
-      saveActiveRoundSnapshot(MODE, createState({ status: "paused", clock: null }))
-    }).toThrow("invalid game state: paused status requires a paused clock")
+  it("still saves a round whose clock disagrees with its status", () => {
+    // Reporting an inconsistent status belongs to game.ts, which owns the state and can log it.
+    // Storage must not refuse the write: remainingMs falls back to the full round duration when
+    // the clock is missing, so the snapshot still restores, and dropping it would lose real
+    // progress over a discrepancy that is recoverable.
+    saveActiveRoundSnapshot(MODE, createState({ status: "paused", clock: null }))
+
+    expect(window.sessionStorage.getItem(storageKey("round"))).not.toBeNull()
+  })
+
+  it("refuses to save a round missing the data needed to restore it", () => {
+    // buildRoundSnapshot is the real gate: without a maze there is nothing to redraw, so no
+    // snapshot is written regardless of status.
+    saveActiveRoundSnapshot(MODE, createState({ status: "paused", maze: null }))
 
     expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })

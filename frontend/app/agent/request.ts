@@ -15,7 +15,7 @@ import {
   previewLoggedMessage,
   previewLoggedTool,
   serializeToolResult,
-} from "./config"
+} from "./protocol"
 import { resolveBatchEfficiencyRank } from "./efficiency"
 import type {
   AgentChatMessage,
