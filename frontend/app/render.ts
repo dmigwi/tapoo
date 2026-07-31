@@ -184,13 +184,13 @@ function buildMazeLines(state: State): string[] {
       continue
     }
 
-    lines[point.y] = replaceAt(lines[point.y], point.x * maze.cellSpan, maze.visitedCellMarker)
+    lines[point.y] = replaceAt(lines[point.y], point.x * maze.renderCellStep, maze.visitedCellMarker)
   }
 
   if (state.finalPosition && shouldDrawDestination(state)) {
     lines[state.finalPosition.y] = replaceAt(
       lines[state.finalPosition.y],
-      state.finalPosition.x * maze.cellSpan,
+      state.finalPosition.x * maze.renderCellStep,
       maze.destinationMarker,
     )
   }
@@ -198,7 +198,7 @@ function buildMazeLines(state: State): string[] {
   if (state.playerPosition) {
     lines[state.playerPosition.y] = replaceAt(
       lines[state.playerPosition.y],
-      state.playerPosition.x * maze.cellSpan,
+      state.playerPosition.x * maze.renderCellStep,
       maze.playerMarker,
     )
   }
@@ -316,8 +316,7 @@ function applyOverlayToMaze(
 
   const overlayStartRow = Math.floor(mazeLines.length / 2)
   const overlayRowStride = overlay.length > 1 ? 2 : 1
-  const overlayEndRow =
-    overlayStartRow + (overlay.length - 1) * overlayRowStride
+  const overlayEndRow = overlayStartRow + (overlay.length - 1) * overlayRowStride
   const clearStartRow = Math.max(0, overlayStartRow - 1)
   const clearEndRow = overlayEndRow + 1
 

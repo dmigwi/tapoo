@@ -575,9 +575,11 @@ export type AppConfig = {
     visitedCellMarker: string
     destinationMarker: string
     walls: Record<WallWeight, [string, string, string]>
-    cellSpan: number
-    cellPathWidth: number
-    moveStep: number
+    renderCellStep: number
+    wallOpening: {
+      horizontal: number
+      vertical: number
+    }
     leftPadding: number
     minMazeSideCells: number
   }

@@ -30,16 +30,16 @@ export const MOVE_ACTIONS = Object.keys(MOVE_DELTAS) as MoveAction[]
 // cellCoordinateFromGridPoint converts one rendered maze-grid point into a logical cell position.
 export function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate {
   return {
-    row: Math.floor((position.y - 1) / maze.cellSpan),
-    col: Math.floor((position.x - 1) / maze.cellSpan),
+    row: Math.floor((position.y - 1) / maze.renderCellStep),
+    col: Math.floor((position.x - 1) / maze.renderCellStep),
   }
 }
 
 // gridPointFromCellCoordinate expands a logical cell position back into rendered maze-grid space.
 export function gridPointFromCellCoordinate(cell: CellCoordinate): RenderGridPoint {
   return {
-    x: cell.col * maze.cellSpan + 1,
-    y: cell.row * maze.cellSpan + 1,
+    x: cell.col * maze.renderCellStep + 1,
+    y: cell.row * maze.renderCellStep + 1,
   }
 }
 
@@ -263,14 +263,14 @@ export function resolvePlayerMove(
 
   const [rowDelta, columnDelta] = MOVE_DELTAS[action]
   const { x, y } = state.playerPosition
-  const nextY = y + rowDelta * maze.moveStep
-  const nextX = x + columnDelta * maze.moveStep
+  const nextY = y + rowDelta * maze.renderCellStep
+  const nextX = x + columnDelta * maze.renderCellStep
 
-  if (nextY <= 0 || nextY > state.mazeDimensions.numRows * maze.cellSpan) {
+  if (nextY <= 0 || nextY > state.mazeDimensions.numRows * maze.renderCellStep) {
     return { canMove: false }
   }
 
-  if (nextX <= 0 || nextX > state.mazeDimensions.numCols * maze.cellSpan) {
+  if (nextX <= 0 || nextX > state.mazeDimensions.numCols * maze.renderCellStep) {
     return { canMove: false }
   }
 
@@ -367,7 +367,7 @@ export function isValidPersistedRound(snapshot: PersistedRound): boolean {
   }
 
   // The stored maze grid must match the dimensions used to generate it.
-  const expectedRows = maze.cellSpan * snapshot.mazeDimensions.numRows + 1
+  const expectedRows = maze.renderCellStep * snapshot.mazeDimensions.numRows + 1
   const expectedColumns = snapshot.mazeDimensions.numCols * 2 + 1
   if (snapshot.maze.length !== expectedRows) {
     return false

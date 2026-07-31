@@ -70,8 +70,7 @@ export function calculateScoreRetentionUnits(
 
   const halfMaxScoreRoundingOffset = Math.floor(maxScore / 2)
   // retentionFullScaleUnits represents 100%, keeping retention precise without floating points.
-  const scaledRetentionUnits =
-    score * scoring.retentionFullScaleUnits + halfMaxScoreRoundingOffset
+  const scaledRetentionUnits = score * scoring.retentionFullScaleUnits + halfMaxScoreRoundingOffset
   const roundedRetentionUnits = Math.floor(scaledRetentionUnits / maxScore)
 
   return clampRetentionUnits(roundedRetentionUnits)
@@ -89,8 +88,7 @@ export function calculateTraversalSpeedUnits(
   }
 
   const halfDecayRoundingOffset = Math.floor(scoreDecayUnits / 2)
-  const scaledSpeedUnits =
-    uniqueCellsVisited * scoring.traversalSpeedScaleUnits + halfDecayRoundingOffset
+  const scaledSpeedUnits = uniqueCellsVisited * scoring.traversalSpeedScaleUnits + halfDecayRoundingOffset
 
   return Math.max(0, Math.floor(scaledSpeedUnits / scoreDecayUnits))
 }
@@ -112,8 +110,8 @@ function formatTraversalSpeedLabel(traversalSpeedUnits: number): string {
 
   return [
     traversalSpeedUnitsToDisplay(traversalSpeedUnits),
-    ` (${rank.charAt(0).toUpperCase()}${rank.slice(1)})`,
-  ].join("")
+    `(${rank.charAt(0).toUpperCase()}${rank.slice(1)})`,
+  ].join(" ")
 }
 
 // retentionUnitsToDisplayPercent converts fixed-point retention units into UI percentage text.
@@ -144,21 +142,9 @@ export function buildWinSummary(
   bestWinRetentionUnits: number | null,
   levelDurationMs: number,
 ): string {
-  const previous = compareWinSummaryPrevious(
-    currentRetentionUnits,
-    lastAttemptRetentionUnits,
-    levelDurationMs,
-  )
-  const best = compareWinSummaryBest(
-    currentRetentionUnits,
-    bestWinRetentionUnits,
-    levelDurationMs,
-  )
-  const template = selectWinSummaryTemplate(
-    previous.comparison,
-    best.comparison,
-  )
-
+  const previous = compareWinSummaryPrevious(currentRetentionUnits, lastAttemptRetentionUnits, levelDurationMs)
+  const best = compareWinSummaryBest(currentRetentionUnits, bestWinRetentionUnits, levelDurationMs)
+  const template = selectWinSummaryTemplate(previous.comparison, best.comparison)
   return replaceWinSummaryDelta(template, previous.delta, best.delta)
 }
 

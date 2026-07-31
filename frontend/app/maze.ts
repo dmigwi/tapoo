@@ -217,8 +217,8 @@ function createPlayingField(
   weight: WallWeight,
 ): string[][] {
   const chars = getWallCharacters(weight)
-  const rows = mazeConfig.cellSpan * dimensions.numRows + 1
-  const path = " ".repeat(mazeConfig.cellPathWidth)
+  const rows = mazeConfig.renderCellStep * dimensions.numRows + 1
+  const horizontalOpening = " ".repeat(mazeConfig.wallOpening.horizontal)
   const data: string[][] = []
 
   for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
@@ -234,7 +234,7 @@ function createPlayingField(
       if (columnIndex !== dimensions.numCols && rowIndex % 2 === 0) {
         row.push(chars[1])
       } else if (columnIndex !== dimensions.numCols) {
-        row.push(path)
+        row.push(horizontalOpening)
       }
     }
 
@@ -253,17 +253,17 @@ function getCellAddress(
     return null
   }
 
-  const row = (Math.floor((cellNo - 1) / dimensions.numCols) + 1) * mazeConfig.cellSpan
-  const column = (((cellNo - 1) % dimensions.numCols) + 1) * mazeConfig.cellSpan
+  const row = (Math.floor((cellNo - 1) / dimensions.numCols) + 1) * mazeConfig.renderCellStep
+  const column = (((cellNo - 1) % dimensions.numCols) + 1) * mazeConfig.renderCellStep
 
   return {
-    __topLeft: { x: column - mazeConfig.cellSpan, y: row - mazeConfig.cellSpan },
-    __topCenter: { x: column - 1, y: row - mazeConfig.cellSpan },
-    __topRight: { x: column, y: row - mazeConfig.cellSpan },
-    __middleLeft: { x: column - mazeConfig.cellSpan, y: row - 1 },
+    __topLeft: { x: column - mazeConfig.renderCellStep, y: row - mazeConfig.renderCellStep },
+    __topCenter: { x: column - 1, y: row - mazeConfig.renderCellStep },
+    __topRight: { x: column, y: row - mazeConfig.renderCellStep },
+    __middleLeft: { x: column - mazeConfig.renderCellStep, y: row - 1 },
     __middleCenter: { x: column - 1, y: row - 1 },
     __middleRight: { x: column, y: row - 1 },
-    __bottomLeft: { x: column - mazeConfig.cellSpan, y: row },
+    __bottomLeft: { x: column - mazeConfig.renderCellStep, y: row },
     __bottomCenter: { x: column - 1, y: row },
     __bottomRight: { x: column, y: row },
   }
@@ -552,20 +552,22 @@ function createPath(
     return
   }
 
+  const horizontalOpening = " ".repeat(mazeConfig.wallOpening.horizontal)
+  const verticalOpening = " ".repeat(mazeConfig.wallOpening.vertical)
   const neighbors = getCellNeighbors(dimensions, currentCellNo)
 
   switch (nextCellNo) {
     case neighbors.__bottom:
-      maze[address.__bottomCenter.y][address.__bottomCenter.x] = "   "
+      maze[address.__bottomCenter.y][address.__bottomCenter.x] = horizontalOpening
       break
     case neighbors.__left:
-      maze[address.__middleLeft.y][address.__middleLeft.x] = " "
+      maze[address.__middleLeft.y][address.__middleLeft.x] = verticalOpening
       break
     case neighbors.__right:
-      maze[address.__middleRight.y][address.__middleRight.x] = " "
+      maze[address.__middleRight.y][address.__middleRight.x] = verticalOpening
       break
     case neighbors.__top:
-      maze[address.__topCenter.y][address.__topCenter.x] = "   "
+      maze[address.__topCenter.y][address.__topCenter.x] = horizontalOpening
       break
   }
 }
@@ -587,7 +589,7 @@ function replaceChar(
     hasTop = true
   }
 
-  if (point.y + 1 <= dimensions.numRows * mazeConfig.cellSpan) {
+  if (point.y + 1 <= dimensions.numRows * mazeConfig.renderCellStep) {
     bottomItem = maze[point.y + 1][point.x]
     hasBottom = true
   }

@@ -124,12 +124,12 @@ function createTraversalMock({
   reweightMaze?: (maze: string[][]) => string[][]
 } = {}) {
   const cellCoordinateFromGridPoint = ({ x, y }: { x: number; y: number }) => ({
-    row: Math.floor((y - 1) / CONFIG.maze.cellSpan),
-    col: Math.floor((x - 1) / CONFIG.maze.cellSpan),
+    row: Math.floor((y - 1) / CONFIG.maze.renderCellStep),
+    col: Math.floor((x - 1) / CONFIG.maze.renderCellStep),
   })
   const gridPointFromCellCoordinate = ({ row, col }: { row: number; col: number }) => ({
-    x: col * CONFIG.maze.cellSpan + 1,
-    y: row * CONFIG.maze.cellSpan + 1,
+    x: col * CONFIG.maze.renderCellStep + 1,
+    y: row * CONFIG.maze.renderCellStep + 1,
   })
   const mazeCellKey = ({ row, col }: { row: number; col: number }) => `${row}:${col}`
   const traversalHistoryIncludes = (
@@ -246,16 +246,16 @@ function createTraversalMock({
         MoveDown: [1, 0],
       }
       const [rowDelta, columnDelta] = deltas[action]
-      const nextY = state.playerPosition.y + rowDelta * CONFIG.maze.moveStep
-      const nextX = state.playerPosition.x + columnDelta * CONFIG.maze.moveStep
+      const nextY = state.playerPosition.y + rowDelta * CONFIG.maze.renderCellStep
+      const nextX = state.playerPosition.x + columnDelta * CONFIG.maze.renderCellStep
       const probeY = state.playerPosition.y + rowDelta
       const probeX = state.playerPosition.x + columnDelta
 
-      if (nextY <= 0 || nextY > state.mazeDimensions.numRows * CONFIG.maze.cellSpan) {
+      if (nextY <= 0 || nextY > state.mazeDimensions.numRows * CONFIG.maze.renderCellStep) {
         return { canMove: false }
       }
 
-      if (nextX <= 0 || nextX > state.mazeDimensions.numCols * CONFIG.maze.cellSpan) {
+      if (nextX <= 0 || nextX > state.mazeDimensions.numCols * CONFIG.maze.renderCellStep) {
         return { canMove: false }
       }
 

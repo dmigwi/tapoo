@@ -201,11 +201,13 @@ export const CONFIG: AppConfig = {
       2: ["╏", "╍╍╍", "╍"],
       3: ["║", "===", "="],
     },
-    cellSpan: 2,
-    cellPathWidth: 3,
-    moveStep: 2,
-    leftPadding: 3,
-    minMazeSideCells: 5,
+    wallOpening: {
+      horizontal: 3, // Replaces a horizontal wall segment like "---" with 3 spaces.
+      vertical: 1, // Replaces a vertical wall segment like "|" with 1 space.
+    },
+    renderCellStep: 2, // Distance in rendered-grid units between neighboring logical cell centers.
+    leftPadding: 3, // Visual spaces added before each rendered maze row.
+    minMazeSideCells: 5, // Smallest allowed logical cells per maze side.
   },
   // Maze-generation tuning controls level growth and navigation difficulty.
   generation: {
