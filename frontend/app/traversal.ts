@@ -43,9 +43,36 @@ export function gridPointFromCellCoordinate(cell: CellCoordinate): RenderGridPoi
   }
 }
 
+function gridPointsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean {
+  return left.x === right.x && left.y === right.y
+}
+
 // mazeCellKey builds a stable string key for deduplicating logical maze cells.
 export function mazeCellKey(cell: CellCoordinate): string {
   return `${cell.row}:${cell.col}`
+}
+
+function isRenderGridPoint(value: unknown): value is RenderGridPoint {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("x" in value) ||
+    !("y" in value)
+  ) {
+    return false
+  }
+
+  const x = value.x
+  const y = value.y
+
+  return (
+    typeof x === "number" &&
+    typeof y === "number" &&
+    Number.isInteger(x) &&
+    Number.isInteger(y) &&
+    x >= 0 &&
+    y >= 0
+  )
 }
 
 // isCellCoordinate validates one zero-based logical cell coordinate.
@@ -354,12 +381,15 @@ export function isValidPersistedRound(snapshot: PersistedRound): boolean {
     return false
   }
 
-  // Player and destination positions must both point at open maze cells.
-  if (!isTraversableGridPoint(snapshot.maze, snapshot.playerPosition)) {
-    return false
-  }
-
-  if (!isTraversableGridPoint(snapshot.maze, snapshot.finalPosition)) {
+  // Start, player, and destination positions must all be valid open maze cells.
+  if (
+    !isRenderGridPoint(snapshot.startPosition) ||
+    !isRenderGridPoint(snapshot.playerPosition) ||
+    !isRenderGridPoint(snapshot.finalPosition) ||
+    !isTraversableGridPoint(snapshot.maze, snapshot.startPosition) ||
+    !isTraversableGridPoint(snapshot.maze, snapshot.playerPosition) ||
+    !isTraversableGridPoint(snapshot.maze, snapshot.finalPosition)
+  ) {
     return false
   }
 
@@ -379,6 +409,10 @@ export function isValidPersistedRound(snapshot: PersistedRound): boolean {
       gridPointFromCellCoordinate(snapshot.startCell),
     )
   ) {
+    return false
+  }
+
+  if (!gridPointsEqual(snapshot.startPosition, gridPointFromCellCoordinate(snapshot.startCell))) {
     return false
   }
 

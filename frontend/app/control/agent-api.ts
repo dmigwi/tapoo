@@ -6,12 +6,13 @@ import { recordAgentTurnStats } from "../storage"
 import { isLostStatus, isRunningStatus, isWonStatus } from "../status"
 import type {
   AgentApiConfig,
+  AgentPredictionFailure,
+  AgentPredictionRequest,
   MazeAction,
   MazeActionDispatch,
   MazeActionResult,
   State,
 } from "../types"
-import type { AgentPredictionFailure, AgentPredictionRequest } from "../agent/request"
 
 const { runtime, scoring, timing } = CONFIG
 const { agentBaseDecayUnits, agentPenaltyDecayUnits } = scoring

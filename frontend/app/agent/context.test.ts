@@ -34,7 +34,7 @@ function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
     endpoint: new URL("https://agents.example/chat"),
     enabled: true,
     gameLevel: 4,
-    requestsCount: 2,
+    turnCount: 2,
     decayUnitsCharged: 2,
     ...overrides,
   }
@@ -89,6 +89,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "   ", " ", "   ", "|"],
       ["|", "---", "|", "---", "|"],
     ],
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     traversalHistory: [selfVisit(0, 0, ["MoveRight"]), agentVisit(0, 1, "Blue", ["MoveRight"])],
     finalPosition: { x: 3, y: 1 },
@@ -102,7 +103,7 @@ function createState(overrides: Partial<State> = {}): State {
     winSummary: "",
     wallWeight: 1,
     scoreDecayUnits: 0,
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,
     ...overrides,
@@ -158,7 +159,7 @@ describe("agent context", () => {
       suggestedMovesPerTurn: 4,
       uniqueCellsVisited: 1,
       decayUnitsCharged: 2,
-      requestsMade: 2,
+      turnsTaken: 2,
       batchEfficiencyRank: "backtracker",
       expectedResponseSchema,
     })
@@ -174,14 +175,14 @@ describe("agent context", () => {
   })
 
   it("defaults a fresh agent's prediction rules to a trailblazer level regardless of raw counts", () => {
-    const freshAgent = createAgent({ requestsCount: undefined, decayUnitsCharged: undefined })
+    const freshAgent = createAgent({ turnCount: undefined, decayUnitsCharged: undefined })
     const toolHandlers = buildAgentToolHandlers(createState(), null, freshAgent)
 
     expect(toolHandlers.get_prediction_rules({})).toEqual({
       suggestedMovesPerTurn: 4,
       uniqueCellsVisited: 1,
       decayUnitsCharged: 0,
-      requestsMade: 0,
+      turnsTaken: 0,
       batchEfficiencyRank: "trailblazer",
       expectedResponseSchema,
     })

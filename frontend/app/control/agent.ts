@@ -53,10 +53,6 @@ type AgentButtonBinding = {
 // clock or maze grid, keeping diagnostics useful while avoiding large circular-ish payloads.
 function logAgentRoundCompletion({ __actionResult, __state, __agent }: AgentRoundState): void {
   const outcome = __state.status
-  // lastSubmittedMovesSchema is a fixed JSON Schema, byte-identical on every result, so it is
-  // dropped from the entry. Copied rather than cleared in place: __actionResult is the same object
-  // agent-api.ts holds as lastActionResult and hands to the context tools, so clearing the field
-  // here would strip it from live game state as a side effect of logging.
   const result: MazeActionResult = { ...__actionResult, lastSubmittedMovesSchema: undefined }
 
   logTapooDiagnostic(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
@@ -71,13 +67,14 @@ function logAgentRoundCompletion({ __actionResult, __state, __agent }: AgentRoun
     score: __state.score,
     lastRoundScore: __state.lastRoundScore,
     winSummary: __state.winSummary,
-    agentRequestCount: __state.agentRequestCount,
+    turnCount: __state.turnCount,
     cumulativeRoundCount: __state.cumulativeRoundCount,
     mazeDimensions: __state.mazeDimensions,
+    startPosition: __state.startPosition,
     playerPosition: __state.playerPosition,
     finalPosition: __state.finalPosition,
     // Only the count: an entry per visited cell is the largest thing in State, and it grew again
-    // when openMoves became a resolved adjacency map. Paired with agentRequestCount it still gives
+    // when openMoves became a resolved adjacency map. Paired with turnCount it still gives
     // the cells-per-request efficiency these entries are read for.
     uniqueCellsVisited: __state.traversalHistory.length,
     lastActionResult: result,
@@ -211,7 +208,6 @@ export function createAgentMode(
         agent: AgentApiConfig,
       ): MazeActionResult => {
         const actionResult = nextDispatch(action, {
-          model: agent.model,
           wantFeedback: true,
           playerName: agent.playerName,
         })

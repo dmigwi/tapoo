@@ -4,6 +4,7 @@ import type {
   GameStatus,
   MazeControlModeName,
   PersistedGameStatus,
+  State,
 } from "./types"
 
 const { controlModes } = CONFIG.runtime
@@ -147,4 +148,46 @@ export function canShowRestart(status: GameStatus): boolean {
   return (
     canProceedStatus(status) || isTooSmallStatus(status)
   )
+}
+
+function hasActiveRoundState(state: State): boolean {
+  return (
+    state.mazeDimensions !== null &&
+    state.maze !== null &&
+    state.startPosition !== null &&
+    state.playerPosition !== null &&
+    state.finalPosition !== null &&
+    state.traversalHistory.length > 0
+  )
+}
+
+// stateInvariantError reports impossible status/state combinations before rendering or persistence.
+export function stateInvariantError(state: State): string | null {
+  // Paused status must freeze time too; otherwise a paused screen would keep burning score.
+  if (isPausedStatus(state.status) && !state.clock?.isPaused) {
+    return "invalid game state: paused status requires a paused clock"
+  }
+
+  // Running status must not carry a frozen clock, or movement and score display drift apart.
+  if (isRunningStatus(state.status) && state.clock?.isPaused) {
+    return "invalid game state: running status requires an active clock"
+  }
+
+  // Playable or resumable states need enough round data to redraw and persist the same maze.
+  if (
+    (isRunningStatus(state.status) ||
+      isPausedStatus(state.status) ||
+      isFinishedStatus(state.status) ||
+      isAwaitAgentStatus(state.status)) &&
+    !hasActiveRoundState(state)
+  ) {
+    return `invalid game state: ${state.status} status requires an active round`
+  }
+
+  // Boot and too-small are non-round screens, so retaining maze data there risks stale redraws.
+  if ((isTooSmallStatus(state.status) || state.status === "boot") && hasActiveRoundState(state)) {
+    return `invalid game state: ${state.status} status cannot keep an active round`
+  }
+
+  return null
 }

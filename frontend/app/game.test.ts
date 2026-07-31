@@ -297,6 +297,7 @@ function createPersistedWonRound(): PersistedRound {
       ["|", "   ", "|"],
       ["|", "---", "|"],
     ],
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     startCell: { row: 0, col: 0 },
     traversalHistory: [selfVisit(0, 0)],
@@ -421,6 +422,10 @@ async function bootstrapHarness({
       constructor(levelDurationMs: number) {
         this.levelDurationMs = levelDurationMs
         this.remainingValue = levelDurationMs
+      }
+
+      get isPaused(): boolean {
+        return this.pausedAt !== 0
       }
     }
 
@@ -807,7 +812,7 @@ describe("bootstrapGame", () => {
 
     const actionResult = harness.runtime.dispatch(
       { type: "MoveRight" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
     expect(harness.mode.readLastActionResult()).toEqual(actionResult)
 
@@ -821,7 +826,7 @@ describe("bootstrapGame", () => {
     expect(state.level).toBe(1)
     expect(state.status).toBe("running")
     expect(state.scoreDecayUnits).toBe(0)
-    expect(state.agentRequestCount).toBe(0)
+    expect(state.turnCount).toBe(0)
     expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
   })
 
@@ -1091,6 +1096,7 @@ describe("bootstrapGame", () => {
       level: 1,
       mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
       maze: createHorizontalRound().maze,
+      startPosition: { x: 1, y: 1 },
       playerPosition: { x: 1, y: 1 },
       startCell: { row: 0, col: 0 },
       traversalHistory: [selfVisit(0, 0)],
@@ -1175,6 +1181,7 @@ describe("bootstrapGame", () => {
         level: 1,
         mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
         maze: createHorizontalRound().maze,
+        startPosition: { x: 1, y: 1 },
         playerPosition: { x: 1, y: 1 },
         startCell: { row: 0, col: 0 },
         traversalHistory: [selfVisit(0, 0)],
@@ -1209,6 +1216,7 @@ describe("bootstrapGame", () => {
       level: 2,
       mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
       maze: createHorizontalRound().maze,
+      startPosition: { x: 1, y: 1 },
       playerPosition: { x: 3, y: 1 },
       startCell: { row: 0, col: 0 },
       traversalHistory: [selfVisit(0, 0), selfVisit(0, 0)],
@@ -1310,7 +1318,7 @@ describe("bootstrapGame", () => {
 
     const actionResult = harness.runtime.dispatch(
       { type: "MoveRight" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
 
     state = latestRenderedState(harness.render)

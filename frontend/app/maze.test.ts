@@ -5,14 +5,18 @@ import {
   getNavigationProfile,
   getMazeDimensions,
 } from "./maze"
-import { openMovesFromCell } from "./traversal"
-import type { BaseDimensions } from "./types"
+import { createMazeDimensions, openMovesFromCell } from "./traversal"
+import type { BaseDimensions, LevelDimensions } from "./types"
 
 // This modeled terminal room approximates a 14-inch MacBook-class browser viewport:
 // physical panel 3024x1964px, CSS viewport about 1512x982px after device scaling,
 // 10 measured PT Mono sample characters about 60 CSS px, and one text row about 11 CSS px.
 // After app insets are removed, the browser maze receives 61 columns by 39 rows of room.
 const macbookBrowserTerminalSize = { numCols: 61, numRows: 39 }
+
+function createLevelDimensions(level: number, dimensions: BaseDimensions): LevelDimensions {
+  return { ...createMazeDimensions(dimensions), level }
+}
 
 // These tests keep maze sizing, navigation tuning, and deterministic carving stable.
 describe("maze", () => {
@@ -78,22 +82,22 @@ describe("maze", () => {
   })
 
   it("tightens the navigation profile as maze area grows", () => {
-    expect(getNavigationProfile({ numCols: 10, numRows: 11 })).toEqual({
+    expect(getNavigationProfile(createMazeDimensions({ numCols: 10, numRows: 11 }))).toEqual({
       __maxCorridorLength: 10,
       __leastNeighborsBias: 100,
     })
 
-    expect(getNavigationProfile({ numCols: 20, numRows: 20 })).toEqual({
+    expect(getNavigationProfile(createMazeDimensions({ numCols: 20, numRows: 20 }))).toEqual({
       __maxCorridorLength: 7,
       __leastNeighborsBias: 57,
     })
 
-    expect(getNavigationProfile({ numCols: 30, numRows: 30 })).toEqual({
+    expect(getNavigationProfile(createMazeDimensions({ numCols: 30, numRows: 30 }))).toEqual({
       __maxCorridorLength: 5,
       __leastNeighborsBias: 28,
     })
 
-    expect(getNavigationProfile({ numCols: 60, numRows: 60 })).toEqual({
+    expect(getNavigationProfile(createMazeDimensions({ numCols: 60, numRows: 60 }))).toEqual({
       __maxCorridorLength: 3,
       __leastNeighborsBias: 0,
     })
@@ -103,7 +107,7 @@ describe("maze", () => {
     // junctionFraction generates one maze and returns the share of cells with 3+ open exits.
     // Verifies the real chooseNextCell wiring, not just the simulation the bias was derived from.
     const junctionFraction = (dimensions: BaseDimensions): number => {
-      const { maze } = generateMaze(dimensions, 1)
+      const { maze } = generateMaze(createLevelDimensions(1, dimensions), 1)
       let junctions = 0
       let total = 0
 
@@ -144,7 +148,7 @@ describe("maze", () => {
       return array
     })
 
-    const round = generateMaze({ numCols: 5, numRows: 5 }, 1)
+    const round = generateMaze(createLevelDimensions(1, { numCols: 5, numRows: 5 }), 1)
 
     expect(round).toMatchSnapshot()
     expect(round.startPosition).not.toEqual(round.finalPosition)

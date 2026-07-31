@@ -39,6 +39,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "-", "---", "|"],
     ],
     mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 3, y: 1 },
@@ -52,7 +53,7 @@ function createState(overrides: Partial<State> = {}): State {
     winSummary: "",
     wallWeight: 1,
     scoreDecayUnits: 0,
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,
     ...overrides,
@@ -76,6 +77,7 @@ function createPersistedRound(
     // openMoves must reflect the actual maze above, since isValidPersistedRound now recomputes
     // and cross-checks it against the restored maze rather than trusting the stored value.
     traversalHistory: [traversalHistoryEntry({ row: 0, col: 0 }, "Self", persistedRoundMaze)],
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     finalPosition: { x: 3, y: 1 },
     wallWeight: 1,
@@ -263,7 +265,25 @@ describe("traversal", () => {
     expect(
       isValidPersistedRound(
         createPersistedRound({
+          startPosition: { x: 2, y: 0 },
+        }),
+      ),
+    ).toBe(false)
+
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
           playerPosition: { x: 2, y: 0 },
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it("rejects a persisted round whose start position disagrees with its start cell", () => {
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
+          startPosition: { x: 3, y: 1 },
         }),
       ),
     ).toBe(false)

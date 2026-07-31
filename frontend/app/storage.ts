@@ -5,7 +5,7 @@ import {
 } from "./config"
 import { normalizeAgentEndpoint } from "./agent/config"
 import { isAgentSeatId } from "./agent/seats"
-import { canPersistRoundStatus, isAgentApiMode } from "./status"
+import { canPersistRoundStatus, isAgentApiMode, stateInvariantError } from "./status"
 import {
   cloneMazeDimensions,
   cloneMazeRows,
@@ -164,7 +164,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   const disabledReasonValue = "disabledReason" in value ? value.disabledReason : undefined
   const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
   const gameLevel = "gameLevel" in value ? value.gameLevel : undefined
-  const requestsCount = "requestsCount" in value ? value.requestsCount : undefined
+  const turnCount = "turnCount" in value ? value.turnCount : undefined
   const decayUnitsCharged = "decayUnitsCharged" in value ? value.decayUnitsCharged : undefined
   const cumulativeRoundCount = "cumulativeRoundCount" in value ? value.cumulativeRoundCount : undefined
   const endpointValue = value.endpoint
@@ -186,7 +186,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
     (lastErrorAt === undefined || (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt))) &&
     (gameLevel === undefined || (typeof gameLevel === "number" && Number.isInteger(gameLevel) && gameLevel >= 0)) &&
     (cumulativeRoundCount === undefined || (typeof cumulativeRoundCount === "number" && Number.isInteger(cumulativeRoundCount) && cumulativeRoundCount >= 0)) &&
-    (requestsCount === undefined || (typeof requestsCount === "number" && Number.isInteger(requestsCount) && requestsCount >= 0)) &&
+    (turnCount === undefined || (typeof turnCount === "number" && Number.isInteger(turnCount) && turnCount >= 0)) &&
     (decayUnitsCharged === undefined || (typeof decayUnitsCharged === "number" && Number.isInteger(decayUnitsCharged) && decayUnitsCharged >= 0))
   ) {
     const disabledReason = disabledReasonValue === "network-error" ? disabledReasonValue : undefined
@@ -200,7 +200,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
       ...(disabledReason ? { disabledReason } : {}),
       ...(typeof gameLevel === "number" ? { gameLevel } : {}),
       ...(typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
-      ...(typeof requestsCount === "number" ? { requestsCount } : {}),
+      ...(typeof turnCount === "number" ? { turnCount } : {}),
       ...(typeof decayUnitsCharged === "number" ? { decayUnitsCharged } : {}),
       ...(typeof cumulativeRoundCount === "number" ? { cumulativeRoundCount } : {}),
     }
@@ -320,7 +320,7 @@ export function disableAgentApiConfigForNetworkError(
 //     cumulativeRoundCount value an old, unrelated agent record already holds. gameLevel is
 //     what catches that collision, since the new round's level will almost never match the
 //     stale record's level. Dropping gameLevel would let a post-reset session silently inherit
-//     a stale requestsCount from a prior session, corrupting the batchEfficiencyLevel an agent
+//     a stale turnCount from a prior session, corrupting the batchEfficiencyLevel an agent
 //     is scored against.
 export function recordAgentTurnStats(
   turnAgent: AgentApiConfig,
@@ -336,13 +336,13 @@ export function recordAgentTurnStats(
     }
 
     const isSameAttempt = agent.gameLevel === level && agent.cumulativeRoundCount === cumulativeRoundCount
-    const priorRequestsCount = isSameAttempt ? (agent.requestsCount ?? 0) : 0
+    const priorTurnCount = isSameAttempt ? (agent.turnCount ?? 0) : 0
     const priorDecayUnitsCharged = isSameAttempt ? (agent.decayUnitsCharged ?? 0) : 0
     updatedAgent = {
       ...agent,
       gameLevel: level,
       cumulativeRoundCount,
-      requestsCount: priorRequestsCount + 1,
+      turnCount: priorTurnCount + 1,
       decayUnitsCharged: priorDecayUnitsCharged + chargedDecayUnits,
     }
 
@@ -521,6 +521,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
   if (
     !state.mazeDimensions ||
     !state.maze ||
+    !state.startPosition ||
     !state.playerPosition ||
     state.traversalHistory.length === 0 ||
     !state.finalPosition ||
@@ -548,6 +549,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     maze: cloneMazeRows(state.maze),
     startCell,
     traversalHistory: cloneTraversalHistory(state.traversalHistory),
+    startPosition: cloneRenderGridPoint(state.startPosition),
     playerPosition: cloneRenderGridPoint(state.playerPosition),
     finalPosition: cloneRenderGridPoint(state.finalPosition),
     wallWeight: state.wallWeight,
@@ -557,7 +559,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     remainingMs,
     winSummary: state.winSummary,
     scoreDecayUnits: state.scoreDecayUnits,
-    agentRequestCount: state.agentRequestCount,
+    turnCount: state.turnCount,
     cumulativeRoundCount: state.cumulativeRoundCount,
   }
 }
@@ -610,6 +612,11 @@ export function saveActiveRoundSnapshot(
   modeName: MazeControlModeName,
   state: State,
 ): void {
+  const invariantError = stateInvariantError(state)
+  if (invariantError) {
+    throw new Error(invariantError)
+  }
+
   saveRound(modeName, buildRoundSnapshot(state))
 }
 

@@ -5,8 +5,9 @@ import {
   canProceedStatus,
   canShowRestart,
   canShowWallsStatus,
+  stateInvariantError,
 } from "./status"
-import type { GameStatus, PersistedGameStatus } from "./types"
+import type { GameStatus, PersistedGameStatus, State } from "./types"
 
 // ALL_STATUSES is every value GameStatus can take. Driving the tables off it means a new status
 // added to the union has to be given an expected answer here rather than silently defaulting.
@@ -29,6 +30,48 @@ const PERSISTABLE_STATUSES: PersistedGameStatus[] = [
   "lost",
   "await-agent",
 ]
+
+function createClock(isPaused: boolean): State["clock"] {
+  return {
+    isPaused,
+    pause: () => {},
+    resume: () => {},
+    elapsed: () => 0,
+    blink: () => true,
+    remaining: () => 1_000,
+  } as State["clock"]
+}
+
+function createState(overrides: Partial<State> = {}): State {
+  return {
+    controlMode: "interactive",
+    level: 1,
+    status: "running",
+    mazeDimensions: { numCols: 1, numRows: 1, area: 1 },
+    maze: [
+      ["|", "---", "|"],
+      ["|", "   ", "|"],
+      ["|", "---", "|"],
+    ],
+    startPosition: { x: 1, y: 1 },
+    playerPosition: { x: 1, y: 1 },
+    finalPosition: { x: 1, y: 1 },
+    traversalHistory: [{ playerName: "Self", row: 0, col: 0, openMoves: [] }],
+    score: 100,
+    lastRoundScore: 0,
+    lastAttemptRetentionUnits: null,
+    bestWinRetentionUnits: null,
+    lastWinTraversalSpeedUnits: null,
+    bestWinTraversalSpeedUnits: null,
+    winSummary: "",
+    wallWeight: 1,
+    scoreDecayUnits: 0,
+    turnCount: 0,
+    cumulativeRoundCount: 0,
+    clock: createClock(false),
+    ...overrides,
+  }
+}
 
 describe("canProceedStatus", () => {
   it.each<[GameStatus, boolean]>([
@@ -152,5 +195,47 @@ describe("canPersistRoundStatus", () => {
     ALL_STATUSES.filter(canProceedStatus).forEach((status) => {
       expect(PERSISTABLE_STATUSES).toContain(status)
     })
+  })
+})
+
+describe("stateInvariantError", () => {
+  it("accepts internally consistent running and paused states", () => {
+    expect(stateInvariantError(createState({ status: "running", clock: createClock(false) }))).toBeNull()
+    expect(stateInvariantError(createState({ status: "paused", clock: createClock(true) }))).toBeNull()
+  })
+
+  it("rejects paused status when the clock is not paused", () => {
+    expect(stateInvariantError(createState({ status: "paused", clock: createClock(false) }))).toBe(
+      "invalid game state: paused status requires a paused clock",
+    )
+  })
+
+  it("rejects running status when the clock is paused", () => {
+    expect(stateInvariantError(createState({ status: "running", clock: createClock(true) }))).toBe(
+      "invalid game state: running status requires an active clock",
+    )
+  })
+
+  it("rejects active statuses without round data", () => {
+    expect(
+      stateInvariantError(createState({
+        status: "running",
+        maze: null,
+        mazeDimensions: null,
+        startPosition: null,
+        playerPosition: null,
+        finalPosition: null,
+        traversalHistory: [],
+      })),
+    ).toBe("invalid game state: running status requires an active round")
+  })
+
+  it("rejects boot and too-small states that still keep active round data", () => {
+    expect(stateInvariantError(createState({ status: "boot", clock: null }))).toBe(
+      "invalid game state: boot status cannot keep an active round",
+    )
+    expect(stateInvariantError(createState({ status: "too-small", clock: null }))).toBe(
+      "invalid game state: too-small status cannot keep an active round",
+    )
   })
 })

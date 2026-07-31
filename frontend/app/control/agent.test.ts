@@ -236,7 +236,7 @@ function createControlFixture(
   overrides: Partial<AgentControlFixture> = {},
 ): AgentControlFixture {
   return {
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
     bestWinTraversalSpeedUnits: null,
     bestWinRetentionUnits: null,
@@ -249,6 +249,7 @@ function createControlFixture(
     level: 4,
     maze: null,
     mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     score: 800,
     scoreDecayUnits: 0,
@@ -355,12 +356,12 @@ describe("agent control mode", () => {
     expect(dispatch).toHaveBeenNthCalledWith(
       1,
       { type: "MoveRight" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
     expect(dispatch).toHaveBeenNthCalledWith(
       2,
       { type: "MoveDown" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(
       1,
@@ -453,7 +454,7 @@ describe("agent control mode", () => {
     )
     const commitAgentTurn = vi.fn(() => {
       state = createControlFixture({
-        agentRequestCount: 1,
+        turnCount: 1,
         cumulativeRoundCount: 1,
         lastRoundScore: 700,
         score: 700,
@@ -605,7 +606,7 @@ describe("agent control mode", () => {
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith(
       { type: "MoveRight" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(1)
     expect(mode.readLastActionResult()).toEqual(
@@ -774,7 +775,7 @@ describe("agent control mode", () => {
     expect(dispatch).toHaveBeenNthCalledWith(
       2,
       { type: "MoveRight" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
   })
 

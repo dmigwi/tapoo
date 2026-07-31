@@ -8,6 +8,7 @@ import {
 } from "./agent/context"
 import type {
   MazeAction,
+  MazeActionDispatchOptions,
   MazeActionResult,
   MoveAction,
   MoveStatus,
@@ -47,13 +48,6 @@ export function mergeMazeActionResult(
   }
 }
 
-type CommandFeedbackContext = {
-  state: State
-  playerName: string
-  executeCommand: (action: MazeAction) => void
-  handleMove: (action: MoveAction, playerName: string) => void
-}
-
 type MazeActionHandlers = {
   state: State
   pauseGame: () => void
@@ -89,26 +83,28 @@ function buildReplayState(
 // executeActionWithFeedback classifies one requested command and returns feedback when supported.
 export function executeActionWithFeedback(
   action: MazeAction,
-  context: CommandFeedbackContext,
+  playerName: string,
+  handlers: MazeActionHandlers,
 ): MazeActionResult | null {
   if (!isMoveAction(action)) {
-    context.executeCommand(action)
+    executeMazeAction(action, playerName, handlers)
     return null
   }
 
-  const { state, handleMove, playerName } = context
   const move = action.type
-  const moveEvaluation = resolvePlayerMove(state, move)
+  const moveEvaluation = resolvePlayerMove(handlers.state, move)
   if (!moveEvaluation.canMove) {
-    return buildReplayState(playerName, move, "invalid-move")
+    const actionResult = buildReplayState(playerName, move, "invalid-move")
+    handlers.recordActionResult(actionResult)
+    return actionResult
   }
 
-  handleMove(move, playerName)
-  const finalStatus: MoveStatus = isWonStatus(state.status) ? "reached-target" : "applied"
+  handlers.movePlayer(move, playerName)
+  const finalStatus: MoveStatus = isWonStatus(handlers.state.status) ? "reached-target" : "applied"
 
-  return buildReplayState(
-    playerName, move, finalStatus, moveEvaluation.visitedBefore,
-  )
+  const actionResult = buildReplayState(playerName, move, finalStatus, moveEvaluation.visitedBefore)
+  handlers.recordActionResult(actionResult)
+  return actionResult
 }
 
 // executeMazeAction maps one semantic action to the runtime effect owned by game.ts.
@@ -145,7 +141,7 @@ export function executeMazeAction(
 // dispatchMazeAction keeps feedback decisions in the shared control layer.
 export function dispatchMazeAction(
   action: MazeAction,
-  options: { model?: string; playerName: string; wantFeedback?: boolean },
+  options: MazeActionDispatchOptions,
   handlers: MazeActionHandlers,
 ): MazeActionResult | null {
   if (!options.wantFeedback) {
@@ -153,17 +149,5 @@ export function dispatchMazeAction(
     return null
   }
 
-  const actionResult = executeActionWithFeedback(action, {
-    executeCommand: (nextAction) => {
-      executeMazeAction(nextAction, options.playerName, handlers)
-    },
-    state: handlers.state,
-    handleMove: handlers.movePlayer,
-    playerName: options.playerName,
-  })
-
-  if (actionResult) {
-    handlers.recordActionResult(actionResult)
-  }
-  return actionResult
+  return executeActionWithFeedback(action, options.playerName, handlers)
 }

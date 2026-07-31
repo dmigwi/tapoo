@@ -78,7 +78,7 @@ describe("resolveBatchEfficiencyRank", () => {
     // Four turns each advancing one cell, but one of them hit an invalid move: 4 new cells
     // against 3 clean units + 3 for the mistake. Requests alone would still read exactly 1.0,
     // which is why the rate is charged against decay rather than request count.
-    const agent = createAgent({ requestsCount: 4, decayUnitsCharged: 6 })
+    const agent = createAgent({ turnCount: 4, decayUnitsCharged: 6 })
     const traversalHistory = [
       visit("Blue", 0, 0),
       visit("Blue", 0, 1),
@@ -92,17 +92,17 @@ describe("resolveBatchEfficiencyRank", () => {
 
 describe("getBatchEfficiencyMetrics", () => {
   it("reports zero counts for a fresh agent with no tracked turns", () => {
-    const agent = createAgent({ requestsCount: undefined, decayUnitsCharged: undefined })
+    const agent = createAgent({ turnCount: undefined, decayUnitsCharged: undefined })
 
     expect(getBatchEfficiencyMetrics([], agent)).toEqual({
       uniqueCellsVisited: 0,
       decayUnitsCharged: 0,
-      requestsMade: 0,
+      turnsTaken: 0,
     })
   })
 
   it("counts only distinct cells attributed to the requesting agent's playerName", () => {
-    const agent = createAgent({ requestsCount: 3, decayUnitsCharged: 5 })
+    const agent = createAgent({ turnCount: 3, decayUnitsCharged: 5 })
     const traversalHistory = [
       visit("Self", 0, 0),
       visit("Blue", 0, 1),
@@ -113,7 +113,7 @@ describe("getBatchEfficiencyMetrics", () => {
     expect(getBatchEfficiencyMetrics(traversalHistory, agent)).toEqual({
       uniqueCellsVisited: 2,
       decayUnitsCharged: 5,
-      requestsMade: 3,
+      turnsTaken: 3,
     })
   })
 })

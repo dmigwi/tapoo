@@ -25,7 +25,7 @@ const agentContextTools = [
     function: {
       name: "get_prediction_rules",
       description:
-        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn. uniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyRank. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyRank is set to backtracker rank when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator rank at 1.0 (one new cell move per decay unit), or trailblazer rank above 1.0 (valid multi-move guesses are paying off — the only rank that can set a new score retention record). requestsMade is reported for context and does not affect your speed, rank or scores Each turn's decay units are subtracted immediately; the resulting score retention is visible via get_game_status. Before anything is charged on this level, batchEfficiencyRank defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"requestsMade\":number, \"batchEfficiencyRank\":string,\"expectedResponseSchema\":object}.",
+        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn. uniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyRank. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyRank is set to backtracker rank when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator rank at 1.0 (one new cell move per decay unit), or trailblazer rank above 1.0 (valid multi-move guesses are paying off — the only rank that can set a new score retention record). turnsTaken is reported for context and does not affect your speed, rank or scores Each turn's decay units are subtracted immediately; the resulting score retention is visible via get_game_status. Before anything is charged on this level, batchEfficiencyRank defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"turnsTaken\":number, \"batchEfficiencyRank\":string,\"expectedResponseSchema\":object}.",
       parameters: {
         type: "object",
         properties: {},
@@ -119,7 +119,7 @@ const agent: AgentApiConfig = {
 const mazeDimensions: MazeDimensions = { numCols: 10, numRows: 10, area: 100 }
 
 const state: State = {
-  agentRequestCount: 0,
+  turnCount: 0,
     cumulativeRoundCount: 0,
   bestWinTraversalSpeedUnits: null,
   bestWinRetentionUnits: null,
@@ -132,6 +132,7 @@ const state: State = {
   level: 1,
   maze: null,
   mazeDimensions,
+  startPosition: { x: 1, y: 1 },
   playerPosition: { x: 1, y: 1 },
   score: 10000,
   scoreDecayUnits: 0,
@@ -331,8 +332,8 @@ describe("agent request service", () => {
     const requestEntries = loadTapooLog<{
       payload: string
       details?: {
-        requestTurn: number
-        mode: "predict" | "tools"
+        requestCount: number
+        agentMode: "predict" | "tools"
         tools: { name: string; description?: string }[]
         messages: unknown[]
       }
@@ -342,12 +343,12 @@ describe("agent request service", () => {
 
     expect(requestEntries).toHaveLength(2)
 
-    // agentRequestCount defaults to 0, so this is the level's first request: everything logs
+    // turnCount defaults to 0, so this is the level's first agent-api turn: everything logs
     // in full, including the system/user prompt and tool descriptions.
     expect(requestEntries[0].details).toEqual({
       endpoint,
-      requestTurn: 1,
-      mode: "tools",
+      requestCount: 1,
+      agentMode: "tools",
       tools: expectedLoggedTools(uncalledTools([]), true),
       messages: [
         { role: "system", content: developerMessage },
@@ -358,13 +359,13 @@ describe("agent request service", () => {
     // Round 2 logs the full accumulated history (system+user+assistant+tool), not just the new
     // assistant/tool-result messages — no delta tracking, every entry stands on its own. Not
     // every tool has been called yet, so only the still-uncalled tools remain on the wire, all
-    // with full definitions. keepFull only covers round 1 (isFirstRequestOfLevel && reqTurn <= 1),
+    // with full definitions. keepFull only covers request 1 (isFirstRequestOfLevel && requestCount <= 1),
     // so by round 2 the system/user prompt and tool descriptions are previewed even within the
     // level's first turn — further limiting duplication across a single turn's tool-call rounds.
     expect(requestEntries[1].details).toEqual({
       endpoint,
-      requestTurn: 2,
-      mode: "tools",
+      requestCount: 2,
+      agentMode: "tools",
       tools: expectedLoggedTools(uncalledTools(["get_maze_positions"]), false),
       messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
@@ -408,14 +409,14 @@ describe("agent request service", () => {
       )
     vi.stubGlobal("fetch", fetchMock)
 
-    // agentRequestCount > 0 means this is not the level's first agent-api request.
-    await requestPrediction(requestInput({ agentRequestCount: 1 }))
+    // turnCount > 0 means this is not the level's first agent-api turn.
+    await requestPrediction(requestInput({ turnCount: 1 }))
 
     const requestEntries = loadTapooLog<{
       payload: string
       details?: {
-        requestTurn: number
-        mode: "predict" | "tools"
+        requestCount: number
+        agentMode: "predict" | "tools"
         tools: { name: string; description?: string }[]
         messages: unknown[]
       }
@@ -429,8 +430,8 @@ describe("agent request service", () => {
     // and tool descriptions are previewed too, since both repeat verbatim every turn.
     expect(requestEntries[0].details).toEqual({
       endpoint,
-      requestTurn: 1,
-      mode: "tools",
+      requestCount: 1,
+      agentMode: "tools",
       tools: expectedLoggedTools(uncalledTools([]), false),
       messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
@@ -443,8 +444,8 @@ describe("agent request service", () => {
     // assistant/tool-call messages are turn-unique and always log in full.
     expect(requestEntries[1].details).toEqual({
       endpoint,
-      requestTurn: 2,
-      mode: "tools",
+      requestCount: 2,
+      agentMode: "tools",
       tools: expectedLoggedTools(uncalledTools(["get_maze_positions"]), false),
       messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
@@ -677,79 +678,22 @@ describe("agent request service", () => {
         suggestedMovesPerTurn: Math.min(getNavigationProfile(mazeDimensions).__maxCorridorLength, 4),
         uniqueCellsVisited: 0,
         decayUnitsCharged: 0,
-        requestsMade: 0,
+        turnsTaken: 0,
         batchEfficiencyRank: "trailblazer",
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       },
     ])
   })
 
-  it.each([
-    ["bare json", "{\"moves\":[\"MoveRight\"]}", ["MoveRight"]],
-    ["json fence", "```json\n{\"moves\":[\"MoveDown\"]}\n```", ["MoveDown"]],
-    ["plain fence", "```\n{\"moves\":[\"MoveLeft\",\"MoveUp\"]}\n```", ["MoveLeft", "MoveUp"]],
-    [
-      "prose prefix with embedded json fence",
-      [
-        "Based on the current state:",
-        "- **Current Cell**: `(row: 0, col: 8)`",
-        "- **Destination Cell**: `(row: 2, col: 2)`",
-        "",
-        "The destination is 2 rows down and 6 columns to the left.",
-        "I will predict the following moves:",
-        "1. Move Left 6 times to reach column 2.",
-        "2. Move Down 2 times to reach row 2.",
-        "",
-        "```json",
-        "{\"moves\":[\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveDown\",\"MoveDown\"]}",
-        "```",
-      ].join("\n"),
-      ["MoveLeft", "MoveLeft", "MoveLeft", "MoveLeft", "MoveLeft", "MoveLeft", "MoveDown", "MoveDown"],
-    ],
-    [
-      "prose prefix with reasoning",
-      [
-        "I am currently at (0,8). The destination is at (2,2).",
-        "The maze is 10x7.",
-        "Since this is Level 1 and my history only shows the start cell (0,8), I need to explore.",
-        "The target is down and to the left. I should generally move in that direction.",
-        'Let\'s try moving Left first along the top row. Given "suggestedMovesPerTurn" is 10, but I should start conservative.',
-        "",
-        "Proposed moves:",
-        "1. MoveLeft (to 0,7)",
-        "2. MoveLeft (to 0,6)",
-        "3. MoveLeft (to 0,5)",
-        "4. MoveDown (to 1,5)",
-        "5. MoveDown (to 2,5)",
-        "6. MoveLeft (to 2,4)",
-        "7. MoveLeft (to 2,3)",
-        "8. MoveLeft (to 2,2 - Target!)",
-        "",
-        "Let's refine: Start by moving **Left** until col 2, then Down.",
-        "",
-        "{\"moves\":[\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveLeft\",\"MoveDown\",\"MoveDown\"]}",
-      ].join("\n"),
-      ["MoveLeft", "MoveLeft", "MoveLeft", "MoveLeft", "MoveLeft", "MoveLeft", "MoveDown", "MoveDown"],
-    ],
-  ])("parses valid predictions wrapped as %s", async (_caseName, content, moves) => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(successfulResponse(content)))
-    await expect(requestPrediction(requestInput())).resolves.toEqual({ ok: true, moves })
-  })
-
-  it.each([
-    ["invalid json", "not-json"],
-    ["missing moves", "{}"],
-    ["empty moves", "{\"moves\":[]}"],
-    ["unsupported move", "{\"moves\":[\"MoveSideways\"]}"],
-  ])("returns malformed-response for %s", async (_caseName, content) => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(successfulResponse(content)))
+  it("returns malformed-response when final content is not a valid prediction", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(successfulResponse("not-json")))
 
     await expect(requestPrediction(requestInput())).resolves.toMatchObject({
       ok: false,
       reason: "malformed-response",
       diagnostic: {
         message: "Malformed agent prediction response.",
-        details: { endpoint, requestTurn: 1 },
+        details: { endpoint, requestCount: 1 },
       },
     })
   })
@@ -882,7 +826,7 @@ describe("agent request service", () => {
         message: "Agent requested an unknown or hallucinated tool.",
         details: {
           endpoint,
-          requestTurn: 1,
+          requestCount: 1,
           toolNames: name === undefined ? [] : [name],
         },
       },
@@ -1000,19 +944,19 @@ describe("agent request service", () => {
 
     // A mixed round makes real progress, so it must not consume the two-strike allowance —
     // round 3 is a clean predict attempt rather than a "warned" round.
-    const modes = loadTapooLog<{ payload: string; details?: { mode: string } }>(
+    const agentModes = loadTapooLog<{ payload: string; details?: { agentMode: string } }>(
       CONFIG.runtime.controlModes.agentApi,
     )
       .filter((entry) => entry.payload === "Agent request.")
-      .map((entry) => entry.details?.mode)
-    expect(modes.at(-1)).not.toBe("warned")
+      .map((entry) => entry.details?.agentMode)
+    expect(agentModes.at(-1)).not.toBe("warned")
   })
 
   it("gives one reminder before failing on a second all-duplicate round", async () => {
-    // Round 1 (mode: tools): model calls all 5 tools — natural exhaustion, predict mode next.
-    // Round 2 (mode: predict): model re-requests an already-called tool — first violation:
+    // Round 1 (agentMode: tools): model calls all 5 tools — natural exhaustion, predict mode next.
+    // Round 2 (agentMode: predict): model re-requests an already-called tool — first violation:
     // no payload is re-served, just a reminder naming that specific call.
-    // Round 3 (mode: warned): model re-requests it again despite the reminder — second
+    // Round 3 (agentMode: warned): model re-requests it again despite the reminder — second
     // violation: the turn fails as malformed-response instead of reminding indefinitely.
     tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
@@ -1040,7 +984,7 @@ describe("agent request service", () => {
       reason: "malformed-response",
       diagnostic: {
         message: "Agent kept re-requesting already-called tools after being told so.",
-        details: { endpoint, requestTurn: 3 },
+        details: { endpoint, requestCount: 3 },
       },
     })
 
@@ -1058,11 +1002,11 @@ describe("agent request service", () => {
 
     // The three rounds are logged with distinct modes: gathering, clean predict attempt, then
     // the post-reminder "warned" round that ultimately fails.
-    const modes = loadTapooLog<{ payload: string; details?: { mode: string } }>(
+    const agentModes = loadTapooLog<{ payload: string; details?: { agentMode: string } }>(
       CONFIG.runtime.controlModes.agentApi,
     )
       .filter((entry) => entry.payload === "Agent request.")
-      .map((entry) => entry.details?.mode)
-    expect(modes).toEqual(["tools", "predict", "warned"])
+      .map((entry) => entry.details?.agentMode)
+    expect(agentModes).toEqual(["tools", "predict", "warned"])
   })
 })

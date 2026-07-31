@@ -13,20 +13,18 @@ import {
 } from "./efficiency"
 import type { BatchEfficiencyRank } from "./efficiency"
 import type {
+  AgentChatMessage,
   AgentApiConfig,
   AgentExpectedResponseSchema,
   AgentSubmittedMovesSchema,
+  AgentToolCall,
+  AgentToolDefinition,
+  AgentToolHandlers,
   CellCoordinate,
   MazeActionResult,
   State,
   TraversalHistoryEntry,
 } from "../types"
-import type {
-  AgentChatMessage,
-  AgentToolCall,
-  AgentToolDefinition,
-  AgentToolHandlers,
-} from "./request"
 
 const { runtime, scoring } = CONFIG
 const { agentBaseDecayUnits, agentPenaltyDecayUnits } = scoring
@@ -197,13 +195,13 @@ const predictionRulesTool: AgentToolDefinition = {
       "batchEfficiencyRank is set to backtracker rank when the speed is below 1.0 (units wasted on invalid moves or",
       "oscillation between visited cells), navigator rank at 1.0 (one new cell move per decay unit),",
       "or trailblazer rank above 1.0 (valid multi-move guesses are paying off — the only rank that can set a new",
-      "score retention record). requestsMade is reported for context and does not affect your speed, rank or scores",
+      "score retention record). turnsTaken is reported for context and does not affect your speed, rank or scores",
       "Each turn's decay units are subtracted immediately; the resulting score retention is visible via",
       "get_game_status.",
       "Before anything is charged on this level, batchEfficiencyRank defaults to trailblazer regardless of these",
       "counts, so you start already primed to predict multi-move sequences. Returns JSON:",
       "{\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number,",
-      "\"requestsMade\":number, \"batchEfficiencyRank\":string,\"expectedResponseSchema\":object}.",
+      "\"turnsTaken\":number, \"batchEfficiencyRank\":string,\"expectedResponseSchema\":object}.",
     ].join(" "),
     parameters: emptyToolParameters,
   },
@@ -335,13 +333,13 @@ export function buildAgentToolHandlers(
       // rank itself; all are always concrete numbers (0 is a valid count), never null, so there is
       // nothing ambiguous for the model to puzzle over before its first request.
       const batchEfficiencyRank = resolveBatchEfficiencyRank(state.traversalHistory, agent)
-      const { uniqueCellsVisited, decayUnitsCharged, requestsMade } =
+      const { uniqueCellsVisited, decayUnitsCharged, turnsTaken } =
         getBatchEfficiencyMetrics(state.traversalHistory, agent)
       return {
         suggestedMovesPerTurn,
         uniqueCellsVisited,
         decayUnitsCharged,
-        requestsMade,
+        turnsTaken,
         batchEfficiencyRank,
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       }

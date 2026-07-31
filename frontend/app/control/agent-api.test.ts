@@ -29,7 +29,7 @@ function selfVisit(row: number, col: number): TraversalHistoryEntry {
 
 function createState(overrides: Partial<State> = {}): State {
   return {
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
     bestWinTraversalSpeedUnits: null,
     bestWinRetentionUnits: null,
@@ -42,6 +42,7 @@ function createState(overrides: Partial<State> = {}): State {
     level: 2,
     maze: null,
     mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     score: 600,
     scoreDecayUnits: 0,

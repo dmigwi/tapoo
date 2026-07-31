@@ -36,7 +36,7 @@ function createActionResult(
 
 function createState(): State {
   return {
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
     bestWinTraversalSpeedUnits: null,
     bestWinRetentionUnits: null,
@@ -49,6 +49,7 @@ function createState(): State {
     level: 1,
     maze: null,
     mazeDimensions: null,
+    startPosition: null,
     playerPosition: null,
     score: 0,
     scoreDecayUnits: 0,

@@ -27,6 +27,7 @@ import {
   isRunningStatus,
   isTooSmallStatus,
   isWonStatus,
+  stateInvariantError,
   viewportFitStatus,
 } from "./status"
 import {
@@ -78,6 +79,7 @@ type RuntimeRoundState = {
   level: number
   mazeDimensions: MazeDimensions
   maze: string[][]
+  startPosition: RenderGridPoint
   playerPosition: RenderGridPoint
   traversalHistory: TraversalHistoryEntry[]
   finalPosition: RenderGridPoint
@@ -88,6 +90,7 @@ const state: State = {
   level: 1,
   maze: null,
   mazeDimensions: null,
+  startPosition: null,
   playerPosition: null,
   traversalHistory: [],
   finalPosition: null,
@@ -101,7 +104,7 @@ const state: State = {
   winSummary: "",
   wallWeight: WALL_WEIGHTS[0],
   scoreDecayUnits: 0,
-  agentRequestCount: 0,
+  turnCount: 0,
   cumulativeRoundCount: 0,
   clock: null,
 }
@@ -166,13 +169,14 @@ function applyTooSmallState(level: number): void {
   state.level = level
   state.mazeDimensions = null
   state.maze = null
+  state.startPosition = null
   state.playerPosition = null
   state.traversalHistory = []
   state.finalPosition = null
   state.score = 0
   state.lastRoundScore = 0
   state.scoreDecayUnits = 0
-  state.agentRequestCount = 0
+  state.turnCount = 0
   state.cumulativeRoundCount += 1
   state.winSummary = ""
   state.clock = null
@@ -236,6 +240,11 @@ function renderState(): void {
     return
   }
 
+  const invariantError = stateInvariantError(state)
+  if (invariantError) {
+    throw new Error(invariantError)
+  }
+
   lastBlinkVisible = currentBlinkVisible()
   render(runtimeElements, state)
 }
@@ -272,7 +281,7 @@ function commitAgentTurn(chargedMovesCount: number): void {
     return
   }
 
-  state.agentRequestCount += 1
+  state.turnCount += 1
   state.scoreDecayUnits += chargedMovesCount
   state.score = calculateRoundScore(totalCells)
 
@@ -306,6 +315,7 @@ function applyRuntimeRoundState(roundState: RuntimeRoundState): void {
   state.level = roundState.level
   state.mazeDimensions = cloneMazeDimensions(roundState.mazeDimensions)
   state.maze = cloneMazeRows(roundState.maze)
+  state.startPosition = cloneRenderGridPoint(roundState.startPosition)
   state.playerPosition = cloneRenderGridPoint(roundState.playerPosition)
   state.traversalHistory = cloneTraversalHistory(roundState.traversalHistory)
   state.finalPosition = cloneRenderGridPoint(roundState.finalPosition)
@@ -341,6 +351,7 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
     level: snapshot.level,
     mazeDimensions: snapshot.mazeDimensions,
     maze: snapshot.maze,
+    startPosition: snapshot.startPosition,
     playerPosition: snapshot.playerPosition,
     traversalHistory: snapshot.traversalHistory,
     finalPosition: snapshot.finalPosition,
@@ -348,7 +359,7 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
   state.score = snapshot.score
   state.lastRoundScore = snapshot.lastRoundScore
   state.scoreDecayUnits = snapshot.scoreDecayUnits ?? 0
-  state.agentRequestCount = snapshot.agentRequestCount ?? 0
+  state.turnCount = snapshot.turnCount ?? 0
   state.cumulativeRoundCount = snapshot.cumulativeRoundCount ?? 0
   state.winSummary = snapshot.winSummary ?? ""
 
@@ -398,6 +409,7 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
     level: dimensions.level,
     mazeDimensions: dimensions,
     maze: round.maze,
+    startPosition: round.startPosition,
     playerPosition: round.startPosition,
     traversalHistory: [
       traversalHistoryEntry(startCell, runtime.interactivePlayerName, round.maze),
@@ -407,7 +419,7 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
   state.status = "running"
   state.lastRoundScore = 0
   state.scoreDecayUnits = 0
-  state.agentRequestCount = 0
+  state.turnCount = 0
   state.cumulativeRoundCount += 1
   state.winSummary = ""
 

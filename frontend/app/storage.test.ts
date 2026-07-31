@@ -88,6 +88,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "   ", "|"],
       ["|", "---", "|"],
     ],
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 1, y: 1 },
@@ -101,7 +102,7 @@ function createState(overrides: Partial<State> = {}): State {
     winSummary: "",
     wallWeight: 2,
     scoreDecayUnits: 0,
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,
     ...overrides,
@@ -363,7 +364,7 @@ describe("storage", () => {
     expect(loadPersistedAgentApiConfigs()).toEqual(nextConfigs)
   })
 
-  it("accumulates an agent's requestsCount and decayUnitsCharged across turns within the same level and round", () => {
+  it("accumulates an agent's turnCount and decayUnitsCharged across turns within the same level and round", () => {
     savePersistedAgentApiConfigs([
       {
         id: 1,
@@ -378,14 +379,14 @@ describe("storage", () => {
     // one per turn either way, so the two counters deliberately diverge.
     const firstTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 1)
     expect(firstTurnAgent).toMatchObject({
-      gameLevel: 3, cumulativeRoundCount: 7, requestsCount: 1, decayUnitsCharged: 1,
+      gameLevel: 3, cumulativeRoundCount: 7, turnCount: 1, decayUnitsCharged: 1,
     })
 
     const secondTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 3)
     expect(secondTurnAgent).toMatchObject({
-      gameLevel: 3, cumulativeRoundCount: 7, requestsCount: 2, decayUnitsCharged: 4,
+      gameLevel: 3, cumulativeRoundCount: 7, turnCount: 2, decayUnitsCharged: 4,
     })
-    expect(loadPersistedAgentApiConfigs()[0]).toMatchObject({ requestsCount: 2, decayUnitsCharged: 4 })
+    expect(loadPersistedAgentApiConfigs()[0]).toMatchObject({ turnCount: 2, decayUnitsCharged: 4 })
   })
 
   it("resets both counters when the level changes", () => {
@@ -398,7 +399,7 @@ describe("storage", () => {
         enabled: true,
         gameLevel: 3,
         cumulativeRoundCount: 7,
-        requestsCount: 5,
+        turnCount: 5,
         decayUnitsCharged: 12,
       },
     ])
@@ -406,7 +407,7 @@ describe("storage", () => {
     const nextLevelAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 4, 7, 1)
 
     expect(nextLevelAgent).toMatchObject({
-      gameLevel: 4, cumulativeRoundCount: 7, requestsCount: 1, decayUnitsCharged: 1,
+      gameLevel: 4, cumulativeRoundCount: 7, turnCount: 1, decayUnitsCharged: 1,
     })
   })
 
@@ -420,7 +421,7 @@ describe("storage", () => {
         enabled: true,
         gameLevel: 3,
         cumulativeRoundCount: 7,
-        requestsCount: 5,
+        turnCount: 5,
         decayUnitsCharged: 12,
       },
     ])
@@ -428,7 +429,7 @@ describe("storage", () => {
     const retryAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 8, 1)
 
     expect(retryAgent).toMatchObject({
-      gameLevel: 3, cumulativeRoundCount: 8, requestsCount: 1, decayUnitsCharged: 1,
+      gameLevel: 3, cumulativeRoundCount: 8, turnCount: 1, decayUnitsCharged: 1,
     })
   })
 
@@ -447,7 +448,7 @@ describe("storage", () => {
         enabled: true,
         gameLevel: 5,
         cumulativeRoundCount: 12,
-        requestsCount: 9,
+        turnCount: 9,
         decayUnitsCharged: 25,
       },
     ])
@@ -455,11 +456,11 @@ describe("storage", () => {
     // New session, different level, but the round counter happens to collide.
     const postResetAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 1, 12, 1)
 
-    // Must NOT inherit the stale requestsCount: 9 or decayUnitsCharged: 25 — gameLevel differing
+    // Must NOT inherit the stale turnCount: 9 or decayUnitsCharged: 25 — gameLevel differing
     // (1 vs 5) is what catches this. If recordAgentTurnStats is ever "simplified" to compare only
     // cumulativeRoundCount, these assertions will fail.
     expect(postResetAgent).toMatchObject({
-      gameLevel: 1, cumulativeRoundCount: 12, requestsCount: 1, decayUnitsCharged: 1,
+      gameLevel: 1, cumulativeRoundCount: 12, turnCount: 1, decayUnitsCharged: 1,
     })
   })
 
@@ -479,6 +480,7 @@ describe("storage", () => {
       maze: state.maze,
       startCell: { row: 0, col: 0 },
       traversalHistory: [selfVisit(0, 0)],
+      startPosition: { x: 1, y: 1 },
       playerPosition: { x: 1, y: 1 },
       finalPosition: { x: 1, y: 1 },
       wallWeight: 2,
@@ -488,7 +490,7 @@ describe("storage", () => {
       winSummary: "",
       remainingMs: 25_000,
       scoreDecayUnits: 0,
-      agentRequestCount: 0,
+      turnCount: 0,
       cumulativeRoundCount: 0,
     })
   })
@@ -609,6 +611,14 @@ describe("storage", () => {
         status: "boot",
       }),
     )
+
+    expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
+  })
+
+  it("rejects internally inconsistent state before saving the active round", () => {
+    expect(() => {
+      saveActiveRoundSnapshot(MODE, createState({ status: "paused", clock: null }))
+    }).toThrow("invalid game state: paused status requires a paused clock")
 
     expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })

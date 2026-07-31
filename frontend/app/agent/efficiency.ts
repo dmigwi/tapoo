@@ -12,13 +12,13 @@ export type BatchEfficiencyRank = "backtracker" | "navigator" | "trailblazer"
 
 // BatchEfficiencyMetrics are the raw counts behind the traversal speed, exposed to the model
 // directly so it can compute and verify the rate/rank itself instead of treating the rank as an
-// unexplained label. requestsMade rides along as context but deliberately does not feed the rate:
+// unexplained label. turnsTaken rides along as context but deliberately does not feed the rate:
 // a turn is charged the same decay whether it carried one move or many, so dividing by requests
 // would leave the rate blind to the batching it is meant to reward.
 export type BatchEfficiencyMetrics = {
   uniqueCellsVisited: number
   decayUnitsCharged: number
-  requestsMade: number
+  turnsTaken: number
 }
 
 // countDistinctCellsForAgent counts traversalHistory entries first attributed to this agent's
@@ -39,7 +39,7 @@ export function getBatchEfficiencyMetrics(
   return {
     uniqueCellsVisited: countDistinctCellsForAgent(traversalHistory, agent),
     decayUnitsCharged: agent.decayUnitsCharged ?? 0,
-    requestsMade: agent.requestsCount ?? 0,
+    turnsTaken: agent.turnCount ?? 0,
   }
 }
 

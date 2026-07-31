@@ -2,6 +2,7 @@ import { CONFIG } from "./config"
 import { createMazeDimensions, isSpaceFound } from "./traversal"
 import type {
   BaseDimensions,
+  MazeDimensions,
   CellAddress,
   CellNeighbors,
   Direction,
@@ -245,36 +246,35 @@ function createPlayingField(
 
 // getCellAddress maps a cell number to its wall and center coordinates.
 function getCellAddress(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   cellNo: number,
 ): CellAddress | null {
-  if (cellNo <= 0 || cellNo > dimensions.numCols * dimensions.numRows) {
+  if (cellNo <= 0 || cellNo > dimensions.area) {
     return null
   }
 
-  const row =
-    (Math.floor((cellNo - 1) / dimensions.numCols) + 1) * mazeConfig.cellSpan
+  const row = (Math.floor((cellNo - 1) / dimensions.numCols) + 1) * mazeConfig.cellSpan
   const column = (((cellNo - 1) % dimensions.numCols) + 1) * mazeConfig.cellSpan
 
   return {
-    __bottomCenter: { x: column - 1, y: row },
-    __bottomLeft: { x: column - mazeConfig.cellSpan, y: row },
-    __bottomRight: { x: column, y: row },
-    __middleCenter: { x: column - 1, y: row - 1 },
-    __middleLeft: { x: column - mazeConfig.cellSpan, y: row - 1 },
-    __middleRight: { x: column, y: row - 1 },
-    __topCenter: { x: column - 1, y: row - mazeConfig.cellSpan },
     __topLeft: { x: column - mazeConfig.cellSpan, y: row - mazeConfig.cellSpan },
+    __topCenter: { x: column - 1, y: row - mazeConfig.cellSpan },
     __topRight: { x: column, y: row - mazeConfig.cellSpan },
+    __middleLeft: { x: column - mazeConfig.cellSpan, y: row - 1 },
+    __middleCenter: { x: column - 1, y: row - 1 },
+    __middleRight: { x: column, y: row - 1 },
+    __bottomLeft: { x: column - mazeConfig.cellSpan, y: row },
+    __bottomCenter: { x: column - 1, y: row },
+    __bottomRight: { x: column, y: row },
   }
 }
 
 // getCellNeighbors returns the adjacent cell numbers around one cell.
 function getCellNeighbors(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   cellNo: number,
 ): CellNeighbors {
-  if (cellNo <= 0 || cellNo > dimensions.numCols * dimensions.numRows) {
+  if (cellNo <= 0 || cellNo > dimensions.area) {
     return { __bottom: 0, __left: 0, __right: 0, __top: 0 }
   }
 
@@ -298,7 +298,7 @@ function getCellNeighbors(
     neighbors.__top = cellNo - dimensions.numCols
   }
 
-  if (cellNo + dimensions.numCols <= dimensions.numCols * dimensions.numRows) {
+  if (cellNo + dimensions.numCols <= dimensions.area) {
     neighbors.__bottom = cellNo + dimensions.numCols
   }
 
@@ -330,7 +330,7 @@ function countNeighbors(neighbors: CellNeighbors): number {
 
 // getPresentNeighbors filters neighboring cells down to the unvisited options.
 function getPresentNeighbors(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   cellNo: number,
   visited: boolean[],
 ): number[] {
@@ -360,7 +360,7 @@ function getPresentNeighbors(
 // least-neighbors bias calls this once per candidate on every generation step and only needs the
 // count, so it avoids the intermediate array getPresentNeighbors would allocate.
 function countPresentNeighbors(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   cellNo: number,
   visited: boolean[],
 ): number {
@@ -390,10 +390,9 @@ function countPresentNeighbors(
 // by the Go runtime. Smaller mazes keep longer corridors, while larger mazes
 // tighten the limits until they reach the hardest supported profile.
 export function getNavigationProfile(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
 ): NavigationProfile {
-  const area = dimensions.numCols * dimensions.numRows
-  const difficultyFactor = navigationDifficultyFactor(area)
+  const difficultyFactor = navigationDifficultyFactor(dimensions.area)
 
   return {
     __maxCorridorLength: interpolateNavigationValue(
@@ -419,8 +418,7 @@ function navigationDifficultyFactor(area: number): number {
     return 1
   }
 
-  const normalizedArea =
-    (area - generation.navigation.friendlyMaxArea) /
+  const normalizedArea = (area - generation.navigation.friendlyMaxArea) /
     (generation.navigation.hardestArea - generation.navigation.friendlyMaxArea)
 
   return Math.sqrt(normalizedArea)
@@ -437,7 +435,7 @@ function interpolateNavigationValue(
 
 // directionBetween converts two adjacent cells into a movement direction.
 function directionBetween(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   currentCell: number,
   nextCell: number,
 ): Direction {
@@ -459,7 +457,7 @@ function directionBetween(
 
 // backtrackToBranch rewinds the carved path until an unvisited branch is found.
 function backtrackToBranch(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   path: PathStep[],
   visited: boolean[],
 ): { path: PathStep[]; currentCell: number; neighbors: number[] } {
@@ -479,7 +477,7 @@ function backtrackToBranch(
 
 // chooseNextCell applies the navigation profile to the next branch decision.
 function chooseNextCell(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   neighbors: number[],
   currentState: PathStep,
   profile: NavigationProfile,
@@ -533,11 +531,9 @@ function chooseNextCell(
 }
 
 // getStartPosition prefers an edge cell so the opening feels less uniform.
-function getStartPosition(dimensions: BaseDimensions): number {
-  const totalCells = dimensions.numCols * dimensions.numRows
-
+function getStartPosition(dimensions: MazeDimensions): number {
   while (true) {
-    const randomCellNo = getRandomNo(totalCells) + 1
+    const randomCellNo = getRandomNo(dimensions.area) + 1
     if (countNeighbors(getCellNeighbors(dimensions, randomCellNo)) < 4) {
       return randomCellNo
     }
@@ -546,7 +542,7 @@ function getStartPosition(dimensions: BaseDimensions): number {
 
 // createPath removes the wall segment between two connected cells.
 function createPath(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   maze: string[][],
   currentCellNo: number,
   nextCellNo: number,
@@ -576,7 +572,7 @@ function createPath(
 
 // replaceChar swaps a junction glyph only when the vertical path stays open.
 function replaceChar(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   point: RenderGridPoint,
   replacement: string,
   maze: string[][],
@@ -615,13 +611,13 @@ function replaceChar(
 
 // optimizeMaze softens eligible vertical joints after the maze is carved.
 function optimizeMaze(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   weight: WallWeight,
   maze: string[][],
 ): void {
   const chars = getWallCharacters(weight)
 
-  for (let cell = 1; cell <= dimensions.numCols * dimensions.numRows; cell += 1) {
+  for (let cell = 1; cell <= dimensions.area; cell += 1) {
     const address = getCellAddress(dimensions, cell)
     if (!address) {
       continue
@@ -644,14 +640,14 @@ function optimizeMaze(
 // `finalCell` are always as far apart as the maze's shape allows, regardless of where the
 // randomly-chosen `startCell` happens to land.
 export function generateMaze(
-  dimensions: BaseDimensions,
+  dimensions: LevelDimensions,
   weight: WallWeight,
 ): RoundState {
-  const totalCells = dimensions.numCols * dimensions.numRows
   const navigationProfile = getNavigationProfile(dimensions)
-  const visited = new Array<boolean>(totalCells + 1).fill(false)
+  const visited = new Array<boolean>(dimensions.area + 1).fill(false)
   const maze = createPlayingField(dimensions, weight)
   const startCell = getStartPosition(dimensions)
+
   let path: PathStep[] = [
     { __cellNo: startCell, __moveDirection: "none", __corridorLength: 0 },
   ]
@@ -667,17 +663,13 @@ export function generateMaze(
 
   visited[currentCell] = true
 
-  while (visitedCount < totalCells) {
+  while (visitedCount < dimensions.area) {
     const backtrackedState = backtrackToBranch(dimensions, path, visited)
     path = backtrackedState.path
     currentCell = backtrackedState.currentCell
 
     const nextChoice = chooseNextCell(
-      dimensions,
-      backtrackedState.neighbors,
-      path[path.length - 1],
-      navigationProfile,
-      visited,
+      dimensions, backtrackedState.neighbors, path[path.length - 1], navigationProfile, visited,
     )
 
     if (visited[nextChoice.__cellNo]) {

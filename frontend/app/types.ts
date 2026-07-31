@@ -157,6 +157,7 @@ export type PersistedRound = {
   maze: string[][]
   startCell: CellCoordinate
   traversalHistory: TraversalHistoryEntry[]
+  startPosition: RenderGridPoint
   playerPosition: RenderGridPoint
   finalPosition: RenderGridPoint
   wallWeight: WallWeight
@@ -166,7 +167,7 @@ export type PersistedRound = {
   remainingMs: number
   winSummary?: string
   scoreDecayUnits?: number
-  agentRequestCount?: number
+  turnCount?: number
   cumulativeRoundCount?: number
 }
 
@@ -222,6 +223,85 @@ export type AgentSubmittedMovesSchema = {
   }
 }
 
+// AgentMessageRole lists the provider-neutral chat roles Tapoo needs for prediction requests.
+export type AgentMessageRole = "assistant" | "tool" | "user" | "system"
+
+// AgentToolDefinition mirrors the provider tool schema Tapoo sends with each chat request.
+export type AgentToolDefinition = {
+  type: "function"
+  function: {
+    name: string
+    description: string
+    parameters: {
+      type: "object"
+      properties: Record<string, unknown>
+      required: string[]
+    }
+  }
+}
+
+export type AgentToolResult =
+  | null
+  | boolean
+  | number
+  | string
+  | Record<string, unknown>
+  | unknown[]
+
+// AgentToolHandlers contains local Tapoo functions that satisfy model-requested tool calls.
+export type AgentToolHandlers = Record<
+  string,
+  (args: unknown) => AgentToolResult | Promise<AgentToolResult>
+>
+
+// AgentToolCall is intentionally permissive because providers vary slightly in tool-call shape.
+export type AgentToolCall = {
+  id?: string
+  type?: "function"
+  function?: {
+    index?: number
+    name?: string
+    arguments?: unknown
+  }
+}
+
+// AgentChatMessage is the minimal chat message shape needed by the prediction request loop.
+export type AgentChatMessage = {
+  role: AgentMessageRole
+  content?: string
+  tool_call_id?: string
+  tool_name?: string
+  tool_calls?: AgentToolCall[]
+}
+
+export type AgentPredictionFailureReason =
+  | "caller-abort"
+  | "malformed-response"
+  | "network-error"
+
+export type AgentPredictionDiagnostic = {
+  message: string
+  details?: Record<string, unknown>
+}
+
+export type AgentPredictionFailure = {
+  ok: false
+  reason: AgentPredictionFailureReason
+  diagnostic?: AgentPredictionDiagnostic
+}
+
+// AgentPredictionResult is the only prediction outcome surface exposed to agent-api controls.
+export type AgentPredictionResult =
+  | { ok: true; moves: MoveAction[] }
+  | AgentPredictionFailure
+
+// AgentPredictionRequest lets the caller stop polling without learning HTTP/tool-call details.
+export type AgentPredictionRequest = {
+  abort: () => void
+  isAborted: () => boolean
+  promise: Promise<AgentPredictionResult>
+}
+
 // AgentApiConfig stores one HTTP-controlled agent that can join the shared agent-api maze.
 export type AgentApiConfig = {
   id: number
@@ -236,7 +316,7 @@ export type AgentApiConfig = {
   // Level alone can't tell a retry of the same level apart from continuing it, hence cumulativeRoundCount.
   gameLevel?: number
   cumulativeRoundCount?: number
-  requestsCount?: number
+  turnCount?: number
   // decayUnitsCharged is this agent's own share of the round's score decay, and is what its traversal
   // speed is measured against. state.scoreDecayUnits cannot serve here: it is shared by every seat,
   // so it attributes no spend to any individual agent.
@@ -263,7 +343,6 @@ export type MazeActionResult = {
 
 // MazeActionDispatchOptions lets each dispatched command opt into feedback when it needs it.
 export type MazeActionDispatchOptions = {
-  model?: string
   wantFeedback?: boolean
   playerName: string
 }
@@ -294,6 +373,7 @@ export type State = {
 
   maze: string[][] | null
   mazeDimensions: MazeDimensions | null
+  startPosition: RenderGridPoint | null
   playerPosition: RenderGridPoint | null
   finalPosition: RenderGridPoint | null
   traversalHistory: TraversalHistoryEntry[]
@@ -307,11 +387,8 @@ export type State = {
   bestWinTraversalSpeedUnits: number | null
   winSummary: string
   scoreDecayUnits: number
-  agentRequestCount: number
-  // cumulativeRoundCount is the total number of rounds played since the last progress reset —
-  // every level start and every retry counts once. It also lets recordAgentTurnStats tell a
-  // genuinely new attempt apart from a resumed one.
-  cumulativeRoundCount: number
+  turnCount: number
+  cumulativeRoundCount: number // Rounds played since the last reset; each level start and retry counts once.
 
   clock: GameClock | null
 }
