@@ -124,12 +124,12 @@ function createTraversalMock({
   reweightMaze?: (maze: string[][]) => string[][]
 } = {}) {
   const cellCoordinateFromGridPoint = ({ x, y }: { x: number; y: number }) => ({
-    row: Math.floor((y - 1) / CONFIG.maze.cellSpan),
-    col: Math.floor((x - 1) / CONFIG.maze.cellSpan),
+    row: Math.floor((y - 1) / CONFIG.maze.renderCellStep),
+    col: Math.floor((x - 1) / CONFIG.maze.renderCellStep),
   })
   const gridPointFromCellCoordinate = ({ row, col }: { row: number; col: number }) => ({
-    x: col * CONFIG.maze.cellSpan + 1,
-    y: row * CONFIG.maze.cellSpan + 1,
+    x: col * CONFIG.maze.renderCellStep + 1,
+    y: row * CONFIG.maze.renderCellStep + 1,
   })
   const mazeCellKey = ({ row, col }: { row: number; col: number }) => `${row}:${col}`
   const traversalHistoryIncludes = (
@@ -246,16 +246,16 @@ function createTraversalMock({
         MoveDown: [1, 0],
       }
       const [rowDelta, columnDelta] = deltas[action]
-      const nextY = state.playerPosition.y + rowDelta * CONFIG.maze.moveStep
-      const nextX = state.playerPosition.x + columnDelta * CONFIG.maze.moveStep
+      const nextY = state.playerPosition.y + rowDelta * CONFIG.maze.renderCellStep
+      const nextX = state.playerPosition.x + columnDelta * CONFIG.maze.renderCellStep
       const probeY = state.playerPosition.y + rowDelta
       const probeX = state.playerPosition.x + columnDelta
 
-      if (nextY <= 0 || nextY > state.mazeDimensions.numRows * CONFIG.maze.cellSpan) {
+      if (nextY <= 0 || nextY > state.mazeDimensions.numRows * CONFIG.maze.renderCellStep) {
         return { canMove: false }
       }
 
-      if (nextX <= 0 || nextX > state.mazeDimensions.numCols * CONFIG.maze.cellSpan) {
+      if (nextX <= 0 || nextX > state.mazeDimensions.numCols * CONFIG.maze.renderCellStep) {
         return { canMove: false }
       }
 
@@ -297,6 +297,7 @@ function createPersistedWonRound(): PersistedRound {
       ["|", "   ", "|"],
       ["|", "---", "|"],
     ],
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     startCell: { row: 0, col: 0 },
     traversalHistory: [selfVisit(0, 0)],
@@ -331,6 +332,7 @@ type DimensionsResult = {
 } | null
 
 type GameHarness = {
+  appendTapooLogEntry: ReturnType<typeof vi.fn>
   clearPersistedSnapshot: ReturnType<typeof vi.fn>
   clearPersistedRound: ReturnType<typeof vi.fn>
   elements: Elements
@@ -377,6 +379,7 @@ async function bootstrapHarness({
   const saveActiveRoundSnapshot = vi.fn()
   const clearPersistedSnapshot = vi.fn()
   const clearPersistedRound = vi.fn()
+  const appendTapooLogEntry = vi.fn()
   const generateMaze = vi.fn(() => round)
   const reweightMaze = vi.fn(() => reweightedMaze ?? round.maze)
 
@@ -422,6 +425,10 @@ async function bootstrapHarness({
         this.levelDurationMs = levelDurationMs
         this.remainingValue = levelDurationMs
       }
+
+      get isPaused(): boolean {
+        return this.pausedAt !== 0
+      }
     }
 
     return { GameClock: MockClock }
@@ -440,9 +447,8 @@ async function bootstrapHarness({
     generateMaze,
     getMazeDimensions,
     getNavigationProfile: vi.fn(() => ({
-      __softCorridorLimit: 8,
-      __hardCorridorLimit: 10,
-      __preferTurnPercent: 90,
+      __maxCorridorLength: 10,
+      __leastNeighborsBias: 100,
     })),
   }))
   vi.doMock("./traversal", () => createTraversalMock({ isSpaceFound, reweightMaze }))
@@ -458,7 +464,7 @@ async function bootstrapHarness({
     saveActiveRoundSnapshot,
     loadTapooLog: vi.fn(() => []),
     saveTapooLog: vi.fn(),
-    appendTapooLogEntry: vi.fn(),
+    appendTapooLogEntry,
     clearTapooLog: vi.fn(),
   }))
   vi.spyOn(window, "setInterval").mockImplementation(
@@ -482,6 +488,7 @@ async function bootstrapHarness({
   const runtime = bootstrapGame(controlMode, elements)
 
   return {
+    appendTapooLogEntry,
     clearPersistedSnapshot,
     clearPersistedRound,
     elements,
@@ -533,9 +540,8 @@ describe("bootstrapGame", () => {
       generateMaze,
       getMazeDimensions,
       getNavigationProfile: vi.fn(() => ({
-        __softCorridorLimit: 8,
-        __hardCorridorLimit: 10,
-        __preferTurnPercent: 90,
+        __maxCorridorLength: 10,
+        __leastNeighborsBias: 100,
       })),
     }))
     vi.doMock("./traversal", () => createTraversalMock())
@@ -605,9 +611,8 @@ describe("bootstrapGame", () => {
         numRows: 1,
       })),
       getNavigationProfile: vi.fn(() => ({
-        __softCorridorLimit: 8,
-        __hardCorridorLimit: 10,
-        __preferTurnPercent: 90,
+        __maxCorridorLength: 10,
+        __leastNeighborsBias: 100,
       })),
     }))
     vi.doMock("./traversal", () => createTraversalMock())
@@ -662,9 +667,8 @@ describe("bootstrapGame", () => {
       generateMaze,
       getMazeDimensions,
       getNavigationProfile: vi.fn(() => ({
-        __softCorridorLimit: 8,
-        __hardCorridorLimit: 10,
-        __preferTurnPercent: 90,
+        __maxCorridorLength: 10,
+        __leastNeighborsBias: 100,
       })),
     }))
     vi.doMock("./traversal", () => createTraversalMock())
@@ -721,9 +725,8 @@ describe("bootstrapGame", () => {
       generateMaze: vi.fn(() => createRound()),
       getMazeDimensions: vi.fn(() => ({ level: 1, numCols: 1, numRows: 1 })),
       getNavigationProfile: vi.fn(() => ({
-        __softCorridorLimit: 8,
-        __hardCorridorLimit: 10,
-        __preferTurnPercent: 90,
+        __maxCorridorLength: 10,
+        __leastNeighborsBias: 100,
       })),
     }))
     vi.doMock("./traversal", () =>
@@ -812,7 +815,7 @@ describe("bootstrapGame", () => {
 
     const actionResult = harness.runtime.dispatch(
       { type: "MoveRight" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
     expect(harness.mode.readLastActionResult()).toEqual(actionResult)
 
@@ -826,7 +829,7 @@ describe("bootstrapGame", () => {
     expect(state.level).toBe(1)
     expect(state.status).toBe("running")
     expect(state.scoreDecayUnits).toBe(0)
-    expect(state.agentRequestCount).toBe(0)
+    expect(state.turnCount).toBe(0)
     expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
   })
 
@@ -838,7 +841,6 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.controlMode).toBe(CONFIG.runtime.controlModes.agentApi)
     expect(state.status).toBe("await-agent")
-    expect(state.canResume).toBe(false)
   })
 
   it("pauses and resumes a running round through interactive controls", async () => {
@@ -850,7 +852,6 @@ describe("bootstrapGame", () => {
 
     let state = latestRenderedState(harness.render)
     expect(state.status).toBe("paused")
-    expect(state.canResume).toBe(true)
     expect(harness.saveGameProgress).toHaveBeenCalled()
     expect(harness.saveActiveRoundSnapshot).toHaveBeenCalled()
 
@@ -863,7 +864,6 @@ describe("bootstrapGame", () => {
 
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
-    expect(state.canResume).toBe(false)
   })
 
   it("moves the player to the target and persists a win", async () => {
@@ -1099,6 +1099,7 @@ describe("bootstrapGame", () => {
       level: 1,
       mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
       maze: createHorizontalRound().maze,
+      startPosition: { x: 1, y: 1 },
       playerPosition: { x: 1, y: 1 },
       startCell: { row: 0, col: 0 },
       traversalHistory: [selfVisit(0, 0)],
@@ -1141,16 +1142,84 @@ describe("bootstrapGame", () => {
 
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("paused")
-    expect(state.canResume).toBe(true)
     expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
     expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(3)
   })
+
+  it.each([
+    {
+      name: "pauses a running interactive round so the human resumes deliberately",
+      mode: CONFIG.runtime.controlModes.interactive,
+      persistedStatus: "running" as const,
+      expectedStatus: "paused",
+    },
+    {
+      name: "keeps a running agent-api round running so the poller picks it back up",
+      mode: CONFIG.runtime.controlModes.agentApi,
+      // Without an enabled seat the mode drops to await-agent on its own, so the running case
+      // needs a live agent for the restored status to be observable at all.
+      agentConfigs: [enabledAgentConfig()],
+      persistedStatus: "running" as const,
+      expectedStatus: "running",
+    },
+    {
+      name: "leaves an already paused agent-api round paused",
+      mode: CONFIG.runtime.controlModes.agentApi,
+      persistedStatus: "paused" as const,
+      expectedStatus: "paused",
+    },
+    {
+      name: "leaves an awaiting agent-api round awaiting",
+      mode: CONFIG.runtime.controlModes.agentApi,
+      persistedStatus: "await-agent" as const,
+      expectedStatus: "await-agent",
+    },
+  ])(
+    "restore $name",
+    async ({ mode, agentConfigs = [], persistedStatus, expectedStatus }) => {
+      // Only an interactive round that was mid-play gets paused on reload: its score decays with
+      // elapsed time, so resuming unattended would burn it. Every other combination keeps whatever
+      // status was saved.
+      const persistedRound: PersistedRound = {
+        level: 1,
+        mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
+        maze: createHorizontalRound().maze,
+        startPosition: { x: 1, y: 1 },
+        playerPosition: { x: 1, y: 1 },
+        startCell: { row: 0, col: 0 },
+        traversalHistory: [selfVisit(0, 0)],
+        finalPosition: { x: 3, y: 1 },
+        wallWeight: 1,
+        status: persistedStatus,
+        score: 200,
+        lastRoundScore: 0,
+        remainingMs: 1500,
+        winSummary: "",
+      }
+
+      const harness = await bootstrapHarness({
+        agentConfigs,
+        mode,
+        round: createHorizontalRound(),
+        persistedSnapshots: [
+          {
+            preferences: { level: 1, wallWeight: 1 },
+            round: persistedRound,
+          },
+        ],
+      })
+
+      const state = latestRenderedState(harness.render)
+      expect(state.status).toBe(expectedStatus)
+    },
+  )
 
   it("rejects malformed persisted traversal history and falls back to a fresh round", async () => {
     const invalidPersistedRound: PersistedRound = {
       level: 2,
       mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
       maze: createHorizontalRound().maze,
+      startPosition: { x: 1, y: 1 },
       playerPosition: { x: 3, y: 1 },
       startCell: { row: 0, col: 0 },
       traversalHistory: [selfVisit(0, 0), selfVisit(0, 0)],
@@ -1252,7 +1321,7 @@ describe("bootstrapGame", () => {
 
     const actionResult = harness.runtime.dispatch(
       { type: "MoveRight" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
 
     state = latestRenderedState(harness.render)
@@ -1302,5 +1371,53 @@ describe("bootstrapGame", () => {
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
     expect(harness.mode.readLastActionResult()).toBeNull()
+  })
+
+  // No public call sequence can produce an inconsistent state — restore matches the clock to the
+  // status it restores, and every transition sets the clock before the status. These tests inject
+  // the violation directly onto the live state instead, which is the only way to reach the reporting
+  // path. cycle-walls is the render trigger because it is the one action that redraws without
+  // touching either the status or the clock, so it cannot repair the violation under test.
+  it("logs an inconsistent state instead of throwing out of the render path", async () => {
+    const harness = await bootstrapHarness()
+    const state = latestRenderedState(harness.render)
+
+    // Paused status while the clock still runs. Throwing here used to reach the global handler in
+    // tapoo.ts and replace the whole game with placeholder art, losing a recoverable round.
+    state.status = "paused"
+    const rendersBeforeViolation = harness.render.mock.calls.length
+
+    harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
+
+    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(1)
+    const [, entry] = harness.appendTapooLogEntry.mock.calls[0] as [string, { type: string; payload: string }]
+    expect(entry.type).toBe("error")
+    expect(entry.payload).toBe("invalid game state: paused status requires a paused clock")
+    // The round keeps playing: rendering continued past the violation rather than aborting.
+    expect(harness.render.mock.calls.length).toBeGreaterThan(rendersBeforeViolation)
+    expect(latestRenderedState(harness.render).wallWeight).toBe(2)
+  })
+
+  it("reports a repeated violation once but still reports a different one", async () => {
+    const harness = await bootstrapHarness()
+    const state = latestRenderedState(harness.render)
+
+    state.status = "paused"
+    harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
+    harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
+
+    // renderState runs on the blink cadence, so an unfixed violation would append entries several
+    // times a second and bury the gameplay history it sits beside.
+    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(1)
+
+    // Suppression is keyed on the message, not on having reported once: a violation that changes
+    // into a different one is still news, so it has to appear.
+    state.status = "running"
+    state.clock?.pause()
+    harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
+
+    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(2)
+    const [, entry] = harness.appendTapooLogEntry.mock.calls[1] as [string, { payload: string }]
+    expect(entry.payload).toBe("invalid game state: running status requires an active clock")
   })
 })

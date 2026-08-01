@@ -4,6 +4,9 @@ const blinkIntervalMs = 500
 export class GameClock {
   levelDurationMs: number
   startedAt: number
+  // pausedAt is a timestamp, not a flag: 0 means the clock has never been stopped or has since
+  // resumed, and any other value is the instant the current pause began. isPaused is the only
+  // place that sentinel is read, so no caller has to remember which way round it goes.
   pausedAt: number
   pausedDuration: number
 
@@ -14,10 +17,15 @@ export class GameClock {
     this.pausedDuration = 0
   }
 
+  // isPaused reports whether active time is currently frozen.
+  get isPaused(): boolean {
+    return this.pausedAt !== 0
+  }
+
   // elapsed reports active time only, excluding any paused duration.
   elapsed(now = performance.now()): number {
     // Freeze elapsed time while paused so reloads and manual pauses keep the remaining time stable.
-    const effectiveNow = this.pausedAt || now
+    const effectiveNow = this.isPaused ? this.pausedAt : now
     return effectiveNow - this.startedAt - this.pausedDuration
   }
 
@@ -34,14 +42,18 @@ export class GameClock {
 
   // pause captures the instant at which active time should stop advancing.
   pause(now = performance.now()): void {
-    if (!this.pausedAt) {
-      this.pausedAt = now
+    // Already stopped: keep the original instant so a repeated pause cannot extend the frozen span.
+    if (this.isPaused) {
+      return
     }
+
+    this.pausedAt = now
   }
 
   // resume folds the paused span back into the accumulated pause duration.
   resume(now = performance.now()): void {
-    if (!this.pausedAt) {
+    // Already running: there is no frozen span to fold back in.
+    if (!this.isPaused) {
       return
     }
 

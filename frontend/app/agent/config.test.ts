@@ -78,4 +78,5 @@ describe("agent config", () => {
       }),
     ).toBe(CONFIG.agentConfig.invalidEndpointMessage)
   })
+
 })

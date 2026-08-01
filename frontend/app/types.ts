@@ -88,11 +88,11 @@ export type WinSummaryPreviousComparison = "none" | "faster" | "slower" | "match
 // WinSummaryBestComparison describes how the current win compares to the best stored win.
 export type WinSummaryBestComparison = "new-record" | "matched-best" | "behind-best"
 
-// AgentRequestPreviousComparison compares the current agent-api win request count to the last win.
-export type AgentRequestPreviousComparison = "none" | "fewer" | "more" | "matched"
+// AgentSpeedPreviousComparison compares the current agent-api win traversal speed to the last win.
+export type AgentSpeedPreviousComparison = "none" | "faster" | "slower" | "matched"
 
-// AgentRequestBestComparison compares the current agent-api win request count to the best win.
-export type AgentRequestBestComparison = "new-record" | "matched-best" | "behind-best"
+// AgentSpeedBestComparison compares the current agent-api win traversal speed to the best win.
+export type AgentSpeedBestComparison = "new-record" | "matched-best" | "behind-best"
 
 // CellAddress records the render-grid coordinates around a logical maze cell.
 export type CellAddress = {
@@ -115,11 +115,25 @@ export type CellNeighbors = {
   __top: number
 }
 
-// NavigationProfile shapes corridor and turning behavior during maze generation.
+// NavigationProfile shapes corridor length and branching behavior during maze generation.
 export type NavigationProfile = {
-  __softCorridorLimit: number
-  __hardCorridorLimit: number
-  __preferTurnPercent: number
+  // __maxCorridorLength caps how many cells a straight run can span before being forced to bend.
+  __maxCorridorLength: number
+  // __leastNeighborsBias (0-100) is the percent chance, at any decision point with more than
+  // one unvisited neighbor, of preferring the candidate with the fewest unvisited neighbors of
+  // its own — this is what actually controls junction density. 100 minimizes branching (long,
+  // predictable corridors, bounded by __maxCorridorLength); 0 restores fully random neighbor
+  // selection (the original branching rate, ~10% junctions regardless of area).
+  //
+  // Junction density also controls how much of the maze the solution path covers, since
+  // generateMaze always connects start to the single farthest cell from it (see its comment).
+  // A tree's longest path is a bigger share of its cells the less it branches — near 100 the
+  // maze is almost one long corridor, so the path can cover 90-100% of all cells; near 0, more
+  // cells get spent on short junction side-branches instead, so the path covers less of the
+  // maze. In other words: higher values make the route straighter and easier to predict from
+  // any single glance, but the player has to walk more of the maze's cells to reach the goal;
+  // lower values make the route harder to read at a glance, but it can be a shorter walk.
+  __leastNeighborsBias: number
 }
 
 // PathStep tracks one generation step and its corridor history.
@@ -143,6 +157,7 @@ export type PersistedRound = {
   maze: string[][]
   startCell: CellCoordinate
   traversalHistory: TraversalHistoryEntry[]
+  startPosition: RenderGridPoint
   playerPosition: RenderGridPoint
   finalPosition: RenderGridPoint
   wallWeight: WallWeight
@@ -152,7 +167,7 @@ export type PersistedRound = {
   remainingMs: number
   winSummary?: string
   scoreDecayUnits?: number
-  agentRequestCount?: number
+  turnCount?: number
   cumulativeRoundCount?: number
 }
 
@@ -166,8 +181,8 @@ export type PersistedGameSetup = {
 export type PersistedWinMetrics = {
   lastAttemptRetentionUnits: number | null
   bestWinRetentionUnits: number | null
-  lastWinRequestCount: number | null
-  bestWinRequestCount: number | null
+  lastWinTraversalSpeedUnits: number | null
+  bestWinTraversalSpeedUnits: number | null
 }
 
 // PersistedPreferences combines setup with optional metrics because old/missing storage can lack either bucket.
@@ -208,6 +223,85 @@ export type AgentSubmittedMovesSchema = {
   }
 }
 
+// AgentMessageRole lists the provider-neutral chat roles Tapoo needs for prediction requests.
+export type AgentMessageRole = "assistant" | "tool" | "user" | "system"
+
+// AgentToolDefinition mirrors the provider tool schema Tapoo sends with each chat request.
+export type AgentToolDefinition = {
+  type: "function"
+  function: {
+    name: string
+    description: string
+    parameters: {
+      type: "object"
+      properties: Record<string, unknown>
+      required: string[]
+    }
+  }
+}
+
+export type AgentToolResult =
+  | null
+  | boolean
+  | number
+  | string
+  | Record<string, unknown>
+  | unknown[]
+
+// AgentToolHandlers contains local Tapoo functions that satisfy model-requested tool calls.
+export type AgentToolHandlers = Record<
+  string,
+  (args: unknown) => AgentToolResult | Promise<AgentToolResult>
+>
+
+// AgentToolCall is intentionally permissive because providers vary slightly in tool-call shape.
+export type AgentToolCall = {
+  id?: string
+  type?: "function"
+  function?: {
+    index?: number
+    name?: string
+    arguments?: unknown
+  }
+}
+
+// AgentChatMessage is the minimal chat message shape needed by the prediction request loop.
+export type AgentChatMessage = {
+  role: AgentMessageRole
+  content?: string
+  tool_call_id?: string
+  tool_name?: string
+  tool_calls?: AgentToolCall[]
+}
+
+export type AgentPredictionFailureReason =
+  | "caller-abort"
+  | "malformed-response"
+  | "network-error"
+
+export type AgentPredictionDiagnostic = {
+  message: string
+  details?: Record<string, unknown>
+}
+
+export type AgentPredictionFailure = {
+  ok: false
+  reason: AgentPredictionFailureReason
+  diagnostic?: AgentPredictionDiagnostic
+}
+
+// AgentPredictionResult is the only prediction outcome surface exposed to agent-api controls.
+export type AgentPredictionResult =
+  | { ok: true; moves: MoveAction[] }
+  | AgentPredictionFailure
+
+// AgentPredictionRequest lets the caller stop polling without learning HTTP/tool-call details.
+export type AgentPredictionRequest = {
+  abort: () => void
+  isAborted: () => boolean
+  promise: Promise<AgentPredictionResult>
+}
+
 // AgentApiConfig stores one HTTP-controlled agent that can join the shared agent-api maze.
 export type AgentApiConfig = {
   id: number
@@ -217,12 +311,16 @@ export type AgentApiConfig = {
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number
-  // gameLevel and cumulativeRoundCount are the level and round requestsCount was last tracked against; a
-  // mismatch on either against the current round means the agent's efficiency tracking resets.
+  // gameLevel and cumulativeRoundCount are the level and round the counters below were last tracked
+  // against; a mismatch on either against the current round means the agent's efficiency tracking resets.
   // Level alone can't tell a retry of the same level apart from continuing it, hence cumulativeRoundCount.
   gameLevel?: number
   cumulativeRoundCount?: number
-  requestsCount?: number
+  turnCount?: number
+  // decayUnitsCharged is this agent's own share of the round's score decay, and is what its traversal
+  // speed is measured against. state.scoreDecayUnits cannot serve here: it is shared by every seat,
+  // so it attributes no spend to any individual agent.
+  decayUnitsCharged?: number
 }
 
 // AgentSeat represents one fixed roster slot; null means the seat is empty.
@@ -245,7 +343,6 @@ export type MazeActionResult = {
 
 // MazeActionDispatchOptions lets each dispatched command opt into feedback when it needs it.
 export type MazeActionDispatchOptions = {
-  model?: string
   wantFeedback?: boolean
   playerName: string
 }
@@ -273,10 +370,10 @@ export type State = {
   controlMode: MazeControlModeName
   level: number
   status: GameStatus
-  canResume: boolean
 
   maze: string[][] | null
   mazeDimensions: MazeDimensions | null
+  startPosition: RenderGridPoint | null
   playerPosition: RenderGridPoint | null
   finalPosition: RenderGridPoint | null
   traversalHistory: TraversalHistoryEntry[]
@@ -286,15 +383,12 @@ export type State = {
   lastRoundScore: number
   lastAttemptRetentionUnits: number | null
   bestWinRetentionUnits: number | null
-  lastWinRequestCount: number | null
-  bestWinRequestCount: number | null
+  lastWinTraversalSpeedUnits: number | null
+  bestWinTraversalSpeedUnits: number | null
   winSummary: string
   scoreDecayUnits: number
-  agentRequestCount: number
-  // cumulativeRoundCount is the total number of rounds played since the last progress reset —
-  // every level start and every retry counts once. It also lets recordAgentTurnStats tell a
-  // genuinely new attempt apart from a resumed one.
-  cumulativeRoundCount: number
+  turnCount: number
+  cumulativeRoundCount: number // Rounds played since the last reset; each level start and retry counts once.
 
   clock: GameClock | null
 }
@@ -426,16 +520,18 @@ export type AppConfig = {
     tooSmallActionMessage: string
     runningStatus: DisplayMsg
     highScoreTemplate: string
+    // noPrevious is a single line rather than a comparison group: with no previous record there is
+    // no best record either, so the result can only ever be a new record.
     winSummary: {
-      noPrevious: SummaryComparisonTemplates
+      noPrevious: string
       fasterPrevious: SummaryComparisonTemplates
       slowerPrevious: SummaryComparisonTemplates
       matchedPrevious: SummaryComparisonTemplates
     }
     agentWinSummary: {
-      noPrevious: SummaryComparisonTemplates
-      fewerPrevious: SummaryComparisonTemplates
-      morePrevious: SummaryComparisonTemplates
+      noPrevious: string
+      fasterPrevious: SummaryComparisonTemplates
+      slowerPrevious: SummaryComparisonTemplates
       matchedPrevious: SummaryComparisonTemplates
     }
   }
@@ -476,11 +572,14 @@ export type AppConfig = {
   }
   maze: {
     playerMarker: string
+    visitedCellMarker: string
     destinationMarker: string
     walls: Record<WallWeight, [string, string, string]>
-    cellSpan: number
-    cellPathWidth: number
-    moveStep: number
+    renderCellStep: number
+    wallOpening: {
+      horizontal: number
+      vertical: number
+    }
     leftPadding: number
     minMazeSideCells: number
   }
@@ -500,6 +599,7 @@ export type AppConfig = {
     retentionFullScaleUnits: number
     agentPenaltyDecayUnits: number
     agentBaseDecayUnits: number
+    traversalSpeedScaleUnits: number
   }
   timing: {
     refreshInterval: number

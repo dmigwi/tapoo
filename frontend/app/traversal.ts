@@ -1,5 +1,5 @@
 import { CONFIG, WALL_WEIGHTS } from "./config"
-import { isRunningStatus } from "./status"
+import { hasActiveRoundState, isRunningStatus } from "./status"
 import type {
   BaseDimensions,
   CellCoordinate,
@@ -30,22 +30,49 @@ export const MOVE_ACTIONS = Object.keys(MOVE_DELTAS) as MoveAction[]
 // cellCoordinateFromGridPoint converts one rendered maze-grid point into a logical cell position.
 export function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate {
   return {
-    row: Math.floor((position.y - 1) / maze.cellSpan),
-    col: Math.floor((position.x - 1) / maze.cellSpan),
+    row: Math.floor((position.y - 1) / maze.renderCellStep),
+    col: Math.floor((position.x - 1) / maze.renderCellStep),
   }
 }
 
 // gridPointFromCellCoordinate expands a logical cell position back into rendered maze-grid space.
 export function gridPointFromCellCoordinate(cell: CellCoordinate): RenderGridPoint {
   return {
-    x: cell.col * maze.cellSpan + 1,
-    y: cell.row * maze.cellSpan + 1,
+    x: cell.col * maze.renderCellStep + 1,
+    y: cell.row * maze.renderCellStep + 1,
   }
+}
+
+function gridPointsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean {
+  return left.x === right.x && left.y === right.y
 }
 
 // mazeCellKey builds a stable string key for deduplicating logical maze cells.
 export function mazeCellKey(cell: CellCoordinate): string {
   return `${cell.row}:${cell.col}`
+}
+
+function isRenderGridPoint(value: unknown): value is RenderGridPoint {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("x" in value) ||
+    !("y" in value)
+  ) {
+    return false
+  }
+
+  const x = value.x
+  const y = value.y
+
+  return (
+    typeof x === "number" &&
+    typeof y === "number" &&
+    Number.isInteger(x) &&
+    Number.isInteger(y) &&
+    x >= 0 &&
+    y >= 0
+  )
 }
 
 // isCellCoordinate validates one zero-based logical cell coordinate.
@@ -225,25 +252,20 @@ export function resolvePlayerMove(
   state: State,
   action: MoveAction,
 ): ResolvedPlayerMove {
-  if (
-    !isRunningStatus(state.status) ||
-    !state.maze ||
-    !state.mazeDimensions ||
-    !state.playerPosition
-  ) {
+  if (!isRunningStatus(state.status) || !hasActiveRoundState(state)) {
     return { canMove: false }
   }
 
   const [rowDelta, columnDelta] = MOVE_DELTAS[action]
   const { x, y } = state.playerPosition
-  const nextY = y + rowDelta * maze.moveStep
-  const nextX = x + columnDelta * maze.moveStep
+  const nextY = y + rowDelta * maze.renderCellStep
+  const nextX = x + columnDelta * maze.renderCellStep
 
-  if (nextY <= 0 || nextY > state.mazeDimensions.numRows * maze.cellSpan) {
+  if (nextY <= 0 || nextY > state.mazeDimensions.numRows * maze.renderCellStep) {
     return { canMove: false }
   }
 
-  if (nextX <= 0 || nextX > state.mazeDimensions.numCols * maze.cellSpan) {
+  if (nextX <= 0 || nextX > state.mazeDimensions.numCols * maze.renderCellStep) {
     return { canMove: false }
   }
 
@@ -340,7 +362,7 @@ export function isValidPersistedRound(snapshot: PersistedRound): boolean {
   }
 
   // The stored maze grid must match the dimensions used to generate it.
-  const expectedRows = maze.cellSpan * snapshot.mazeDimensions.numRows + 1
+  const expectedRows = maze.renderCellStep * snapshot.mazeDimensions.numRows + 1
   const expectedColumns = snapshot.mazeDimensions.numCols * 2 + 1
   if (snapshot.maze.length !== expectedRows) {
     return false
@@ -354,12 +376,15 @@ export function isValidPersistedRound(snapshot: PersistedRound): boolean {
     return false
   }
 
-  // Player and destination positions must both point at open maze cells.
-  if (!isTraversableGridPoint(snapshot.maze, snapshot.playerPosition)) {
-    return false
-  }
-
-  if (!isTraversableGridPoint(snapshot.maze, snapshot.finalPosition)) {
+  // Start, player, and destination positions must all be valid open maze cells.
+  if (
+    !isRenderGridPoint(snapshot.startPosition) ||
+    !isRenderGridPoint(snapshot.playerPosition) ||
+    !isRenderGridPoint(snapshot.finalPosition) ||
+    !isTraversableGridPoint(snapshot.maze, snapshot.startPosition) ||
+    !isTraversableGridPoint(snapshot.maze, snapshot.playerPosition) ||
+    !isTraversableGridPoint(snapshot.maze, snapshot.finalPosition)
+  ) {
     return false
   }
 
@@ -379,6 +404,10 @@ export function isValidPersistedRound(snapshot: PersistedRound): boolean {
       gridPointFromCellCoordinate(snapshot.startCell),
     )
   ) {
+    return false
+  }
+
+  if (!gridPointsEqual(snapshot.startPosition, gridPointFromCellCoordinate(snapshot.startCell))) {
     return false
   }
 

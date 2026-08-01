@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { loadTapooLog } from "./storage"
+import { APP_VERSION } from "./config"
 import {
   initTapooLogs,
   logTapooDiagnostic,
@@ -8,6 +9,7 @@ import {
   tapooDownloadLogs,
   tapooLogCount,
   tapooResetLogs,
+  trimLoggedDescription,
 } from "./logs"
 
 // These tests keep the in-memory Tapoo log export/reset behavior intentionally small.
@@ -23,10 +25,13 @@ describe("tapoo logs", () => {
   })
 
   it("resets in-memory logs before downloading them", async () => {
-    let downloadedBlob: Blob | null = null
+    // The blob is captured on a holder object rather than in a `let`. TypeScript cannot see the
+    // mock body run, so a `let` initialized to null stays narrowed to `null` at every later read
+    // and guarding it collapses to `never`; a property read uses its declared type instead.
+    const captured: { blob: Blob | null } = { blob: null }
     let downloadedFilename = ""
     const createObjectURL = vi.fn((blob: Blob) => {
-      downloadedBlob = blob
+      captured.blob = blob
       return "blob:tapoo-logs"
     })
     vi.stubGlobal("URL", {
@@ -44,27 +49,54 @@ describe("tapoo logs", () => {
     tapooDownloadLogs("interactive")
 
     expect(createObjectURL).toHaveBeenCalledTimes(1)
-    if (!downloadedBlob) {
+    const firstDownload = captured.blob
+    if (!firstDownload) {
       throw new Error("expected log download blob")
     }
     expect(downloadedFilename).toMatch(
-      /^tapoo-interactive-logs-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/,
+      new RegExp(
+        `^tapoo-v${APP_VERSION.replaceAll(".", "\\.")}-interactive-logs-\\d+\\.json$`,
+      ),
     )
-    const downloadedText = await downloadedBlob.text()
+    const downloadedText = await firstDownload.text()
+    const downloadedPayload = JSON.parse(downloadedText) as {
+      downloadedAt: string
+      entries: unknown[]
+      mode: string
+      name: string
+      version: string
+    }
+    expect(downloadedPayload.name).toBe("tapoo")
+    expect(downloadedPayload.version).toBe(APP_VERSION)
+    expect(downloadedPayload.mode).toBe("interactive")
+    expect(downloadedPayload.entries).toHaveLength(1)
     expect(downloadedText).toContain("before reset")
     expect(downloadedText).toMatch(/"timestamp": \d+(\.\d+)?/)
     expect(downloadedText).toMatch(
       /"time": "\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}[+-]\d{2}-\d{2}"/,
+    )
+    expect(downloadedPayload.downloadedAt).toMatch(
+      /\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}[+-]\d{2}-\d{2}/,
     )
 
     tapooResetLogs("interactive")
     tapooDownloadLogs("interactive")
 
     expect(createObjectURL).toHaveBeenCalledTimes(2)
-    if (!downloadedBlob) {
+    const resetDownload = captured.blob
+    if (!resetDownload) {
       throw new Error("expected reset log download blob")
     }
-    await expect(downloadedBlob.text()).resolves.toBe("[]")
+    const resetPayload = JSON.parse(await resetDownload.text()) as {
+      entries: unknown[]
+      mode: string
+      name: string
+      version: string
+    }
+    expect(resetPayload.name).toBe("tapoo")
+    expect(resetPayload.version).toBe(APP_VERSION)
+    expect(resetPayload.mode).toBe("interactive")
+    expect(resetPayload.entries).toEqual([])
   })
 
   it("persists log entries to sessionStorage and clears them on reset", () => {
@@ -99,5 +131,30 @@ describe("tapoo logs", () => {
     logTapooDiagnostic("interactive", "info", "after unsubscribe")
 
     expect(listener).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe("trimLoggedDescription", () => {
+  it("returns the full text when keepFull is true, regardless of length", () => {
+    const long = "x".repeat(50)
+    expect(trimLoggedDescription(long, true)).toBe(long)
+  })
+
+  it("returns undefined unchanged", () => {
+    expect(trimLoggedDescription(undefined, false)).toBeUndefined()
+  })
+
+  it("returns short text unchanged even when keepFull is false", () => {
+    expect(trimLoggedDescription("short text", false)).toBe("short text")
+  })
+
+  it("truncates text longer than the preview length and appends an ellipsis", () => {
+    const long = "This description is definitely longer than the preview length allows."
+    expect(trimLoggedDescription(long, false)).toBe(`${long.slice(0, 25)}...`)
+  })
+
+  it("leaves text exactly at the preview length untouched", () => {
+    const exact = "x".repeat(25)
+    expect(trimLoggedDescription(exact, false)).toBe(exact)
   })
 })

@@ -1,9 +1,14 @@
 import { appendTapooLogEntry, clearTapooLog, loadTapooLog } from "./storage"
 import type { LogEntry, LogLevel, MazeControlModeName } from "./types"
+import { APP_VERSION } from "./config"
 
 type LogStateListener = (logCount: number) => void
 
 const logStateListeners = new Set<LogStateListener>()
+
+// loggedDescriptionPreviewLength caps how much of a known long/repeated description field
+// survives into the log when the full text isn't needed.
+const loggedDescriptionPreviewLength = 25
 
 // logCount tracks how many entries are stored without holding the full payloads in memory.
 // Seeded by initTapooLogs once the page mode is known; zero until then.
@@ -38,10 +43,18 @@ function getLocalTimestamp(): string {
   return localTimestampParts().join("")
 }
 
-// getDownloadTimestamp keeps downloaded filenames shorter while log entries retain timezone data.
-function getDownloadTimestamp(): string {
-  const [localDate, localTime] = localTimestampParts()
-  return `${localDate}${localTime}`
+// trimLoggedDescription is the single place every long, repeated description field goes through
+// before being logged. Passing keepFull lets each call site decide once whether this entry needs
+// the real text (e.g. the level's first request) or just a short, recognizable preview.
+export function trimLoggedDescription(
+  description: string | undefined,
+  keepFull: boolean,
+): string | undefined {
+  if (keepFull || !description || description.length <= loggedDescriptionPreviewLength) {
+    return description
+  }
+
+  return `${description.slice(0, loggedDescriptionPreviewLength)}...`
 }
 
 // initTapooLogs seeds the in-memory log count from sessionStorage entries that survived a page
@@ -98,13 +111,20 @@ export function subscribeTapooLogs(listener: LogStateListener): () => void {
 // Attach to window in the page entry point so it survives property mangling and tree-shaking.
 export function tapooDownloadLogs(modeName: MazeControlModeName): void {
   const entries = loadTapooLog<LogEntry>(modeName)
-  const blob = new Blob([JSON.stringify(entries, null, 2)], {
+  const payload = {
+    name: "tapoo",
+    version: APP_VERSION,
+    mode: modeName,
+    downloadedAt: getLocalTimestamp(),
+    entries,
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json",
   })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement("a")
   anchor.href = url
-  anchor.download = `tapoo-${modeName}-logs-${getDownloadTimestamp()}.json`
+  anchor.download = `${payload.name}-v${payload.version}-${modeName}-logs-${Date.now()}.json`
   anchor.hidden = true
   document.body.append(anchor)
   anchor.click()

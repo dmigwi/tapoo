@@ -4,11 +4,13 @@ import { createAgentMode } from "./agent"
 import { CONFIG } from "../config"
 import { logTapooDiagnostic, tapooResetLogs } from "../logs"
 import {
+  loadTapooLog,
   loadPersistedAgentApiConfigs,
   savePersistedAgentApiConfigs,
 } from "../storage"
 import type {
   AgentApiConfig,
+  AgentElements,
   Elements,
   MazeAction,
   MazeActionDispatchOptions,
@@ -66,7 +68,13 @@ function createButton({
   return button
 }
 
-function createAgentFormElements(): Elements {
+// AgentFormElements is the return shape of createAgentFormElements: every agent-api overlay
+// handle is populated, so tests can address them without re-checking each optional ref. Declaring
+// it as Required<AgentElements> rather than Elements also makes the fixture fail to compile if a
+// new agent handle is added to the type without being built here.
+type AgentFormElements = Elements & Required<AgentElements>
+
+function createAgentFormElements(): AgentFormElements {
   const agentSeatsBody = document.createElement("div")
   const tapooLogsReset = document.createElement("button")
   const tapooLogsDownload = document.createElement("button")
@@ -204,24 +212,44 @@ function createMemoryStorage(): Storage {
 
 type AgentControlFixture = State & MazeActionResult & Record<string, unknown>
 
+type AgentRoundLogDetails = {
+  agent: {
+    model: string
+    playerName: string
+  }
+  lastActionResult: Pick<MazeActionResult, "lastMoveStatus">
+  lastRoundScore: number
+  level: number
+  outcome: "won" | "lost"
+  score: number
+  uniqueCellsVisited: number
+  winSummary: string
+}
+
+type AgentRoundLogEntry = {
+  details: AgentRoundLogDetails
+  payload: string
+  type: string
+}
+
 function createControlFixture(
   overrides: Partial<AgentControlFixture> = {},
 ): AgentControlFixture {
   return {
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
-    bestWinRequestCount: null,
+    bestWinTraversalSpeedUnits: null,
     bestWinRetentionUnits: null,
-    canResume: false,
     clock: null,
     controlMode: CONFIG.runtime.controlModes.agentApi,
     finalPosition: { x: 5, y: 1 },
     lastAttemptRetentionUnits: null,
     lastRoundScore: 0,
-    lastWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
     level: 4,
     maze: null,
     mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     score: 800,
     scoreDecayUnits: 0,
@@ -328,12 +356,12 @@ describe("agent control mode", () => {
     expect(dispatch).toHaveBeenNthCalledWith(
       1,
       { type: "MoveRight" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
     expect(dispatch).toHaveBeenNthCalledWith(
       2,
       { type: "MoveDown" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(
       1,
@@ -402,6 +430,58 @@ describe("agent control mode", () => {
         chargedMovesCount: 1,
       }),
     )
+  })
+
+  it("logs final round payload when an agent wins the level", async () => {
+    const elements = createAgentFormElements()
+    savePersistedAgentApiConfigs(enabledAgentConfigs())
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      }),
+    )
+
+    let state = createControlFixture({ status: "running", score: 800 })
+    const dispatch = vi.fn(() =>
+      createControlFixture({
+        currentCell: { row: 0, col: 1 },
+        lastMoveStatus: "reached-target",
+      }),
+    )
+    const commitAgentTurn = vi.fn(() => {
+      state = createControlFixture({
+        turnCount: 1,
+        cumulativeRoundCount: 1,
+        lastRoundScore: 700,
+        score: 700,
+        status: "won",
+        winSummary: "New record",
+      })
+    })
+
+    const mode = createAgentMode(elements)
+    mode.bindActionDispatch(dispatch, () => state, commitAgentTurn)
+    await flushImmediateAgentTurn()
+
+    const logEntries = loadTapooLog<AgentRoundLogEntry>(CONFIG.runtime.controlModes.agentApi)
+    const lastEntry = logEntries[logEntries.length - 1]
+    expect(lastEntry.payload).toBe("Agent level won.")
+    expect(lastEntry.type).toBe("info")
+    expect(lastEntry.details.outcome).toBe("won")
+    expect(lastEntry.details.level).toBe(4)
+    expect(lastEntry.details.score).toBe(700)
+    expect(lastEntry.details.lastRoundScore).toBe(700)
+    expect(lastEntry.details.winSummary).toBe("New record")
+    expect(lastEntry.details.agent.playerName).toBe("Blue")
+    expect(lastEntry.details.agent.model).toBe("llama3.2")
+    expect(lastEntry.details.lastActionResult.lastMoveStatus).toBe("reached-target")
+    // Summarised rather than embedded: the entry carries the visited-cell count, not the trail.
+    // The fixture records only the start cell, so the count is 1.
+    expect(lastEntry.details.uniqueCellsVisited).toBe(1)
   })
 
   it("applies score decay to every submitted move in a valid prediction batch even when replay stops early", async () => {
@@ -526,7 +606,7 @@ describe("agent control mode", () => {
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith(
       { type: "MoveRight" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(1)
     expect(mode.readLastActionResult()).toEqual(
@@ -695,7 +775,7 @@ describe("agent control mode", () => {
     expect(dispatch).toHaveBeenNthCalledWith(
       2,
       { type: "MoveRight" },
-      { model: "llama3.2", wantFeedback: true, playerName: "Blue" },
+      { wantFeedback: true, playerName: "Blue" },
     )
   })
 
@@ -1278,6 +1358,45 @@ describe("agent control mode", () => {
 
     expect(dispatch).not.toHaveBeenCalled()
     expect(elements.agentConfigForm?.hidden).toBe(true)
+    expect(
+      elements.body.classList.contains("terminal-body--agent-form-active"),
+    ).toBe(false)
+    elements.app.remove()
+  })
+
+  it("closes the manage/delete dialog with Escape without dispatching pause", () => {
+    // The delete dialog focuses a <button> (agentDeleteApply), unlike the add/edit form which
+    // focuses an <input>. Escape must still close it rather than falling through to the global
+    // session shortcut, regardless of which element type currently holds focus.
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
+        enabled: true,
+      },
+    ])
+    const elements = createAgentFormElements()
+    const dispatch = vi.fn()
+    vi.stubGlobal("fetch", vi.fn())
+    document.body.append(elements.app)
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickDeleteSeat(elements, "1")
+    dispatch.mockClear()
+    elements.agentDeleteApply?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    )
+
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(elements.agentDeleteDialog?.hidden).toBe(true)
     expect(
       elements.body.classList.contains("terminal-body--agent-form-active"),
     ).toBe(false)

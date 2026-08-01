@@ -36,20 +36,20 @@ function createActionResult(
 
 function createState(): State {
   return {
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
-    bestWinRequestCount: null,
+    bestWinTraversalSpeedUnits: null,
     bestWinRetentionUnits: null,
-    canResume: false,
     clock: null,
     controlMode: CONFIG.runtime.controlModes.interactive,
     finalPosition: null,
     lastAttemptRetentionUnits: null,
     lastRoundScore: 0,
-    lastWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
     level: 1,
     maze: null,
     mazeDimensions: null,
+    startPosition: null,
     playerPosition: null,
     score: 0,
     scoreDecayUnits: 0,
@@ -174,6 +174,43 @@ describe("interactive control mode", () => {
 
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: "restart" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenNthCalledWith(2, { type: "pause" }, { playerName: "Self" })
+  })
+
+  it("ignores keyboard shortcuts while typing inside a form control nested in the terminal app", () => {
+    // The agent-config form's text inputs live inside elements.app's own DOM subtree (even in
+    // interactive mode), so isMazeControlFocused alone would treat them as "focused enough" to
+    // dispatch game shortcuts — a space typed into a player name field must not pause the game.
+    const restartButton = createButton({ action: "restart" })
+    const nestedInput = document.createElement("input")
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [restartButton],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [],
+      touchControls: document.createElement("div"),
+    }
+    elements.app.tabIndex = 0
+    elements.app.append(restartButton, nestedInput)
+    document.body.append(elements.app)
+    const dispatch = vi.fn()
+
+    const mode = createInteractiveMode(elements)
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn())
+
+    // Dispatch on the focused input itself (not window) so the event bubbles up with
+    // event.target set to the input, matching real browser keydown delivery.
+    nestedInput.focus()
+    nestedInput.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
+    nestedInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+
+    expect(dispatch).not.toHaveBeenCalled()
+
+    elements.app.focus()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
+
+    expect(dispatch).toHaveBeenCalledWith({ type: "pause" }, { playerName: "Self" })
   })
 
   it("rebinds controls without keeping stale listeners alive", () => {

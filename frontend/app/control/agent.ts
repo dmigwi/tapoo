@@ -13,7 +13,7 @@ import {
 import {
   handleAgentTurnLoop,
 } from "./agent-api"
-import type { AgentMovePoller } from "./agent-api"
+import type { AgentMovePoller, AgentRoundState } from "./agent-api"
 import {
   agentSeatAddLabel,
   agentSeatIdFromDataset,
@@ -35,6 +35,7 @@ import {
 import { CONFIG } from "../config"
 import {
   subscribeTapooLogs,
+  logTapooDiagnostic,
   tapooDownloadLogs,
   tapooLogCount,
   tapooResetLogs,
@@ -46,6 +47,38 @@ const { agentConfig, runtime } = CONFIG
 type AgentButtonBinding = {
   __button: HTMLButtonElement
   __onClick: () => void
+}
+
+// logAgentRoundCompletion captures the final agent-api round state without serializing the live
+// clock or maze grid, keeping diagnostics useful while avoiding large circular-ish payloads.
+function logAgentRoundCompletion({ __actionResult, __state, __agent }: AgentRoundState): void {
+  const outcome = __state.status
+  const result: MazeActionResult = { ...__actionResult, lastSubmittedMovesSchema: undefined }
+
+  logTapooDiagnostic(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
+    outcome,
+    agent: {
+      id: __agent.id,
+      playerName: __agent.playerName,
+      model: __agent.model,
+      enabled: __agent.enabled,
+    },
+    level: __state.level,
+    score: __state.score,
+    lastRoundScore: __state.lastRoundScore,
+    winSummary: __state.winSummary,
+    turnCount: __state.turnCount,
+    cumulativeRoundCount: __state.cumulativeRoundCount,
+    mazeDimensions: __state.mazeDimensions,
+    startPosition: __state.startPosition,
+    playerPosition: __state.playerPosition,
+    finalPosition: __state.finalPosition,
+    // Only the count: an entry per visited cell is the largest thing in State, and it grew again
+    // when openMoves became a resolved adjacency map. Paired with turnCount it still gives
+    // the cells-per-request efficiency these entries are read for.
+    uniqueCellsVisited: __state.traversalHistory.length,
+    lastActionResult: result,
+  })
 }
 
 // createAgentMode builds the agent-api MazeActionControl while transport wiring is still pending.
@@ -175,7 +208,6 @@ export function createAgentMode(
         agent: AgentApiConfig,
       ): MazeActionResult => {
         const actionResult = nextDispatch(action, {
-          model: agent.model,
           wantFeedback: true,
           playerName: agent.playerName,
         })
@@ -199,6 +231,7 @@ export function createAgentMode(
           activeAgentId = agent?.id ?? null
           renderAgentRoster()
         },
+        __onRoundOutcome: logAgentRoundCompletion,
         __readAgentConfigs: readAgentConfigs,
         __readState: readState,
       })
@@ -436,28 +469,33 @@ export function createAgentMode(
           }, 420)
         }
 
-        if (elements.tapooLogsReset) {
+        // Each button is bound to a const local so the deferred onClick closure keeps the
+        // narrowed non-optional type; reading elements.<button> inside the closure would widen
+        // it back to possibly-undefined, since the property could in principle change later.
+        const resetButton = elements.tapooLogsReset
+        if (resetButton) {
           const onClick = (): void => {
-            showButtonFeedback(elements.tapooLogsReset)
+            showButtonFeedback(resetButton)
             tapooResetLogs(runtime.controlModes.agentApi)
           }
           buttonBindings.push({
-            __button: elements.tapooLogsReset,
+            __button: resetButton,
             __onClick: onClick,
           })
-          elements.tapooLogsReset.addEventListener("click", onClick)
+          resetButton.addEventListener("click", onClick)
         }
 
-        if (elements.tapooLogsDownload) {
+        const downloadButton = elements.tapooLogsDownload
+        if (downloadButton) {
           const onClick = (): void => {
-            showButtonFeedback(elements.tapooLogsDownload)
+            showButtonFeedback(downloadButton)
             tapooDownloadLogs(runtime.controlModes.agentApi)
           }
           buttonBindings.push({
-            __button: elements.tapooLogsDownload,
+            __button: downloadButton,
             __onClick: onClick,
           })
-          elements.tapooLogsDownload.addEventListener("click", onClick)
+          downloadButton.addEventListener("click", onClick)
         }
 
         releaseLogSubscription = subscribeTapooLogs(syncResetButton)
@@ -612,18 +650,10 @@ export function createAgentMode(
         return false
       }
 
-      // handleFormControlKeydown intercepts keys inside form fields, allowing Escape to close overlays.
+      // handleFormControlKeydown intercepts keys inside form fields so they keep normal typing
+      // behavior instead of falling through to global session shortcuts.
       const handleFormControlKeydown = (event: KeyboardEvent): boolean => {
-        if (!isFormControlTarget(event.target)) {
-          return false
-        }
-
-        // Form fields keep normal typing behavior; Escape is reserved for closing overlays.
-        if (event.key === "Escape" && closeActiveAgentOverlay()) {
-          event.preventDefault()
-        }
-
-        return true
+        return isFormControlTarget(event.target)
       }
 
       // Human-owned session controls stay on the no-feedback path in agent-api mode.
@@ -658,6 +688,13 @@ export function createAgentMode(
 
       // keydownHandler routes global keyboard shortcuts while yielding control to open overlays.
       keydownHandler = (event: KeyboardEvent): void => {
+        // Escape closes whichever agent overlay is open, regardless of which element inside it
+        // currently holds focus (an input, a button, or otherwise).
+        if (event.key === "Escape" && closeActiveAgentOverlay()) {
+          event.preventDefault()
+          return
+        }
+
         // Global shortcuts are ignored while the user is typing inside agent forms.
         if (handleFormControlKeydown(event)) {
           return

@@ -8,15 +8,31 @@ import (
 	termbox "github.com/nsf/termbox-go"
 )
 
-// coldef maintains the original color used on the
-// background or the foreground depending on its usage.
-const coldef = termbox.ColorDefault
+const (
+	// coldef maintains the original color used on the
+	// background or the foreground depending on its usage.
+	coldef = termbox.ColorDefault
+
+	// playerColor renders both the player marker and the visited-cell trail it leaves behind.
+	playerColor = termbox.ColorCyan
+
+	// targetColor renders the goal marker the player is trying to reach.
+	targetColor = termbox.ColorRed
+
+	// visitedCellMarker replaces a cell's blank path glyph once the player has moved through it,
+	// leaving a visible trail while still counting as traversable so backtracking stays possible.
+	visitedCellMarker = '░'
+)
 
 const (
 	// Maze cells are rendered on a doubled grid so walls and passages can occupy separate slots.
 
 	cellSpan      = 2
 	cellPathWidth = 3
+
+	// glyphPaddingSides is the number of sides a centered cell glyph is padded on, so passageGlyph
+	// derives its padding from cellPathWidth instead of assuming a particular width.
+	glyphPaddingSides = 2
 )
 
 const (
@@ -85,10 +101,11 @@ const (
 	gameOverNavigation = "              Press Ctrl+C to quit.     Press Enter to Proceed           "
 	tooSmallMazeFormat = "   level %d needs more screen room; enlarge the window to keep playing   "
 
-	highScores               = "               Final Level %d Scores:  %d (%d%% retention)               "
-	winNoPrevNewRecord       = "               New scores retention record                               "
-	winNoPrevMatchedBest     = "               Matched best scores retention                             "
-	winNoPrevBehindBest      = "               %s behind best scores retention                           "
+	highScores = "               Final Level %d Scores:  %d (%d%% retention)               "
+	// winNoPrev needs no best-clear variants: with no previous attempt there is no stored best
+	// either (loadStoredGameState drops the pair unless both halves are present), so a first
+	// recorded clear can only ever be a new record.
+	winNoPrev                = "               New scores retention record                               "
 	winFasterPrevNewRecord   = "               %s faster than previous (new record)                      "
 	winFasterPrevMatchedBest = "               %s faster than previous (matched best)                    "
 	winFasterPrevBehindBest  = "               %s faster than previous (%s behind best)                  "
@@ -226,34 +243,33 @@ const (
 	navigationFriendlyMaxArea = 130
 	navigationHardestArea     = 1600
 
-	// These fallback values keep very large mazes on the tightest corridor profile.
-	navigationFallbackSoftCorridorLimit = 2
-	navigationFallbackHardCorridorLimit = 3
-	navigationFallbackPreferTurnPercent = 55
+	// These fallback values keep very large mazes on the tightest supported profile.
+	navigationFallbackMaxCorridorLength  = 3
+	navigationFallbackLeastNeighborsBias = 0
 
-	navigationFriendlySoftCorridorLimit = 8
-	navigationFriendlyHardCorridorLimit = 10
-	navigationFriendlyPreferTurnPercent = 90
+	navigationFriendlyMaxCorridorLength  = 10
+	navigationFriendlyLeastNeighborsBias = 100
 )
 
-// NavigationProfile tunes how maze generation manages corridor length as the maze grows.
-// Early levels stay more welcoming by allowing longer straight corridors, while later levels
-// tighten those limits so navigation becomes denser and harder to read at a glance.
+// NavigationProfile tunes corridor length and branching behavior as the maze grows.
+// Early levels stay more welcoming by allowing longer straight corridors and minimizing
+// branching, while later levels tighten those limits so navigation becomes denser.
 type NavigationProfile struct {
-	// SoftCorridorLimit is the straight-run length after which turns should become preferred.
-	SoftCorridorLimit int
+	// MaxCorridorLength caps how many cells a straight run can span before being forced to bend.
+	MaxCorridorLength int
 
-	// HardCorridorLimit is the straight-run length that should rarely be exceeded when a turn exists.
-	HardCorridorLimit int
-
-	// PreferTurnPercent controls how often a turn should win over continuing straight when both are valid.
-	PreferTurnPercent int
+	// LeastNeighborsBias (0-100) is the percent chance, at any decision point with more than
+	// one unvisited neighbor, of preferring the candidate with the fewest unvisited neighbors of
+	// its own — this is what actually controls junction density. 100 minimizes branching (long,
+	// predictable corridors, bounded by MaxCorridorLength); 0 restores fully random neighbor
+	// selection (the original branching rate, ~10% junctions regardless of area).
+	LeastNeighborsBias int
 }
 
 // GetNavigationProfile returns the corridor-management profile derived from the
 // provided maze dimensions. The first few levels intentionally allow longer
-// straights so the maze feels approachable, then the profile gradually clamps
-// corridor length until the largest mazes use the hardest supported settings.
+// straights and minimal branching so the maze feels approachable, then the
+// profile gradually tightens both until the largest mazes use the hardest settings.
 func GetNavigationProfile(config Dimensions) NavigationProfile {
 	area := config.NumCols * config.NumRows
 
@@ -261,19 +277,14 @@ func GetNavigationProfile(config Dimensions) NavigationProfile {
 	// corridors faster than a plain linear interpolation while still staying smooth.
 	difficultyFactor := navigationDifficultyFactor(area)
 	return NavigationProfile{
-		SoftCorridorLimit: interpolateNavigationValue(
-			navigationFriendlySoftCorridorLimit,
-			navigationFallbackSoftCorridorLimit,
+		MaxCorridorLength: interpolateNavigationValue(
+			navigationFriendlyMaxCorridorLength,
+			navigationFallbackMaxCorridorLength,
 			difficultyFactor,
 		),
-		HardCorridorLimit: interpolateNavigationValue(
-			navigationFriendlyHardCorridorLimit,
-			navigationFallbackHardCorridorLimit,
-			difficultyFactor,
-		),
-		PreferTurnPercent: interpolateNavigationValue(
-			navigationFriendlyPreferTurnPercent,
-			navigationFallbackPreferTurnPercent,
+		LeastNeighborsBias: interpolateNavigationValue(
+			navigationFriendlyLeastNeighborsBias,
+			navigationFallbackLeastNeighborsBias,
 			difficultyFactor,
 		),
 	}

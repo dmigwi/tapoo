@@ -3,7 +3,10 @@ import type {
   BaseDimensions,
   GameStatus,
   MazeControlModeName,
+  MazeDimensions,
   PersistedGameStatus,
+  RenderGridPoint,
+  State,
 } from "./types"
 
 const { controlModes } = CONFIG.runtime
@@ -112,20 +115,9 @@ export function isFinishedStatus(
   return isWonStatus(status) || isLostStatus(status)
 }
 
-// canPersistRoundStatus limits persistence to round states that can be restored later.
-export function canPersistRoundStatus(
-  status: GameStatus,
-): status is PersistedGameStatus {
-  return (
-    isRunningStatus(status) ||
-    isPausedStatus(status) ||
-    isWonStatus(status) ||
-    isLostStatus(status) ||
-    isAwaitAgentStatus(status)
-  )
-}
-
-// canProceedStatus marks states that accept the proceed action.
+// canProceedStatus marks a settled round: a maze exists but is not advancing, so the player owes
+// it a decision. The three compound checks below are each written as this set plus or minus what
+// makes them differ, so the shared membership is stated once here — widening this widens them all.
 export function canProceedStatus(status: GameStatus): boolean {
   return (
     isAwaitAgentStatus(status) ||
@@ -134,11 +126,82 @@ export function canProceedStatus(status: GameStatus): boolean {
   )
 }
 
-// canShowWallsStatus marks states where wall reweighting remains safe to expose.
-export function canShowWallsStatus(status: GameStatus): boolean {
+// canPersistRoundStatus accepts everything canProceedStatus does, plus running, since a live round
+// has to survive a reload too. Its return type claims every status it accepts is a
+// PersistedGameStatus, and that claim is only true while canProceedStatus itself stays within that
+// union. TypeScript never checks a type predicate's body, so status.test.ts enforces the claim.
+export function canPersistRoundStatus(
+  status: GameStatus,
+): status is PersistedGameStatus {
   return (
-    isAwaitAgentStatus(status) || 
-    isPausedStatus(status) || 
-    isFinishedStatus(status)
+    isRunningStatus(status) || canProceedStatus(status)
   )
+}
+
+// canShowWallsStatus accepts exactly what canProceedStatus does: reweighting redraws the maze,
+// which is only safe while nothing is moving through it.
+export function canShowWallsStatus(status: GameStatus): boolean {
+  return canProceedStatus(status)
+}
+
+// canShowRestart accepts everything canProceedStatus does, plus too-small — the one state with no
+// drawable maze to proceed from, and so no way out except starting over.
+export function canShowRestart(status: GameStatus): boolean {
+  return (
+    canProceedStatus(status) || isTooSmallStatus(status)
+  )
+}
+
+// ActiveRoundState is State with every field a live round needs proven present, so callers guarded by
+// hasActiveRoundState can read them without repeating the null checks. traversalHistory stays a plain
+// array here: a type cannot express "non-empty", so that half of the guard is a runtime claim only.
+export type ActiveRoundState = State & {
+  mazeDimensions: MazeDimensions
+  maze: string[][]
+  startPosition: RenderGridPoint
+  playerPosition: RenderGridPoint
+  finalPosition: RenderGridPoint
+}
+
+// hasActiveRoundState reports whether a round holds enough state to be drawn, moved through, or saved.
+export function hasActiveRoundState(state: State): state is ActiveRoundState {
+  return (
+    state.mazeDimensions !== null &&
+    state.maze !== null &&
+    state.startPosition !== null &&
+    state.playerPosition !== null &&
+    state.finalPosition !== null &&
+    state.traversalHistory.length > 0
+  )
+}
+
+// stateInvariantError reports impossible status/state combinations before rendering or persistence.
+export function stateInvariantError(state: State): string | null {
+  // Paused status must freeze time too; otherwise a paused screen would keep burning score.
+  if (isPausedStatus(state.status) && !state.clock?.isPaused) {
+    return "invalid game state: paused status requires a paused clock"
+  }
+
+  // Running status must not carry a frozen clock, or movement and score display drift apart.
+  if (isRunningStatus(state.status) && state.clock?.isPaused) {
+    return "invalid game state: running status requires an active clock"
+  }
+
+  // Playable or resumable states need enough round data to redraw and persist the same maze.
+  if (
+    (isRunningStatus(state.status) ||
+      isPausedStatus(state.status) ||
+      isFinishedStatus(state.status) ||
+      isAwaitAgentStatus(state.status)) &&
+    !hasActiveRoundState(state)
+  ) {
+    return `invalid game state: ${state.status} status requires an active round`
+  }
+
+  // Boot and too-small are non-round screens, so retaining maze data there risks stale redraws.
+  if ((isTooSmallStatus(state.status) || state.status === "boot") && hasActiveRoundState(state)) {
+    return `invalid game state: ${state.status} status cannot keep an active round`
+  }
+
+  return null
 }

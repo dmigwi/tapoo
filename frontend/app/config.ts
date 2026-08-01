@@ -6,25 +6,23 @@ import type {
 
 declare const __TAPOO_BUILD_YEAR__: number
 
-// NAVIGATION_FRIENDLY_PROFILE defines the easiest corridor settings for small mazes.
+// NAVIGATION_FRIENDLY_PROFILE defines the easiest, least-branching settings for small mazes.
 const NAVIGATION_FRIENDLY_PROFILE: NavigationProfile = {
-  __softCorridorLimit: 8,
-  __hardCorridorLimit: 10,
-  __preferTurnPercent: 90,
+  __maxCorridorLength: 10,
+  __leastNeighborsBias: 100,
 }
 
-// NAVIGATION_HARDEST_PROFILE defines the tightest supported corridor settings.
+// NAVIGATION_HARDEST_PROFILE defines the tightest, most-branching supported profile.
 const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
-  __softCorridorLimit: 2,
-  __hardCorridorLimit: 3,
-  __preferTurnPercent: 55,
+  __maxCorridorLength: 3,
+  __leastNeighborsBias: 0,
 }
 
 // VERSION_MAJOR is the semantic major version for the browser SPA runtime.
 const VERSION_MAJOR = 2
 
 // VERSION_MINOR is the semantic minor version for the browser SPA runtime.
-const VERSION_MINOR = 1
+const VERSION_MINOR = 2
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
 const VERSION_PATCH = 0
@@ -119,19 +117,15 @@ export const CONFIG: AppConfig = {
       "Final Level {level} Scores:  {score} ({percent}% retention)",
     // Win-summary variants are selected from scoring.ts after comparing retention metrics.
     winSummary: {
-      noPrevious: {
-        newRecord: "New scores retention record",
-        matchedBest: "Matched best scores retention",
-        behindBest: "{delta} behind best scores retention",
-      },
+      noPrevious: "New scores retention record",
       fasterPrevious: {
         newRecord: "{delta} faster than previous (new record)",
-        matchedBest: "{delta} faster than previous (matched best)",
+        matchedBest: "{delta} faster than previous (matched as best)",
         behindBest: "{delta} faster than previous ({bestDelta} behind best)",
       },
       slowerPrevious: {
         newRecord: "{delta} slower than previous (new record)",
-        matchedBest: "{delta} slower than previous (matched best)",
+        matchedBest: "{delta} slower than previous (matched as best)",
         behindBest: "{delta} slower than previous ({bestDelta} behind best)",
       },
       matchedPrevious: {
@@ -141,25 +135,21 @@ export const CONFIG: AppConfig = {
       },
     },
     agentWinSummary: {
-      noPrevious: {
-        newRecord: "New lowest request count",
-        matchedBest: "Matched best request count",
-        behindBest: "{delta} requests behind best",
+      noPrevious: "new traversal speed record",
+      fasterPrevious: {
+        newRecord: "{delta} faster than previous (new record)",
+        matchedBest: "{delta} faster than previous (matched as best)",
+        behindBest: "{delta} faster than previous ({bestDelta} behind best)",
       },
-      fewerPrevious: {
-        newRecord: "{delta} fewer requests than previous (new record)",
-        matchedBest: "{delta} fewer requests than previous (matched best)",
-        behindBest: "{delta} fewer requests than previous ({bestDelta} behind best)",
-      },
-      morePrevious: {
-        newRecord: "{delta} more requests than previous (new record)",
-        matchedBest: "{delta} more requests than previous (matched best)",
-        behindBest: "{delta} more requests than previous ({bestDelta} behind best)",
+      slowerPrevious: {
+        newRecord: "{delta} slower than previous (new record)",
+        matchedBest: "{delta} slower than previous (matched as best)",
+        behindBest: "{delta} slower than previous ({bestDelta} behind best)",
       },
       matchedPrevious: {
-        newRecord: "Matched previous request count (new record)",
-        matchedBest: "Matched previous request count (matched best)",
-        behindBest: "Matched previous request count ({bestDelta} behind best)",
+        newRecord: "matched previous traversal speed (new record)",
+        matchedBest: "matched previous traversal speed (matched as best)",
+        behindBest: "matched previous traversal speed ({bestDelta} behind best)",
       },
     },
   },
@@ -204,17 +194,20 @@ export const CONFIG: AppConfig = {
   // Maze glyphs and geometry shared by generation, traversal, and rendering.
   maze: {
     playerMarker: "▓",
+    visitedCellMarker: "░",
     destinationMarker: "█",
     walls: {
       1: ["|", "---", "-"],
       2: ["╏", "╍╍╍", "╍"],
       3: ["║", "===", "="],
     },
-    cellSpan: 2,
-    cellPathWidth: 3,
-    moveStep: 2,
-    leftPadding: 3,
-    minMazeSideCells: 5,
+    wallOpening: {
+      horizontal: 3, // Replaces a horizontal wall segment like "---" with 3 spaces.
+      vertical: 1, // Replaces a vertical wall segment like "|" with 1 space.
+    },
+    renderCellStep: 2, // Distance in rendered-grid units between neighboring logical cell centers.
+    leftPadding: 3, // Visual spaces added before each rendered maze row.
+    minMazeSideCells: 5, // Smallest allowed logical cells per maze side.
   },
   // Maze-generation tuning controls level growth and navigation difficulty.
   generation: {
@@ -234,6 +227,7 @@ export const CONFIG: AppConfig = {
     retentionFullScaleUnits: 1_000_000, // Represents 100% scores retention without using floating-point percentages.
     agentPenaltyDecayUnits: 2, // Penalty for any agent mistake (invalid move or malformed error).
     agentBaseDecayUnits: 1,    // Constant decay for a turn that applied any valid moves.
+    traversalSpeedScaleUnits: 100, // Scales the traversal speed ratio as its display precision.
   },
   // Timing values drive refresh cadence, score decay, and the slower agent-api pacing.
   timing: {
@@ -241,7 +235,10 @@ export const CONFIG: AppConfig = {
     scoreDecayRate: 100,
     interactiveCoreDecayIntervalPerCellMs: 1_000, // Translates to 1sec
     agentApiCoreDecayIntervalPerCellMs: 30_000,   // Translates to 30sec
-    agentApiResponseTimeoutMs: 180_000,           // Translates to 3min
+    // Per provider request, not per turn: a turn issues several rounds, so a whole turn can take a
+    // multiple of this (see the request-count derivation in agent/request.ts). Per-request by
+    // design — a provider that stops responding is caught on the first round regardless.
+    agentApiResponseTimeoutMs: 300_000,           // Translates to 5min
   },
   // Viewport thresholds translate measured DOM space into logical maze room.
   viewport: {
@@ -260,7 +257,7 @@ export const CONFIG: AppConfig = {
       interactive: "interactive",
     },
     storage: {
-      version: 4,
+      version: 4.2,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",
@@ -269,11 +266,23 @@ export const CONFIG: AppConfig = {
       },
     },
     interactivePlayerName: "Self",
+    // Ollama's num_ctx, temperature and num_predict (see requestChatTurn in agent/request.ts),
+    // tuned for parseable moves over good prose. Only the prompt can overrun, so num_ctx is the
+    // one knob worth tuning: num_ctx = max(floor, mazeArea * multiplier).
+    // Known limit: the multiplier budgets fewer tokens per cell than get_traversal_history spends per
+    // visited cell, so large mazes overrun it — the fix is to bound that tool rather than raise this.
     modelConfig: {
-      contextWindowFloor: 2500,       // Floor above Ollama's 2048 default; avoids 500 errors on long histories
-      contextWindowAreaMultiplier: 5, // Tokens-per-cell scaling factor; grows context with maze area
-      temperature: 0.5,               // Lower than 0.8 default; favors format-compliant over creative replies
-      numPredict: 3000,               // Caps total output (thinking + content); thinking models consume ~1000-2000 tokens before emitting the JSON
+      // Ollama's default is too small for the prompt, and it answers 500 rather than truncating.
+      // Also the value used before generation, while area is still unknown.
+      contextWindowFloor: 3000,
+      // Tokens per cell: history grows with the maze, and every round resends the conversation.
+      contextWindowAreaMultiplier: 5,
+      // Under Ollama's default: an unparseable reply is charged malformed-response, so format
+      // compliance beats creativity.
+      temperature: 0.5,
+      // Counts thinking, hence think: false — with it on, models hit the cap before emitting any
+      // JSON. Sized well above what a compliant reply needs, so it is not a working limit.
+      numPredict: 4000,
     },
   },
 }

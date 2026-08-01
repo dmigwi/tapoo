@@ -43,6 +43,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "   ", " ", "   ", "|"],
       ["|", "---", "|", "---", "|"],
     ],
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 3, y: 1 },
@@ -51,13 +52,12 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 0,
     lastAttemptRetentionUnits: null,
     bestWinRetentionUnits: null,
-    lastWinRequestCount: null,
-    bestWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
+    bestWinTraversalSpeedUnits: null,
     winSummary: "",
-    canResume: false,
     wallWeight: 1,
     scoreDecayUnits: 0,
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,
     ...overrides,
@@ -77,16 +77,26 @@ function createClock(): State["clock"] {
 
 // createContext provides the minimal runtime hooks consumed by movement feedback execution.
 function createContext(state: State) {
+  const movePlayer = vi.fn((action: MoveAction) => {
+    if (action === "MoveRight") {
+      state.playerPosition = { x: 3, y: 1 }
+      state.traversalHistory = [selfVisit(0, 0), agentVisit(0, 1)]
+    }
+  })
+
   return {
-    executeCommand: vi.fn(),
     state,
-    handleMove: vi.fn((action: MoveAction) => {
-      if (action === "MoveRight") {
-        state.playerPosition = { x: 3, y: 1 }
-        state.traversalHistory = [selfVisit(0, 0), agentVisit(0, 1)]
-      }
-    }),
     playerName: "Blue",
+    handlers: {
+      state,
+      pauseGame: vi.fn(),
+      awaitAgent: vi.fn(),
+      restartGame: vi.fn(),
+      resumeOrProceed: vi.fn(),
+      cycleWallWeight: vi.fn(),
+      movePlayer,
+      recordActionResult: vi.fn(),
+    },
   }
 }
 
@@ -104,9 +114,13 @@ describe("control", () => {
     })
     const context = createContext(state)
 
-    expect(
-      executeActionWithFeedback(moveAction("MoveLeft"), context),
-    ).toEqual({
+    const actionResult = executeActionWithFeedback(
+      moveAction("MoveLeft"),
+      context.playerName,
+      context.handlers,
+    )
+
+    expect(actionResult).toEqual({
       lastPlayerName: "Blue",
       lastMoveStatus: "invalid-move",
       lastReplayStartIndex: 0,
@@ -115,7 +129,8 @@ describe("control", () => {
       lastAppliedMoveIndex: null,
       chargedMovesCount: 0,
     })
-    expect(context.handleMove).not.toHaveBeenCalled()
+    expect(context.handlers.movePlayer).not.toHaveBeenCalled()
+    expect(context.handlers.recordActionResult).toHaveBeenCalledWith(actionResult)
   })
 
   it("reports blocked movement when a wall is encountered", () => {
@@ -128,9 +143,13 @@ describe("control", () => {
     })
     const context = createContext(state)
 
-    expect(
-      executeActionWithFeedback(moveAction("MoveRight"), context),
-    ).toEqual({
+    const actionResult = executeActionWithFeedback(
+      moveAction("MoveRight"),
+      context.playerName,
+      context.handlers,
+    )
+
+    expect(actionResult).toEqual({
       lastPlayerName: "Blue",
       lastMoveStatus: "invalid-move",
       lastReplayStartIndex: 0,
@@ -139,13 +158,14 @@ describe("control", () => {
       lastAppliedMoveIndex: null,
       chargedMovesCount: 0,
     })
-    expect(context.handleMove).not.toHaveBeenCalled()
+    expect(context.handlers.movePlayer).not.toHaveBeenCalled()
+    expect(context.handlers.recordActionResult).toHaveBeenCalledWith(actionResult)
   })
 
   it("reports when a move reaches the destination", () => {
     const state = createState()
     const context = createContext(state)
-    context.handleMove.mockImplementationOnce((action: MoveAction) => {
+    context.handlers.movePlayer.mockImplementationOnce((action: MoveAction) => {
       if (action === "MoveRight") {
         state.playerPosition = { x: 3, y: 1 }
         state.traversalHistory = [selfVisit(0, 0), agentVisit(0, 1)]
@@ -153,9 +173,13 @@ describe("control", () => {
       }
     })
 
-    expect(
-      executeActionWithFeedback(moveAction("MoveRight"), context),
-    ).toEqual({
+    const actionResult = executeActionWithFeedback(
+      moveAction("MoveRight"),
+      context.playerName,
+      context.handlers,
+    )
+
+    expect(actionResult).toEqual({
       lastPlayerName: "Blue",
       lastMoveStatus: "reached-target",
       visitedBefore: false,
@@ -165,7 +189,8 @@ describe("control", () => {
       lastAppliedMoveIndex: 0,
       chargedMovesCount: 0,
     })
-    expect(context.handleMove).toHaveBeenCalledWith("MoveRight", "Blue")
+    expect(context.handlers.movePlayer).toHaveBeenCalledWith("MoveRight", "Blue")
+    expect(context.handlers.recordActionResult).toHaveBeenCalledWith(actionResult)
   })
 
   it("keeps traversal history stable when a move revisits an older cell", () => {
@@ -174,15 +199,19 @@ describe("control", () => {
       traversalHistory: [selfVisit(0, 0), agentVisit(0, 1)],
     })
     const context = createContext(state)
-    context.handleMove.mockImplementationOnce((action: MoveAction) => {
+    context.handlers.movePlayer.mockImplementationOnce((action: MoveAction) => {
       if (action === "MoveLeft") {
         state.playerPosition = { x: 1, y: 1 }
       }
     })
 
-    expect(
-      executeActionWithFeedback(moveAction("MoveLeft"), context),
-    ).toEqual({
+    const actionResult = executeActionWithFeedback(
+      moveAction("MoveLeft"),
+      context.playerName,
+      context.handlers,
+    )
+
+    expect(actionResult).toEqual({
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
       visitedBefore: true,
@@ -192,5 +221,6 @@ describe("control", () => {
       lastAppliedMoveIndex: 0,
       chargedMovesCount: 0,
     })
+    expect(context.handlers.recordActionResult).toHaveBeenCalledWith(actionResult)
   })
 })

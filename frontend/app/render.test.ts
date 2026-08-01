@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { GameClock } from "./clock"
 import { CONFIG } from "./config"
 import { render } from "./render"
-import type { Elements, State, TraversalHistoryEntry } from "./types"
+import type { AgentElements, Elements, State, TraversalHistoryEntry } from "./types"
 
 const { messages } = CONFIG
 
@@ -39,7 +39,12 @@ function createButton({
 }
 
 // createElements assembles the DOM shell consumed by the renderer during tests.
-function createElements(): Elements {
+// RenderElements narrows Elements to the two agent overlays these render tests toggle; the rest
+// of AgentElements stays optional because the renderer never reads it.
+type RenderElements = Elements &
+  Required<Pick<AgentElements, "agentConfigForm" | "agentDeleteDialog">>
+
+function createElements(): RenderElements {
   const screen = document.createElement("div")
   const touchControls = document.createElement("div")
   const agentConfigForm = document.createElement("form")
@@ -83,6 +88,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "   ", "|", "   ", "|"],
       ["|", "---", "|", "---", "|"],
     ],
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 2, y: 1 },
@@ -91,13 +97,12 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 0,
     lastAttemptRetentionUnits: null,
     bestWinRetentionUnits: null,
-    lastWinRequestCount: null,
-    bestWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
+    bestWinTraversalSpeedUnits: null,
     winSummary: "",
-    canResume: false,
     wallWeight: 1,
     scoreDecayUnits: 0,
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,
     ...overrides,
@@ -220,6 +225,39 @@ describe("render", () => {
       "MoveDown",
       "pause",
     ])
+  })
+
+  it("renders a visited-cell trail for history entries other than the current position", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        traversalHistory: [selfVisit(0, 0), selfVisit(0, 1)],
+      }),
+    )
+
+    // selfVisit(0, 1) maps to a different rendered point than the default playerPosition
+    // {x: 1, y: 1}, so it should be drawn as a visited-trail cell, not overwritten by the
+    // player marker.
+    expect(elements.screen.innerHTML).toContain('class="maze-cell visited"')
+    expect(elements.screen.innerHTML).toContain('class="maze-cell player"')
+  })
+
+  it("does not draw a visited marker over the player's own current cell", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        traversalHistory: [selfVisit(0, 0)],
+      }),
+    )
+
+    // selfVisit(0, 0) maps to the same rendered point as the default playerPosition
+    // {x: 1, y: 1}, so the player marker must win there instead of a visited marker.
+    expect(elements.screen.innerHTML).not.toContain('class="maze-cell visited"')
+    expect(elements.screen.innerHTML).toContain('class="maze-cell player"')
   })
 
   it("shows only local action touch controls when the agent-api mode is active", () => {
@@ -361,7 +399,6 @@ describe("render", () => {
       elements,
       createState({
         status: "paused",
-        canResume: true,
       }),
     )
 
@@ -435,7 +472,6 @@ describe("render", () => {
       elements,
       createState({
         status: "paused",
-        canResume: true,
       }),
     )
 

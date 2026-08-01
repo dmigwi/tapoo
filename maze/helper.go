@@ -62,7 +62,7 @@ func (config *Dimensions) CreatePlayingField(weight WallWeight) ([][]string, err
 
 	rows := (cellSpan * config.NumRows) + 1
 	data := make([][]string, 0, rows)
-	passage := strings.Repeat(" ", cellPathWidth)
+	passage := passageGlyph(0)
 	rowCapacity := ((config.NumCols + 1) * cellSpan)
 
 	for rowIndex := range rows {
@@ -197,8 +197,25 @@ func reweightMaze(data [][]string, currentWeight WallWeight) ([][]string, error)
 	return translated, nil
 }
 
-// isSpaceFound reports whether the segment is a traversable passage.
-// All open path segments in the maze begin with a leading space, so a single-byte check is enough.
-func isSpaceFound(item string) bool {
+// passageGlyph returns a cellPathWidth-wide passage segment: blank when marker is zero, or the
+// marker surrounded by space padding otherwise. Every writable maze cell slot goes through this so
+// its width stays consistent regardless of whether it is blank or visited. The padding is derived
+// from cellPathWidth rather than hardcoded, so a marker glyph always keeps a leading space — the
+// invariant isTraversable relies on.
+func passageGlyph(marker rune) string {
+	if marker == 0 {
+		return strings.Repeat(" ", cellPathWidth)
+	}
+
+	leading := (cellPathWidth - 1) / glyphPaddingSides
+	return strings.Repeat(" ", leading) + string(marker) + strings.Repeat(" ", cellPathWidth-1-leading)
+}
+
+// isTraversable returns true when the segment is an open passage rather than a wall. Callers only
+// ever pass the slot between two cells — PlayerMovement's probe, and replaceChar's neighbours during
+// generation — never a cell centre, so it never sees a visited marker and the leading-space check is
+// enough. The name reads as broader than that on purpose: what a caller wants to know is whether it
+// may move through the segment.
+func isTraversable(item string) bool {
 	return len(item) > 0 && item[0] == ' '
 }

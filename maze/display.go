@@ -31,6 +31,10 @@ type UIOverlay struct {
 // fill prints a string to the termbox view box on the given coordinates.
 func fill(ui UI, x, y int, val string, foreground termbox.Attribute) int {
 	width := 0
+	if strings.ContainsRune(val, visitedCellMarker) {
+		foreground = playerColor
+	}
+
 	for _, char := range val {
 		ui.SetCell(x+width, y, char, foreground, coldef)
 		width++
@@ -117,16 +121,16 @@ func renderLiveScene(ui UI, config *Dimensions, level, score int, data [][]strin
 			(targetPos[1]*cellSpan)+mazeLeftPadding,
 			targetPos[0]+mazeTopPadding,
 			goalMarker,
-			termbox.ColorRed,
-			termbox.ColorRed,
+			targetColor,
+			targetColor,
 		)
 	}
 	ui.SetCell(
 		(startPos[1]*cellSpan)+mazeLeftPadding,
 		startPos[0]+mazeTopPadding,
 		playerMarker,
-		termbox.ColorCyan,
-		termbox.ColorCyan,
+		playerColor,
+		playerColor,
 	)
 
 	msg := fmt.Sprintf(statusMsg, level, score)

@@ -1,4 +1,4 @@
-.PHONY: help ci lint govulncheck deps frontend-install frontend-deps frontend-typecheck frontend-lint frontend-test frontend-quality frontend-build frontend-local test coverage clean-coverage
+.PHONY: help ci ci-bench lint govulncheck deps frontend-install frontend-deps frontend-typecheck frontend-lint frontend-test frontend-quality frontend-build frontend-local frontend-bench test go-bench coverage clean-coverage
 
 COVERAGE_FILE := coverage.out
 GOCACHE := $(CURDIR)/.gocache
@@ -11,6 +11,7 @@ help:
 	@printf '%s\n' \
 		'Available targets:' \
 		'  make ci                Run the local equivalent of the CI pipeline.' \
+		'  make ci-bench          Run Go and frontend benchmark suites.' \
 		'  make lint              Run golangci-lint.' \
 		'  make govulncheck       Run govulncheck against this module.' \
 		'  make frontend-install  Install the pinned frontend toolchain.' \
@@ -22,6 +23,9 @@ help:
 		'  make clean-coverage    Remove the generated coverage profile.'
 
 ci: lint frontend-lint govulncheck test
+
+ci-bench: frontend-deps
+	node ./scripts/bench-report.mjs
 
 lint:
 	golangci-lint run
@@ -55,6 +59,9 @@ frontend-lint:
 frontend-test:
 	CI=true $(PNPM) --config.confirmModulesPurge=false run test:frontend
 
+frontend-bench: frontend-deps
+	node ./scripts/bench-report.mjs --frontend-only
+
 frontend-quality: frontend-deps
 	CI=true $(PNPM) --config.confirmModulesPurge=false run quality:frontend
 
@@ -66,6 +73,9 @@ frontend-local: frontend-install frontend-quality frontend-build
 test: deps frontend-deps frontend-typecheck frontend-build frontend-test
 	go test -race -covermode=atomic -coverprofile=$(COVERAGE_FILE) ./...
 	rm -f $(COVERAGE_FILE)
+
+go-bench:
+	node ./scripts/bench-report.mjs --go-only
 
 coverage:
 	go tool cover -func=$(COVERAGE_FILE)

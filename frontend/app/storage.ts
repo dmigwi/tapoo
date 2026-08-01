@@ -5,7 +5,7 @@ import {
 } from "./config"
 import { normalizeAgentEndpoint } from "./agent/config"
 import { isAgentSeatId } from "./agent/seats"
-import { canPersistRoundStatus, isAgentApiMode } from "./status"
+import { canPersistRoundStatus, hasActiveRoundState, isAgentApiMode } from "./status"
 import {
   cloneMazeDimensions,
   cloneMazeRows,
@@ -164,7 +164,8 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   const disabledReasonValue = "disabledReason" in value ? value.disabledReason : undefined
   const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
   const gameLevel = "gameLevel" in value ? value.gameLevel : undefined
-  const requestsCount = "requestsCount" in value ? value.requestsCount : undefined
+  const turnCount = "turnCount" in value ? value.turnCount : undefined
+  const decayUnitsCharged = "decayUnitsCharged" in value ? value.decayUnitsCharged : undefined
   const cumulativeRoundCount = "cumulativeRoundCount" in value ? value.cumulativeRoundCount : undefined
   const endpointValue = value.endpoint
   const endpoint =
@@ -185,7 +186,8 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
     (lastErrorAt === undefined || (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt))) &&
     (gameLevel === undefined || (typeof gameLevel === "number" && Number.isInteger(gameLevel) && gameLevel >= 0)) &&
     (cumulativeRoundCount === undefined || (typeof cumulativeRoundCount === "number" && Number.isInteger(cumulativeRoundCount) && cumulativeRoundCount >= 0)) &&
-    (requestsCount === undefined || (typeof requestsCount === "number" && Number.isInteger(requestsCount) && requestsCount >= 0))
+    (turnCount === undefined || (typeof turnCount === "number" && Number.isInteger(turnCount) && turnCount >= 0)) &&
+    (decayUnitsCharged === undefined || (typeof decayUnitsCharged === "number" && Number.isInteger(decayUnitsCharged) && decayUnitsCharged >= 0))
   ) {
     const disabledReason = disabledReasonValue === "network-error" ? disabledReasonValue : undefined
 
@@ -198,7 +200,8 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
       ...(disabledReason ? { disabledReason } : {}),
       ...(typeof gameLevel === "number" ? { gameLevel } : {}),
       ...(typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
-      ...(typeof requestsCount === "number" ? { requestsCount } : {}),
+      ...(typeof turnCount === "number" ? { turnCount } : {}),
+      ...(typeof decayUnitsCharged === "number" ? { decayUnitsCharged } : {}),
       ...(typeof cumulativeRoundCount === "number" ? { cumulativeRoundCount } : {}),
     }
   }
@@ -298,8 +301,11 @@ export function disableAgentApiConfigForNetworkError(
   return nextConfigs
 }
 
-// recordAgentTurnStats persists one agent's post-turn request count, resetting it when the
-// current level or round no longer matches what requestsCount was last tracked against.
+// recordAgentTurnStats persists one agent's post-turn counters — requests made and decay units
+// charged — resetting both when the current level or round no longer matches what they were last
+// tracked against. decayUnitsCharged is accumulated per agent because state.scoreDecayUnits is
+// shared across every seat and so cannot say which agent spent what; the agent's traversal speed
+// (progress per decay unit) is measured against its own share.
 //
 // Both gameLevel and cumulativeRoundCount are required in the isSameAttempt check below — do
 // not simplify this to cumulativeRoundCount alone. Reasoning:
@@ -314,12 +320,13 @@ export function disableAgentApiConfigForNetworkError(
 //     cumulativeRoundCount value an old, unrelated agent record already holds. gameLevel is
 //     what catches that collision, since the new round's level will almost never match the
 //     stale record's level. Dropping gameLevel would let a post-reset session silently inherit
-//     a stale requestsCount from a prior session, corrupting the batchEfficiencyLevel an agent
+//     a stale turnCount from a prior session, corrupting the batchEfficiencyLevel an agent
 //     is scored against.
 export function recordAgentTurnStats(
   turnAgent: AgentApiConfig,
   level: number,
   cumulativeRoundCount: number,
+  chargedDecayUnits: number,
 ): AgentApiConfig {
   let updatedAgent: AgentApiConfig = turnAgent
 
@@ -329,12 +336,14 @@ export function recordAgentTurnStats(
     }
 
     const isSameAttempt = agent.gameLevel === level && agent.cumulativeRoundCount === cumulativeRoundCount
-    const priorRequestsCount = isSameAttempt ? (agent.requestsCount ?? 0) : 0
+    const priorTurnCount = isSameAttempt ? (agent.turnCount ?? 0) : 0
+    const priorDecayUnitsCharged = isSameAttempt ? (agent.decayUnitsCharged ?? 0) : 0
     updatedAgent = {
       ...agent,
       gameLevel: level,
       cumulativeRoundCount,
-      requestsCount: priorRequestsCount + 1,
+      turnCount: priorTurnCount + 1,
+      decayUnitsCharged: priorDecayUnitsCharged + chargedDecayUnits,
     }
 
     return updatedAgent
@@ -362,6 +371,28 @@ function validWallWeightPreference(
   return typeof value === "number" && isWallWeight(value) ? value : defaultWeight
 }
 
+// validWinMetricPair restores a last/best win metric pair together or not at all. Every writer
+// sets both at once — resolveWinScore always returns both, a reset clears both — so a half-restored
+// pair is a state gameplay can never produce. Keeping restore atomic means "no previous record"
+// always implies "no best record" too, which is what lets the summary treat a first result as a
+// new record without needing to describe a last-attempt-missing-but-best-present case.
+function validWinMetricPair<LastKey extends string, BestKey extends string>(
+  lastKey: LastKey,
+  bestKey: BestKey,
+  lastValue: unknown,
+  bestValue: unknown,
+  validate: (value: unknown) => number | null,
+): Record<LastKey | BestKey, number | null> {
+  const last = validate(lastValue)
+  const best = validate(bestValue)
+  const bothValid = last !== null && best !== null
+
+  return {
+    [lastKey]: bothValid ? last : null,
+    [bestKey]: bothValid ? best : null,
+  } as Record<LastKey | BestKey, number | null>
+}
+
 // validRetentionUnitsPreference restores fixed-point retention units within the configured scale.
 function validRetentionUnitsPreference(value: unknown): number | null {
   return typeof value === "number" &&
@@ -372,9 +403,11 @@ function validRetentionUnitsPreference(value: unknown): number | null {
     : null
 }
 
-// validRequestCountPreference restores positive agent request counters.
-function validRequestCountPreference(value: unknown): number | null {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1
+// validTraversalSpeedPreference restores stored traversal speed records. Zero is a legitimate
+// stored value here, unlike the request counter this replaced: a round can finish having covered
+// no new ground on its final charged units, so the floor is 0 rather than 1.
+function validTraversalSpeedPreference(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
     ? value
     : null
 }
@@ -391,8 +424,8 @@ function savePreferences(
   const winMetrics: PersistedWinMetrics = {
     lastAttemptRetentionUnits: preferences.lastAttemptRetentionUnits ?? null,
     bestWinRetentionUnits: preferences.bestWinRetentionUnits ?? null,
-    lastWinRequestCount: preferences.lastWinRequestCount ?? null,
-    bestWinRequestCount: preferences.bestWinRequestCount ?? null,
+    lastWinTraversalSpeedUnits: preferences.lastWinTraversalSpeedUnits ?? null,
+    bestWinTraversalSpeedUnits: preferences.bestWinTraversalSpeedUnits ?? null,
   }
 
   try {
@@ -439,17 +472,19 @@ function loadPreferences(
         defaultWeight,
         isWallWeight,
       ),
-      lastAttemptRetentionUnits: validRetentionUnitsPreference(
+      ...validWinMetricPair(
+        "lastAttemptRetentionUnits",
+        "bestWinRetentionUnits",
         parsedWinMetrics?.lastAttemptRetentionUnits,
-      ),
-      bestWinRetentionUnits: validRetentionUnitsPreference(
         parsedWinMetrics?.bestWinRetentionUnits,
+        validRetentionUnitsPreference,
       ),
-      lastWinRequestCount: validRequestCountPreference(
-        parsedWinMetrics?.lastWinRequestCount,
-      ),
-      bestWinRequestCount: validRequestCountPreference(
-        parsedWinMetrics?.bestWinRequestCount,
+      ...validWinMetricPair(
+        "lastWinTraversalSpeedUnits",
+        "bestWinTraversalSpeedUnits",
+        parsedWinMetrics?.lastWinTraversalSpeedUnits,
+        parsedWinMetrics?.bestWinTraversalSpeedUnits,
+        validTraversalSpeedPreference,
       ),
     }
   } catch {
@@ -458,8 +493,8 @@ function loadPreferences(
       wallWeight: defaultWeight,
       lastAttemptRetentionUnits: null,
       bestWinRetentionUnits: null,
-      lastWinRequestCount: null,
-      bestWinRequestCount: null,
+      lastWinTraversalSpeedUnits: null,
+      bestWinTraversalSpeedUnits: null,
     }
   }
 }
@@ -474,8 +509,8 @@ export function saveGameProgress(
     wallWeight: state.wallWeight,
     lastAttemptRetentionUnits: state.lastAttemptRetentionUnits,
     bestWinRetentionUnits: state.bestWinRetentionUnits,
-    lastWinRequestCount: state.lastWinRequestCount,
-    bestWinRequestCount: state.bestWinRequestCount,
+    lastWinTraversalSpeedUnits: state.lastWinTraversalSpeedUnits,
+    bestWinTraversalSpeedUnits: state.bestWinTraversalSpeedUnits,
   })
 }
 
@@ -483,14 +518,7 @@ export function saveGameProgress(
 
 // buildRoundSnapshot extracts the restorable round state from the live runtime.
 function buildRoundSnapshot(state: State): PersistedRound | null {
-  if (
-    !state.mazeDimensions ||
-    !state.maze ||
-    !state.playerPosition ||
-    state.traversalHistory.length === 0 ||
-    !state.finalPosition ||
-    !canPersistRoundStatus(state.status)
-  ) {
+  if (!hasActiveRoundState(state) || !canPersistRoundStatus(state.status)) {
     return null
   }
 
@@ -513,6 +541,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     maze: cloneMazeRows(state.maze),
     startCell,
     traversalHistory: cloneTraversalHistory(state.traversalHistory),
+    startPosition: cloneRenderGridPoint(state.startPosition),
     playerPosition: cloneRenderGridPoint(state.playerPosition),
     finalPosition: cloneRenderGridPoint(state.finalPosition),
     wallWeight: state.wallWeight,
@@ -522,7 +551,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     remainingMs,
     winSummary: state.winSummary,
     scoreDecayUnits: state.scoreDecayUnits,
-    agentRequestCount: state.agentRequestCount,
+    turnCount: state.turnCount,
     cumulativeRoundCount: state.cumulativeRoundCount,
   }
 }
@@ -575,6 +604,9 @@ export function saveActiveRoundSnapshot(
   modeName: MazeControlModeName,
   state: State,
 ): void {
+  // No invariant check here: buildRoundSnapshot already refuses a round missing any of the fields
+  // hasActiveRoundState requires, and storage cannot report one anyway — logs.ts imports storage,
+  // so importing it back would be circular. game.ts owns the state and does the reporting.
   saveRound(modeName, buildRoundSnapshot(state))
 }
 

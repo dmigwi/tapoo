@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CONFIG } from "../config"
+import { tapooResetLogs } from "../logs"
+import { loadTapooLog } from "../storage"
 import type {
   AgentApiConfig,
   MazeAction,
@@ -10,6 +12,7 @@ import type {
   TraversalHistoryEntry,
 } from "../types"
 import { handleAgentTurnLoop } from "./agent-api"
+import type { AgentRoundState } from "./agent-api"
 
 const testAgentMovePollIntervalMs = 5
 const testAgentResponseTimeoutMs = 20
@@ -26,20 +29,20 @@ function selfVisit(row: number, col: number): TraversalHistoryEntry {
 
 function createState(overrides: Partial<State> = {}): State {
   return {
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
-    bestWinRequestCount: null,
+    bestWinTraversalSpeedUnits: null,
     bestWinRetentionUnits: null,
-    canResume: false,
     clock: null,
     controlMode: CONFIG.runtime.controlModes.agentApi,
     finalPosition: { x: 5, y: 1 },
     lastAttemptRetentionUnits: null,
     lastRoundScore: 0,
-    lastWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
     level: 2,
     maze: null,
     mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     score: 600,
     scoreDecayUnits: 0,
@@ -78,6 +81,8 @@ function createDisableAgentAfterNetworkError() {
   })
 }
 
+const ignoreRoundOutcome = (): void => {}
+
 async function flushImmediateAgentTurn(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0)
 }
@@ -113,6 +118,7 @@ describe("agent api turn loop", () => {
       ),
       __commitAgentTurn: vi.fn(),
       __onActionResult: vi.fn(),
+      __onRoundOutcome: ignoreRoundOutcome,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: enabledAgentConfigs,
       __readState: () => state,
@@ -144,6 +150,7 @@ describe("agent api turn loop", () => {
       __dispatchAgentAction: vi.fn(),
       __commitAgentTurn: vi.fn(),
       __onActionResult: vi.fn(),
+      __onRoundOutcome: ignoreRoundOutcome,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: () => [],
       __readState: () => createState(),
@@ -172,6 +179,7 @@ describe("agent api turn loop", () => {
       __dispatch: dispatch,
       __dispatchAgentAction: vi.fn(),
       __onActionResult: vi.fn(),
+      __onRoundOutcome: ignoreRoundOutcome,
       __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
       __readAgentConfigs: () => agentConfigs,
       __readState: () => createState(),
@@ -220,6 +228,7 @@ describe("agent api turn loop", () => {
       __dispatch: dispatch,
       __dispatchAgentAction: dispatchAgentAction,
       __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: enabledAgentConfigs,
       __readState: () => createState(),
@@ -280,6 +289,7 @@ describe("agent api turn loop", () => {
     const commitAgentTurn = vi.fn(() => {
       roundStatus = "lost"
     })
+    const onRoundOutcome = vi.fn<(event: AgentRoundState) => void>()
 
     const poller = handleAgentTurnLoop({
       __elements: { body: document.createElement("div") },
@@ -288,6 +298,7 @@ describe("agent api turn loop", () => {
       __dispatchAgentAction: dispatchAgentAction,
       __onActionResult: vi.fn(),
       __onActiveAgentChange: onActiveAgentChange,
+      __onRoundOutcome: onRoundOutcome,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: enabledAgentConfigs,
       __readState: () => createState({ status: roundStatus }),
@@ -302,6 +313,56 @@ describe("agent api turn loop", () => {
       expect.objectContaining({ playerName: "Blue" }),
     )
     expect(onActiveAgentChange).toHaveBeenLastCalledWith(null)
+    expect(onRoundOutcome).toHaveBeenCalledTimes(1)
+    const lostEvent = onRoundOutcome.mock.calls[0][0]
+    expect(lostEvent.__agent.playerName).toBe("Blue")
+    expect(lostEvent.__actionResult.lastMoveStatus).toBe("applied")
+    expect(lostEvent.__state.status).toBe("lost")
+  })
+
+  it("invokes the win callback with final agent state after a reached-target replay", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      }),
+    )
+
+    const dispatchAgentAction = vi.fn(() =>
+      createActionResult({ lastMoveStatus: "reached-target" }),
+    )
+    const onRoundOutcome = vi.fn<(event: AgentRoundState) => void>()
+    let roundStatus: State["status"] = "running"
+    const commitAgentTurn = vi.fn(() => {
+      roundStatus = "won"
+    })
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionResult: vi.fn(),
+      __onRoundOutcome: onRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState({ status: roundStatus, score: 500 }),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    expect(commitAgentTurn).toHaveBeenCalledTimes(1)
+    expect(onRoundOutcome).toHaveBeenCalledTimes(1)
+    const wonEvent = onRoundOutcome.mock.calls[0][0]
+    expect(wonEvent.__agent.playerName).toBe("Blue")
+    expect(wonEvent.__actionResult.lastMoveStatus).toBe("reached-target")
+    expect(wonEvent.__state.status).toBe("won")
+    expect(wonEvent.__state.score).toBe(500)
   })
 
   it("rotates through enabled agents configured for the shared maze", async () => {
@@ -359,6 +420,7 @@ describe("agent api turn loop", () => {
       __dispatchAgentAction: dispatchAgentAction,
       __onActionResult: onActionResult,
       __onActiveAgentChange: onActiveAgentChange,
+      __onRoundOutcome: ignoreRoundOutcome,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: () => agentConfigs,
       __readState: () => createState({ level: 2 }),
@@ -475,6 +537,7 @@ describe("agent api turn loop", () => {
       __dispatch: vi.fn() as MazeActionDispatch,
       __dispatchAgentAction: dispatchAgentAction,
       __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: enabledAgentConfigs,
       __readState: () => createState(),
@@ -517,6 +580,7 @@ describe("agent api turn loop", () => {
       __dispatch: vi.fn() as MazeActionDispatch,
       __dispatchAgentAction: dispatchAgentAction,
       __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
       __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
       __readAgentConfigs: enabledAgentConfigs,
       __readState: () => createState(),
@@ -560,6 +624,7 @@ describe("agent api turn loop", () => {
       __dispatch: vi.fn() as MazeActionDispatch,
       __dispatchAgentAction: vi.fn(),
       __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
       __readAgentConfigs: () => agentConfigs,
       __readState: () => createState(),
     })
@@ -602,6 +667,7 @@ describe("agent api turn loop", () => {
       __dispatch: vi.fn() as MazeActionDispatch,
       __dispatchAgentAction: vi.fn(),
       __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
       __readAgentConfigs: () => agentConfigs,
       __readState: () => createState(),
     })
@@ -623,6 +689,7 @@ describe("agent api turn loop", () => {
   })
 
   it("disables the agent after fetch failures without score decay", async () => {
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockRejectedValue(new TypeError("network failed")),
@@ -640,6 +707,7 @@ describe("agent api turn loop", () => {
       __dispatch: vi.fn() as MazeActionDispatch,
       __dispatchAgentAction: vi.fn(),
       __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
       __readAgentConfigs: () => agentConfigs,
       __readState: () => createState(),
     })
@@ -658,5 +726,13 @@ describe("agent api turn loop", () => {
         lastPlayerName: "Blue",
       }),
     )
+    expect(
+      loadTapooLog<{ payload: string; details?: { endpoint: string } }>(
+        CONFIG.runtime.controlModes.agentApi,
+      ).find(
+        (entry) =>
+          entry.payload === "Request failed before a valid response.",
+      )?.details,
+    ).toEqual({ endpoint: "https://agents.example/move" })
   })
 })

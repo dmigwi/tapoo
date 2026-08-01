@@ -1,16 +1,18 @@
 import { CONFIG } from "../config"
 import { mergeMazeActionResult } from "../control"
 import { requestPredictionWithAbort } from "../agent/request"
+import { logTapooDiagnostic } from "../logs"
 import { recordAgentTurnStats } from "../storage"
-import { isRunningStatus } from "../status"
+import { isLostStatus, isRunningStatus, isWonStatus } from "../status"
 import type {
   AgentApiConfig,
+  AgentPredictionFailure,
+  AgentPredictionRequest,
   MazeAction,
   MazeActionDispatch,
   MazeActionResult,
   State,
 } from "../types"
-import type { AgentPredictionRequest } from "../agent/request"
 
 const { runtime, scoring, timing } = CONFIG
 const { agentBaseDecayUnits, agentPenaltyDecayUnits } = scoring
@@ -42,16 +44,30 @@ type HandleAgentTurnLoopOptions = {
   ) => MazeActionResult
   __disableAgentAfterNetworkError: (agent: AgentApiConfig) => void
   __onActiveAgentChange?: (agent: AgentApiConfig | null) => void
+  __onRoundOutcome: (event: AgentRoundState) => void
   __readAgentConfigs: () => AgentApiConfig[]
   __onActionResult: (actionResult: MazeActionResult) => void
   __readState: () => State
 }
 
+export type AgentRoundState = {
+  __agent: AgentApiConfig
+  __state: State
+  __actionResult: MazeActionResult
+}
+
 // handleAgentTurnLoop owns the HTTP polling cycle used by the agent-api control mode.
 export function handleAgentTurnLoop({
-  __commitAgentTurn, __disableAgentAfterNetworkError, __dispatch,
-  __dispatchAgentAction, __elements, __onActionResult, __onActiveAgentChange,
-  __readState, __readAgentConfigs,
+  __elements,
+  __commitAgentTurn,
+  __dispatch,
+  __dispatchAgentAction,
+  __disableAgentAfterNetworkError,
+  __onActiveAgentChange,
+  __onRoundOutcome,
+  __readAgentConfigs,
+  __onActionResult,
+  __readState,
 }: HandleAgentTurnLoopOptions): AgentMovePoller {
   let attached = false
   let scheduledTurn: number | null = null
@@ -111,6 +127,23 @@ export function handleAgentTurnLoop({
   // shouldPollAgent only keeps the replay loop alive while the live round is actively running.
   const shouldPollAgent = (): boolean => attached && isRunningStatus(__readState().status)
 
+  // notifyRoundCompletion invokes final-state callbacks only after score decay and replay metadata
+  // have been committed, so diagnostics receive the same state the UI is about to show.
+  const notifyRoundCompletion = (
+    agent: AgentApiConfig,
+    actionResult: MazeActionResult,
+  ): void => {
+    const currentState = __readState()
+
+    if (isWonStatus(currentState.status) || isLostStatus(currentState.status)) {
+      __onRoundOutcome({
+        __agent: agent,
+        __state: currentState,
+        __actionResult: actionResult,
+      })
+    }
+  }
+
   // recordAgentNetworkError disables failed agents and records the no-score-decay network state.
   const recordAgentNetworkError = (agent: AgentApiConfig | null): void => {
     if (!agent) {
@@ -134,14 +167,43 @@ export function handleAgentTurnLoop({
   const recordMalformedAgentResponse = (agent: AgentApiConfig): void => {
     const chargedMovesCount = agentPenaltyDecayUnits
     __commitAgentTurn(chargedMovesCount)
-    recordAgentTurnStats(agent, __readState().level, __readState().cumulativeRoundCount)
+    recordAgentTurnStats(agent, __readState().level, __readState().cumulativeRoundCount, chargedMovesCount)
+
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
       lastMoveStatus: "malformed-response",
       chargedMovesCount,
     })
     lastActionResult = nextResult
+
     __onActionResult(nextResult)
+    notifyRoundCompletion(agent, nextResult)
+  }
+
+  // recordPredictionFailure is the single bridge from provider/request failures to game effects.
+  const recordPredictionFailure = (
+    agent: AgentApiConfig,
+    failure: AgentPredictionFailure,
+  ): void => {
+    if (failure.reason === "caller-abort") {
+      return
+    }
+
+    if (failure.diagnostic) {
+      logTapooDiagnostic(
+        runtime.controlModes.agentApi,
+        "warn",
+        failure.diagnostic.message,
+        failure.diagnostic.details,
+      )
+    }
+
+    if (failure.reason === "malformed-response") {
+      recordMalformedAgentResponse(agent)
+      return
+    }
+
+    recordAgentNetworkError(agent)
   }
 
   // scheduleNextAgentTurn starts/resumes immediately, then delays internal loop continuations.
@@ -197,14 +259,13 @@ export function handleAgentTurnLoop({
         lastActionResult: activeActionResult(),
         state: __readState(),
         timeoutMs: timing.agentApiResponseTimeoutMs,
-        onMalformedResponse: recordMalformedAgentResponse,
-        onNetworkError: recordAgentNetworkError,
       })
 
       activeRequest = predictionRequest
       const prediction = await predictionRequest.promise
-      // Manual aborts and classified failures have already been handled by request.ts callbacks.
-      if (predictionRequest.isAborted() || prediction.ok === false) {
+      // Request service returns structured failures; game consequences stay centralized here.
+      if (prediction.ok === false) {
+        recordPredictionFailure(selectedAgent, prediction)
         return
       }
 
@@ -234,6 +295,9 @@ export function handleAgentTurnLoop({
         break
       }
 
+      // Unreachable in practice — parseAgentPrediction guarantees a non-empty submittedMoves, so
+      // the loop above always runs at least once and sets lastReplayResult. This check exists
+      // only to satisfy TypeScript's control-flow analysis on the nullable `let` declaration.
       if (!lastReplayResult) {
         return
       }
@@ -250,7 +314,9 @@ export function handleAgentTurnLoop({
         (appliedMoveCount > 0 ? agentBaseDecayUnits : 0) + (hasInvalidMove ? agentPenaltyDecayUnits : 0)
 
       __commitAgentTurn(chargedMovesCount)
-      recordAgentTurnStats(selectedAgent, __readState().level, __readState().cumulativeRoundCount)
+      recordAgentTurnStats(
+        selectedAgent, __readState().level, __readState().cumulativeRoundCount, chargedMovesCount,
+      )
 
       const nextResult = mergeReplayResult(lastReplayResult, {
         lastPlayerName: selectedAgent.playerName,
@@ -263,6 +329,7 @@ export function handleAgentTurnLoop({
 
       lastActionResult = nextResult
       __onActionResult(nextResult)
+      notifyRoundCompletion(selectedAgent, nextResult)
     } finally {
       activeRequest = null
       if (shouldPollAgent()) {

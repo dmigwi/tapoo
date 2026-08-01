@@ -64,8 +64,8 @@ function showPageView(view: "terminal" | "placeholder"): void {
   }
 }
 
-// showTerminalApp promotes the checked runtime view over the default placeholder.
-export function showTerminalApp(): void {
+// prepareTerminalAppForBootstrap makes the checked terminal visible before bootstrap focuses it.
+export function prepareTerminalAppForBootstrap(): void {
   showPageView("terminal")
 }
 

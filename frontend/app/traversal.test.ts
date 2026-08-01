@@ -20,10 +20,39 @@ import {
 } from "./traversal"
 import type {
   MazeAction,
+  MoveAction,
   PersistedRound,
   State,
   TraversalHistoryEntry,
+  WallWeight,
 } from "./types"
+
+// The two lists below are built from a record keyed by the union rather than written as an annotated
+// array, because `const x: MoveAction[] = [...]` only asks that each element belong to the union and
+// never that the list be complete — a stale list stays valid as the union grows, and the tests that
+// walk it keep their old coverage in silence. A missing key is a compile error instead.
+function valuesOf<T extends string>(members: Record<T, true>): T[] {
+  return Object.keys(members) as T[]
+}
+
+// numericValuesOf is the same guarantee for number-keyed unions, where Object.keys hands back the
+// numeric keys as strings and has to be converted back.
+function numericValuesOf<T extends number>(members: Record<T, true>): T[] {
+  return Object.keys(members).map(Number) as T[]
+}
+
+const ALL_MOVE_ACTIONS = valuesOf<MoveAction>({
+  "MoveUp": true,
+  "MoveDown": true,
+  "MoveLeft": true,
+  "MoveRight": true,
+})
+
+const ALL_WALL_WEIGHTS = numericValuesOf<WallWeight>({
+  1: true,
+  2: true,
+  3: true,
+})
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Self", row, col, openMoves: [] }
@@ -39,6 +68,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "---", "-", "---", "|"],
     ],
     mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 3, y: 1 },
@@ -47,13 +77,12 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 0,
     lastAttemptRetentionUnits: null,
     bestWinRetentionUnits: null,
-    lastWinRequestCount: null,
-    bestWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
+    bestWinTraversalSpeedUnits: null,
     winSummary: "",
-    canResume: false,
     wallWeight: 1,
     scoreDecayUnits: 0,
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,
     ...overrides,
@@ -77,6 +106,7 @@ function createPersistedRound(
     // openMoves must reflect the actual maze above, since isValidPersistedRound now recomputes
     // and cross-checks it against the restored maze rather than trusting the stored value.
     traversalHistory: [traversalHistoryEntry({ row: 0, col: 0 }, "Self", persistedRoundMaze)],
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     finalPosition: { x: 3, y: 1 },
     wallWeight: 1,
@@ -90,15 +120,25 @@ function createPersistedRound(
 
 // These tests cover the traversal-only helpers kept separate from maze generation.
 describe("traversal", () => {
-  it("accepts supported wall weights and cycles them in order", () => {
-    expect(isWallWeight(1)).toBe(true)
-    expect(isWallWeight(2)).toBe(true)
-    expect(isWallWeight(3)).toBe(true)
-    expect(isWallWeight(4)).toBe(false)
+  it("accepts every supported wall weight and cycles through all of them", () => {
+    ALL_WALL_WEIGHTS.forEach((weight) => {
+      expect(isWallWeight(weight)).toBe(true)
+    })
+    expect(isWallWeight(0)).toBe(false)
+    expect(isWallWeight(ALL_WALL_WEIGHTS.length + 1)).toBe(false)
 
-    expect(nextWallWeight(1)).toBe(2)
-    expect(nextWallWeight(2)).toBe(3)
-    expect(nextWallWeight(3)).toBe(1)
+    // Stepping once per weight has to visit each exactly once and land back on the start. Spelling
+    // the rotation out as 1→2→3→1 would keep passing if a fourth weight were added but left out of
+    // the cycle, stranding a weight the wall button could never reach.
+    const visited: WallWeight[] = []
+    let weight = ALL_WALL_WEIGHTS[0]
+    ALL_WALL_WEIGHTS.forEach(() => {
+      weight = nextWallWeight(weight)
+      visited.push(weight)
+    })
+
+    expect([...visited].sort()).toEqual([...ALL_WALL_WEIGHTS].sort())
+    expect(weight).toBe(ALL_WALL_WEIGHTS[0])
   })
 
   it("treats maze paths as space-prefixed segments", () => {
@@ -123,7 +163,13 @@ describe("traversal", () => {
   })
 
   it("classifies only movement actions as maze moves", () => {
-    expect(isMoveAction({ type: "MoveRight" })).toBe(true)
+    // Every MoveAction has to be accepted, not just a sample: isMoveAction gates agent-supplied
+    // moves against MOVE_DELTAS, so a move added to the union but never given a delta would be
+    // rejected at runtime while the type says it is legal.
+    ALL_MOVE_ACTIONS.forEach((move) => {
+      expect(isMoveAction({ type: move })).toBe(true)
+    })
+
     expect(isMoveAction({ type: "pause" })).toBe(false)
     expect(isMoveAction({ type: "await-agent" })).toBe(false)
     expect(isMoveAction({ type: "Unknown" } as unknown as MazeAction)).toBe(false)
@@ -264,7 +310,25 @@ describe("traversal", () => {
     expect(
       isValidPersistedRound(
         createPersistedRound({
+          startPosition: { x: 2, y: 0 },
+        }),
+      ),
+    ).toBe(false)
+
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
           playerPosition: { x: 2, y: 0 },
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it("rejects a persisted round whose start position disagrees with its start cell", () => {
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
+          startPosition: { x: 3, y: 1 },
         }),
       ),
     ).toBe(false)

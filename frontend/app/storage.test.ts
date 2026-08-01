@@ -13,6 +13,9 @@ import {
   saveGameProgress,
   savePersistedAgentApiConfigs,
 } from "./storage"
+// The real guard rather than a local copy: loadPersistedSnapshot takes it from its caller, so a copy
+// here would let these tests keep accepting weights production had already stopped accepting.
+import { isWallWeight } from "./traversal"
 import type { State, TraversalHistoryEntry } from "./types"
 
 const MODE = CONFIG.runtime.controlModes.interactive
@@ -44,11 +47,6 @@ function versionedStorageKey(
   suffix: string,
 ): string {
   return `tapoo.v${version}.${mode}.${suffix}`
-}
-
-// isWallWeight mirrors the production wall-weight guard for persistence tests.
-function isWallWeight(value: number): value is 1 | 2 | 3 {
-  return value === 1 || value === 2 || value === 3
 }
 
 // createMemoryStorage provides a minimal Storage implementation for browser persistence tests.
@@ -88,6 +86,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "   ", "|"],
       ["|", "---", "|"],
     ],
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     traversalHistory: [selfVisit(0, 0)],
     finalPosition: { x: 1, y: 1 },
@@ -96,13 +95,12 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 700,
     lastAttemptRetentionUnits: 700000,
     bestWinRetentionUnits: 820000,
-    lastWinRequestCount: null,
-    bestWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
+    bestWinTraversalSpeedUnits: null,
     winSummary: "",
-    canResume: false,
     wallWeight: 2,
     scoreDecayUnits: 0,
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,
     ...overrides,
@@ -132,8 +130,8 @@ describe("storage", () => {
       wallWeight: 3,
       lastAttemptRetentionUnits: 710000,
       bestWinRetentionUnits: 840000,
-      lastWinRequestCount: null,
-      bestWinRequestCount: null,
+      lastWinTraversalSpeedUnits: null,
+      bestWinTraversalSpeedUnits: null,
     })
 
     const storedGameSetup = window.localStorage.getItem(storageKey(gameSetup))
@@ -150,8 +148,8 @@ describe("storage", () => {
       wallWeight: 3,
       lastAttemptRetentionUnits: 710000,
       bestWinRetentionUnits: 840000,
-      lastWinRequestCount: null,
-      bestWinRequestCount: null,
+      lastWinTraversalSpeedUnits: null,
+      bestWinTraversalSpeedUnits: null,
     })
   })
 
@@ -295,8 +293,8 @@ describe("storage", () => {
       wallWeight: 2,
       lastAttemptRetentionUnits: 640000,
       bestWinRetentionUnits: 760000,
-      lastWinRequestCount: 8,
-      bestWinRequestCount: 5,
+      lastWinTraversalSpeedUnits: 8,
+      bestWinTraversalSpeedUnits: 5,
     })
 
     expect(window.localStorage.getItem(agentStorageKey(gameSetup))).toContain(
@@ -311,8 +309,8 @@ describe("storage", () => {
       wallWeight: 2,
       lastAttemptRetentionUnits: 640000,
       bestWinRetentionUnits: 760000,
-      lastWinRequestCount: 8,
-      bestWinRequestCount: 5,
+      lastWinTraversalSpeedUnits: 8,
+      bestWinTraversalSpeedUnits: 5,
     })
   })
 
@@ -364,7 +362,7 @@ describe("storage", () => {
     expect(loadPersistedAgentApiConfigs()).toEqual(nextConfigs)
   })
 
-  it("tracks an agent's requestsCount across turns within the same level and round", () => {
+  it("accumulates an agent's turnCount and decayUnitsCharged across turns within the same level and round", () => {
     savePersistedAgentApiConfigs([
       {
         id: 1,
@@ -375,34 +373,21 @@ describe("storage", () => {
       },
     ])
 
-    const firstTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7)
-    expect(firstTurnAgent).toMatchObject({ gameLevel: 3, cumulativeRoundCount: 7, requestsCount: 1 })
+    // A clean turn costs 1 decay unit; a turn that hit an invalid move costs 3. Requests count
+    // one per turn either way, so the two counters deliberately diverge.
+    const firstTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 1)
+    expect(firstTurnAgent).toMatchObject({
+      gameLevel: 3, cumulativeRoundCount: 7, turnCount: 1, decayUnitsCharged: 1,
+    })
 
-    const secondTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7)
-    expect(secondTurnAgent).toMatchObject({ gameLevel: 3, cumulativeRoundCount: 7, requestsCount: 2 })
-    expect(loadPersistedAgentApiConfigs()[0]).toMatchObject({ requestsCount: 2 })
+    const secondTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 3)
+    expect(secondTurnAgent).toMatchObject({
+      gameLevel: 3, cumulativeRoundCount: 7, turnCount: 2, decayUnitsCharged: 4,
+    })
+    expect(loadPersistedAgentApiConfigs()[0]).toMatchObject({ turnCount: 2, decayUnitsCharged: 4 })
   })
 
-  it("resets requestsCount when the level changes", () => {
-    savePersistedAgentApiConfigs([
-      {
-        id: 1,
-        playerName: "Blue",
-        model: "llama3.2",
-        endpoint: endpoint("/api/agents/blue/move"),
-        enabled: true,
-        gameLevel: 3,
-        cumulativeRoundCount: 7,
-        requestsCount: 5,
-      },
-    ])
-
-    const nextLevelAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 4, 7)
-
-    expect(nextLevelAgent).toMatchObject({ gameLevel: 4, cumulativeRoundCount: 7, requestsCount: 1 })
-  })
-
-  it("resets requestsCount when the level is retried in a new round (level unchanged, cumulativeRoundCount changed)", () => {
+  it("resets both counters when the level changes", () => {
     savePersistedAgentApiConfigs([
       {
         id: 1,
@@ -412,16 +397,41 @@ describe("storage", () => {
         enabled: true,
         gameLevel: 3,
         cumulativeRoundCount: 7,
-        requestsCount: 5,
+        turnCount: 5,
+        decayUnitsCharged: 12,
       },
     ])
 
-    const retryAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 8)
+    const nextLevelAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 4, 7, 1)
 
-    expect(retryAgent).toMatchObject({ gameLevel: 3, cumulativeRoundCount: 8, requestsCount: 1 })
+    expect(nextLevelAgent).toMatchObject({
+      gameLevel: 4, cumulativeRoundCount: 7, turnCount: 1, decayUnitsCharged: 1,
+    })
   })
 
-  it("resets requestsCount when a post-reset cumulativeRoundCount collides with a stale pre-reset value", () => {
+  it("resets both counters when the level is retried in a new round (level unchanged, cumulativeRoundCount changed)", () => {
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: endpoint("/api/agents/blue/move"),
+        enabled: true,
+        gameLevel: 3,
+        cumulativeRoundCount: 7,
+        turnCount: 5,
+        decayUnitsCharged: 12,
+      },
+    ])
+
+    const retryAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 8, 1)
+
+    expect(retryAgent).toMatchObject({
+      gameLevel: 3, cumulativeRoundCount: 8, turnCount: 1, decayUnitsCharged: 1,
+    })
+  })
+
+  it("resets both counters when a post-reset cumulativeRoundCount collides with a stale pre-reset value", () => {
     // "Reset Progress" (clearPersistedSnapshot) never touches the agentConfigs storage
     // namespace, so this agent's record survives untouched from a prior session where it
     // last played level 5. state.cumulativeRoundCount restarts from 0 after the reset, so a
@@ -436,17 +446,20 @@ describe("storage", () => {
         enabled: true,
         gameLevel: 5,
         cumulativeRoundCount: 12,
-        requestsCount: 9,
+        turnCount: 9,
+        decayUnitsCharged: 25,
       },
     ])
 
     // New session, different level, but the round counter happens to collide.
-    const postResetAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 1, 12)
+    const postResetAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 1, 12, 1)
 
-    // Must NOT inherit the stale requestsCount: 9 — gameLevel differing (1 vs 5) is what
-    // catches this. If recordAgentTurnStats is ever "simplified" to compare only
-    // cumulativeRoundCount, this assertion will fail.
-    expect(postResetAgent).toMatchObject({ gameLevel: 1, cumulativeRoundCount: 12, requestsCount: 1 })
+    // Must NOT inherit the stale turnCount: 9 or decayUnitsCharged: 25 — gameLevel differing
+    // (1 vs 5) is what catches this. If recordAgentTurnStats is ever "simplified" to compare only
+    // cumulativeRoundCount, these assertions will fail.
+    expect(postResetAgent).toMatchObject({
+      gameLevel: 1, cumulativeRoundCount: 12, turnCount: 1, decayUnitsCharged: 1,
+    })
   })
 
   it("saves and reloads the active round state", () => {
@@ -465,6 +478,7 @@ describe("storage", () => {
       maze: state.maze,
       startCell: { row: 0, col: 0 },
       traversalHistory: [selfVisit(0, 0)],
+      startPosition: { x: 1, y: 1 },
       playerPosition: { x: 1, y: 1 },
       finalPosition: { x: 1, y: 1 },
       wallWeight: 2,
@@ -474,7 +488,7 @@ describe("storage", () => {
       winSummary: "",
       remainingMs: 25_000,
       scoreDecayUnits: 0,
-      agentRequestCount: 0,
+      turnCount: 0,
       cumulativeRoundCount: 0,
     })
   })
@@ -491,11 +505,56 @@ describe("storage", () => {
       wallWeight: 1,
       lastAttemptRetentionUnits: null,
       bestWinRetentionUnits: null,
-      lastWinRequestCount: null,
-      bestWinRequestCount: null,
+      lastWinTraversalSpeedUnits: null,
+      bestWinTraversalSpeedUnits: null,
     })
     expect(snapshot.round).toBeNull()
     expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
+  })
+
+  it("drops a win metric pair when only one half survives validation", () => {
+    // Gameplay never produces a half-set pair: resolveWinScore writes both, a reset clears both.
+    // A pair can only arrive split from corrupted storage, and restoring it split would resurrect
+    // the impossible "no previous attempt, but a stored best" state the win summary has no wording
+    // for — with no previous record, any result is by definition a new record.
+    // Written through the real encoder so the test exercises production decoding; the values are
+    // out of range rather than the wrong type, which is what a tampered record looks like.
+    saveGameProgress(MODE, {
+      level: 2,
+      wallWeight: 1,
+      lastAttemptRetentionUnits: -1, // below zero, so it fails validation
+      bestWinRetentionUnits: 840000, // valid on its own
+      lastWinTraversalSpeedUnits: 2_000, // valid on its own
+      bestWinTraversalSpeedUnits: -5, // below zero, so it fails validation
+    })
+
+    const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
+
+    // Each pair is discarded as a unit: the valid half is dropped alongside the invalid one.
+    expect(snapshot.preferences.bestWinRetentionUnits).toBeNull()
+    expect(snapshot.preferences.lastAttemptRetentionUnits).toBeNull()
+    expect(snapshot.preferences.lastWinTraversalSpeedUnits).toBeNull()
+    expect(snapshot.preferences.bestWinTraversalSpeedUnits).toBeNull()
+  })
+
+  it("restores a win metric pair when both halves are valid", () => {
+    saveGameProgress(MODE, {
+      level: 2,
+      wallWeight: 1,
+      lastAttemptRetentionUnits: 710000,
+      bestWinRetentionUnits: 840000,
+      lastWinTraversalSpeedUnits: 1_500,
+      bestWinTraversalSpeedUnits: 2_500,
+    })
+
+    const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
+
+    expect(snapshot.preferences).toMatchObject({
+      lastAttemptRetentionUnits: 710000,
+      bestWinRetentionUnits: 840000,
+      lastWinTraversalSpeedUnits: 1_500,
+      bestWinTraversalSpeedUnits: 2_500,
+    })
   })
 
   it("clears stale browser storage versions without touching the current version", () => {
@@ -511,8 +570,8 @@ describe("storage", () => {
       wallWeight: 3,
       lastAttemptRetentionUnits: 710000,
       bestWinRetentionUnits: 840000,
-      lastWinRequestCount: 6,
-      bestWinRequestCount: 4,
+      lastWinTraversalSpeedUnits: 6,
+      bestWinTraversalSpeedUnits: 4,
     })
     saveActiveRoundSnapshot(
       MODE,
@@ -554,6 +613,24 @@ describe("storage", () => {
     expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
   })
 
+  it("still saves a round whose clock disagrees with its status", () => {
+    // Reporting an inconsistent status belongs to game.ts, which owns the state and can log it.
+    // Storage must not refuse the write: remainingMs falls back to the full round duration when
+    // the clock is missing, so the snapshot still restores, and dropping it would lose real
+    // progress over a discrepancy that is recoverable.
+    saveActiveRoundSnapshot(MODE, createState({ status: "paused", clock: null }))
+
+    expect(window.sessionStorage.getItem(storageKey("round"))).not.toBeNull()
+  })
+
+  it("refuses to save a round missing the data needed to restore it", () => {
+    // buildRoundSnapshot is the real gate: without a maze there is nothing to redraw, so no
+    // snapshot is written regardless of status.
+    saveActiveRoundSnapshot(MODE, createState({ status: "paused", maze: null }))
+
+    expect(window.sessionStorage.getItem(storageKey("round"))).toBeNull()
+  })
+
   it("clears the persisted round on demand", () => {
     saveActiveRoundSnapshot(
       MODE,
@@ -574,8 +651,8 @@ describe("storage", () => {
       wallWeight: 3,
       lastAttemptRetentionUnits: 710000,
       bestWinRetentionUnits: 840000,
-      lastWinRequestCount: null,
-      bestWinRequestCount: null,
+      lastWinTraversalSpeedUnits: null,
+      bestWinTraversalSpeedUnits: null,
     })
     saveActiveRoundSnapshot(
       MODE,

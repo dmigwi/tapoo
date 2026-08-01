@@ -27,16 +27,24 @@ type pathStep struct {
 
 // GenerateMaze converts the created grid view playing field into a series on paths and walls.
 // The Maze is created such that only a single path can exists between the starting point and
-// and the goal.
+// and the goal. Maze size controls how strongly generation should resist long straight corridors.
 func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
+	return config.GenerateMazeWithProfile(weight, GetNavigationProfile(*config))
+}
+
+// GenerateMazeWithProfile carves a maze under a caller-supplied navigation profile instead of the
+// one GetNavigationProfile derives from area. Gameplay always wants the derived profile, so this
+// exists for measurement: because the profile is a pure function of area, nothing else can hold the
+// grid fixed while moving a knob, which is what separates a knob's effect from the grid's own.
+func (config *Dimensions) GenerateMazeWithProfile(
+	weight WallWeight,
+	navigationProfile NavigationProfile,
+) ([][]string, error) {
 	totalCells, errValidate := config.validateMazeGenerationInputs(weight)
 	if errValidate != nil {
 		config.resetPositions()
 		return nil, errValidate
 	}
-
-	// Maze size controls how strongly generation should resist long straight corridors.
-	navigationProfile := GetNavigationProfile(*config)
 
 	// The visited set is scoped to a single generation so repeated runs do not leak traversal state.
 	visitedCells := make([]bool, totalCells+1)
@@ -72,7 +80,9 @@ func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
 		}
 
 		// Corridor shaping happens here; the returned cell still preserves DFS behavior.
-		nextChoice, nextChoiceErr := config.chooseNextCell(neighbors, cellsPath[len(cellsPath)-1], navigationProfile)
+		nextChoice, nextChoiceErr := config.chooseNextCell(
+			neighbors, cellsPath[len(cellsPath)-1], navigationProfile, visitedCells,
+		)
 		if nextChoiceErr != nil {
 			config.resetPositions()
 			return nil, fmt.Errorf("select next maze cell: %w", nextChoiceErr)
@@ -106,21 +116,19 @@ func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
 	return maze, nil
 }
 
-// chooseNextCell selects the next unvisited neighbor while applying the configured corridor limits.
-// The returned choice preserves the DFS spanning-tree behavior but can bias turns once a straight
-// run becomes long enough to make navigation feel too corridor-heavy.
+// chooseNextCell selects the next unvisited neighbor while applying the configured corridor
+// length cap and least-neighbors bias. The returned choice preserves the DFS spanning-tree
+// behavior.
 func (config *Dimensions) chooseNextCell(
-	neighbors []int, currentState pathStep, profile NavigationProfile,
+	neighbors []int, currentState pathStep, profile NavigationProfile, visitedCells []bool,
 ) (pathStep, error) {
 	var (
-		allCount  int
-		turnCount int
-		hardCount int
+		allCount    int
+		lengthCount int
 
 		// These fixed-size arrays avoid per-step heap growth while we score up to four neighbors.
-		allChoices      [mazeEdgeNeighborCount]pathStep
-		turnChoices     [mazeEdgeNeighborCount]pathStep
-		withinHardLimit [mazeEdgeNeighborCount]pathStep
+		allChoices        [mazeEdgeNeighborCount]pathStep
+		withinLengthLimit [mazeEdgeNeighborCount]pathStep
 	)
 
 	for _, neighbor := range neighbors {
@@ -139,36 +147,50 @@ func (config *Dimensions) chooseNextCell(
 		allChoices[allCount] = choice
 		allCount++
 
-		if nextDirection != currentState.moveDirection {
-			turnChoices[turnCount] = choice
-			turnCount++
-		}
-
-		if straightLength <= profile.HardCorridorLimit {
-			withinHardLimit[hardCount] = choice
-			hardCount++
+		// Caps how long a straight run can go before being forced to bend.
+		if straightLength <= profile.MaxCorridorLength {
+			withinLengthLimit[lengthCount] = choice
+			lengthCount++
 		}
 	}
 
 	// Start with every valid neighbor, then narrow down only if the profile says this corridor is too long.
 	choices := allChoices[:allCount]
-
-	if hardCount > 0 {
-		choices = withinHardLimit[:hardCount]
+	if lengthCount > 0 {
+		choices = withinLengthLimit[:lengthCount]
 	}
 
-	if currentState.moveDirection != directionNone && turnCount > 0 {
-		// Soft limits bias the choice toward a turn, while hard limits force one when available.
-		turnPreferenceRoll, err := secureRandomIndex(percentScale)
+	if len(choices) > 1 {
+		biasRoll, err := secureRandomIndex(percentScale)
 		if err != nil {
 			return pathStep{}, err
 		}
 
-		if currentState.corridorLength >= profile.HardCorridorLimit {
-			choices = turnChoices[:turnCount]
-		} else if currentState.corridorLength >= profile.SoftCorridorLimit &&
-			turnPreferenceRoll < profile.PreferTurnPercent {
-			choices = turnChoices[:turnCount]
+		if biasRoll < profile.LeastNeighborsBias {
+			// Prefer the candidate with the fewest remaining unvisited neighbors of its own. A
+			// low-neighbor-count cell gets "used up" cleanly by visiting it now, leaving nothing
+			// behind for some later, unrelated branch to claim and retroactively turn this cell
+			// into a junction. This is the mechanism that actually controls branching — unlike
+			// corridor length, neighbor count directly predicts whether a cell will be orphaned.
+			var (
+				leastPopulatedCount int
+				fewestRemaining     = mazeEdgeNeighborCount + 1
+				leastPopulated      [mazeEdgeNeighborCount]pathStep
+			)
+
+			for _, choice := range choices {
+				remaining := config.countPresentNeighbors(choice.cellNo, visitedCells)
+				switch {
+				case remaining < fewestRemaining:
+					fewestRemaining = remaining
+					leastPopulated[0] = choice
+					leastPopulatedCount = 1
+				case remaining == fewestRemaining:
+					leastPopulated[leastPopulatedCount] = choice
+					leastPopulatedCount++
+				}
+			}
+			choices = leastPopulated[:leastPopulatedCount]
 		}
 	}
 
@@ -235,7 +257,7 @@ func (config *Dimensions) createPath(maze [][]string, currentCellNo, newCellNo i
 
 	switch newCellNo {
 	case neighbors.Bottom:
-		maze[addr.BottomCenter[0]][addr.BottomCenter[1]] = "   "
+		maze[addr.BottomCenter[0]][addr.BottomCenter[1]] = passageGlyph(0)
 
 	case neighbors.Left:
 		maze[addr.MiddleLeft[0]][addr.MiddleLeft[1]] = " "
@@ -244,7 +266,7 @@ func (config *Dimensions) createPath(maze [][]string, currentCellNo, newCellNo i
 		maze[addr.MiddleRight[0]][addr.MiddleRight[1]] = " "
 
 	case neighbors.Top:
-		maze[addr.TopCenter[0]][addr.TopCenter[1]] = "   "
+		maze[addr.TopCenter[0]][addr.TopCenter[1]] = passageGlyph(0)
 	}
 }
 
@@ -272,6 +294,32 @@ func (config *Dimensions) getPresentNeighbors(cellNo int, visitedCells []bool) [
 	}
 
 	return presentCells
+}
+
+// countPresentNeighbors reports how many of a cell's neighbors are still unvisited. The
+// least-neighbors bias calls this once per candidate on every generation step and only needs the
+// count, so it avoids the slice getPresentNeighbors would allocate.
+func (config *Dimensions) countPresentNeighbors(cellNo int, visitedCells []bool) int {
+	neighbors := config.GetCellNeighbors(cellNo)
+	count := 0
+
+	if neighbors.Bottom != 0 && !visitedCells[neighbors.Bottom] {
+		count++
+	}
+
+	if neighbors.Left != 0 && !visitedCells[neighbors.Left] {
+		count++
+	}
+
+	if neighbors.Right != 0 && !visitedCells[neighbors.Right] {
+		count++
+	}
+
+	if neighbors.Top != 0 && !visitedCells[neighbors.Top] {
+		count++
+	}
+
+	return count
 }
 
 // backtrackToBranch rewinds the DFS stack until it finds a cell with at least one unvisited neighbor.
@@ -364,13 +412,13 @@ func (config *Dimensions) replaceChar(point [2]int, replChar string, maze [][]st
 
 	x, y := point[0], point[1]
 	switch {
-	case !lenTop && lenBottom && isSpaceFound(elemBottom):
+	case !lenTop && lenBottom && isTraversable(elemBottom):
 		maze[x][y] = replChar
 
-	case lenTop && !lenBottom && isSpaceFound(elemTop):
+	case lenTop && !lenBottom && isTraversable(elemTop):
 		maze[x][y] = replChar
 
-	case lenTop && lenBottom && isSpaceFound(elemBottom) && isSpaceFound(elemTop):
+	case lenTop && lenBottom && isTraversable(elemBottom) && isTraversable(elemTop):
 		maze[x][y] = replChar
 	}
 }

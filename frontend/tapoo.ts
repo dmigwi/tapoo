@@ -2,7 +2,7 @@ import { createAgentMode } from "./app/control/agent"
 import { createInteractiveMode } from "./app/control/interactive"
 import { CONFIG } from "./app/config"
 import { getGameElements } from "./app/dom"
-import { showPlaceholderArt, showTerminalApp } from "./app/fallback-policy"
+import { prepareTerminalAppForBootstrap, showPlaceholderArt } from "./app/fallback-policy"
 import { initTapooLogs, tapooDownloadLogs, tapooResetLogs } from "./app/logs"
 import { bootstrapGame } from "./app/game"
 import type { Elements, MazeActionControl, MazeControlModeName } from "./app/types"
@@ -39,8 +39,8 @@ try {
   if (elements) {
     const mode = pageControlMode(elements)
     initTapooLogs(mode.name)
+    prepareTerminalAppForBootstrap()
     bootstrapGame(mode, elements)
-    showTerminalApp()
   }
 } catch (error) {
   showPlaceholderArt(pageModeName(), error)

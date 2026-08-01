@@ -63,6 +63,59 @@ func TestStore(t *testing.T) {
 		}
 	})
 
+	t.Run("drops the retention pair when only one half is stored", func(t *testing.T) {
+		t.Parallel()
+
+		// Gameplay always moves both halves together, so a file holding one without the other was
+		// written from outside the game. Restoring it split would leave the win summary trailing a
+		// best clear that no previous attempt was ever measured against.
+		for _, testCase := range []struct {
+			name        string
+			lastAttempt *uint32
+			best        *uint32
+		}{
+			{name: "best without last attempt", lastAttempt: nil, best: storeUint32Ptr(820000)},
+			{name: "last attempt without best", lastAttempt: storeUint32Ptr(710000), best: nil},
+		} {
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
+
+				storePath := filepath.Join(t.TempDir(), ".tapoo.store")
+				gameStore, errStore := maze.NewStore(storePath)
+				if errStore != nil {
+					t.Fatalf("new store returned error: %v", errStore)
+				}
+
+				if err := gameStore.Save(maze.StoredGameState{
+					Level:                7,
+					WallWeight:           maze.WallWeightBold,
+					State:                maze.GameProgressWon,
+					LastAttemptRetention: testCase.lastAttempt,
+					BestWinRetention:     testCase.best,
+				}); err != nil {
+					t.Fatalf("save returned error: %v", err)
+				}
+
+				state, errLoad := gameStore.Load()
+				if errLoad != nil {
+					t.Fatalf("load returned error: %v", errLoad)
+				}
+
+				if state.LastAttemptRetention != nil || state.BestWinRetention != nil {
+					t.Fatalf(
+						"expected both retention halves dropped: got last=%v best=%v",
+						state.LastAttemptRetention, state.BestWinRetention,
+					)
+				}
+
+				// Everything outside the pair must survive; the pair is not worth losing progress over.
+				if state.Level != 7 {
+					t.Fatalf("unexpected stored level: got %d want %d", state.Level, 7)
+				}
+			})
+		}
+	})
+
 	t.Run("returns an error when the store file does not exist", func(t *testing.T) {
 		t.Parallel()
 

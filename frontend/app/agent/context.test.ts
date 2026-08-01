@@ -5,6 +5,7 @@ import {
   AGENT_CONTEXT_TOOLS,
   buildAgentMessages,
   buildAgentToolHandlers,
+  buildDuplicateToolCallMessage,
   describeAgentRankIdentity,
 } from "./context"
 import {
@@ -33,7 +34,8 @@ function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
     endpoint: new URL("https://agents.example/chat"),
     enabled: true,
     gameLevel: 4,
-    requestsCount: 2,
+    turnCount: 2,
+    decayUnitsCharged: 2,
     ...overrides,
   }
 }
@@ -44,17 +46,17 @@ const expectedAgentPrompt = [
   "currentCell is your current position; destinationCell is the target.",
   "The maze is randomly generated at each level with exactly one path to the destination.",
   "traversalHistory entries matching your playerName record your past moves in chronological order.",
-  "Each entry includes openMoves — the open exits from that cell are fixed since creation — helping you reconstruct the maze's path flow; so entries recorded by other players are just as trustworthy as your own.",
-  "openMoves count reveals the physical maze structure at that cell: one open move is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction.",
+  "Each entry's openMoves maps every open exit from that cell directly to the neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries recorded by other players are just as trustworthy as your own.",
+  "openMoves key count reveals the physical maze structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction.",
   "traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected.",
   "Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination.",
   "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
   "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
   "get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is.",
-  "lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON and a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units.",
+  "lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units.",
   "get_prediction_rules provides the required response format and move count guidance.",
   "Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
-  "Longer, well-reasoned predictions are strictly cheaper per move than single-stepping — a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course.",
+  "Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more new cells for the same decay — that ratio is your traversal speed, and it is the rank you carry: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course.",
   "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
 ].join(" ")
 
@@ -87,6 +89,7 @@ function createState(overrides: Partial<State> = {}): State {
       ["|", "   ", " ", "   ", "|"],
       ["|", "---", "|", "---", "|"],
     ],
+    startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     traversalHistory: [selfVisit(0, 0, ["MoveRight"]), agentVisit(0, 1, "Blue", ["MoveRight"])],
     finalPosition: { x: 3, y: 1 },
@@ -95,13 +98,12 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 0,
     lastAttemptRetentionUnits: null,
     bestWinRetentionUnits: null,
-    lastWinRequestCount: null,
-    bestWinRequestCount: null,
+    lastWinTraversalSpeedUnits: null,
+    bestWinTraversalSpeedUnits: null,
     winSummary: "",
-    canResume: false,
     wallWeight: 1,
     scoreDecayUnits: 0,
-    agentRequestCount: 0,
+    turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,
     ...overrides,
@@ -140,12 +142,24 @@ describe("agent context", () => {
       destinationCell: { row: 0, col: 1 },
     })
     expect(toolHandlers.get_traversal_history({})).toEqual({
-      traversalHistory: [selfVisit(0, 0, ["MoveRight"]), agentVisit(0, 1, "Blue", ["MoveRight"])],
+      traversalHistory: [
+        {
+          playerName: "Self",
+          cell: { row: 0, col: 0 },
+          openMoves: { MoveRight: { row: 0, col: 1, visited: true } },
+        },
+        {
+          playerName: "Blue",
+          cell: { row: 0, col: 1 },
+          openMoves: { MoveRight: { row: 0, col: 2, visited: false } },
+        },
+      ],
     })
     expect(toolHandlers.get_prediction_rules({})).toEqual({
       suggestedMovesPerTurn: 4,
       uniqueCellsVisited: 1,
-      requestsMade: 2,
+      decayUnitsCharged: 2,
+      turnsTaken: 2,
       batchEfficiencyRank: "backtracker",
       expectedResponseSchema,
     })
@@ -161,13 +175,14 @@ describe("agent context", () => {
   })
 
   it("defaults a fresh agent's prediction rules to a trailblazer level regardless of raw counts", () => {
-    const freshAgent = createAgent({ requestsCount: undefined })
+    const freshAgent = createAgent({ turnCount: undefined, decayUnitsCharged: undefined })
     const toolHandlers = buildAgentToolHandlers(createState(), null, freshAgent)
 
     expect(toolHandlers.get_prediction_rules({})).toEqual({
       suggestedMovesPerTurn: 4,
       uniqueCellsVisited: 1,
-      requestsMade: 0,
+      decayUnitsCharged: 0,
+      turnsTaken: 0,
       batchEfficiencyRank: "trailblazer",
       expectedResponseSchema,
     })
@@ -181,11 +196,44 @@ describe("agent context", () => {
       },
       {
         role: "user",
-        content: `It is Blue's turn to predict Tapoo maze moves. Use the available tools to inspect the current maze state.`,
+        content: `It is Blue's turn to predict next moves. Use the available tools to see the maze state.`,
       },
     ])
   })
 
+})
+
+describe("buildDuplicateToolCallMessage", () => {
+  it("names a single duplicate call as an explicit warning tied to malformed-response", () => {
+    const message = buildDuplicateToolCallMessage([
+      { id: "call_2", function: { name: "get_game_status", arguments: {} } },
+    ])
+
+    expect(message).toEqual({
+      role: "user",
+      content:
+        "Warning: get_game_status (call_2) won't yield any new information. " +
+        "You may still call any tools you haven't used yet, or respond now with only the moves JSON. " +
+        "Requesting these tool call(s) once again will be treated as a malformed-response.",
+    })
+  })
+
+  it("lists multiple duplicate calls together, in order", () => {
+    const message = buildDuplicateToolCallMessage([
+      { id: "call_2", function: { name: "get_game_status", arguments: {} } },
+      { id: "call_3", function: { name: "get_maze_positions", arguments: {} } },
+    ])
+
+    expect(message.content).toContain(
+      "get_game_status (call_2), get_maze_positions (call_3) won't yield any new information.",
+    )
+  })
+
+  it("falls back to placeholders when a call is missing its name or id", () => {
+    const message = buildDuplicateToolCallMessage([{ function: { arguments: {} } }])
+
+    expect(message.content).toContain("unknown (no id)")
+  })
 })
 
 describe("describeAgentRankIdentity", () => {

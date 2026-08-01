@@ -5,6 +5,7 @@ import {
 } from "./scoring"
 import {
   canProceedStatus,
+  canShowRestart,
   canShowWallsStatus,
   isAgentApiMode,
   isAwaitAgentStatus,
@@ -15,6 +16,7 @@ import {
   isTooSmallStatus,
   isWonStatus,
 } from "./status"
+import { gridPointFromCellCoordinate } from "./traversal"
 import type { DisplayMsg, Elements, ScreenLine, State } from "./types"
 
 const { maze, messages, viewport } = CONFIG
@@ -166,7 +168,7 @@ function shouldDrawDestination(state: State): boolean {
   return state.clock.blink()
 }
 
-// buildMazeLines merges the maze grid with the current player and target markers.
+// buildMazeLines merges the maze grid with the visited trail, current player, and target markers.
 function buildMazeLines(state: State): string[] {
   if (!state.maze) {
     return []
@@ -174,10 +176,21 @@ function buildMazeLines(state: State): string[] {
 
   const lines = state.maze.map((row) => row.join(""))
 
+  // The trail is drawn first so the player and destination markers always take precedence
+  // over it at their own cell, matching the draw order below.
+  for (const visitedCell of state.traversalHistory) {
+    const point = gridPointFromCellCoordinate(visitedCell)
+    if (state.playerPosition && point.x === state.playerPosition.x && point.y === state.playerPosition.y) {
+      continue
+    }
+
+    lines[point.y] = replaceAt(lines[point.y], point.x * maze.renderCellStep, maze.visitedCellMarker)
+  }
+
   if (state.finalPosition && shouldDrawDestination(state)) {
     lines[state.finalPosition.y] = replaceAt(
       lines[state.finalPosition.y],
-      state.finalPosition.x * maze.cellSpan,
+      state.finalPosition.x * maze.renderCellStep,
       maze.destinationMarker,
     )
   }
@@ -185,7 +198,7 @@ function buildMazeLines(state: State): string[] {
   if (state.playerPosition) {
     lines[state.playerPosition.y] = replaceAt(
       lines[state.playerPosition.y],
-      state.playerPosition.x * maze.cellSpan,
+      state.playerPosition.x * maze.renderCellStep,
       maze.playerMarker,
     )
   }
@@ -204,6 +217,8 @@ function renderMarkedLine(rawLine: string): string {
       html += `<span class="maze-cell player">${value}</span>`
     } else if (char === maze.destinationMarker) {
       html += `<span class="maze-cell target">${value}</span>`
+    } else if (char === maze.visitedCellMarker) {
+      html += `<span class="maze-cell visited">${value}</span>`
     } else {
       html += `<span class="maze-cell walls">${value}</span>`
     }
@@ -301,8 +316,7 @@ function applyOverlayToMaze(
 
   const overlayStartRow = Math.floor(mazeLines.length / 2)
   const overlayRowStride = overlay.length > 1 ? 2 : 1
-  const overlayEndRow =
-    overlayStartRow + (overlay.length - 1) * overlayRowStride
+  const overlayEndRow = overlayStartRow + (overlay.length - 1) * overlayRowStride
   const clearStartRow = Math.max(0, overlayStartRow - 1)
   const clearEndRow = overlayEndRow + 1
 
@@ -350,38 +364,23 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
 
 // updateTouchControls shows only the touch controls that make sense for the current state.
 function updateTouchControls(elements: Elements, state: State): void {
-  const canProceed = state.canResume
-    ? canProceedStatus(state.status)
-    : isAwaitAgentStatus(state.status) || isWonStatus(state.status) || isLostStatus(state.status)
-  const showMoveControls =
-    isInteractiveMode(state.controlMode) && isRunningStatus(state.status)
-  const showPause = isRunningStatus(state.status)
-  const showWalls = canShowWallsStatus(state.status)
-  const showRestart =
-    isAwaitAgentStatus(state.status) ||
-    isPausedStatus(state.status) ||
-    isWonStatus(state.status) ||
-    isLostStatus(state.status) ||
-    isTooSmallStatus(state.status)
+  const showMoveControls = isInteractiveMode(state.controlMode) && isRunningStatus(state.status)
+  // Keyed by data-action so adding a control is one entry here rather than another branch. The
+  // lookup deliberately fails closed: an action with no entry stays hidden, so a button wired into
+  // the markup but not into this map disappears instead of sitting clickable in every state.
+  const actionIsVisible: Record<string, boolean> = {
+    pause: isRunningStatus(state.status),
+    walls: canShowWallsStatus(state.status),
+    proceed: canProceedStatus(state.status),
+    restart: canShowRestart(state.status),
+  }
   let visibleButtons = 0
 
   elements.touchButtons.forEach((button) => {
-    const action = button.dataset.action
-    const move = button.dataset.move
-    const hidden = move
+    const { action, move } = button.dataset
+    button.hidden = move
       ? !showMoveControls
-      : action === "pause"
-        ? !showPause
-        : action === "walls"
-          ? !showWalls
-          : action === "proceed"
-            ? !canProceed
-            : action === "restart"
-              ? !showRestart
-              : false
-
-    button.hidden = hidden
-    button.disabled = false
+      : !(actionIsVisible[action ?? ""] ?? false)
 
     if (!button.hidden) {
       visibleButtons += 1

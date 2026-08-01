@@ -13,6 +13,14 @@ import (
 	"github.com/dmigwi/tapoo/maze"
 )
 
+func cloneGrid(data [][]string) [][]string {
+	cloned := make([][]string, len(data))
+	for row := range data {
+		cloned[row] = slices.Clone(data[row])
+	}
+	return cloned
+}
+
 func TestPlayerMovement(t *testing.T) {
 	t.Parallel()
 
@@ -52,14 +60,18 @@ func TestPlayerMovement(t *testing.T) {
 				NumRows:       3,
 				StartPosition: testCase.startPos,
 			}
+			grid := maze.NewRuntimeMaze(&dimensions, cloneGrid(data))
 
-			dimensions.PlayerMovement(data, testCase.rowDelta, testCase.colDelta)
-			if !slices.Equal(dimensions.StartPosition[:], testCase.wantPos[:]) {
+			dimensions.PlayerMovement(grid, testCase.rowDelta, testCase.colDelta)
+			// Dimensions.StartPosition stays put at the level's start cell; the live position the
+			// move updates lives on the RuntimeMaze.
+			livePos := grid.PlayerPosition()
+			if !slices.Equal(livePos[:], testCase.wantPos[:]) {
 				t.Fatalf(
 					"unexpected position after delta (%d,%d): got %v want %v",
 					testCase.rowDelta,
 					testCase.colDelta,
-					dimensions.StartPosition,
+					livePos,
 					testCase.wantPos,
 				)
 			}
@@ -105,7 +117,8 @@ func TestHandlePlayerMovement(t *testing.T) {
 					StartPosition: testCase.startPos,
 				}
 
-				status, ok := dimensions.HandlePlayerMovement(testCase.key, data)
+				grid := maze.NewRuntimeMaze(&dimensions, cloneGrid(data))
+				status, ok := dimensions.HandlePlayerMovement(testCase.key, grid)
 				if ok {
 					t.Fatalf("expected no status for arrow key %v, got %d", testCase.key, status)
 				}
@@ -114,11 +127,14 @@ func TestHandlePlayerMovement(t *testing.T) {
 					t.Fatalf("expected zero status for arrow key %v, got %d", testCase.key, status)
 				}
 
-				if !slices.Equal(dimensions.StartPosition[:], testCase.wantPos[:]) {
+				// StartPosition is the level's fixed start cell, so the move is observed on the
+				// RuntimeMaze's live position instead.
+				livePos := grid.PlayerPosition()
+				if !slices.Equal(livePos[:], testCase.wantPos[:]) {
 					t.Fatalf(
 						"unexpected position for key %v: got %v want %v",
 						testCase.key,
-						dimensions.StartPosition,
+						livePos,
 						testCase.wantPos,
 					)
 				}
@@ -146,7 +162,8 @@ func TestHandlePlayerMovement(t *testing.T) {
 				t.Parallel()
 
 				dimensions := maze.Dimensions{NumCols: 3, NumRows: 3}
-				got, ok := dimensions.HandlePlayerMovement(testCase.key, data)
+				grid := maze.NewRuntimeMaze(&dimensions, cloneGrid(data))
+				got, ok := dimensions.HandlePlayerMovement(testCase.key, grid)
 				if !ok {
 					t.Fatalf("expected a status for key %v", testCase.key)
 				}
@@ -205,7 +222,7 @@ func TestBuildWinSummary(t *testing.T) {
 			want:        "               1.20s faster than previous (new record)                      ",
 		},
 		{
-			name:        "falls back to the best summary when no last attempt is stored",
+			name:        "reports a first stored clear as a new record",
 			current:     660000,
 			lastAttempt: nil,
 			best:        nil,
@@ -213,12 +230,16 @@ func TestBuildWinSummary(t *testing.T) {
 			want:        "               New scores retention record                               ",
 		},
 		{
-			name:        "reports a first stored run that matches the best clear",
+			name: "still reports a new record when a stray best survives without a last attempt",
+			// loadStoredGameState drops the retention pair unless both halves are present, so this
+			// combination cannot reach BuildWinSummary from a real save. It is pinned here because
+			// the summary has no wording for trailing a best clear that no attempt was measured
+			// against — with nothing previous recorded, the clear is a record by definition.
 			current:     660000,
 			lastAttempt: nil,
-			best:        uint32Ptr(660000),
+			best:        uint32Ptr(740000),
 			duration:    10 * time.Second,
-			want:        "               Matched best scores retention                             ",
+			want:        "               New scores retention record                               ",
 		},
 		{
 			name:        "reports a matched previous run that is still behind the best",

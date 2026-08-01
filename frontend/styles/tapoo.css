@@ -641,6 +641,11 @@ body {
   text-shadow: 0 0 10px rgba(255, 107, 95, 0.28);
 }
 
+.visited {
+  color: var(--player);
+  opacity: 0.55;
+}
+
 .accent {
   color: var(--accent);
 }

@@ -2,6 +2,7 @@ import { CONFIG } from "./config"
 import { createMazeDimensions, isSpaceFound } from "./traversal"
 import type {
   BaseDimensions,
+  MazeDimensions,
   CellAddress,
   CellNeighbors,
   Direction,
@@ -15,12 +16,29 @@ import type {
 
 const { generation, maze: mazeConfig, scoring } = CONFIG
 
-// getRandomNo returns a bounded pseudo-random index for maze generation.
+// getRandomNo returns a bounded, cryptographically random index for maze generation. Using
+// crypto.getRandomValues rather than Math.random keeps maze layouts genuinely unpredictable —
+// worthwhile even for a game, since a guessable layout would blunt the challenge, and it means
+// no swap is needed later if the project grows into a context where that unpredictability
+// becomes a real security property rather than just a gameplay one.
 function getRandomNo(limit: number): number {
   if (limit <= 0) {
     return 0
   }
-  return Math.floor(Math.random() * limit)
+
+  // Rejection sampling avoids modulo bias: values landing in the partial final range above the
+  // largest multiple of `limit` are discarded and re-rolled rather than folded in unevenly.
+  const range = 2 ** 32
+  const rejectionThreshold = range - (range % limit)
+  const buffer = new Uint32Array(1)
+
+  let value: number
+  do {
+    crypto.getRandomValues(buffer)
+    value = buffer[0]
+  } while (value >= rejectionThreshold)
+
+  return value % limit
 }
 
 // absInt normalizes signed values when comparing candidate dimensions.
@@ -33,8 +51,9 @@ function getWallCharacters(weight: WallWeight): [string, string, string] {
   return mazeConfig.walls[weight]
 }
 
-// generateMazeArea turns a level number into the target maze area.
-function generateMazeArea(level: number): number {
+// generateMazeArea turns a level number into the target maze area. Exported so the benchmark can
+// find which level a case belongs to using this function rather than restating seed and diff.
+export function generateMazeArea(level: number): number {
   return level * generation.diff + generation.seed
 }
 
@@ -199,8 +218,8 @@ function createPlayingField(
   weight: WallWeight,
 ): string[][] {
   const chars = getWallCharacters(weight)
-  const rows = mazeConfig.cellSpan * dimensions.numRows + 1
-  const path = " ".repeat(mazeConfig.cellPathWidth)
+  const rows = mazeConfig.renderCellStep * dimensions.numRows + 1
+  const horizontalOpening = " ".repeat(mazeConfig.wallOpening.horizontal)
   const data: string[][] = []
 
   for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
@@ -216,7 +235,7 @@ function createPlayingField(
       if (columnIndex !== dimensions.numCols && rowIndex % 2 === 0) {
         row.push(chars[1])
       } else if (columnIndex !== dimensions.numCols) {
-        row.push(path)
+        row.push(horizontalOpening)
       }
     }
 
@@ -228,36 +247,35 @@ function createPlayingField(
 
 // getCellAddress maps a cell number to its wall and center coordinates.
 function getCellAddress(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   cellNo: number,
 ): CellAddress | null {
-  if (cellNo <= 0 || cellNo > dimensions.numCols * dimensions.numRows) {
+  if (cellNo <= 0 || cellNo > dimensions.area) {
     return null
   }
 
-  const row =
-    (Math.floor((cellNo - 1) / dimensions.numCols) + 1) * mazeConfig.cellSpan
-  const column = (((cellNo - 1) % dimensions.numCols) + 1) * mazeConfig.cellSpan
+  const row = (Math.floor((cellNo - 1) / dimensions.numCols) + 1) * mazeConfig.renderCellStep
+  const column = (((cellNo - 1) % dimensions.numCols) + 1) * mazeConfig.renderCellStep
 
   return {
-    __bottomCenter: { x: column - 1, y: row },
-    __bottomLeft: { x: column - mazeConfig.cellSpan, y: row },
-    __bottomRight: { x: column, y: row },
+    __topLeft: { x: column - mazeConfig.renderCellStep, y: row - mazeConfig.renderCellStep },
+    __topCenter: { x: column - 1, y: row - mazeConfig.renderCellStep },
+    __topRight: { x: column, y: row - mazeConfig.renderCellStep },
+    __middleLeft: { x: column - mazeConfig.renderCellStep, y: row - 1 },
     __middleCenter: { x: column - 1, y: row - 1 },
-    __middleLeft: { x: column - mazeConfig.cellSpan, y: row - 1 },
     __middleRight: { x: column, y: row - 1 },
-    __topCenter: { x: column - 1, y: row - mazeConfig.cellSpan },
-    __topLeft: { x: column - mazeConfig.cellSpan, y: row - mazeConfig.cellSpan },
-    __topRight: { x: column, y: row - mazeConfig.cellSpan },
+    __bottomLeft: { x: column - mazeConfig.renderCellStep, y: row },
+    __bottomCenter: { x: column - 1, y: row },
+    __bottomRight: { x: column, y: row },
   }
 }
 
 // getCellNeighbors returns the adjacent cell numbers around one cell.
 function getCellNeighbors(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   cellNo: number,
 ): CellNeighbors {
-  if (cellNo <= 0 || cellNo > dimensions.numCols * dimensions.numRows) {
+  if (cellNo <= 0 || cellNo > dimensions.area) {
     return { __bottom: 0, __left: 0, __right: 0, __top: 0 }
   }
 
@@ -281,7 +299,7 @@ function getCellNeighbors(
     neighbors.__top = cellNo - dimensions.numCols
   }
 
-  if (cellNo + dimensions.numCols <= dimensions.numCols * dimensions.numRows) {
+  if (cellNo + dimensions.numCols <= dimensions.area) {
     neighbors.__bottom = cellNo + dimensions.numCols
   }
 
@@ -313,7 +331,7 @@ function countNeighbors(neighbors: CellNeighbors): number {
 
 // getPresentNeighbors filters neighboring cells down to the unvisited options.
 function getPresentNeighbors(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   cellNo: number,
   visited: boolean[],
 ): number[] {
@@ -339,29 +357,53 @@ function getPresentNeighbors(
   return present
 }
 
+// countPresentNeighbors reports how many of a cell's neighbors are still unvisited. The
+// least-neighbors bias calls this once per candidate on every generation step and only needs the
+// count, so it avoids the intermediate array getPresentNeighbors would allocate.
+function countPresentNeighbors(
+  dimensions: MazeDimensions,
+  cellNo: number,
+  visited: boolean[],
+): number {
+  const neighbors = getCellNeighbors(dimensions, cellNo)
+  let count = 0
+
+  if (neighbors.__bottom !== 0 && !visited[neighbors.__bottom]) {
+    count += 1
+  }
+
+  if (neighbors.__left !== 0 && !visited[neighbors.__left]) {
+    count += 1
+  }
+
+  if (neighbors.__right !== 0 && !visited[neighbors.__right]) {
+    count += 1
+  }
+
+  if (neighbors.__top !== 0 && !visited[neighbors.__top]) {
+    count += 1
+  }
+
+  return count
+}
+
 // getNavigationProfile maps maze area into the same smooth difficulty curve used
 // by the Go runtime. Smaller mazes keep longer corridors, while larger mazes
 // tighten the limits until they reach the hardest supported profile.
 export function getNavigationProfile(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
 ): NavigationProfile {
-  const area = dimensions.numCols * dimensions.numRows
-  const difficultyFactor = navigationDifficultyFactor(area)
+  const difficultyFactor = navigationDifficultyFactor(dimensions.area)
 
   return {
-    __softCorridorLimit: interpolateNavigationValue(
-      generation.navigation.friendlyProfile.__softCorridorLimit,
-      generation.navigation.hardestProfile.__softCorridorLimit,
+    __maxCorridorLength: interpolateNavigationValue(
+      generation.navigation.friendlyProfile.__maxCorridorLength,
+      generation.navigation.hardestProfile.__maxCorridorLength,
       difficultyFactor,
     ),
-    __hardCorridorLimit: interpolateNavigationValue(
-      generation.navigation.friendlyProfile.__hardCorridorLimit,
-      generation.navigation.hardestProfile.__hardCorridorLimit,
-      difficultyFactor,
-    ),
-    __preferTurnPercent: interpolateNavigationValue(
-      generation.navigation.friendlyProfile.__preferTurnPercent,
-      generation.navigation.hardestProfile.__preferTurnPercent,
+    __leastNeighborsBias: interpolateNavigationValue(
+      generation.navigation.friendlyProfile.__leastNeighborsBias,
+      generation.navigation.hardestProfile.__leastNeighborsBias,
       difficultyFactor,
     ),
   }
@@ -377,8 +419,7 @@ function navigationDifficultyFactor(area: number): number {
     return 1
   }
 
-  const normalizedArea =
-    (area - generation.navigation.friendlyMaxArea) /
+  const normalizedArea = (area - generation.navigation.friendlyMaxArea) /
     (generation.navigation.hardestArea - generation.navigation.friendlyMaxArea)
 
   return Math.sqrt(normalizedArea)
@@ -395,7 +436,7 @@ function interpolateNavigationValue(
 
 // directionBetween converts two adjacent cells into a movement direction.
 function directionBetween(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   currentCell: number,
   nextCell: number,
 ): Direction {
@@ -417,7 +458,7 @@ function directionBetween(
 
 // backtrackToBranch rewinds the carved path until an unvisited branch is found.
 function backtrackToBranch(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   path: PathStep[],
   visited: boolean[],
 ): { path: PathStep[]; currentCell: number; neighbors: number[] } {
@@ -432,28 +473,24 @@ function backtrackToBranch(
     path.pop()
   }
 
-  throw new Error("failed to backtrack to a maze branch")
+  throw new Error("maze generation failed: no branch with unvisited neighbors found")
 }
 
 // chooseNextCell applies the navigation profile to the next branch decision.
 function chooseNextCell(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   neighbors: number[],
   currentState: PathStep,
   profile: NavigationProfile,
+  visited: boolean[],
 ): PathStep {
   const allChoices: PathStep[] = []
-  const turnChoices: PathStep[] = []
-  const withinHardLimit: PathStep[] = []
+  const withinLengthLimit: PathStep[] = []
 
   for (const neighbor of neighbors) {
     const choice: PathStep = {
       __cellNo: neighbor,
-      __moveDirection: directionBetween(
-        dimensions,
-        currentState.__cellNo,
-        neighbor,
-      ),
+      __moveDirection: directionBetween(dimensions, currentState.__cellNo, neighbor),
       __corridorLength: 1,
     }
 
@@ -463,43 +500,41 @@ function chooseNextCell(
 
     allChoices.push(choice)
 
-    if (choice.__moveDirection !== currentState.__moveDirection) {
-      turnChoices.push(choice)
-    }
-
-    if (choice.__corridorLength <= profile.__hardCorridorLimit) {
-      withinHardLimit.push(choice)
+    // Caps how long a straight run can go before being forced to bend.
+    if (choice.__corridorLength <= profile.__maxCorridorLength) {
+      withinLengthLimit.push(choice)
     }
   }
 
-  let choices = allChoices
+  const choices = withinLengthLimit.length > 0 ? withinLengthLimit : allChoices
+  if (choices.length > 1 && getRandomNo(scoring.percentScale) < profile.__leastNeighborsBias) {
+    // Prefer the candidate with the fewest remaining unvisited neighbors of its own. A
+    // low-neighbor-count cell gets "used up" cleanly by visiting it now, leaving nothing behind
+    // for some later, unrelated branch to claim and retroactively turn this cell into a
+    // junction. This is the mechanism that actually controls branching — unlike corridor length
+    // or turn direction, neighbor count directly predicts whether a cell will be orphaned.
+    let leastPopulated: PathStep[] = []
+    let fewestRemaining = Infinity
 
-  if (withinHardLimit.length > 0) {
-    choices = withinHardLimit
-  }
-
-  if (currentState.__moveDirection !== "none" && turnChoices.length > 0) {
-    const turnPreferenceRoll = getRandomNo(scoring.percentScale)
-
-    if (currentState.__corridorLength >= profile.__hardCorridorLimit) {
-      choices = turnChoices
-    } else if (
-      currentState.__corridorLength >= profile.__softCorridorLimit &&
-      turnPreferenceRoll < profile.__preferTurnPercent
-    ) {
-      choices = turnChoices
+    for (const choice of choices) {
+      const remaining = countPresentNeighbors(dimensions, choice.__cellNo, visited)
+      if (remaining < fewestRemaining) {
+        fewestRemaining = remaining
+        leastPopulated = [choice]
+      } else if (remaining === fewestRemaining) {
+        leastPopulated.push(choice)
+      }
     }
+    return leastPopulated[getRandomNo(leastPopulated.length)]
   }
 
   return choices[getRandomNo(choices.length)]
 }
 
 // getStartPosition prefers an edge cell so the opening feels less uniform.
-function getStartPosition(dimensions: BaseDimensions): number {
-  const totalCells = dimensions.numCols * dimensions.numRows
-
+function getStartPosition(dimensions: MazeDimensions): number {
   while (true) {
-    const randomCellNo = getRandomNo(totalCells) + 1
+    const randomCellNo = getRandomNo(dimensions.area) + 1
     if (countNeighbors(getCellNeighbors(dimensions, randomCellNo)) < 4) {
       return randomCellNo
     }
@@ -508,7 +543,7 @@ function getStartPosition(dimensions: BaseDimensions): number {
 
 // createPath removes the wall segment between two connected cells.
 function createPath(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   maze: string[][],
   currentCellNo: number,
   nextCellNo: number,
@@ -518,27 +553,29 @@ function createPath(
     return
   }
 
+  const horizontalOpening = " ".repeat(mazeConfig.wallOpening.horizontal)
+  const verticalOpening = " ".repeat(mazeConfig.wallOpening.vertical)
   const neighbors = getCellNeighbors(dimensions, currentCellNo)
 
   switch (nextCellNo) {
     case neighbors.__bottom:
-      maze[address.__bottomCenter.y][address.__bottomCenter.x] = "   "
+      maze[address.__bottomCenter.y][address.__bottomCenter.x] = horizontalOpening
       break
     case neighbors.__left:
-      maze[address.__middleLeft.y][address.__middleLeft.x] = " "
+      maze[address.__middleLeft.y][address.__middleLeft.x] = verticalOpening
       break
     case neighbors.__right:
-      maze[address.__middleRight.y][address.__middleRight.x] = " "
+      maze[address.__middleRight.y][address.__middleRight.x] = verticalOpening
       break
     case neighbors.__top:
-      maze[address.__topCenter.y][address.__topCenter.x] = "   "
+      maze[address.__topCenter.y][address.__topCenter.x] = horizontalOpening
       break
   }
 }
 
 // replaceChar swaps a junction glyph only when the vertical path stays open.
 function replaceChar(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   point: RenderGridPoint,
   replacement: string,
   maze: string[][],
@@ -553,7 +590,7 @@ function replaceChar(
     hasTop = true
   }
 
-  if (point.y + 1 <= dimensions.numRows * mazeConfig.cellSpan) {
+  if (point.y + 1 <= dimensions.numRows * mazeConfig.renderCellStep) {
     bottomItem = maze[point.y + 1][point.x]
     hasBottom = true
   }
@@ -577,13 +614,13 @@ function replaceChar(
 
 // optimizeMaze softens eligible vertical joints after the maze is carved.
 function optimizeMaze(
-  dimensions: BaseDimensions,
+  dimensions: MazeDimensions,
   weight: WallWeight,
   maze: string[][],
 ): void {
   const chars = getWallCharacters(weight)
 
-  for (let cell = 1; cell <= dimensions.numCols * dimensions.numRows; cell += 1) {
+  for (let cell = 1; cell <= dimensions.area; cell += 1) {
     const address = getCellAddress(dimensions, cell)
     if (!address) {
       continue
@@ -595,15 +632,30 @@ function optimizeMaze(
 }
 
 // generateMaze carves the maze, then returns the grid plus start and target positions.
+//
+// The target is deliberately chosen as the single farthest cell from the start, by tree
+// distance, across the entire maze — not an arbitrary or independently-random pick. Because a
+// perfect maze is a spanning tree, and `path` here always mirrors the exact tree-path from
+// `startCell` to whichever cell the DFS currently stands on, tracking `path.length`'s running
+// maximum re-derives every cell's true distance from the start as it's first visited. The
+// classic graph-theory guarantee for trees is that the farthest node from any fixed point is
+// always an endpoint of the tree's longest possible path (its diameter) — so `startCell` and
+// `finalCell` are always as far apart as the maze's shape allows, regardless of where the
+// randomly-chosen `startCell` happens to land.
+// profileOverride carves under a caller-supplied profile instead of the one getNavigationProfile
+// derives from area. Gameplay always omits it; it exists for measurement, since the profile is a
+// pure function of area and nothing else can hold the grid fixed while moving a knob — which is what
+// separates a knob's effect from the grid's own.
 export function generateMaze(
-  dimensions: BaseDimensions,
+  dimensions: LevelDimensions,
   weight: WallWeight,
+  profileOverride?: NavigationProfile,
 ): RoundState {
-  const totalCells = dimensions.numCols * dimensions.numRows
-  const navigationProfile = getNavigationProfile(dimensions)
-  const visited = new Array<boolean>(totalCells + 1).fill(false)
+  const navigationProfile = profileOverride ?? getNavigationProfile(dimensions)
+  const visited = new Array<boolean>(dimensions.area + 1).fill(false)
   const maze = createPlayingField(dimensions, weight)
   const startCell = getStartPosition(dimensions)
+
   let path: PathStep[] = [
     { __cellNo: startCell, __moveDirection: "none", __corridorLength: 0 },
   ]
@@ -619,16 +671,13 @@ export function generateMaze(
 
   visited[currentCell] = true
 
-  while (visitedCount < totalCells) {
+  while (visitedCount < dimensions.area) {
     const backtrackedState = backtrackToBranch(dimensions, path, visited)
     path = backtrackedState.path
     currentCell = backtrackedState.currentCell
 
     const nextChoice = chooseNextCell(
-      dimensions,
-      backtrackedState.neighbors,
-      path[path.length - 1],
-      navigationProfile,
+      dimensions, backtrackedState.neighbors, path[path.length - 1], navigationProfile, visited,
     )
 
     if (visited[nextChoice.__cellNo]) {

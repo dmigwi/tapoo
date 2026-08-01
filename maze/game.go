@@ -21,47 +21,148 @@ type gameState struct {
 	store      *Store
 }
 
-// runtimeMaze keeps the active maze data synchronized between the event loop and the keyboard goroutine.
-type runtimeMaze struct {
+// RuntimeMaze keeps the active maze data synchronized between the event loop and the keyboard
+// goroutine, and owns the player's live position.
+//
+// Dimensions stays write-once for the life of a level: StartPosition and FinalPosition describe where
+// traversal begins and ends, not where the player currently is. That separation is what keeps
+// Dimensions safe to share between goroutines and to copy by value, since nothing mutates it during
+// play. playerLivePos is seeded from StartPosition and is the only thing a move updates.
+type RuntimeMaze struct {
 	mu   sync.RWMutex
 	data [][]string
+
+	// playerLivePos is the player's current cell; maxRow and maxColumn are the level's movement
+	// bounds. Both are captured from Dimensions at round init so a move never has to dereference the
+	// shared Dimensions, which the event loop overwrites when it loads the next level.
+	playerLivePos     [2]int
+	maxRow, maxColumn int
 }
 
 // keyboardSession keeps the keyboard goroutine wiring together so the main loop
 // can focus on gameplay rather than channel lifecycle management.
 type keyboardSession struct {
-	mazeData     *runtimeMaze
+	mazeData     *RuntimeMaze
 	statusCh     chan int
 	errCh        chan error
 	done         chan struct{}
 	inputStopped chan struct{}
 }
 
-// newRuntimeMaze stores the initial maze data that player movement checks against.
-func newRuntimeMaze(data [][]string) *runtimeMaze {
-	return &runtimeMaze{data: data}
+// NewRuntimeMaze takes ownership of the maze data. The grid is deliberately not copied: the visited
+// trail the keyboard goroutine writes has to be visible to the renderer, so both must see one grid.
+// Serialising that sharing is what the lock is for.
+func NewRuntimeMaze(config *Dimensions, data [][]string) *RuntimeMaze {
+	return &RuntimeMaze{
+		data:          data,
+		playerLivePos: config.StartPosition,
+		maxRow:        config.NumRows * cellSpan,
+		maxColumn:     config.NumCols * cellSpan,
+	}
 }
 
-// Data returns the current maze snapshot used for traversability checks.
-func (mazeData *runtimeMaze) Data() [][]string {
-	mazeData.mu.RLock()
-	defer mazeData.mu.RUnlock()
+// advance moves the player one cell when the passage between here and there is open, marking the
+// cell being left. Position and grid are read and written under one exclusive lock, so the marker and
+// the position can never be observed disagreeing, and nothing outside needs a slice reference or a
+// writable Dimensions to make a move. The lock is exclusive rather than RLock because this writes.
+func (mazeData *RuntimeMaze) advance(rowDelta, columnDelta int) bool {
+	mazeData.mu.Lock()
+	defer mazeData.mu.Unlock()
 
-	return mazeData.data
+	currentRow, currentColumn := mazeData.playerLivePos[0], mazeData.playerLivePos[1]
+	nextRow := currentRow + rowDelta*moveStep
+	nextColumn := currentColumn + columnDelta*moveStep
+
+	if nextRow <= 0 || nextRow > mazeData.maxRow || nextColumn <= 0 || nextColumn > mazeData.maxColumn {
+		return false
+	}
+
+	if !isTraversable(mazeData.data[currentRow+rowDelta][currentColumn+columnDelta]) {
+		return false
+	}
+
+	mazeData.data[currentRow][currentColumn] = passageGlyph(visitedCellMarker)
+	mazeData.playerLivePos = [2]int{nextRow, nextColumn}
+
+	return true
 }
 
-// SetData swaps in a new maze snapshot after level reloads or wall-weight changes.
-func (mazeData *runtimeMaze) SetData(data [][]string) {
+// initLevelRoundInfo installs a freshly loaded level — its grid together with the player's starting
+// cell — under one write lock, so no move can land against a half-swapped level.
+//
+// It initialises a round and is only valid at a level boundary. Because it seeds playerLivePos from
+// config.StartPosition, calling it part-way through a round discards wherever the player had walked
+// to and drops them back at the start. To change the grid mid-round without disturbing the position,
+// use replaceGrid.
+func (mazeData *RuntimeMaze) initLevelRoundInfo(config *Dimensions, data [][]string) {
 	mazeData.mu.Lock()
 	defer mazeData.mu.Unlock()
 
 	mazeData.data = data
+	mazeData.playerLivePos = config.StartPosition
+	mazeData.maxRow = config.NumRows * cellSpan
+	mazeData.maxColumn = config.NumCols * cellSpan
+}
+
+// PlayerPosition reports the player's current cell. It is a copy taken under the read lock, so
+// callers observe a whole coordinate pair rather than one that a concurrent move is midway through.
+func (mazeData *RuntimeMaze) PlayerPosition() [2]int {
+	mazeData.mu.RLock()
+	defer mazeData.mu.RUnlock()
+
+	return mazeData.playerLivePos
+}
+
+// RenderUI draws the current grid under the read lock. It is the race-safe counterpart to
+// RenderMazeUI: that one renders a grid the caller owns, this one renders a grid RuntimeMaze owns
+// and may be concurrently marking. Every render in the game loop goes through
+// here rather than holding a grid of its own, which is what stops these reads racing the
+// visited-cell writes isTraversable makes from the keyboard goroutine. Centralising it in one method
+// also means a new render site cannot forget to take the lock. showGoal is threaded through so
+// callers can follow the blink phase; pass true for the steady overlay screens.
+//
+// The lock deliberately stops at this boundary: display.go stays a pure function of the grid it is
+// handed, with no knowledge of the game loop's concurrency.
+func (mazeData *RuntimeMaze) RenderUI(
+	ui UI, config *Dimensions, level, score int, overlay *UIOverlay, showGoal bool,
+) (bool, error) {
+	mazeData.mu.RLock()
+	defer mazeData.mu.RUnlock()
+
+	// Overlay screens pass no dimensions, and renderMazeUI handles that itself.
+	if config == nil {
+		return renderMazeUI(ui, nil, level, score, mazeData.data, overlay, showGoal)
+	}
+
+	// The live scene gets a per-frame copy whose StartPosition carries the player's current cell, so
+	// renderLiveScene still finds both positions in one Dimensions while the shared struct is never
+	// written. Copying is safe precisely because Dimensions holds no synchronization primitives.
+	frame := *config
+	frame.StartPosition = mazeData.playerLivePos
+
+	return renderMazeUI(ui, &frame, level, score, mazeData.data, overlay, showGoal)
+}
+
+// replaceGrid swaps the grid for whatever fn derives from it, holding the write lock across both
+// steps. Reading the grid and then publishing the result through a separate setter would leave a gap
+// in which the keyboard goroutine could mark a cell on the grid being retired, silently losing that mark.
+func (mazeData *RuntimeMaze) replaceGrid(fn func(data [][]string) ([][]string, error)) error {
+	mazeData.mu.Lock()
+	defer mazeData.mu.Unlock()
+
+	next, err := fn(mazeData.data)
+	if err != nil {
+		return err
+	}
+
+	mazeData.data = next
+	return nil
 }
 
 // newKeyboardSession starts the polling goroutine used by the gameplay loop.
 func newKeyboardSession(ui UI, val *Dimensions, data [][]string) *keyboardSession {
 	session := &keyboardSession{
-		mazeData:     newRuntimeMaze(data),
+		mazeData:     NewRuntimeMaze(val, data),
 		statusCh:     make(chan int),
 		errCh:        make(chan error, 1),
 		done:         make(chan struct{}),
@@ -85,33 +186,16 @@ func (session *keyboardSession) Close(ui UI) {
 
 // PlayerMovement updates the player coordinates using the supplied row and column deltas.
 // The move only succeeds when the intermediate passage slot between maze cells is traversable.
-func (config *Dimensions) PlayerMovement(data [][]string, rowDelta, columnDelta int) (int, bool) {
-	startPos := config.StartPosition
-	currentColumn, currentRow := startPos[1], startPos[0]
-	nextRow := currentRow + rowDelta*moveStep
-	nextColumn := currentColumn + columnDelta*moveStep
-	probeRow := currentRow + rowDelta
-	probeColumn := currentColumn + columnDelta
+func (config *Dimensions) PlayerMovement(data *RuntimeMaze, rowDelta, columnDelta int) (int, bool) {
+	// Deliberately reads nothing from config: position and bounds both live on the RuntimeMaze, so the
+	// keyboard goroutine never touches the Dimensions the event loop overwrites at a level change.
+	data.advance(rowDelta, columnDelta)
 
-	if nextRow <= 0 || nextRow > config.NumRows*cellSpan {
-		return 0, false
-	}
-
-	if nextColumn <= 0 || nextColumn > config.NumCols*cellSpan {
-		return 0, false
-	}
-
-	if !isSpaceFound(data[probeRow][probeColumn]) {
-		return 0, false
-	}
-
-	config.StartPosition[0] = nextRow
-	config.StartPosition[1] = nextColumn
 	return 0, false
 }
 
 // HandlePlayerMovement interprets keyboard input and updates the player position or returns a game status.
-func (config *Dimensions) HandlePlayerMovement(event termbox.Key, data [][]string) (int, bool) {
+func (config *Dimensions) HandlePlayerMovement(event termbox.Key, data *RuntimeMaze) (int, bool) {
 	// Status-returning keys are separated from movement keys so callers can route game actions cleanly.
 	if event == termbox.KeyCtrlC {
 		return StatusQuit, true
@@ -155,13 +239,13 @@ func (config *Dimensions) HandlePlayerMovement(event termbox.Key, data [][]strin
 }
 
 // handleKeyboardMapping handles all the keyboard input as captured by termbox.
-func (config *Dimensions) handleKeyboardMapping(ui UI, mazeData *runtimeMaze,
+func (config *Dimensions) handleKeyboardMapping(ui UI, mazeData *RuntimeMaze,
 	statusCh chan<- int, done <-chan struct{}) error {
 	for {
 		ev := ui.PollEvent()
 		if ev.Type == termbox.EventKey {
 			// Arrow keys mutate player state directly; control keys are converted into higher-level statuses.
-			if gameStatus, ok := config.HandlePlayerMovement(ev.Key, mazeData.Data()); ok {
+			if gameStatus, ok := config.HandlePlayerMovement(ev.Key, mazeData); ok {
 				select {
 				case statusCh <- gameStatus:
 				case <-done:
@@ -265,40 +349,35 @@ func PlayPreparedGameWithStore(
 
 	// Render the current maze state immediately so restored sessions and trivial win states
 	// do not wait for the first refresh tick before becoming visible.
-	if err := renderPreparedGameStart(ui, &state, &clock, val, data, timeout); err != nil {
+	if err := renderPreparedGameStart(ui, &state, &clock, val, keyboard.mazeData, timeout); err != nil {
 		return err
 	}
 
-	return runPreparedGameLoop(ui, &state, &clock, val, data, keyboard, ticker, timeout)
+	return runPreparedGameLoop(ui, &state, &clock, val, keyboard, ticker, timeout)
 }
 
 // renderPreparedGameStart draws the first visible frame for playable mazes before the
 // regular refresh ticker begins advancing the level.
 func renderPreparedGameStart(
-	ui UI, state *gameState, clock *GameClock, val *Dimensions, data [][]string, timeout *time.Timer,
+	ui UI, state *gameState, clock *GameClock, val *Dimensions, mazeData *RuntimeMaze, timeout *time.Timer,
 ) error {
 	if val.NumCols <= 0 || val.NumRows <= 0 {
 		return nil
 	}
 
-	return state.handleTick(ui, time.Now(), clock, val, data, timeout)
+	return state.handleTick(ui, time.Now(), clock, val, mazeData, timeout)
 }
 
 // runPreparedGameLoop coordinates timer ticks, status signals, and keyboard errors until the game exits.
 func runPreparedGameLoop(
-	ui UI, state *gameState, clock *GameClock, val *Dimensions, data [][]string, keyboard *keyboardSession,
+	ui UI, state *gameState, clock *GameClock, val *Dimensions, keyboard *keyboardSession,
 	ticker *time.Ticker, timeout *time.Timer,
 ) error {
 	for {
-		updatedData, exitGame, err := handlePreparedGameEvent(
-			ui, state, clock, val, data, keyboard, ticker, timeout,
-		)
+		exitGame, err := handlePreparedGameEvent(ui, state, clock, val, keyboard, ticker, timeout)
 		if err != nil {
 			return err
 		}
-
-		data = updatedData
-		keyboard.mazeData.SetData(data)
 
 		if exitGame {
 			return nil
@@ -306,31 +385,26 @@ func runPreparedGameLoop(
 	}
 }
 
-// handlePreparedGameEvent processes one signal from the runtime loop and reports the next maze snapshot.
+// handlePreparedGameEvent processes one signal from the runtime loop and reports whether to exit.
+// Handlers that replace the grid publish it through RuntimeMaze rather than returning it, so there
+// is only ever one owner of the active maze.
 func handlePreparedGameEvent(
-	ui UI, state *gameState, clock *GameClock, val *Dimensions, data [][]string, keyboard *keyboardSession,
+	ui UI, state *gameState, clock *GameClock, val *Dimensions, keyboard *keyboardSession,
 	ticker *time.Ticker, timeout *time.Timer,
-) ([][]string, bool, error) {
+) (bool, error) {
 	select {
 	case timeVal := <-ticker.C:
 		// Rendering, score decay, and win detection all advance on the same heartbeat.
-		err := state.handleTick(ui, timeVal, clock, val, data, timeout)
-		return data, false, err
+		return false, state.handleTick(ui, timeVal, clock, val, keyboard.mazeData, timeout)
 	case <-timeout.C:
-		err := state.handleTimeout(ui, data)
-		return data, false, err
+		return false, state.handleTimeout(ui, keyboard.mazeData)
 	case returnedStatus := <-keyboard.statusCh:
-		exitGame, updatedData, err := state.handleStatus(ui, returnedStatus, val, data, timeout, clock)
-		if err != nil {
-			return data, false, err
-		}
-
-		return updatedData, exitGame, nil
+		return state.handleStatus(ui, returnedStatus, val, keyboard.mazeData, timeout, clock)
 	case err := <-keyboard.errCh:
 		if err != nil {
-			return data, false, fmt.Errorf("read keyboard input: %w", err)
+			return false, fmt.Errorf("read keyboard input: %w", err)
 		}
-		return data, false, nil
+		return false, nil
 	}
 }
 
@@ -395,10 +469,7 @@ func BuildWinSummary(current uint32, lastAttempt, best *uint32, levelDuration ti
 
 	switch previousCmp {
 	case winSummaryPreviousNone:
-		// First stored wins never mention a previous attempt, so only the best delta can be injected.
-		if bestCmp == winSummaryBestBehind {
-			return fmt.Sprintf(template, bestDelta)
-		}
+		// First stored clears carry no deltas at all: nothing earlier exists to measure against.
 		return template
 	case winSummaryPreviousFaster, winSummaryPreviousSlower:
 		// Faster/slower templates always carry the previous-attempt delta and optionally the best delta too.
@@ -470,15 +541,8 @@ func selectWinSummaryTemplate(
 ) string {
 	switch previousCmp {
 	case winSummaryPreviousNone:
-		// First stored win: only the relationship to the best clear matters.
-		switch bestCmp {
-		case winSummaryBestNewRecord:
-			return winNoPrevNewRecord
-		case winSummaryBestMatched:
-			return winNoPrevMatchedBest
-		case winSummaryBestBehind:
-			return winNoPrevBehindBest
-		}
+		// First stored clear: with no previous attempt there is no best to trail, so this is a record.
+		return winNoPrev
 	case winSummaryPreviousFaster:
 		// Faster reruns always include the improvement over the previous attempt.
 		switch bestCmp {
@@ -519,7 +583,7 @@ func retentionPointer(value uint32) *uint32 {
 }
 
 func (state *gameState) handleTick(
-	ui UI, timeVal time.Time, clock *GameClock, val *Dimensions, data [][]string, timeout *time.Timer,
+	ui UI, timeVal time.Time, clock *GameClock, val *Dimensions, mazeData *RuntimeMaze, timeout *time.Timer,
 ) error {
 	if state.paused {
 		return nil
@@ -528,8 +592,8 @@ func (state *gameState) handleTick(
 	// Scores decay smoothly from the level budget so each refresh can show sub-second changes.
 	elapsed := clock.elapsedAt(timeVal)
 	state.scores = CalculateScore(state.totalCells, elapsed)
-	targetReached, errUI := renderMazeUI(
-		ui, val, state.persisted.Level, state.scores, data, nil, clock.blinkOnAt(timeVal),
+	targetReached, errUI := mazeData.RenderUI(
+		ui, val, state.persisted.Level, state.scores, nil, clock.blinkOnAt(timeVal),
 	)
 	if errUI != nil {
 		return fmt.Errorf("refresh ui: %w", errUI)
@@ -561,7 +625,7 @@ func (state *gameState) handleTick(
 	state.nextLevel = state.persisted.Level + 1
 	state.persisted.State = GameProgressWon
 
-	if _, err := RenderMazeUI(ui, nil, state.persisted.Level, state.scores, data, state.overlay); err != nil {
+	if _, err := mazeData.RenderUI(ui, nil, state.persisted.Level, state.scores, state.overlay, true); err != nil {
 		return fmt.Errorf("show success screen: %w", err)
 	}
 
@@ -571,7 +635,7 @@ func (state *gameState) handleTick(
 	return nil
 }
 
-func (state *gameState) handleTimeout(ui UI, data [][]string) error {
+func (state *gameState) handleTimeout(ui UI, mazeData *RuntimeMaze) error {
 	state.persisted.LastAttemptRetention = retentionPointer(0)
 	state.overlay = &UIOverlay{
 		Message:       gameOverFailed,
@@ -581,7 +645,7 @@ func (state *gameState) handleTimeout(ui UI, data [][]string) error {
 	state.nextLevel = state.persisted.Level
 	state.persisted.State = GameProgressFail
 
-	if _, err := RenderMazeUI(ui, nil, state.persisted.Level, state.scores, data, state.overlay); err != nil {
+	if _, err := mazeData.RenderUI(ui, nil, state.persisted.Level, state.scores, state.overlay, true); err != nil {
 		return fmt.Errorf("show failure screen: %w", err)
 	}
 
@@ -592,37 +656,32 @@ func (state *gameState) handleTimeout(ui UI, data [][]string) error {
 }
 
 // handleStatus processes non-movement game actions such as quit, pause, wall-style changes,
-// and proceed requests after a pause or completed run. It returns whether the game loop should
-// exit, plus the maze data that should remain active after the action.
+// and proceed requests after a pause or completed run. It reports whether the game loop should
+// exit; actions that replace the maze publish it through mazeData instead of returning it.
 func (state *gameState) handleStatus(
-	ui UI, returnedStatus int, val *Dimensions, data [][]string, timeout *time.Timer, clock *GameClock,
-) (bool, [][]string, error) {
+	ui UI, returnedStatus int, val *Dimensions, mazeData *RuntimeMaze, timeout *time.Timer, clock *GameClock,
+) (bool, error) {
 	// Quit exits immediately and preserves whichever progress state was last established for this level.
 	if returnedStatus == StatusQuit {
 		state.persistProgress()
-		return true, data, nil
+		return true, nil
 	}
 
 	// Ctrl+B only changes the wall glyph set; it leaves level progress, timers, and player state intact.
 	if returnedStatus == StatusCycleWallWeight {
-		updatedData, err := state.handleWallWeightCycle(data)
-		if err != nil {
-			return false, data, err
-		}
-
-		return false, updatedData, nil
+		return false, state.handleWallWeightCycle(mazeData)
 	}
 
 	// Enter serves two different flows:
 	// 1. Resume a manually paused game when no overlay transition is pending.
 	// 2. Load the next or current level after a win or fail overlay.
 	if returnedStatus == StatusProceed {
-		return state.handleProceed(ui, val, data, timeout, clock)
+		return state.handleProceed(ui, val, mazeData, timeout, clock)
 	}
 
 	// Ignore duplicate pause requests and any unknown status values.
 	if returnedStatus != StatusPause || state.paused {
-		return false, data, nil
+		return false, nil
 	}
 
 	// A fresh pause freezes the timer, clears any pending level transition, and shows the pause overlay.
@@ -638,31 +697,26 @@ func (state *gameState) handleStatus(
 	clock.Pause()
 	stopTimer(timeout)
 
-	if _, err := RenderMazeUI(ui, nil, 0, quitNavigationStatus, data, state.overlay); err != nil {
-		return false, data, fmt.Errorf("show pause screen: %w", err)
+	if _, err := mazeData.RenderUI(ui, nil, 0, quitNavigationStatus, state.overlay, true); err != nil {
+		return false, fmt.Errorf("show pause screen: %w", err)
 	}
 
 	state.persistProgress()
-	return false, data, nil
+	return false, nil
 }
 
 func (state *gameState) handleProceed(
-	ui UI, val *Dimensions, data [][]string, timeout *time.Timer, clock *GameClock,
-) (bool, [][]string, error) {
+	ui UI, val *Dimensions, mazeData *RuntimeMaze, timeout *time.Timer, clock *GameClock,
+) (bool, error) {
 	// Ignore proceed unless the game is currently in a resumable or reloadable paused state.
 	if !state.paused || !state.canResume {
-		return false, data, nil
+		return false, nil
 	}
 
 	// Proceed after win/fail reloads a level, while proceed after a manual pause resumes
 	// the active maze. That decision belongs to persisted game progress, not the UI overlay.
 	if state.persisted.State != GameProgressInProgress {
-		reloadedData, err := state.reloadLevel(ui, val, timeout, clock)
-		if err != nil {
-			return false, data, err
-		}
-
-		return false, reloadedData, nil
+		return false, state.reloadLevel(ui, val, mazeData, timeout, clock)
 	}
 
 	// Without an overlay transition, proceed simply resumes the current timed run from a manual pause.
@@ -672,23 +726,23 @@ func (state *gameState) handleProceed(
 	clock.Resume()
 	timeout.Reset(clock.Remaining())
 	state.scores = CalculateScore(state.totalCells, clock.Elapsed())
-	if _, err := renderMazeUI(
-		ui, val, state.persisted.Level, state.scores, data, nil, clock.blinkOnAt(time.Now()),
+	if _, err := mazeData.RenderUI(
+		ui, val, state.persisted.Level, state.scores, nil, clock.blinkOnAt(time.Now()),
 	); err != nil {
-		return false, data, fmt.Errorf("resume paused game: %w", err)
+		return false, fmt.Errorf("resume paused game: %w", err)
 	}
 
-	return false, data, nil
+	return false, nil
 }
 
 // reloadLevel rebuilds the current or next level after a game-over proceed request.
 func (state *gameState) reloadLevel(
-	ui UI, val *Dimensions, timeout *time.Timer, clock *GameClock,
-) ([][]string, error) {
+	ui UI, val *Dimensions, mazeData *RuntimeMaze, timeout *time.Timer, clock *GameClock,
+) error {
 	level := state.nextLevel
 	nextConfig, nextData, errLevel := loadLevel(ui, level, state.persisted.WallWeight)
 	if errLevel != nil {
-		return nil, fmt.Errorf("reload level %d: %w", level, errLevel)
+		return fmt.Errorf("reload level %d: %w", level, errLevel)
 	}
 
 	*val = *nextConfig
@@ -704,12 +758,15 @@ func (state *gameState) reloadLevel(
 	stopTimer(timeout)
 	timeout.Reset(clock.levelDuration)
 
-	if _, err := RenderMazeUI(ui, val, state.persisted.Level, state.scores, nextData, nil); err != nil {
-		return nil, fmt.Errorf("render reloaded level: %w", err)
+	// Published before rendering so the keyboard goroutine cannot mark a cell on the retired grid,
+	// and it resets the live position to the new level's start in the same locked step.
+	mazeData.initLevelRoundInfo(nextConfig, nextData)
+	if _, err := mazeData.RenderUI(ui, val, state.persisted.Level, state.scores, nil, true); err != nil {
+		return fmt.Errorf("render reloaded level: %w", err)
 	}
 
 	state.persistProgress()
-	return nextData, nil
+	return nil
 }
 
 // loadLevel creates a fresh maze for the requested level using the current wall-weight setting.
@@ -728,15 +785,17 @@ func loadLevel(ui UI, level int, weight WallWeight) (*Dimensions, [][]string, er
 
 // handleWallWeightCycle advances to the next wall weight and updates the maze data in place.
 // The next scheduled refresh is responsible for rendering the updated wall glyphs.
-func (state *gameState) handleWallWeightCycle(data [][]string) ([][]string, error) {
-	updatedData, err := reweightMaze(data, state.persisted.WallWeight)
-	if err != nil {
-		return data, fmt.Errorf("update wall weight: %w", err)
+func (state *gameState) handleWallWeightCycle(mazeData *RuntimeMaze) error {
+	if err := mazeData.replaceGrid(func(data [][]string) ([][]string, error) {
+		return reweightMaze(data, state.persisted.WallWeight)
+	}); err != nil {
+		return fmt.Errorf("update wall weight: %w", err)
 	}
 
 	state.persisted.WallWeight = state.persisted.WallWeight.Next()
 	state.persistProgress()
-	return updatedData, nil
+
+	return nil
 }
 
 // persistProgress stores the current level, wall weight, and progress state on a best-effort basis.
