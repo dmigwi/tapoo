@@ -51,8 +51,9 @@ function getWallCharacters(weight: WallWeight): [string, string, string] {
   return mazeConfig.walls[weight]
 }
 
-// generateMazeArea turns a level number into the target maze area.
-function generateMazeArea(level: number): number {
+// generateMazeArea turns a level number into the target maze area. Exported so the benchmark can
+// find which level a case belongs to using this function rather than restating seed and diff.
+export function generateMazeArea(level: number): number {
   return level * generation.diff + generation.seed
 }
 

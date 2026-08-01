@@ -106,12 +106,13 @@ describe("maze", () => {
   it("cuts junction density as __leastNeighborsBias rises, with the grid held fixed", () => {
     // The test below varies bias and area together, because getNavigationProfile derives the
     // profile from area alone — so on its own it cannot say whether the bias or the size did the
-    // work. Overriding the profile pins one 20x14 grid and moves only the bias, which is the one
-    // arrangement that attributes the change to the knob.
+    // work. Overriding the profile pins one square 20x20 grid and moves only the bias. Square
+    // because skew is not neutral either: at full bias a skewed grid branches measurably more than a
+    // square of the same area, so a non-square grid would leave a second uncontrolled variable.
     const junctionFraction = (bias: number): number => {
-      const dimensions = createLevelDimensions(1, { numCols: 20, numRows: 14 })
+      const dimensions = createLevelDimensions(1, { numCols: 20, numRows: 20 })
       const { maze } = generateMaze(dimensions, 1, {
-        __maxCorridorLength: 8,
+        __maxCorridorLength: 7,
         __leastNeighborsBias: bias,
       })
       let junctions = 0
@@ -134,7 +135,7 @@ describe("maze", () => {
       ) / 20
 
     // Generation is random, so this asserts a wide separation rather than an exact figure. The
-    // benchmark in maze/levels_bench_test.go reports the full distribution behind these means.
+    // benchmark in maze/bench/levels_bench_test.go reports the full distribution behind these means.
     expect(average(100)).toBeLessThan(average(0) / 2)
   })
 

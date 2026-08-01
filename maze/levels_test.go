@@ -139,14 +139,14 @@ func countOpenExits(config maze.Dimensions, grid [][]string, cellNo int) int {
 func TestLeastNeighborsBiasCutsJunctionDensity(t *testing.T) {
 	t.Parallel()
 
-	config := maze.Dimensions{NumCols: 20, NumRows: 14}
+	config := maze.Dimensions{NumCols: 20, NumRows: 20}
 	totalCells := config.NumCols * config.NumRows
 
 	average := func(bias int, samples int) float64 {
 		var sum float64
 		for range samples {
 			grid, err := config.GenerateMazeWithProfile(maze.WallWeightRegular, maze.NavigationProfile{
-				MaxCorridorLength:  8,
+				MaxCorridorLength:  7,
 				LeastNeighborsBias: bias,
 			})
 			if err != nil {

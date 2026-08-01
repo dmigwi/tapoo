@@ -20,7 +20,7 @@ func meanJunctionFraction(t *testing.T, grid maze.Dimensions, bias int) float64 
 
 	config := grid
 	totalCells := config.NumCols * config.NumRows
-	profile := maze.NavigationProfile{MaxCorridorLength: 8, LeastNeighborsBias: bias}
+	profile := maze.NavigationProfile{MaxCorridorLength: 7, LeastNeighborsBias: bias}
 
 	var sum float64
 	for range biasCurveSamples {
@@ -91,14 +91,17 @@ func fitExponential(x, y []float64) []float64 {
 // claim a bare monotonicity check would miss: several wrong models are also monotonic.
 //
 // Endpoints are measured rather than hardcoded, so the test states a relationship instead of
-// memorising today's numbers. BenchmarkMazeBranchingByBias reports the same sweep with its spread.
+// memorising today's numbers. This is now the only place the bias curve is measured: the benchmark
+// sweeps only states the game can reach, and a bias sweep at a fixed grid is not one of them.
 func TestJunctionDensityFollowsBiasMixture(t *testing.T) {
 	t.Parallel()
 
-	// The grid stays fixed for the whole sweep. It has to: GetNavigationProfile derives the profile
-	// from area alone, so a sweep that let the profile be derived would move area and bias together
-	// and could not attribute the resulting curve to either one.
-	grid := maze.Dimensions{NumCols: 20, NumRows: 14}
+	// The grid stays fixed and square for the whole sweep. Fixed because GetNavigationProfile derives
+	// the profile from area alone, so a derived sweep would move area and bias together and could not
+	// attribute the curve to either. Square because skew is not neutral either: at full bias a skewed
+	// grid branches measurably more than a square of the same area. This matches the grid and corridor
+	// cap the benchmark's area400_20x20 case uses, so the two remain directly comparable.
+	grid := maze.Dimensions{NumCols: 20, NumRows: 20}
 
 	biasLevels := []float64{}
 	densities := []float64{}
