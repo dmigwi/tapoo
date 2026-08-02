@@ -167,7 +167,7 @@ export const CONFIG: AppConfig = {
     newAgentLabel: "New Agent",
     agentEnabledLabel: "Agent is enabled.",
     agentDisabledLabel: "Agent is disabled.",
-    maxSeats: 5,
+    maxSeats: 6,
     maxModelDisplayLength: 18,
     playerNameMinLength: 3,
     playerNameMaxLength: 8,
