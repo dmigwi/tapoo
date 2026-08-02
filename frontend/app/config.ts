@@ -81,7 +81,7 @@ export const CONFIG: AppConfig = {
       agentApi: {
         wide:
           "Agent APIs guide Blue to Red. Ctrl+B walls, Space/Esc pauses, Enter proceeds.",
-        compact: "Agent APIs guide Blue to Red. Use touch buttons for session controls.",
+        compact: "Agents guide Blue to Red. Touch buttons control sessions.",
       },
     },
     pauseMessage: "Game paused !!!",
@@ -102,9 +102,8 @@ export const CONFIG: AppConfig = {
     agentAwaitMessage: "No enabled agent API is configured.",
     agentAwaitAction: {
       wide:
-        "Use the agent seats dock on the right edge of the screen to add/manage an agent, then press Enter to proceed.",
-      compact:
-        "Use the screen-edge seats dock to add/manage an agent, then tap Proceed.",
+        "Use the right-edge agent seats dock to add/manage an agent, then press Enter to proceed.",
+      compact: "Use edge seats to add/manage agents. Tap Proceed.",
     },
     tooSmallMessage: "Level {level} needs more screen room!",
     tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
