@@ -18,6 +18,7 @@
   --top-button-padding-x: 15px;
   --top-button-font-size: 1.02rem;
   --top-button-icon-width: 54px;
+  --brand-wrap-tolerance: 6px;
   --menu-item-min-height: 38px;
   --menu-item-padding-y: 6px;
   --menu-item-padding-x: 16px;
@@ -28,6 +29,8 @@
   --touch-action-button-min-width: 132px;
   --touch-arrow-button-width: 102px;
   --touch-arrow-icon-size: 1.52rem;
+  --touch-controls-gap: 20px;
+  --touch-controls-padding: 14px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -684,12 +687,12 @@ body {
     ". control-up ."
     "control-left control-pause control-right"
     ". control-down .";
-  column-gap: 20px;
-  row-gap: 20px;
+  column-gap: var(--touch-controls-gap);
+  row-gap: var(--touch-controls-gap);
   align-items: center;
   justify-items: center;
   justify-content: center;
-  padding: 14px;
+  padding: var(--touch-controls-padding);
   border: 1px solid rgba(72, 198, 62, 0.14);
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.5);
@@ -895,7 +898,7 @@ body {
 }
 
 .touch-controls--action-row {
-  grid-template-columns: repeat(3, max-content);
+  grid-template-columns: repeat(var(--touch-action-columns), max-content);
   grid-template-areas: none;
 }
 

@@ -226,6 +226,12 @@ function persistNow(scope: PersistenceScope): void {
   saveActiveRoundSnapshot(state.controlMode, state)
 }
 
+// persistProgressOnly saves durable preferences without replacing the restorable round snapshot.
+function persistProgressOnly(): void {
+  cancelScheduledRoundPersist()
+  saveGameProgress(state.controlMode, state)
+}
+
 // currentBlinkVisible exposes the current destination blink state for rendering.
 function currentBlinkVisible(): boolean | null {
   if (!isRunningStatus(state.status) || !state.clock) {
@@ -365,7 +371,7 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
   if (!persistedRoundFitsViewport(snapshot)) {
     applyTooSmallState(snapshot.level)
     state.wallWeight = snapshot.wallWeight
-    persistNow("state")
+    persistProgressOnly()
     renderState()
     return
   }
@@ -709,8 +715,9 @@ function handleResize(): void {
       return
     }
 
+    saveActiveRoundSnapshot(state.controlMode, state)
     applyTooSmallState(state.level)
-    persistNow("state")
+    persistProgressOnly()
   }
 
   if (isTooSmallStatus(state.status)) {

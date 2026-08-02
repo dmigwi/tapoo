@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { CONFIG } from "./config"
 import {
   compactChromeClass,
+  fittingColumnCount,
+  fittingTouchActionColumnCount,
   isCompactViewport,
   observeCompactViewportChanges,
   wideChromeClass,
@@ -44,6 +46,18 @@ describe("viewport helpers", () => {
       configurable: true,
       value: wideTestViewport,
     })
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: wideTestViewport,
+    })
+    Object.defineProperty(window.screen, "width", {
+      configurable: true,
+      value: wideTestViewport,
+    })
+    Object.defineProperty(window.screen, "availWidth", {
+      configurable: true,
+      value: wideTestViewport,
+    })
     vi.restoreAllMocks()
     vi.stubGlobal(
       "matchMedia",
@@ -69,6 +83,44 @@ describe("viewport helpers", () => {
     })
 
     expect(isCompactViewport()).toBe(true)
+  })
+
+  it("calculates how many fixed-width layout columns fit in the viewport", () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 320,
+    })
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 320,
+    })
+
+    expect(
+      fittingColumnCount({
+        availableItemCount: 3,
+        gap: 20,
+        itemWidth: 132,
+        padding: 14,
+      }),
+    ).toBe(2)
+  })
+
+  it("uses touch-control CSS variables when calculating action columns", () => {
+    const touchControls = document.createElement("div")
+    touchControls.style.setProperty("--touch-action-button-min-width", "100px")
+    touchControls.style.setProperty("--touch-controls-gap", "10px")
+    touchControls.style.setProperty("--touch-controls-padding", "12px")
+    document.body.append(touchControls)
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 250,
+    })
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 250,
+    })
+
+    expect(fittingTouchActionColumnCount(touchControls, 3)).toBe(2)
   })
 
   it("treats top menu overflow as compact viewport pressure", () => {
@@ -107,6 +159,7 @@ describe("viewport helpers", () => {
         <details class="top-menu"></details>
       </header>
     `
+    document.documentElement.style.setProperty("--brand-wrap-tolerance", "6px")
     const title = document.querySelector<HTMLElement>(".top-bar__title")
     const subtitle = document.querySelector<HTMLElement>(".top-bar__subtitle")
     if (!title || !subtitle) {

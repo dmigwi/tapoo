@@ -346,6 +346,10 @@ type GameHarness = {
   runtime: GameRuntime
   saveGameProgress: ReturnType<typeof vi.fn>
   saveActiveRoundSnapshot: ReturnType<typeof vi.fn>
+  savedRoundStates: Array<{
+    mazeDimensions: State["mazeDimensions"]
+    status: State["status"]
+  }>
 }
 
 // bootstrapHarness wires a mocked runtime so high-level browser game flows stay testable.
@@ -376,7 +380,13 @@ async function bootstrapHarness({
   const elements = createElements()
   const render = vi.fn<(elements: Elements, state: State) => void>()
   const saveGameProgress = vi.fn()
-  const saveActiveRoundSnapshot = vi.fn()
+  const savedRoundStates: GameHarness["savedRoundStates"] = []
+  const saveActiveRoundSnapshot = vi.fn((_modeName: MazeControlModeName, state: State) => {
+    savedRoundStates.push({
+      mazeDimensions: state.mazeDimensions ? { ...state.mazeDimensions } : null,
+      status: state.status,
+    })
+  })
   const clearPersistedSnapshot = vi.fn()
   const clearPersistedRound = vi.fn()
   const appendTapooLogEntry = vi.fn()
@@ -502,6 +512,7 @@ async function bootstrapHarness({
     runtime,
     saveGameProgress,
     saveActiveRoundSnapshot,
+    savedRoundStates,
   }
 }
 
@@ -1092,6 +1103,31 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("too-small")
     expect(harness.getMazeDimensions).toHaveBeenCalledTimes(1)
     expect(harness.generateMaze).toHaveBeenCalledTimes(1)
+  })
+
+  it("preserves the last valid round snapshot when resize enters too-small", async () => {
+    const harness = await bootstrapHarness({
+      dimensionsResults: [{ level: 1, numCols: 4, numRows: 4 }],
+      terminalSizes: [
+        { numCols: 20, numRows: 20 },
+        { numCols: 1, numRows: 1 },
+      ],
+    })
+
+    window.dispatchEvent(new Event("resize"))
+
+    const state = latestRenderedState(harness.render)
+    expect(state.status).toBe("too-small")
+    expect(harness.savedRoundStates).toEqual([
+      {
+        mazeDimensions: { numCols: 4, numRows: 4, area: 16 },
+        status: "running",
+      },
+      {
+        mazeDimensions: { numCols: 4, numRows: 4, area: 16 },
+        status: "running",
+      },
+    ])
   })
 
   it("restores a persisted round in paused mode once the viewport fits again", async () => {

@@ -18,7 +18,7 @@ import {
 } from "./status"
 import { gridPointFromCellCoordinate } from "./traversal"
 import type { DisplayMsg, Elements, ScreenLine, State } from "./types"
-import { isCompactViewport } from "./viewport"
+import { fittingTouchActionColumnCount, isCompactViewport } from "./viewport"
 
 const { maze, messages } = CONFIG
 
@@ -348,6 +348,16 @@ function updateTouchControls(elements: Elements, state: State): void {
   elements.touchControls.classList.toggle(
     "touch-controls--single-action",
     !showMoveControls && visibleButtons === 1,
+  )
+
+  if (!actionOnly) {
+    elements.touchControls.style.removeProperty("--touch-action-columns")
+    return
+  }
+
+  elements.touchControls.style.setProperty(
+    "--touch-action-columns",
+    String(fittingTouchActionColumnCount(elements.touchControls, visibleButtons)),
   )
 }
 

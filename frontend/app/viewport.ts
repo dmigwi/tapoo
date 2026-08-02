@@ -4,7 +4,6 @@ const { viewport } = CONFIG
 
 export const compactChromeClass = "page-chrome--compact"
 export const wideChromeClass = "page-chrome--wide"
-const brandWrapTolerancePx = 6
 
 // compactViewportMediaQueries returns the shared breakpoint queries used by page chrome and render.
 export function compactViewportMediaQueries(): string[] {
@@ -40,6 +39,60 @@ export function viewportSizeCandidates(): {
   }
 }
 
+// viewportWidth reports the narrowest live browser width used for layout-capacity decisions.
+export function viewportWidth(): number {
+  const { widthCandidates } = viewportSizeCandidates()
+
+  return widthCandidates.length > 0 ? Math.min(...widthCandidates) : Number.POSITIVE_INFINITY
+}
+
+// fittingColumnCount reports how many fixed-width items can fit without changing their size.
+export function fittingColumnCount({
+  availableItemCount,
+  gap,
+  itemWidth,
+  padding,
+}: {
+  availableItemCount: number
+  gap: number
+  itemWidth: number
+  padding: number
+}): number {
+  const availableWidth = Math.max(0, viewportWidth() - padding * 2)
+  const columnWidth = itemWidth + gap
+  const fittingColumns = Math.floor((availableWidth + gap) / columnWidth)
+
+  return Math.max(1, Math.min(availableItemCount, fittingColumns))
+}
+
+// cssPixelValue reads a CSS pixel custom property for UI layout helpers.
+export function cssPixelValue(
+  element: HTMLElement,
+  propertyName: string,
+): number {
+  const value = Number.parseFloat(
+    element.style.getPropertyValue(propertyName) ||
+      getComputedStyle(element).getPropertyValue(propertyName) ||
+      document.documentElement.style.getPropertyValue(propertyName) ||
+      getComputedStyle(document.documentElement).getPropertyValue(propertyName),
+  )
+
+  return Number.isFinite(value) ? value : 0
+}
+
+// fittingTouchActionColumnCount reports how many visible touch action buttons fit on one row.
+export function fittingTouchActionColumnCount(
+  touchControls: HTMLElement,
+  visibleButtons: number,
+): number {
+  return fittingColumnCount({
+    availableItemCount: visibleButtons,
+    gap: cssPixelValue(touchControls, "--touch-controls-gap"),
+    itemWidth: cssPixelValue(touchControls, "--touch-action-button-min-width"),
+    padding: cssPixelValue(touchControls, "--touch-controls-padding"),
+  })
+}
+
 // isCompactViewport is the single compact-mode decision shared across the browser UI.
 export function isCompactViewport(): boolean {
   const compactMedia = compactViewportMediaQueries().some(
@@ -71,12 +124,12 @@ export function isCompactViewport(): boolean {
         ),
       )
       const firstBrandTop = brandLines[0]?.offsetTop ?? 0
+      const brandWrapTolerancePx = cssPixelValue(document.documentElement, "--brand-wrap-tolerance")
       const brandWraps = brandLines.some(
         (line) => Math.abs(line.offsetTop - firstBrandTop) > brandWrapTolerancePx,
       )
 
-      compactChromePressure =
-        topBar.scrollWidth > topBar.clientWidth + 1 || brandWraps
+      compactChromePressure = topBar.scrollWidth > topBar.clientWidth + 1 || brandWraps
     } finally {
       root.classList.toggle(compactChromeClass, hadCompactClass)
       root.classList.toggle(wideChromeClass, hadWideClass)

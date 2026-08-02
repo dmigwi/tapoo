@@ -158,6 +158,9 @@ describe("render", () => {
       configurable: true,
       value: 768,
     })
+    document.documentElement.style.setProperty("--touch-action-button-min-width", "132px")
+    document.documentElement.style.setProperty("--touch-controls-gap", "20px")
+    document.documentElement.style.setProperty("--touch-controls-padding", "14px")
     Reflect.deleteProperty(window, "visualViewport")
   })
 
@@ -309,6 +312,36 @@ describe("render", () => {
     expect(
       elements.touchControls.classList.contains("touch-controls--action-row"),
     ).toBe(true)
+    expect(
+      elements.touchControls.style.getPropertyValue("--touch-action-columns"),
+    ).toBe("3")
+  })
+
+  it("reduces action-row touch columns when the viewport cannot fit three buttons", () => {
+    const elements = createElements()
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 320,
+    })
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 320,
+    })
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        status: "await-agent",
+      }),
+    )
+
+    expect(
+      elements.touchControls.classList.contains("touch-controls--action-row"),
+    ).toBe(true)
+    expect(
+      elements.touchControls.style.getPropertyValue("--touch-action-columns"),
+    ).toBe("2")
   })
 
   it("uses compact right-side seat guidance while agent-api waits on small displays", () => {
