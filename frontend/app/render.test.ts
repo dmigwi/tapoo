@@ -608,17 +608,14 @@ describe("render", () => {
 
   it("shows compact navigation and too-small messaging on narrow screens", () => {
     const elements = createElements()
-    elements.body.getBoundingClientRect = vi.fn(() => ({
-      width: 360,
-      height: 420,
-      top: 0,
-      right: 360,
-      bottom: 420,
-      left: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    }))
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 360,
+    })
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 420,
+    })
 
     render(
       elements,

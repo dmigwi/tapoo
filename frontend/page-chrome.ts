@@ -1,9 +1,11 @@
 import { CONFIG, PAGE_COPYRIGHT_TEXT } from "./app/config"
 import { showPlaceholderArt } from "./app/fallback-policy"
-
-const { viewport } = CONFIG
-const compactChromeClass = "page-chrome--compact"
-const wideChromeClass = "page-chrome--wide"
+import {
+  compactChromeClass,
+  isCompactViewport,
+  observeCompactViewportChanges,
+  wideChromeClass,
+} from "./app/viewport"
 
 // configValue resolves a dotted CONFIG path and rejects missing segments early.
 function configValue(path: string): unknown {
@@ -111,92 +113,18 @@ function applyPageText(): void {
 // initTopMenus keeps shared top-bar menus expanded on wide screens and collapsible on compact ones.
 function initTopMenus(): void {
   const menus = Array.from(document.querySelectorAll<HTMLDetailsElement>("details.top-menu"))
-  const topBar = document.querySelector<HTMLElement>(".top-bar")
-  const compactWidthViewport = window.matchMedia(
-    `(max-width: ${viewport.compactWidth}px)`,
-  )
-  const compactHeightViewport = window.matchMedia(
-    `(max-height: ${viewport.compactHeight}px)`,
-  )
   let compactMode = false
 
-  // brandLines holds the title/subtitle/page-tag: individually short, but .top-bar__brand wraps
-  // them onto their own line each once the row gets tight. That wrap never registers as scrollWidth
-  // overflow — flexbox shrinks the brand box to fit and wraps its children inside it rather than
-  // spilling out of .top-bar — so a squeezed, multi-line brand sits right next to the full-size wide
-  // menu with nothing here to catch it.
-  const brandLines = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      ".top-bar__title, .top-bar__subtitle, .top-bar__page-tag",
-    ),
-  )
-
-  // brandWraps reports whether the brand's pieces have split across more than one line. Baseline
-  // alignment jitters offsetTop by a couple of px even on one line, so the tolerance only has to
-  // clear that; a real wrap is a full line-height apart, tens of px.
-  function brandWraps(): boolean {
-    if (brandLines.length === 0) {
-      return false
-    }
-
-    const wrapTolerancePx = 6
-    const firstTop = brandLines[0].offsetTop
-    return brandLines.some(
-      (line) => Math.abs(line.offsetTop - firstTop) > wrapTolerancePx,
-    )
-  }
-
-  // wideMenuWouldOverflow checks the actual chrome width, so compacting also happens when the
-  // viewport is wider than the phone breakpoint but the full title/menu row no longer fits — either
-  // because it would scroll, or because the brand would wrap onto multiple squeezed lines instead.
-  function wideMenuWouldOverflow(): boolean {
-    if (!topBar || menus.length === 0) {
-      return false
-    }
-
-    const root = document.documentElement
-    const hadCompactClass = root.classList.contains(compactChromeClass)
-    const hadWideClass = root.classList.contains(wideChromeClass)
-    const openStates = menus.map((menu) => menu.open)
-
-    root.classList.remove(compactChromeClass)
-    root.classList.add(wideChromeClass)
-    for (const menu of menus) {
-      menu.open = true
-    }
-
-    const overflows = topBar.scrollWidth > topBar.clientWidth + 1 || brandWraps()
-
-    root.classList.toggle(compactChromeClass, hadCompactClass)
-    root.classList.toggle(wideChromeClass, hadWideClass)
-    menus.forEach((menu, index) => {
-      menu.open = openStates[index] ?? false
-    })
-
-    return overflows
-  }
-
-  // isCompactMode reports the latest synced state without remeasuring during click/key handlers.
-  function isCompactMode(): boolean {
-    return compactMode
-  }
-
   // syncChromeMode exposes the shared compact/wide page state to CSS for every page.
-  function syncChromeMode(): boolean {
-    compactMode =
-      compactWidthViewport.matches ||
-      compactHeightViewport.matches ||
-      wideMenuWouldOverflow()
+  function syncChromeMode(): void {
+    compactMode = isCompactViewport()
     document.documentElement.classList.toggle(compactChromeClass, compactMode)
     document.documentElement.classList.toggle(wideChromeClass, !compactMode)
-
-    return compactMode
   }
 
   if (menus.length === 0) {
     syncChromeMode()
-    compactWidthViewport.addEventListener("change", syncChromeMode)
-    compactHeightViewport.addEventListener("change", syncChromeMode)
+    observeCompactViewportChanges(syncChromeMode)
     return
   }
 
@@ -207,9 +135,9 @@ function initTopMenus(): void {
 
   // syncMenuMode expands menus on wide screens and collapses them on compact ones.
   function syncMenuMode(): void {
-    const compact = syncChromeMode()
+    syncChromeMode()
     for (const menu of menus) {
-      menu.open = !compact
+      menu.open = !compactMode
     }
   }
 
@@ -224,14 +152,14 @@ function initTopMenus(): void {
 
   for (const menu of menus) {
     menu.addEventListener("toggle", () => {
-      if (isCompactMode() && menu.open) {
+      if (compactMode && menu.open) {
         closeOtherMenus(menu)
       }
     })
   }
 
   document.addEventListener("click", (event: MouseEvent) => {
-    if (!isCompactMode()) {
+    if (!compactMode) {
       return
     }
 
@@ -248,7 +176,7 @@ function initTopMenus(): void {
   })
 
   document.addEventListener("keydown", (event: KeyboardEvent) => {
-    if (!isCompactMode()) {
+    if (!compactMode) {
       return
     }
 
@@ -261,8 +189,7 @@ function initTopMenus(): void {
     }
   })
 
-  compactWidthViewport.addEventListener("change", syncMenuMode)
-  compactHeightViewport.addEventListener("change", syncMenuMode)
+  observeCompactViewportChanges(syncMenuMode)
   window.addEventListener("resize", syncMenuMode)
   void document.fonts?.ready.then(syncMenuMode)
   syncMenuMode()

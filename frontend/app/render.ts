@@ -18,8 +18,9 @@ import {
 } from "./status"
 import { gridPointFromCellCoordinate } from "./traversal"
 import type { DisplayMsg, Elements, ScreenLine, State } from "./types"
+import { isCompactViewport } from "./viewport"
 
-const { maze, messages, viewport } = CONFIG
+const { maze, messages } = CONFIG
 
 // escapeHtml protects text rows before they are written as HTML.
 function escapeHtml(value: string): string {
@@ -53,76 +54,26 @@ function replaceAt(line: string, index: number, char: string): string {
 }
 
 // statusText selects the running-status footer copy for the current display size.
-function statusText(elements: Elements, state: State): string {
-  const template = displayText(elements, messages.runningStatus)
+function statusText(state: State): string {
+  const template = displayText(messages.runningStatus)
 
   return template
     .replace("{level}", String(state.level))
     .replace("{score}", String(state.score))
 }
 
-// viewportMetrics gathers every meaningful browser measurement used for compact mode detection.
-function viewportMetrics(elements: Elements): {
-  heightCandidates: number[]
-  widthCandidates: number[]
-} {
-  const rect = elements.body.getBoundingClientRect()
-  const widthCandidates = [
-    window.screen.width,
-    window.screen.availWidth,
-    rect.width,
-    window.visualViewport?.width ?? 0,
-    document.documentElement.clientWidth,
-    window.innerWidth,
-  ].filter((value) => value > 0)
-  const heightCandidates = [
-    window.screen.height,
-    window.screen.availHeight,
-    rect.height,
-    window.visualViewport?.height ?? 0,
-    document.documentElement.clientHeight,
-    window.innerHeight,
-  ].filter((value) => value > 0)
-
-  return {
-    widthCandidates,
-    heightCandidates,
-  }
-}
-
-// isCompactDisplay collapses copy when any viewport dimension crosses the compact threshold.
-function isCompactDisplay(elements: Elements): boolean {
-  const { availableWidth, availableHeight } = {
-    availableWidth: window.matchMedia(
-      `(max-width: ${viewport.compactWidth}px)`,
-    ).matches,
-    availableHeight: window.matchMedia(
-      `(max-height: ${viewport.compactHeight}px)`,
-    ).matches,
-  }
-  const { widthCandidates, heightCandidates } = viewportMetrics(elements)
-  const compactWidth = widthCandidates.some(
-    (width) => width <= viewport.compactWidth,
-  )
-  const compactHeight = heightCandidates.some(
-    (height) => height <= viewport.compactHeight,
-  )
-
-  return availableWidth || availableHeight || compactWidth || compactHeight
-}
-
 // displayText picks the wide or compact copy variant for the currently available display room.
-function displayText(elements: Elements, message: DisplayMsg): string {
-  return isCompactDisplay(elements) ? message.compact : message.wide
+function displayText(message: DisplayMsg): string {
+  return isCompactViewport() ? message.compact : message.wide
 }
 
 // navigationText picks the control-mode and viewport-specific navigation hint.
-function navigationText(elements: Elements, state: State): string {
+function navigationText(state: State): string {
   const navigation = isAgentApiMode(state.controlMode)
     ? messages.navigation.agentApi
     : messages.navigation.interactive
 
-  return displayText(elements, navigation)
+  return displayText(navigation)
 }
 
 // centeredTextRow creates one centered text line for the rendered screen model.
@@ -253,14 +204,14 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
   if (isAwaitAgentStatus(state.status) && isAgentApiMode(state.controlMode)) {
     return [
       centeredTextRow(messages.agentAwaitMessage, "status"),
-      centeredTextRow(displayText(elements, messages.agentAwaitAction)),
+      centeredTextRow(displayText(messages.agentAwaitAction)),
     ]
   }
 
   if (isPausedStatus(state.status)) {
     return [
       centeredTextRow(messages.pauseMessage, "status"),
-      centeredTextRow(displayText(elements, messages.proceed)),
+      centeredTextRow(displayText(messages.proceed)),
     ]
   }
 
@@ -270,7 +221,7 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
       .replace("{score}", String(state.lastRoundScore))
       .replace("{percent}", String(scorePercent(state)))
     const rows = [
-      centeredTextRow(displayText(elements, messages.success), "status"),
+      centeredTextRow(displayText(messages.success), "status"),
       centeredTextRow(scoresMsg, "accent"),
     ]
 
@@ -278,14 +229,14 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
       rows.push(centeredTextRow(state.winSummary, "accent"))
     }
 
-    rows.push(centeredTextRow(displayText(elements, messages.proceed)))
+    rows.push(centeredTextRow(displayText(messages.proceed)))
     return rows
   }
 
   if (isLostStatus(state.status)) {
     return [
-      centeredTextRow(displayText(elements, messages.failed), "status"),
-      centeredTextRow(displayText(elements, messages.proceed)),
+      centeredTextRow(displayText(messages.failed), "status"),
+      centeredTextRow(displayText(messages.proceed)),
     ]
   }
 
@@ -343,7 +294,7 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
     0,
   )
   const lines: ScreenLine[] = [
-    centeredTextRow(navigationText(elements, state)),
+    centeredTextRow(navigationText(state)),
     emptyTextRow(),
   ]
 
@@ -356,7 +307,7 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
   lines.push(...applyOverlayToMaze(elements, state, mazeLines, mazeWidth))
 
   if (isRunningStatus(state.status)) {
-    lines.push(emptyTextRow(), centeredTextRow(statusText(elements, state)))
+    lines.push(emptyTextRow(), centeredTextRow(statusText(state)))
   }
 
   return lines
