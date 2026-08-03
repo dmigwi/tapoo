@@ -33,8 +33,12 @@ function visit(playerName: string, row: number, col: number): TraversalHistoryEn
 // Agent-seat tests keep display labels, dataset ids, and fixed roster slots centralized.
 describe("agent seats", () => {
   it("lists configured seat ids in stable display order", () => {
-    expect(agentSeatIds()).toEqual([1, 2, 3, 4, 5])
-    expect(agentSeatIds()).toHaveLength(CONFIG.agentConfig.maxSeats)
+    const expectedIds = Array.from(
+      { length: CONFIG.agentConfig.maxSeats },
+      (_, index) => index + 1,
+    )
+
+    expect(agentSeatIds()).toEqual(expectedIds)
   })
 
   it("accepts only configured positive integer seat ids", () => {
@@ -76,13 +80,15 @@ describe("agent seats", () => {
   })
 
   it("builds fixed slots without persisting empty seats", () => {
-    expect(buildAgentSeats([agent(2, "Kora")])).toEqual([
-      { id: 1, agent: null },
-      { id: 2, agent: agent(2, "Kora") },
-      { id: 3, agent: null },
-      { id: 4, agent: null },
-      { id: 5, agent: null },
-    ])
+    const expectedSeats = Array.from(
+      { length: CONFIG.agentConfig.maxSeats },
+      (_, index) => {
+        const id = index + 1
+        return { id, agent: id === 2 ? agent(2, "Kora") : null }
+      },
+    )
+
+    expect(buildAgentSeats([agent(2, "Kora")])).toEqual(expectedSeats)
   })
 
   it("renders empty, occupied, disabled, and active seats with stable labels", () => {

@@ -25,7 +25,7 @@ const VERSION_MAJOR = 2
 const VERSION_MINOR = 2
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 0
+const VERSION_PATCH = 1
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -81,7 +81,7 @@ export const CONFIG: AppConfig = {
       agentApi: {
         wide:
           "Agent APIs guide Blue to Red. Ctrl+B walls, Space/Esc pauses, Enter proceeds.",
-        compact: "Agent APIs guide Blue to Red. Use touch buttons for session controls.",
+        compact: "Agents guide Blue to Red. Touch buttons control sessions.",
       },
     },
     pauseMessage: "Game paused !!!",
@@ -102,9 +102,8 @@ export const CONFIG: AppConfig = {
     agentAwaitMessage: "No enabled agent API is configured.",
     agentAwaitAction: {
       wide:
-        "Use the agent seats dock on the right edge of the screen to add/manage an agent, then press Enter to proceed.",
-      compact:
-        "Use the screen-edge seats dock to add/manage an agent, then tap Proceed.",
+        "Use the right-edge agent seats dock to add/manage an agent, then press Enter to proceed.",
+      compact: "Use edge seats to add/manage agents. Tap Proceed.",
     },
     tooSmallMessage: "Level {level} needs more screen room!",
     tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
@@ -168,7 +167,7 @@ export const CONFIG: AppConfig = {
     newAgentLabel: "New Agent",
     agentEnabledLabel: "Agent is enabled.",
     agentDisabledLabel: "Agent is disabled.",
-    maxSeats: 5,
+    maxSeats: 6,
     maxModelDisplayLength: 18,
     playerNameMinLength: 3,
     playerNameMaxLength: 8,

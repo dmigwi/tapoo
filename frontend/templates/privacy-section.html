@@ -4,6 +4,10 @@
       <p class="privacy-eyebrow">Privacy Policy</p>
       <h1 id="privacy-title">Tapoo Privacy Policy</h1>
       <p>
+        Tapoo is a browser-based maze game where you, or a configured AI agent, guide a
+        player through a maze to a target.
+      </p>
+      <p>
         The current Tapoo version (shown at the bottom of this page) supports two control
         modes: Interactive mode, where you play directly, and AI Agent mode, where a
         configured agent API endpoint plays on your behalf. In both modes, gameplay state
@@ -16,8 +20,9 @@
         Tapoo uses <code>localStorage</code> to keep durable game preferences such as
         level, wall weight, score-retention metrics, optional AI Agent configuration, and
         Tapoo Logs. Each configured AI Agent's stored configuration also includes its own
-        request count for the current level and round; the classification described below
-        is computed from that count on demand, not stored separately. Tapoo Logs capture
+        turn count and decay units charged for the current level and round; the
+        traversal-speed classification described below is computed from those counts on
+        demand, not stored separately. Tapoo Logs capture
         requests and responses exchanged during play, stay only on your device (never
         sent over the network), and can be downloaded or cleared from the game controls.
         Tapoo also uses <code>sessionStorage</code> for the active round snapshot so a
@@ -34,15 +39,17 @@
         AI Agent mode sends gameplay context to the agent API endpoints you configure.
         That context may include the current cell, destination cell, player names
         (user-chosen in-game nicknames), model name, allowed moves, submitted moves,
-        score, level, and traversal history — each entry recording the open exits at that
-        cell. It also includes the raw counts behind a batch efficiency classification —
-        unique cells visited and requests made this level — and the classification
-        itself: a rate (unique cells visited divided by requests made) below 1 is
-        <code>Backtracker</code>, exactly 1 is <code>Navigator</code>, and above 1 is
-        <code>Trailblazer</code>. An agent starts out as a Trailblazer and is expected to
-        maintain that rank throughout the game. The rank is shown in the agent seat
-        roster in your browser and included in the prompt sent to the configured agent
-        endpoint.
+        score, level, and traversal history — each entry recording a visited cell and,
+        for that cell, every open exit mapped to its neighbouring cell and whether that
+        neighbour has already been visited. It also includes the raw counts behind a
+        traversal-speed classification — unique cells visited and decay units charged
+        this level (turns taken is included too, for context only) — and the
+        classification itself: a rate (unique cells visited divided by decay units
+        charged) below 1 is <code>Backtracker</code>, exactly 1 is <code>Navigator</code>,
+        and above 1 is <code>Trailblazer</code>. An agent starts out as a Trailblazer and
+        is expected to maintain that rank throughout the game. The rank is shown in the
+        agent seat roster in your browser and included in the prompt sent to the
+        configured agent endpoint.
       </p>
       <p>
         Only configure endpoints you trust. External endpoints may receive network

@@ -112,8 +112,12 @@ export function createAgentMode(
   // Open overlays temporarily own focus, so normal app refocus should pause until they close.
   const isAgentConfigFormOpen = (): boolean => elements.agentConfigForm?.hidden === false
   const isAgentDeleteDialogOpen = (): boolean => elements.agentDeleteDialog?.hidden === false
+  // At most one overlay is ever open (openAgentConfigForm/openAgentDeleteDialog each close the
+  // other before opening), but callers that only care whether the app should yield focus or dim
+  // don't need to know which — this is the shared "something is showing" check for those callers.
+  const isAnyAgentOverlayOpen = (): boolean => isAgentConfigFormOpen() || isAgentDeleteDialogOpen()
   const focusCurrentApp = (): void => {
-    if (isAgentConfigFormOpen() || isAgentDeleteDialogOpen()) {
+    if (isAnyAgentOverlayOpen()) {
       return
     }
 
@@ -271,7 +275,7 @@ export function createAgentMode(
       const syncOverlayState = (): void => {
         elements.body.classList.toggle(
           "terminal-body--agent-form-active",
-          isAgentConfigFormOpen() || isAgentDeleteDialogOpen(),
+          isAnyAgentOverlayOpen(),
         )
       }
 
@@ -352,6 +356,12 @@ export function createAgentMode(
           return
         }
 
+        // Both overlays share one screen position, so leaving the other open would render them
+        // superimposed rather than merely stacked.
+        if (isAgentDeleteDialogOpen()) {
+          closeAgentDeleteDialog()
+        }
+
         pauseIfRunning()
         selectedSeatId = seatId
         if (elements.agentConfigTitle) {
@@ -390,6 +400,12 @@ export function createAgentMode(
         const agent = readAgentConfigs().find((config) => config.id === seatId)
         if (!agent || agent.id === currentPlayingAgentId() || !elements.agentDeleteDialog) {
           return
+        }
+
+        // Both overlays share one screen position, so leaving the other open would render them
+        // superimposed rather than merely stacked.
+        if (isAgentConfigFormOpen()) {
+          closeAgentConfigForm()
         }
 
         pauseIfRunning()
@@ -578,17 +594,11 @@ export function createAgentMode(
         agentFormCloseHandler = closeAgentConfigForm
         elements.agentConfigClose.addEventListener("click", agentFormCloseHandler)
 
+        // Only one overlay is ever open at a time (openAgentConfigForm/openAgentDeleteDialog each
+        // close the other), so whichever one closeActiveAgentOverlay finds open is the right one.
         agentFormOuterClickHandler = (event: MouseEvent): void => {
-          if (elements.agentConfigForm?.hidden === false && event.target === elements.body) {
-            closeAgentConfigForm()
-            return
-          }
-
-          if (
-            elements.agentDeleteDialog?.hidden === false &&
-            event.target === elements.body
-          ) {
-            closeAgentDeleteDialog()
+          if (event.target === elements.body) {
+            closeActiveAgentOverlay()
           }
         }
         elements.body.addEventListener("click", agentFormOuterClickHandler)

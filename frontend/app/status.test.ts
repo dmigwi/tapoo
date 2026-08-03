@@ -228,34 +228,39 @@ describe("canShowRestart", () => {
     ["won", true],
     ["lost", true],
     ["await-agent", true],
-    // The viewport is too small to draw a maze, so restarting is the only route out of it. This
-    // is what separates canShowRestart from canProceedStatus and canShowWallsStatus.
-    ["too-small", true],
     // Hidden mid-round so a stray tap cannot discard live progress.
     ["running", false],
     // Nothing exists to restart before the first round is built.
     ["boot", false],
-  ])("returns %s for the %s status", (status, expected) => {
-    expect(canShowRestart(status)).toBe(expected)
+  ])("returns %s for the %s status at level 1", (status, expected) => {
+    expect(canShowRestart(status, 1)).toBe(expected)
   })
 
-  it("answers for every status in the union", () => {
+  it("answers for every status in the union, at level 1", () => {
     // Guards the table above against drifting out of sync with GameStatus.
-    expect(ALL_STATUSES.every((status) => typeof canShowRestart(status) === "boolean")).toBe(true)
-    expect(ALL_STATUSES.filter(canShowRestart)).toEqual([
+    expect(
+      ALL_STATUSES.every((status) => typeof canShowRestart(status, 1) === "boolean"),
+    ).toBe(true)
+    expect(ALL_STATUSES.filter((status) => canShowRestart(status, 1))).toEqual([
       "paused",
       "won",
       "lost",
       "await-agent",
-      "too-small",
     ])
   })
 
-  it("covers canProceedStatus and adds too-small on top", () => {
+  it("covers canProceedStatus regardless of level", () => {
     ALL_STATUSES.filter(canProceedStatus).forEach((status) => {
-      expect(canShowRestart(status)).toBe(true)
+      expect(canShowRestart(status, 1)).toBe(true)
+      expect(canShowRestart(status, 3)).toBe(true)
     })
-    expect(canShowRestart("too-small")).toBe(true)
+  })
+
+  // Reset Progress always restarts at level 1 (restartGame in game.ts), so too-small only offers a
+  // way out when there's a lower level to fall back to.
+  it("offers restart from too-small only when a lower level exists", () => {
+    expect(canShowRestart("too-small", 1)).toBe(false)
+    expect(canShowRestart("too-small", 2)).toBe(true)
     expect(canProceedStatus("too-small")).toBe(false)
   })
 })

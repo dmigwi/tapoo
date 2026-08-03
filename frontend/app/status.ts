@@ -144,12 +144,16 @@ export function canShowWallsStatus(status: GameStatus): boolean {
   return canProceedStatus(status)
 }
 
-// canShowRestart accepts everything canProceedStatus does, plus too-small — the one state with no
-// drawable maze to proceed from, and so no way out except starting over.
-export function canShowRestart(status: GameStatus): boolean {
-  return (
-    canProceedStatus(status) || isTooSmallStatus(status)
-  )
+// canShowRestart accepts everything canProceedStatus does, plus too-small when there's a lower level
+// to fall back to. Reset Progress always restarts at level 1 (restartGame in game.ts), so offering it
+// while already too-small at level 1 would just redraw the same maze into the same too-small state —
+// there's no smaller level left to make room.
+export function canShowRestart(status: GameStatus, level: number): boolean {
+  if (isTooSmallStatus(status)) {
+    return level > 1
+  }
+
+  return canProceedStatus(status)
 }
 
 // ActiveRoundState is State with every field a live round needs proven present, so callers guarded by

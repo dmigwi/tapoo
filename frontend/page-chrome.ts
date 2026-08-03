@@ -1,9 +1,11 @@
 import { CONFIG, PAGE_COPYRIGHT_TEXT } from "./app/config"
 import { showPlaceholderArt } from "./app/fallback-policy"
-
-const { viewport } = CONFIG
-const compactChromeClass = "page-chrome--compact"
-const wideChromeClass = "page-chrome--wide"
+import {
+  compactChromeClass,
+  isCompactViewport,
+  observeCompactViewportChanges,
+  wideChromeClass,
+} from "./app/viewport"
 
 // configValue resolves a dotted CONFIG path and rejects missing segments early.
 function configValue(path: string): unknown {
@@ -95,32 +97,34 @@ function applyPageText(): void {
 
       input.placeholder = configText(configKey)
     })
+  document
+    .querySelectorAll<HTMLInputElement>("[data-config-value]")
+    .forEach((input) => {
+      const configKey = input.dataset.configValue
+      if (!configKey) {
+        return
+      }
+
+      input.defaultValue = configText(configKey)
+      input.value = input.defaultValue
+    })
 }
 
 // initTopMenus keeps shared top-bar menus expanded on wide screens and collapsible on compact ones.
 function initTopMenus(): void {
   const menus = Array.from(document.querySelectorAll<HTMLDetailsElement>("details.top-menu"))
-  const compactViewport = window.matchMedia(
-    `(max-width: ${viewport.compactWidth}px)`,
-  )
-
-  // isCompactMode centralizes the breakpoint used by the menu behavior.
-  function isCompactMode(): boolean {
-    return compactViewport.matches
-  }
+  let compactMode = false
 
   // syncChromeMode exposes the shared compact/wide page state to CSS for every page.
-  function syncChromeMode(): boolean {
-    const compact = isCompactMode()
-    document.documentElement.classList.toggle(compactChromeClass, compact)
-    document.documentElement.classList.toggle(wideChromeClass, !compact)
-
-    return compact
+  function syncChromeMode(): void {
+    compactMode = isCompactViewport()
+    document.documentElement.classList.toggle(compactChromeClass, compactMode)
+    document.documentElement.classList.toggle(wideChromeClass, !compactMode)
   }
 
   if (menus.length === 0) {
     syncChromeMode()
-    compactViewport.addEventListener("change", syncChromeMode)
+    observeCompactViewportChanges(syncChromeMode)
     return
   }
 
@@ -131,9 +135,9 @@ function initTopMenus(): void {
 
   // syncMenuMode expands menus on wide screens and collapses them on compact ones.
   function syncMenuMode(): void {
-    const compact = syncChromeMode()
+    syncChromeMode()
     for (const menu of menus) {
-      menu.open = !compact
+      menu.open = !compactMode
     }
   }
 
@@ -148,14 +152,14 @@ function initTopMenus(): void {
 
   for (const menu of menus) {
     menu.addEventListener("toggle", () => {
-      if (isCompactMode() && menu.open) {
+      if (compactMode && menu.open) {
         closeOtherMenus(menu)
       }
     })
   }
 
   document.addEventListener("click", (event: MouseEvent) => {
-    if (!isCompactMode()) {
+    if (!compactMode) {
       return
     }
 
@@ -172,7 +176,7 @@ function initTopMenus(): void {
   })
 
   document.addEventListener("keydown", (event: KeyboardEvent) => {
-    if (!isCompactMode()) {
+    if (!compactMode) {
       return
     }
 
@@ -185,7 +189,9 @@ function initTopMenus(): void {
     }
   })
 
-  compactViewport.addEventListener("change", syncMenuMode)
+  observeCompactViewportChanges(syncMenuMode)
+  window.addEventListener("resize", syncMenuMode)
+  void document.fonts?.ready.then(syncMenuMode)
   syncMenuMode()
 }
 

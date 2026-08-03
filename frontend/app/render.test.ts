@@ -158,6 +158,9 @@ describe("render", () => {
       configurable: true,
       value: 768,
     })
+    document.documentElement.style.setProperty("--touch-action-button-min-width", "132px")
+    document.documentElement.style.setProperty("--touch-controls-gap", "20px")
+    document.documentElement.style.setProperty("--touch-controls-padding", "14px")
     Reflect.deleteProperty(window, "visualViewport")
   })
 
@@ -309,6 +312,36 @@ describe("render", () => {
     expect(
       elements.touchControls.classList.contains("touch-controls--action-row"),
     ).toBe(true)
+    expect(
+      elements.touchControls.style.getPropertyValue("--touch-action-columns"),
+    ).toBe("3")
+  })
+
+  it("reduces action-row touch columns when the viewport cannot fit three buttons", () => {
+    const elements = createElements()
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 320,
+    })
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 320,
+    })
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        status: "await-agent",
+      }),
+    )
+
+    expect(
+      elements.touchControls.classList.contains("touch-controls--action-row"),
+    ).toBe(true)
+    expect(
+      elements.touchControls.style.getPropertyValue("--touch-action-columns"),
+    ).toBe("2")
   })
 
   it("uses compact right-side seat guidance while agent-api waits on small displays", () => {
@@ -571,7 +604,7 @@ describe("render", () => {
     expect(text).not.toContain("Final Level 3 Scores:")
   })
 
-  it("shows the too-small message with reset progress as the only touch control", () => {
+  it("hides every touch control on a too-small level 1, with no lower level to fall back to", () => {
     const elements = createElements()
 
     render(
@@ -594,6 +627,34 @@ describe("render", () => {
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
+    expect(visibleLabels).toEqual([])
+    expect(elements.touchControls.hidden).toBe(true)
+  })
+
+  it("shows reset progress as the only touch control on a too-small level above 1", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        level: 2,
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain("Level 2 needs more screen room!")
+    expect(text).toContain(messages.tooSmallActionMessage)
+
+    const visibleLabels = elements.touchButtons
+      .filter((button) => !button.hidden)
+      .map((button) => button.dataset.action ?? button.dataset.move)
+
     expect(visibleLabels).toEqual(["restart"])
     expect(
       elements.touchControls.classList.contains("touch-controls--action-row"),
@@ -608,21 +669,19 @@ describe("render", () => {
 
   it("shows compact navigation and too-small messaging on narrow screens", () => {
     const elements = createElements()
-    elements.body.getBoundingClientRect = vi.fn(() => ({
-      width: 360,
-      height: 420,
-      top: 0,
-      right: 360,
-      bottom: 420,
-      left: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    }))
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 360,
+    })
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 420,
+    })
 
     render(
       elements,
       createState({
+        level: 2,
         mazeDimensions: null,
         maze: null,
         playerPosition: null,
@@ -634,7 +693,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain(messages.navigation.interactive.compact)
-    expect(text).toContain("Level 1 needs more screen room!")
+    expect(text).toContain("Level 2 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
     expect(elements.touchControls.hidden).toBe(false)
   })

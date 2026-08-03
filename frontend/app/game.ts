@@ -226,6 +226,12 @@ function persistNow(scope: PersistenceScope): void {
   saveActiveRoundSnapshot(state.controlMode, state)
 }
 
+// persistProgressOnly saves durable preferences without replacing the restorable round snapshot.
+function persistProgressOnly(): void {
+  cancelScheduledRoundPersist()
+  saveGameProgress(state.controlMode, state)
+}
+
 // currentBlinkVisible exposes the current destination blink state for rendering.
 function currentBlinkVisible(): boolean | null {
   if (!isRunningStatus(state.status) || !state.clock) {
@@ -365,7 +371,7 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
   if (!persistedRoundFitsViewport(snapshot)) {
     applyTooSmallState(snapshot.level)
     state.wallWeight = snapshot.wallWeight
-    persistNow("state")
+    persistProgressOnly()
     renderState()
     return
   }
@@ -709,14 +715,23 @@ function handleResize(): void {
       return
     }
 
+    saveActiveRoundSnapshot(state.controlMode, state)
     applyTooSmallState(state.level)
-    persistNow("state")
+    persistProgressOnly()
   }
 
   if (isTooSmallStatus(state.status)) {
     const snapshot = loadPersistedSnapshotWithFallbacks(state.controlMode)
     const validRoundWasRestored = noValidRoundExists(snapshot.round) === false
     if (validRoundWasRestored) {
+      return
+    }
+
+    // No persisted round to restore, but the viewport may already be big enough for a fresh one —
+    // e.g. a brand-new session that never had a round to lose, or one whose bootstrap measurement
+    // was corrected after fonts finished loading. Self-heal instead of leaving the too-small screen
+    // up until the user manually resets progress.
+    if (redrawRoundForViewport(state.level)) {
       return
     }
   }
@@ -739,6 +754,11 @@ export function bootstrapGame(
   window.addEventListener("resize", handleResize)
   window.visualViewport?.addEventListener("resize", handleResize)
   window.addEventListener("pagehide", () => { persistNow("state") })
+  // getTerminalSize measures real font metrics (dom.ts); a bootstrap that runs before web fonts
+  // finish loading can decide against a stale, fallback-font measurement. No resize event fires
+  // when fonts swap in, so re-run the same check once they settle — same pattern as
+  // page-chrome.ts's document.fonts?.ready.then(syncMenuMode).
+  void document.fonts?.ready.then(handleResize)
   // This interval is the browser runtime heartbeat that refreshes score, blink, and loss state.
   window.setInterval(refreshRunningRound, timing.refreshInterval)
 

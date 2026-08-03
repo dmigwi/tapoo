@@ -206,85 +206,53 @@ describe("storage", () => {
   })
 
   it("normalizes fixed agent seats without reassigning occupied slots", () => {
-    savePersistedAgentApiConfigs([
-      {
-        id: 1,
-        playerName: "Aone",
-        model: "llama3.2",
-        endpoint: endpoint("/api/agents/1/move"),
-        enabled: true,
+    // One config beyond maxSeats, so the excess (highest id) has to be dropped rather than
+    // reassigned into an earlier gap — the behavior this test's name asserts.
+    const models = ["llama3.2", "gemma4", "qwen3", "mistral", "deepseek", "phi4"]
+    const oversizedConfigs = Array.from(
+      { length: CONFIG.agentConfig.maxSeats + 1 },
+      (_, index) => {
+        const id = index + 1
+        return {
+          id,
+          playerName: `Aseat${id}`,
+          model: models[index % models.length],
+          endpoint: endpoint(`/api/agents/${id}/move`),
+          enabled: true,
+        }
       },
-      {
-        id: 2,
-        playerName: "Atwo",
-        model: "gemma4",
-        endpoint: endpoint("/api/agents/2/move"),
-        enabled: false,
-      },
-      {
-        id: 3,
-        playerName: "Athr",
-        model: "qwen3",
-        endpoint: endpoint("/api/agents/3/move"),
-        enabled: true,
-      },
-      {
-        id: 4,
-        playerName: "Afou",
-        model: "mistral",
-        endpoint: endpoint("/api/agents/4/move"),
-        enabled: true,
-      },
-      {
-        id: 5,
-        playerName: "Afiv",
-        model: "deepseek",
-        endpoint: endpoint("/api/agents/5/move"),
-        enabled: true,
-      },
-      {
-        id: 6,
-        playerName: "Asix",
-        model: "phi4",
-        endpoint: endpoint("/api/agents/6/move"),
-        enabled: true,
-      },
-    ])
+    )
 
-    expect(loadPersistedAgentApiConfigs().map((agent) => agent.playerName)).toEqual([
-      "Aone",
-      "Atwo",
-      "Athr",
-      "Afou",
-      "Afiv",
-    ])
-    expect(loadPersistedAgentApiConfigs().map((agent) => agent.id)).toEqual([
-      1,
-      2,
-      3,
-      4,
-      5,
-    ])
+    savePersistedAgentApiConfigs(oversizedConfigs)
+
+    const survivingConfigs = oversizedConfigs.slice(0, CONFIG.agentConfig.maxSeats)
+    expect(loadPersistedAgentApiConfigs().map((agent) => agent.playerName)).toEqual(
+      survivingConfigs.map((config) => config.playerName),
+    )
+    expect(loadPersistedAgentApiConfigs().map((agent) => agent.id)).toEqual(
+      survivingConfigs.map((config) => config.id),
+    )
   })
 
   it("normalizes oversized enabled agents by removing the highest excess seats", () => {
-    savePersistedAgentApiConfigs(
-      Array.from({ length: CONFIG.agentConfig.maxSeats + 1 }, (_, index) => ({
+    const oversizedConfigs = Array.from(
+      { length: CONFIG.agentConfig.maxSeats + 1 },
+      (_, index) => ({
         id: index + 1,
         playerName: `A${index + 1}bot`,
         model: "llama3.2",
         endpoint: endpoint(`/api/agents/${index + 1}/move`),
         enabled: true,
-      })),
+      }),
     )
 
-    expect(loadPersistedAgentApiConfigs().map((agent) => agent.playerName)).toEqual([
-      "A1bot",
-      "A2bot",
-      "A3bot",
-      "A4bot",
-      "A5bot",
-    ])
+    savePersistedAgentApiConfigs(oversizedConfigs)
+
+    expect(loadPersistedAgentApiConfigs().map((agent) => agent.playerName)).toEqual(
+      oversizedConfigs
+        .slice(0, CONFIG.agentConfig.maxSeats)
+        .map((config) => config.playerName),
+    )
   })
 
   it("saves and reloads agent api progress in the agent storage namespace", () => {
