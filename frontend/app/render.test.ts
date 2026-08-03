@@ -604,7 +604,7 @@ describe("render", () => {
     expect(text).not.toContain("Final Level 3 Scores:")
   })
 
-  it("shows the too-small message with reset progress as the only touch control", () => {
+  it("hides every touch control on a too-small level 1, with no lower level to fall back to", () => {
     const elements = createElements()
 
     render(
@@ -621,6 +621,34 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain("Level 1 needs more screen room!")
+    expect(text).toContain(messages.tooSmallActionMessage)
+
+    const visibleLabels = elements.touchButtons
+      .filter((button) => !button.hidden)
+      .map((button) => button.dataset.action ?? button.dataset.move)
+
+    expect(visibleLabels).toEqual([])
+    expect(elements.touchControls.hidden).toBe(true)
+  })
+
+  it("shows reset progress as the only touch control on a too-small level above 1", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        level: 2,
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain("Level 2 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
 
     const visibleLabels = elements.touchButtons
@@ -653,6 +681,7 @@ describe("render", () => {
     render(
       elements,
       createState({
+        level: 2,
         mazeDimensions: null,
         maze: null,
         playerPosition: null,
@@ -664,7 +693,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain(messages.navigation.interactive.compact)
-    expect(text).toContain("Level 1 needs more screen room!")
+    expect(text).toContain("Level 2 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
     expect(elements.touchControls.hidden).toBe(false)
   })

@@ -323,7 +323,7 @@ function updateTouchControls(elements: Elements, state: State): void {
     pause: isRunningStatus(state.status),
     walls: canShowWallsStatus(state.status),
     proceed: canProceedStatus(state.status),
-    restart: canShowRestart(state.status),
+    restart: canShowRestart(state.status, state.level),
   }
   let visibleButtons = 0
 

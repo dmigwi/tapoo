@@ -527,6 +527,7 @@ describe("bootstrapGame", () => {
     vi.unstubAllGlobals()
     vi.useRealTimers()
     Reflect.deleteProperty(window, "visualViewport")
+    Reflect.deleteProperty(document, "fonts")
   })
 
   it("starts a fresh round from persisted preferences when no round is stored", async () => {
@@ -1088,9 +1089,32 @@ describe("bootstrapGame", () => {
     )
   })
 
+  it("re-measures once web fonts finish loading and corrects a stale too-small bootstrap", async () => {
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: { ready: Promise.resolve() },
+    })
+
+    const harness = await bootstrapHarness({
+      dimensionsResults: [
+        null,
+        { level: 1, numCols: 2, numRows: 1 },
+      ],
+      terminalSizes: [
+        { numCols: 1, numRows: 1 },
+        { numCols: 20, numRows: 20 },
+      ],
+    })
+
+    const state = latestRenderedState(harness.render)
+    expect(state.status).toBe("running")
+    expect(state.mazeDimensions).toEqual({ numCols: 2, numRows: 1, area: 2 })
+    expect(harness.generateMaze).toHaveBeenCalledTimes(1)
+  })
+
   it("keeps the too-small flow when both maze axes exceed the resized viewport", async () => {
     const harness = await bootstrapHarness({
-      dimensionsResults: [{ level: 1, numCols: 4, numRows: 4 }],
+      dimensionsResults: [{ level: 1, numCols: 4, numRows: 4 }, null],
       terminalSizes: [
         { numCols: 20, numRows: 20 },
         { numCols: 1, numRows: 1 },
@@ -1101,13 +1125,13 @@ describe("bootstrapGame", () => {
 
     const state = latestRenderedState(harness.render)
     expect(state.status).toBe("too-small")
-    expect(harness.getMazeDimensions).toHaveBeenCalledTimes(1)
+    expect(harness.getMazeDimensions).toHaveBeenCalledTimes(2)
     expect(harness.generateMaze).toHaveBeenCalledTimes(1)
   })
 
   it("preserves the last valid round snapshot when resize enters too-small", async () => {
     const harness = await bootstrapHarness({
-      dimensionsResults: [{ level: 1, numCols: 4, numRows: 4 }],
+      dimensionsResults: [{ level: 1, numCols: 4, numRows: 4 }, null],
       terminalSizes: [
         { numCols: 20, numRows: 20 },
         { numCols: 1, numRows: 1 },
@@ -1285,7 +1309,7 @@ describe("bootstrapGame", () => {
     expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
   })
 
-  it("does not auto-restart a too-small game when the viewport fits again without a persisted round", async () => {
+  it("auto-restarts a too-small game when the viewport fits again without a persisted round", async () => {
     const harness = await bootstrapHarness({
       dimensionsResults: [
         null,
@@ -1306,8 +1330,10 @@ describe("bootstrapGame", () => {
     window.dispatchEvent(new Event("resize"))
 
     const state = latestRenderedState(harness.render)
-    expect(state.status).toBe("too-small")
-    expect(harness.generateMaze).not.toHaveBeenCalled()
+    expect(state.status).toBe("running")
+    expect(state.level).toBe(1)
+    expect(state.mazeDimensions).toEqual({ numCols: 2, numRows: 1, area: 2 })
+    expect(harness.generateMaze).toHaveBeenCalledTimes(1)
   })
 
   it("handles touch controls and page lifecycle persistence", async () => {
