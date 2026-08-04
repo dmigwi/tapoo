@@ -174,6 +174,21 @@ describe("agent context", () => {
     })
   })
 
+  // A zero suggestion would read as "batch nothing" - a followable instruction no level intends -
+  // so the count stays positive even in the unreachable case where dimensions are missing.
+  it("never suggests zero moves per turn, even without maze dimensions", () => {
+    const toolHandlers = buildAgentToolHandlers(
+      createState({ mazeDimensions: null }),
+      null,
+      createAgent({}),
+    )
+
+    const { suggestedMovesPerTurn } = toolHandlers.get_prediction_rules({}) as {
+      suggestedMovesPerTurn: number
+    }
+    expect(suggestedMovesPerTurn).toBeGreaterThan(0)
+  })
+
   it("defaults a fresh agent's prediction rules to a trailblazer level regardless of raw counts", () => {
     const freshAgent = createAgent({ turnCount: undefined, decayUnitsCharged: undefined })
     const toolHandlers = buildAgentToolHandlers(createState(), null, freshAgent)
