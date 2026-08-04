@@ -14,6 +14,11 @@ const loggedDescriptionPreviewLength = 25
 // Seeded by initTapooLogs once the page mode is known; zero until then.
 let logCount = 0
 
+// currentTurn stamps every entry written while one agent turn resolves. A turn issues several
+// provider requests before its prediction lands, and nothing else in an entry identifies which
+// turn produced it, so this is what makes per-turn grouping possible in a downloaded log.
+let currentTurn = 0
+
 // notifyLogStateListeners keeps UI controls aligned with the current log count.
 function notifyLogStateListeners(): void {
   logStateListeners.forEach((listener) => {
@@ -64,6 +69,12 @@ export function initTapooLogs(modeName: MazeControlModeName): void {
   notifyLogStateListeners()
 }
 
+// setTapooLogTurn marks which agent turn subsequent entries belong to. Called once as each turn
+// begins, so every request, response, and diagnostic it produces carries the same turn number.
+export function setTapooLogTurn(turn: number): void {
+  currentTurn = turn
+}
+
 // logTapooDiagnostic appends one entry to sessionStorage and increments the in-memory count.
 // The full payload is never held in memory; only the count is, so large request/response bodies
 // accumulated over many turns do not grow the JS heap.
@@ -73,7 +84,13 @@ export function logTapooDiagnostic(
   message: string,
   details?: unknown,
 ): void {
-  const entry: LogEntry = { timestamp: Date.now() / 1000, time: getLocalTimestamp(), type, payload: message }
+  const entry: LogEntry = {
+    timestamp: Date.now() / 1000,
+    time: getLocalTimestamp(),
+    turn: currentTurn,
+    type,
+    payload: message,
+  }
   if (details !== undefined) {
     entry.details = details
   }
@@ -87,6 +104,7 @@ export function logTapooDiagnostic(
 export function tapooResetLogs(modeName: MazeControlModeName): void {
   clearTapooLog(modeName)
   logCount = 0
+  currentTurn = 0
   
   notifyLogStateListeners()
 }
