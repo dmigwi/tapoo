@@ -503,6 +503,12 @@ export type AppConfig = {
       pageLabel: string
       backToGameLabel: string
     }
+    prompts: {
+      documentTitle: string
+      description: string
+      pageLabel: string
+      backToAgentsLabel: string
+    }
     privacy: {
       documentTitle: string
       description: string
@@ -546,6 +552,16 @@ export type AppConfig = {
       proceedLabel: string
       resetProgressLabel: string
     }
+  }
+  promptPreview: {
+    openLabel: string
+    title: string
+    intro: string
+    playerNoteTemplate: string
+    systemHeading: string
+    userHeading: string
+    toolsHeading: string
+    schemaHeading: string
   }
   agentConfig: {
     title: string

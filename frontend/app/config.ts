@@ -22,10 +22,10 @@ const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
 const VERSION_MAJOR = 2
 
 // VERSION_MINOR is the semantic minor version for the browser SPA runtime.
-const VERSION_MINOR = 2
+const VERSION_MINOR = 3
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 1
+const VERSION_PATCH = 0
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -61,6 +61,13 @@ export const CONFIG: AppConfig = {
         "Tapoo maze runner played by an HTTP-driven agent with human session controls.",
       pageLabel: "AI Agents",
       backToGameLabel: "Back To Game",
+    },
+    prompts: {
+      documentTitle: "Tapoo Maze Runner | Agent Prompts",
+      description:
+        "The exact system prompt, user message, tool definitions and response format Tapoo sends to a configured AI agent.",
+      pageLabel: "Agent Prompts",
+      backToAgentsLabel: "Back To AI Agents",
     },
     privacy: {
       documentTitle: "Tapoo Maze Runner | Privacy",
@@ -189,6 +196,20 @@ export const CONFIG: AppConfig = {
     activeSeatLabelTemplate: "Player {agent} is playing in seat {seat}",
     deleteMessageTemplate: "Delete now?",
     updateConfirmLabel: "Apply Changes",
+  },
+  // Prompt preview copy, used only by the agent-api prompt overlay.
+  promptPreview: {
+    openLabel: "View Prompts",
+    title: "Agent Request Prompts",
+    intro:
+      "Every agent request carries the messages and tool definitions below, rendered from the same builders the game itself"+
+      " calls so they cannot drift apart. Tool results are omitted because they change with the live maze.",
+    playerNoteTemplate:
+      "Shown for placeholder player '{player}'; each configured agent sees its own name in place of it.",
+    systemHeading: "System message",
+    userHeading: "User message",
+    toolsHeading: "Tool definitions",
+    schemaHeading: "Required response format",
   },
   // Maze glyphs and geometry shared by generation, traversal, and rendering.
   maze: {
