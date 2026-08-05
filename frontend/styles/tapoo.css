@@ -1270,3 +1270,34 @@ body {
     padding: 12px 10px 16px;
   }
 }
+
+/* The prompts page renders inside the shared privacy-panel frame, so it only needs the styling for
+   the generated blocks themselves. */
+.prompt-preview__body {
+  display: grid;
+  gap: 10px;
+}
+
+.prompt-preview__heading {
+  margin: 18px 0 0;
+  color: var(--status);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* pre keeps the schema's indentation and the prompt's line breaks, but the prompt is prose that
+   should reflow to the page width rather than force a horizontal scrollbar. */
+.prompt-preview__block {
+  margin: 0;
+  border: 1px solid rgba(72, 198, 62, 0.14);
+  border-radius: 10px;
+  background: rgba(5, 8, 5, 0.7);
+  padding: 12px 14px;
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

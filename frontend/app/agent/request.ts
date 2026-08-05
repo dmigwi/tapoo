@@ -1,4 +1,4 @@
-import { logTapooDiagnostic } from "../logs"
+import { logTapooDiagnostic, setTapooLogTurn } from "../logs"
 import { CONFIG } from "../config"
 import {
   AGENT_CONTEXT_TOOLS,
@@ -184,6 +184,11 @@ export function requestPredictionWithAbort({
   // A level's first agent-api turn is the only one that needs the full system/user prompt
   // and tool descriptions logged; later turns repeat that same static content.
   const isFirstRequestOfLevel = state.turnCount === 0
+
+  // Stamp every entry this turn produces with the same turn number. turnCount only advances in
+  // commitAgentTurn once the turn resolves, so it stays fixed across the several provider
+  // requests made below, and a trailing win/loss entry still carries the turn that produced it.
+  setTapooLogTurn(state.turnCount)
 
   // Each provider request gets its own timeout; one agent turn may make several requests while
   // servicing tool calls before the final move prediction arrives.

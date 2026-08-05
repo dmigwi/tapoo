@@ -8,6 +8,7 @@ import {
   subscribeTapooLogs,
   tapooDownloadLogs,
   tapooLogCount,
+  setTapooLogTurn,
   tapooResetLogs,
   trimLoggedDescription,
 } from "./logs"
@@ -131,6 +132,39 @@ describe("tapoo logs", () => {
     logTapooDiagnostic("interactive", "info", "after unsubscribe")
 
     expect(listener).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe("turn stamping", () => {
+  afterEach(() => {
+    setTapooLogTurn(0)
+    tapooResetLogs("interactive")
+  })
+
+  it("stamps every entry with the turn set when it was written", () => {
+    initTapooLogs("interactive")
+
+    setTapooLogTurn(4)
+    logTapooDiagnostic("interactive", "info", "Agent request.")
+    logTapooDiagnostic("interactive", "info", "Agent response.")
+    setTapooLogTurn(5)
+    logTapooDiagnostic("interactive", "info", "Agent request.")
+
+    const entries = loadTapooLog<{ turn: number; payload: string }>("interactive")
+    // One turn issues several requests, so entries group by turn rather than mapping 1:1 to it.
+    expect(entries.map((entry) => entry.turn)).toEqual([4, 4, 5])
+  })
+
+  it("resets the turn when logs are cleared", () => {
+    initTapooLogs("interactive")
+
+    setTapooLogTurn(7)
+    tapooResetLogs("interactive")
+    logTapooDiagnostic("interactive", "info", "after reset")
+
+    const entries = loadTapooLog<{ turn: number }>("interactive")
+    expect(entries).toHaveLength(1)
+    expect(entries[0].turn).toBe(0)
   })
 })
 

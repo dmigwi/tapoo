@@ -466,12 +466,16 @@ export type LogLevel = "error" | "info" | "warn"
 // timestamp is Unix time in seconds — machine-readable and suitable for sorting or arithmetic.
 // time is the same instant expressed in local timezone as a human-readable string, so downloaded
 // logs are interpretable without UTC conversion.
+// turn is the agent turn being resolved when the entry was written. One turn issues several
+// provider requests — one per tool-servicing round, then the prediction — so this is what ties
+// those entries back together when a downloaded log is analysed.
 // payload is the human-readable description of what was logged.
 // details holds arbitrary context — request payloads, response bodies, error objects — and is
 // omitted when there is nothing beyond the payload to record.
 export type LogEntry = {
   timestamp: number
   time: string
+  turn: number
   type: LogLevel
   payload: string
   details?: unknown
@@ -498,6 +502,12 @@ export type AppConfig = {
       description: string
       pageLabel: string
       backToGameLabel: string
+    }
+    prompts: {
+      documentTitle: string
+      description: string
+      pageLabel: string
+      backToAgentsLabel: string
     }
     privacy: {
       documentTitle: string
@@ -542,6 +552,16 @@ export type AppConfig = {
       proceedLabel: string
       resetProgressLabel: string
     }
+  }
+  promptPreview: {
+    openLabel: string
+    title: string
+    intro: string
+    playerNoteTemplate: string
+    systemHeading: string
+    userHeading: string
+    toolsHeading: string
+    schemaHeading: string
   }
   agentConfig: {
     title: string
