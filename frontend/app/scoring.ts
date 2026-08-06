@@ -182,7 +182,7 @@ export function resolveWinScore(input: WinScoreInput): WinScoreResult {
         currentRetentionUnits,
         input.lastAttemptRetentionUnits,
         input.bestWinRetentionUnits,
-        input.totalCells * timing.interactiveCoreDecayIntervalPerCellMs,
+        input.totalCells * timing.interactiveDecayIntervalPerCellMs,
       ),
     }
   }

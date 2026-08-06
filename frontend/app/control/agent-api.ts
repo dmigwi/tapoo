@@ -236,7 +236,7 @@ export function handleAgentTurnLoop({
 
   // scheduleNextAgentTurn starts/resumes immediately, then delays internal loop continuations.
   const scheduleNextAgentTurn = (
-    delayMs = timing.agentApiCoreDecayIntervalPerCellMs,
+    delayMs = timing.agentApiPollIntervalMs,
     isDelay = false,
   ): void => {
     clearScheduledTurn()
@@ -318,7 +318,7 @@ export function handleAgentTurnLoop({
 
   // requestNextAgentTurn asks the next enabled agent for moves, then replays only successful predictions here.
   const requestNextAgentTurn = async (
-    nextDelayMs = timing.agentApiCoreDecayIntervalPerCellMs,
+    nextDelayMs = timing.agentApiPollIntervalMs,
   ): Promise<void> => {
     if (!shouldPollAgent()) {
       return

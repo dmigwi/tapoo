@@ -280,8 +280,14 @@ export const CONFIG: AppConfig = {
   timing: {
     refreshInterval: 250,
     scoreDecayRate: 100,
-    interactiveCoreDecayIntervalPerCellMs: 1_000, // Translates to 1sec
-    agentApiCoreDecayIntervalPerCellMs: 30_000,   // Translates to 30sec
+    // Also sizes agent-api mode's clock, which only exists there to drive the destination blink
+    // animation (see restoreClock's comment in game.ts) — agent-api score decay comes from
+    // scoreDecayUnits, not this figure.
+    interactiveDecayIntervalPerCellMs: 1_000, // Translates to 1sec
+    // The real wall-clock delay between agent turns, throttling how often provider requests go
+    // out. Set well above the old 30s decay-budget figure this replaced, to pace-throttle request
+    // volume (e.g. Hugging Face rate limits) independently of the scoring math.
+    agentApiPollIntervalMs: 60_000,           // Translates to 1min
     // Per provider request, not per turn: a turn issues several rounds, so a whole turn can take a
     // multiple of this (see the request-count derivation in agent/request.ts). Per-request by
     // design — a provider that stops responding is caught on the first round regardless.

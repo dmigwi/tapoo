@@ -5,7 +5,7 @@ import {
 } from "./config"
 import { isAgentApiProvider, normalizeAgentEndpoint } from "./agent/config"
 import { isAgentSeatId } from "./agent/seats"
-import { canPersistRoundStatus, hasActiveRoundState, isAgentApiMode } from "./status"
+import { canPersistRoundStatus, hasActiveRoundState } from "./status"
 import {
   cloneMazeDimensions,
   cloneMazeRows,
@@ -538,13 +538,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
   }
 
   const totalCells = state.mazeDimensions.area
-  const decayIntervalPerCellMs = isAgentApiMode(state.controlMode)
-    ? timing.agentApiCoreDecayIntervalPerCellMs
-    : timing.interactiveCoreDecayIntervalPerCellMs
-  const remainingMs = state.clock
-    ? state.clock.remaining()
-    : totalCells * decayIntervalPerCellMs
-
+  const remainingMs = state.clock ? state.clock.remaining() : totalCells * timing.interactiveDecayIntervalPerCellMs
   const startCell = startCellFromTraversalHistory(state.traversalHistory)
   if (!startCell) {
     return null

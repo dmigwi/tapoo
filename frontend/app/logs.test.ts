@@ -137,41 +137,48 @@ describe("tapoo logs", () => {
 
 describe("log context stamping", () => {
   afterEach(() => {
-    setTapooLogContext({ turnCount: 0, level: 0 })
+    setTapooLogContext({ turnCount: 0, level: 0, cumulativeRoundCount: 0 })
     tapooResetLogs("interactive")
   })
 
-  it("stamps every entry with the turn and level set when it was written", () => {
+  it("stamps every entry with the turn, level, and game set when it was written", () => {
     initTapooLogs("interactive")
 
-    setTapooLogContext({ turnCount: 4, level: 2 })
+    setTapooLogContext({ turnCount: 4, level: 2, cumulativeRoundCount: 9 })
     logTapooDiagnostic("interactive", "info", "Agent request.")
     logTapooDiagnostic("interactive", "info", "Agent response.")
-    setTapooLogContext({ turnCount: 5, level: 2 })
+    setTapooLogContext({ turnCount: 5, level: 2, cumulativeRoundCount: 9 })
     logTapooDiagnostic("interactive", "info", "Agent request.")
 
     // One turn issues several requests, and a level issues several turns, so entries group by
-    // both rather than mapping 1:1 to either — without level, a downloaded log has no way to tell
-    // which level a given request belongs to, since turn alone resets every level.
-    const entries = loadTapooLog<{ turn: number; level: number; payload: string }>("interactive")
-    expect(entries.map((entry) => [entry.turn, entry.level])).toEqual([
-      [4, 2],
-      [4, 2],
-      [5, 2],
+    // all three rather than mapping 1:1 to any one — without level and game, a downloaded log
+    // can't tell which level/playthrough a given request belongs to, since turn alone resets every
+    // level and level alone can't distinguish a retry from continuing the same level.
+    const entries = loadTapooLog<{
+      turn: number
+      level: number
+      game: number
+      payload: string
+    }>("interactive")
+    expect(entries.map((entry) => [entry.turn, entry.level, entry.game])).toEqual([
+      [4, 2, 9],
+      [4, 2, 9],
+      [5, 2, 9],
     ])
   })
 
-  it("resets both the turn and level when logs are cleared", () => {
+  it("resets the turn, level, and game when logs are cleared", () => {
     initTapooLogs("interactive")
 
-    setTapooLogContext({ turnCount: 7, level: 3 })
+    setTapooLogContext({ turnCount: 7, level: 3, cumulativeRoundCount: 12 })
     tapooResetLogs("interactive")
     logTapooDiagnostic("interactive", "info", "after reset")
 
-    const entries = loadTapooLog<{ turn: number; level: number }>("interactive")
+    const entries = loadTapooLog<{ turn: number; level: number; game: number }>("interactive")
     expect(entries).toHaveLength(1)
     expect(entries[0].turn).toBe(0)
     expect(entries[0].level).toBe(0)
+    expect(entries[0].game).toBe(0)
   })
 })
 

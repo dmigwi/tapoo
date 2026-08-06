@@ -23,6 +23,12 @@ let currentTurn = 0
 // which maze level a given request belongs to — turn alone can't, since turnCount resets each level.
 let currentLevel = 0
 
+// currentGame stamps every entry the same way currentTurn/currentLevel do (from State's
+// cumulativeRoundCount) — turn and level alone can't tell a retry of the same level apart from
+// continuing it, since both reset to the same values either way; this counter never resets
+// mid-session.
+let currentGame = 0
+
 // notifyLogStateListeners keeps UI controls aligned with the current log count.
 function notifyLogStateListeners(): void {
   logStateListeners.forEach((listener) => {
@@ -73,13 +79,16 @@ export function initTapooLogs(modeName: MazeControlModeName): void {
   notifyLogStateListeners()
 }
 
-// setTapooLogContext marks which turn and level subsequent entries belong to, reading both off one
-// state snapshot in a single call. Called once as each turn begins, so every request, response, and
-// diagnostic it produces carries the same turn/level pair. Takes a Pick rather than the whole State
-// so this module only ever depends on the two fields it actually stamps entries with.
-export function setTapooLogContext(state: Pick<State, "turnCount" | "level">): void {
+// setTapooLogContext marks which turn, level, and game subsequent entries belong to, reading all
+// three off one state snapshot in a single call. Called once as each turn begins, so every
+// request, response, and diagnostic it produces carries the same values. Takes a Pick rather than
+// the whole State so this module only ever depends on the fields it actually stamps entries with.
+export function setTapooLogContext(
+  state: Pick<State, "turnCount" | "level" | "cumulativeRoundCount">,
+): void {
   currentTurn = state.turnCount
   currentLevel = state.level
+  currentGame = state.cumulativeRoundCount
 }
 
 // logTapooDiagnostic appends one entry to sessionStorage and increments the in-memory count.
@@ -96,6 +105,7 @@ export function logTapooDiagnostic(
     time: getLocalTimestamp(),
     level: currentLevel,
     turn: currentTurn,
+    game: currentGame,
     log,
     payload: message,
   }
@@ -114,6 +124,7 @@ export function tapooResetLogs(modeName: MazeControlModeName): void {
   logCount = 0
   currentTurn = 0
   currentLevel = 0
+  currentGame = 0
 
   notifyLogStateListeners()
 }

@@ -516,6 +516,9 @@ export type LogLevel = "error" | "info" | "warn"
 // level is the maze level being played when the entry was written, stamped the same way turn is —
 // without it, a "Agent request."/"Agent response." pair only carries a turn number, which resets
 // every level and gives no way to tell which level a given request actually belongs to.
+// game is State's cumulativeRoundCount, stamped the same way turn and level are — level and turn
+// alone can't distinguish a retry of the same level from continuing the prior playthrough, since
+// both reset to the same values either way; this counter never resets mid-session.
 // payload is the human-readable description of what was logged.
 // details holds arbitrary context — request payloads, response bodies, error objects — and is
 // omitted when there is nothing beyond the payload to record.
@@ -524,6 +527,7 @@ export type LogEntry = {
   time: string
   turn: number
   level: number
+  game: number
   log: LogLevel
   payload: string
   details?: unknown
@@ -681,8 +685,8 @@ export type AppConfig = {
   timing: {
     refreshInterval: number
     scoreDecayRate: number
-    interactiveCoreDecayIntervalPerCellMs: number
-    agentApiCoreDecayIntervalPerCellMs: number
+    interactiveDecayIntervalPerCellMs: number
+    agentApiPollIntervalMs: number
     agentApiResponseTimeoutMs: number
     agentApiConnectionErrorRetryDelayMs: number
   }
