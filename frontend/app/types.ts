@@ -604,9 +604,6 @@ export type AppConfig = {
     endpointPlaceholders: Record<AgentApiProvider, string>
     credentialLabels: Record<AgentApiProvider, string>
     credentialRotationTooltip: string
-    // Named anthropicVersion*, not apiVersion*, deliberately: this header value is specific to
-    // Anthropic's wire protocol and has no equivalent for Ollama or OpenAI. A generic apiVersion*
-    // name would invite a future provider to reuse it for something that isn't the same thing.
     anthropicVersionLabel: string
     anthropicVersionPlaceholder: string
     submitLabel: string

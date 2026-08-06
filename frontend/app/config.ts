@@ -208,7 +208,7 @@ export const CONFIG: AppConfig = {
       openai: "Bearer Token",
       anthropic: "API Key",
     },
-    credentialRotationTooltip: "Once set, rotate this token/key periodically for better security.",
+    credentialRotationTooltip: "Once set, rotate this token/key periodically for better security!",
     submitLabel: "Add Agent",
     invalidMessage: "Fill in Player Name, Model and Endpoint.",
     invalidApiMessage: "This agent's API provider is not properly configured.",

@@ -1,9 +1,11 @@
 import type { AgentApiConfig, TraversalHistoryEntry } from "../types"
 
 // BATCH_EFFICIENCY_BASELINE_RATE is the break-even traversal speed: one new cell reached for every
-// decay unit spent. A maze's entire budget is one decay unit per cell, so an agent holding exactly
-// this pace arrives with nothing to spare — below it the score runs out before the destination
-// does, above it there is margin left for mistakes.
+// decay unit spent. It is compared against traversalSpeed = uniqueCellsVisited / decayUnitsCharged
+// (see resolveBatchEfficiencyRank), the same formula surfaced to the model itself. A maze's entire
+// budget is one decay unit per cell, so an agent holding exactly this pace arrives with nothing to
+// spare — below it the score runs out before the destination does, above it there is margin left
+// for mistakes.
 export const BATCH_EFFICIENCY_BASELINE_RATE = 1
 
 // BatchEfficiencyRank names the traversal behavior the rate measures, not just a grade, so the
@@ -58,8 +60,8 @@ export function resolveBatchEfficiencyRank(
     return "trailblazer"
   }
 
-  // New cells reached per decay unit spent; decayUnitsCharged is guaranteed > 0 here since the
-  // fresh-agent case above already returned for a falsy count.
+  // traversalSpeed, per BATCH_EFFICIENCY_BASELINE_RATE's formula; decayUnitsCharged is guaranteed
+  // > 0 here since the fresh-agent case above already returned for a falsy count.
   const { uniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(traversalHistory, agent)
   return resolveTraversalSpeedRank(uniqueCellsVisited / decayUnitsCharged)
 }
