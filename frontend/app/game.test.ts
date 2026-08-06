@@ -1453,8 +1453,8 @@ describe("bootstrapGame", () => {
     harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
 
     expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(1)
-    const [, entry] = harness.appendTapooLogEntry.mock.calls[0] as [string, { type: string; payload: string }]
-    expect(entry.type).toBe("error")
+    const [, entry] = harness.appendTapooLogEntry.mock.calls[0] as [string, { log: string; payload: string }]
+    expect(entry.log).toBe("error")
     expect(entry.payload).toBe("invalid game state: paused status requires a paused clock")
     // The round keeps playing: rendering continued past the violation rather than aborting.
     expect(harness.render.mock.calls.length).toBeGreaterThan(rendersBeforeViolation)

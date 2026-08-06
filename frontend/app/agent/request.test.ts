@@ -395,6 +395,24 @@ describe("agent request service", () => {
     })
   })
 
+  it("stamps every request/response entry with the maze level being played", async () => {
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(successfulResponse(JSON.stringify({ moves: ["MoveRight"] })))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await requestPrediction(requestInput({ level: 6 }))
+
+    const entries = loadTapooLog<{ payload: string; level: number }>(
+      CONFIG.runtime.controlModes.agentApi,
+    ).filter((entry) => entry.payload === "Agent request." || entry.payload === "Agent response.")
+
+    expect(entries.length).toBeGreaterThan(0)
+    expect(entries.every((entry) => entry.level === 6)).toBe(true)
+  })
+
   it("previews the repeated system/user prompt and tool descriptions in a later turn, every round", async () => {
     tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 

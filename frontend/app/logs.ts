@@ -1,5 +1,5 @@
 import { appendTapooLogEntry, clearTapooLog, loadTapooLog } from "./storage"
-import type { LogEntry, LogLevel, MazeControlModeName } from "./types"
+import type { LogEntry, LogLevel, MazeControlModeName, State } from "./types"
 import { APP_VERSION } from "./config"
 
 type LogStateListener = (logCount: number) => void
@@ -18,6 +18,10 @@ let logCount = 0
 // provider requests before its prediction lands, and nothing else in an entry identifies which
 // turn produced it, so this is what makes per-turn grouping possible in a downloaded log.
 let currentTurn = 0
+
+// currentLevel stamps every entry the same way currentTurn does, so a downloaded log can tell
+// which maze level a given request belongs to — turn alone can't, since turnCount resets each level.
+let currentLevel = 0
 
 // notifyLogStateListeners keeps UI controls aligned with the current log count.
 function notifyLogStateListeners(): void {
@@ -69,10 +73,13 @@ export function initTapooLogs(modeName: MazeControlModeName): void {
   notifyLogStateListeners()
 }
 
-// setTapooLogTurn marks which agent turn subsequent entries belong to. Called once as each turn
-// begins, so every request, response, and diagnostic it produces carries the same turn number.
-export function setTapooLogTurn(turn: number): void {
-  currentTurn = turn
+// setTapooLogContext marks which turn and level subsequent entries belong to, reading both off one
+// state snapshot in a single call. Called once as each turn begins, so every request, response, and
+// diagnostic it produces carries the same turn/level pair. Takes a Pick rather than the whole State
+// so this module only ever depends on the two fields it actually stamps entries with.
+export function setTapooLogContext(state: Pick<State, "turnCount" | "level">): void {
+  currentTurn = state.turnCount
+  currentLevel = state.level
 }
 
 // logTapooDiagnostic appends one entry to sessionStorage and increments the in-memory count.
@@ -80,15 +87,16 @@ export function setTapooLogTurn(turn: number): void {
 // accumulated over many turns do not grow the JS heap.
 export function logTapooDiagnostic(
   modeName: MazeControlModeName,
-  type: LogLevel,
+  log: LogLevel,
   message: string,
   details?: unknown,
 ): void {
   const entry: LogEntry = {
     timestamp: Date.now() / 1000,
     time: getLocalTimestamp(),
+    level: currentLevel,
     turn: currentTurn,
-    type,
+    log,
     payload: message,
   }
   if (details !== undefined) {
@@ -105,7 +113,8 @@ export function tapooResetLogs(modeName: MazeControlModeName): void {
   clearTapooLog(modeName)
   logCount = 0
   currentTurn = 0
-  
+  currentLevel = 0
+
   notifyLogStateListeners()
 }
 

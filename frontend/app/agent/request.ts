@@ -1,4 +1,4 @@
-import { logTapooDiagnostic, setTapooLogTurn } from "../logs"
+import { logTapooDiagnostic, setTapooLogContext } from "../logs"
 import { CONFIG } from "../config"
 import {
   AGENT_CONTEXT_TOOLS,
@@ -133,10 +133,10 @@ async function requestChatTurn(
     api: agent.api,
     requestCount,
     agentMode,
-    tools: tools.map((tool) => previewLoggedTool(tool, keepFull)),
     // The full accumulated conversation is sent on every provider request. Static prompts are
     // previewed after the first request, while assistant/tool context stays available in full.
     messages: messages.map((msg) => previewLoggedMessage(msg, keepFull)),
+    tools: tools.map((tool) => previewLoggedTool(tool, keepFull)),
   })
 
   const msgBody = adapter.buildBody({ model: agent.model, messages, tools, mazeArea, wantsPredictionFormat })
@@ -189,10 +189,11 @@ export function requestPredictionWithAbort({
   // and tool descriptions logged; later turns repeat that same static content.
   const isFirstRequestOfLevel = state.turnCount === 0
 
-  // Stamp every entry this turn produces with the same turn number. turnCount only advances in
-  // commitAgentTurn once the turn resolves, so it stays fixed across the several provider
-  // requests made below, and a trailing win/loss entry still carries the turn that produced it.
-  setTapooLogTurn(state.turnCount)
+  // Stamp every entry this turn produces with the same turn number and level. turnCount only
+  // advances in commitAgentTurn once the turn resolves, so it stays fixed across the several
+  // provider requests made below, and a trailing win/loss entry still carries the turn/level that
+  // produced it.
+  setTapooLogContext(state)
 
   // Each provider request gets its own timeout; one agent turn may make several requests while
   // servicing tool calls before the final move prediction arrives.

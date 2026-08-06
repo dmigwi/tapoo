@@ -53,9 +53,8 @@ type AgentButtonBinding = {
 
 // logAgentRoundCompletion captures the final agent-api round state without serializing the live
 // clock or maze grid, keeping diagnostics useful while avoiding large circular-ish payloads.
-function logAgentRoundCompletion({ __actionResult, __state, __agent }: AgentRoundState): void {
+function logAgentRoundCompletion({ __state, __agent }: AgentRoundState): void {
   const outcome = __state.status
-  const result: MazeActionResult = { ...__actionResult, lastSubmittedMovesSchema: undefined }
 
   logTapooDiagnostic(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
     outcome,
@@ -67,7 +66,6 @@ function logAgentRoundCompletion({ __actionResult, __state, __agent }: AgentRoun
     },
     level: __state.level,
     score: __state.score,
-    lastRoundScore: __state.lastRoundScore,
     winSummary: __state.winSummary,
     turnCount: __state.turnCount,
     cumulativeRoundCount: __state.cumulativeRoundCount,
@@ -79,7 +77,6 @@ function logAgentRoundCompletion({ __actionResult, __state, __agent }: AgentRoun
     // when openMoves became a resolved adjacency map. Paired with turnCount it still gives
     // the cells-per-request efficiency these entries are read for.
     uniqueCellsVisited: __state.traversalHistory.length,
-    lastActionResult: result,
   })
 }
 

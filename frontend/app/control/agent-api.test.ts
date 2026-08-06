@@ -565,6 +565,7 @@ describe("agent api turn loop", () => {
   })
 
   it("records malformed responses with the fixed mistake decay", async () => {
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -605,6 +606,12 @@ describe("agent api turn loop", () => {
         chargedMovesCount: CONFIG.scoring.agentPenaltyDecayUnits,
       }),
     )
+    // malformed-response is the model's own recoverable mistake, already charged its own decay
+    // penalty above — not a system failure, so unlike network-error this stays a "warn".
+    const malformedEntry = loadTapooLog<{ payload: string; log: string }>(
+      CONFIG.runtime.controlModes.agentApi,
+    ).find((entry) => entry.payload === "Malformed agent prediction response.")
+    expect(malformedEntry?.log).toBe("warn")
   })
 
   it("disables the agent after response timeouts without score decay", async () => {
@@ -731,13 +738,16 @@ describe("agent api turn loop", () => {
         lastPlayerName: "Blue",
       }),
     )
-    expect(
-      loadTapooLog<{ payload: string; details?: { endpoint: string } }>(
-        CONFIG.runtime.controlModes.agentApi,
-      ).find(
-        (entry) =>
-          entry.payload === "Request failed before a valid response.",
-      )?.details,
-    ).toEqual({ endpoint: "https://agents.example/move" })
+    const networkErrorEntry = loadTapooLog<{
+      payload: string
+      log: string
+      details?: { endpoint: string }
+    }>(CONFIG.runtime.controlModes.agentApi).find(
+      (entry) => entry.payload === "Request failed before a valid response.",
+    )
+    expect(networkErrorEntry?.details).toEqual({ endpoint: "https://agents.example/move" })
+    // network-error means the provider/infrastructure actually broke, unlike malformed-response
+    // (the model's own recoverable mistake, which stays a "warn") — so this logs as "error".
+    expect(networkErrorEntry?.log).toBe("error")
   })
 })

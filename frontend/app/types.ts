@@ -478,7 +478,21 @@ export type SummaryComparisonTemplates = {
   behindBest: string
 }
 
-// LogLevel classifies the severity of a Tapoo log entry for filtering and analysis.
+// LogLevel classifies the severity of a Tapoo log entry for filtering and analysis. For an
+// agent-api provider response specifically (see request.ts/control/agent-api.ts), the three levels
+// map onto AgentPredictionResult like this:
+//   info  — a successful request/response round-trip with a validly-formatted output. This covers
+//           "Agent request.", "Agent response.", and a round's final "Agent level won/lost." entry
+//           — the batch of moves it carried may still include invalid ones (a wall hit stops
+//           replay), since that is a maze-navigation outcome, not a wire-format problem.
+//   warn  — reason: "malformed-response". The model's own recoverable mistake (unparseable JSON, a
+//           hallucinated tool call, ignoring a duplicate-call warning) — Tapoo charges the fixed
+//           mistake penalty and keeps the agent enabled, so play continues.
+//   error — reason: "network-error". The provider/infrastructure itself failed (HTTP failure,
+//           timeout, fetch exception) rather than the model producing bad output. No penalty is
+//           charged for this — see recordAgentNetworkError — and the agent is disabled instead.
+// "error" is also used outside the agent-api response path, for internal invariant violations
+// (game.ts) and fallback-policy failures unrelated to any specific agent's response.
 export type LogLevel = "error" | "info" | "warn"
 
 // LogEntry is one structured record in the Tapoo log buffer.
@@ -488,6 +502,9 @@ export type LogLevel = "error" | "info" | "warn"
 // turn is the agent turn being resolved when the entry was written. One turn issues several
 // provider requests — one per tool-servicing round, then the prediction — so this is what ties
 // those entries back together when a downloaded log is analysed.
+// level is the maze level being played when the entry was written, stamped the same way turn is —
+// without it, a "Agent request."/"Agent response." pair only carries a turn number, which resets
+// every level and gives no way to tell which level a given request actually belongs to.
 // payload is the human-readable description of what was logged.
 // details holds arbitrary context — request payloads, response bodies, error objects — and is
 // omitted when there is nothing beyond the payload to record.
@@ -495,7 +512,8 @@ export type LogEntry = {
   timestamp: number
   time: string
   turn: number
-  type: LogLevel
+  level: number
+  log: LogLevel
   payload: string
   details?: unknown
 }

@@ -244,8 +244,6 @@ type AgentRoundLogDetails = {
     model: string
     playerName: string
   }
-  lastActionResult: Pick<MazeActionResult, "lastMoveStatus">
-  lastRoundScore: number
   level: number
   outcome: "won" | "lost"
   score: number
@@ -256,7 +254,7 @@ type AgentRoundLogDetails = {
 type AgentRoundLogEntry = {
   details: AgentRoundLogDetails
   payload: string
-  type: string
+  log: string
 }
 
 function createControlFixture(
@@ -497,15 +495,17 @@ describe("agent control mode", () => {
     const logEntries = loadTapooLog<AgentRoundLogEntry>(CONFIG.runtime.controlModes.agentApi)
     const lastEntry = logEntries[logEntries.length - 1]
     expect(lastEntry.payload).toBe("Agent level won.")
-    expect(lastEntry.type).toBe("info")
+    expect(lastEntry.log).toBe("info")
     expect(lastEntry.details.outcome).toBe("won")
     expect(lastEntry.details.level).toBe(4)
     expect(lastEntry.details.score).toBe(700)
-    expect(lastEntry.details.lastRoundScore).toBe(700)
     expect(lastEntry.details.winSummary).toBe("New record")
     expect(lastEntry.details.agent.playerName).toBe("Blue")
     expect(lastEntry.details.agent.model).toBe("llama3.2")
-    expect(lastEntry.details.lastActionResult.lastMoveStatus).toBe("reached-target")
+    // lastActionResult is dropped entirely: it describes one move replay (lastMoveStatus,
+    // chargedMovesCount, etc.), not the round as a whole, and everything that mattered about the
+    // round outcome is already covered by the fields above.
+    expect(lastEntry.details).not.toHaveProperty("lastActionResult")
     // Summarised rather than embedded: the entry carries the visited-cell count, not the trail.
     // The fixture records only the start cell, so the count is 1.
     expect(lastEntry.details.uniqueCellsVisited).toBe(1)

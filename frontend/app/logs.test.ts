@@ -8,7 +8,7 @@ import {
   subscribeTapooLogs,
   tapooDownloadLogs,
   tapooLogCount,
-  setTapooLogTurn,
+  setTapooLogContext,
   tapooResetLogs,
   trimLoggedDescription,
 } from "./logs"
@@ -135,36 +135,43 @@ describe("tapoo logs", () => {
   })
 })
 
-describe("turn stamping", () => {
+describe("log context stamping", () => {
   afterEach(() => {
-    setTapooLogTurn(0)
+    setTapooLogContext({ turnCount: 0, level: 0 })
     tapooResetLogs("interactive")
   })
 
-  it("stamps every entry with the turn set when it was written", () => {
+  it("stamps every entry with the turn and level set when it was written", () => {
     initTapooLogs("interactive")
 
-    setTapooLogTurn(4)
+    setTapooLogContext({ turnCount: 4, level: 2 })
     logTapooDiagnostic("interactive", "info", "Agent request.")
     logTapooDiagnostic("interactive", "info", "Agent response.")
-    setTapooLogTurn(5)
+    setTapooLogContext({ turnCount: 5, level: 2 })
     logTapooDiagnostic("interactive", "info", "Agent request.")
 
-    const entries = loadTapooLog<{ turn: number; payload: string }>("interactive")
-    // One turn issues several requests, so entries group by turn rather than mapping 1:1 to it.
-    expect(entries.map((entry) => entry.turn)).toEqual([4, 4, 5])
+    // One turn issues several requests, and a level issues several turns, so entries group by
+    // both rather than mapping 1:1 to either — without level, a downloaded log has no way to tell
+    // which level a given request belongs to, since turn alone resets every level.
+    const entries = loadTapooLog<{ turn: number; level: number; payload: string }>("interactive")
+    expect(entries.map((entry) => [entry.turn, entry.level])).toEqual([
+      [4, 2],
+      [4, 2],
+      [5, 2],
+    ])
   })
 
-  it("resets the turn when logs are cleared", () => {
+  it("resets both the turn and level when logs are cleared", () => {
     initTapooLogs("interactive")
 
-    setTapooLogTurn(7)
+    setTapooLogContext({ turnCount: 7, level: 3 })
     tapooResetLogs("interactive")
     logTapooDiagnostic("interactive", "info", "after reset")
 
-    const entries = loadTapooLog<{ turn: number }>("interactive")
+    const entries = loadTapooLog<{ turn: number; level: number }>("interactive")
     expect(entries).toHaveLength(1)
     expect(entries[0].turn).toBe(0)
+    expect(entries[0].level).toBe(0)
   })
 })
 

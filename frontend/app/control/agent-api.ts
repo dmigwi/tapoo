@@ -190,9 +190,13 @@ export function handleAgentTurnLoop({
     }
 
     if (failure.diagnostic) {
+      // network-error means the provider/infrastructure actually broke (HTTP failure, timeout,
+      // fetch exception) — a genuine error. malformed-response means the model returned something
+      // Tapoo couldn't use (bad JSON, a hallucinated tool call); that's an anticipated, handled
+      // deviation charged its own decay penalty below, not a system failure, so it stays a warning.
       logTapooDiagnostic(
         runtime.controlModes.agentApi,
-        "warn",
+        failure.reason === "network-error" ? "error" : "warn",
         failure.diagnostic.message,
         failure.diagnostic.details,
       )
