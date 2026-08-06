@@ -8,6 +8,7 @@ import type {
   AgentApiConfig,
   AgentPredictionFailure,
   AgentPredictionRequest,
+  AgentPredictionResult,
   MazeAction,
   MazeActionDispatch,
   MazeActionResult,
@@ -16,6 +17,11 @@ import type {
 
 const { runtime, scoring, timing } = CONFIG
 const { agentBaseDecayUnits, agentPenaltyDecayUnits } = scoring
+
+// sleep resolves after delayMs — used only for the connection-error retry backoff below.
+function sleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs))
+}
 
 // mergeReplayResult reapplies replay metadata without duplicating live game state.
 function mergeReplayResult(
@@ -180,26 +186,16 @@ export function handleAgentTurnLoop({
     notifyRoundCompletion(agent, nextResult)
   }
 
-  // recordPredictionFailure is the single bridge from provider/request failures to game effects.
-  const recordPredictionFailure = (
+  // applyPredictionFailureConsequence dispatches a failure's game effect. caller-abort means
+  // polling already stopped, so it gets none. Kept separate from recordPredictionFailure below
+  // because the connection-error retry needs to apply this consequence on its own, once the retry
+  // is abandoned — by which point the diagnostic was already logged and must not be logged again.
+  const applyPredictionFailureConsequence = (
     agent: AgentApiConfig,
     failure: AgentPredictionFailure,
   ): void => {
     if (failure.reason === "caller-abort") {
       return
-    }
-
-    if (failure.diagnostic) {
-      // network-error means the provider/infrastructure actually broke (HTTP failure, timeout,
-      // fetch exception) — a genuine error. malformed-response means the model returned something
-      // Tapoo couldn't use (bad JSON, a hallucinated tool call); that's an anticipated, handled
-      // deviation charged its own decay penalty below, not a system failure, so it stays a warning.
-      logTapooDiagnostic(
-        runtime.controlModes.agentApi,
-        failure.reason === "network-error" ? "error" : "warn",
-        failure.diagnostic.message,
-        failure.diagnostic.details,
-      )
     }
 
     if (failure.reason === "malformed-response") {
@@ -208,6 +204,34 @@ export function handleAgentTurnLoop({
     }
 
     recordAgentNetworkError(agent)
+  }
+
+  // recordPredictionFailure is the single place a failure's diagnostic gets logged. It also applies
+  // the matching game consequence immediately, unless deferConsequence is set — used by the
+  // connection-error retry to log the failure up front while the consequence waits on the retry's
+  // outcome; that consequence is then applied later via applyPredictionFailureConsequence directly.
+  const recordPredictionFailure = (
+    agent: AgentApiConfig,
+    failure: AgentPredictionFailure,
+    deferConsequence = false,
+  ): void => {
+    if (failure.diagnostic) {
+      // network-error and connection-error both mean the provider/infrastructure actually broke —
+      // a genuine error — just split apart by retry eligibility (see AgentPredictionFailureReason's
+      // comment). malformed-response means the model returned something Tapoo couldn't use (bad
+      // JSON, a hallucinated tool call); that's an anticipated, handled deviation charged its own
+      // decay penalty below, not a system failure, so it stays a warning.
+      logTapooDiagnostic(
+        runtime.controlModes.agentApi,
+        failure.reason === "malformed-response" ? "warn" : "error",
+        failure.diagnostic.message,
+        failure.diagnostic.details,
+      )
+    }
+
+    if (!deferConsequence) {
+      applyPredictionFailureConsequence(agent, failure)
+    }
   }
 
   // scheduleNextAgentTurn starts/resumes immediately, then delays internal loop continuations.
@@ -235,6 +259,63 @@ export function handleAgentTurnLoop({
     }, delayMs)
   }
 
+  // requestAgentPrediction builds and awaits one provider request for the given agent, tracking it
+  // as the currently active request so stopPolling can still abort it mid-flight.
+  const requestAgentPrediction = (agent: AgentApiConfig): Promise<AgentPredictionResult> => {
+    // The request service owns HTTP, timeout, tool calls, and classified failure handling.
+    const predictionRequest = requestPredictionWithAbort({
+      agent,
+      lastActionResult: activeActionResult(),
+      state: __readState(),
+      timeoutMs: timing.agentApiResponseTimeoutMs,
+    })
+    activeRequest = predictionRequest
+    return predictionRequest.promise
+  }
+
+  // requestAgentPredictionWithRetry gives a connection-error exactly one retry, after a short
+  // backoff, before the caller treats it as final. connection-error is deliberately narrow (see
+  // AgentPredictionFailureReason's comment): it means the connection itself failed — a reset, a
+  // dropped socket, a DNS hiccup, a timeout abort — before any HTTP response arrived at all, the
+  // one shape a retry is actually likely to fix (see the "TypeError: Failed to fetch" investigation
+  // this exists for). Nothing else is retried here: a plain network-error (a non-OK HTTP status, a
+  // missing message body, a Tapoo-side tool-handler bug, an unrecognized provider) means the
+  // provider already answered or the problem is on our own side, neither of which a blind retry
+  // fixes — a non-OK status in particular (e.g. a 429) can get worse from an immediate retry.
+  // malformed-response and caller-abort are never retried either: a malformed response is the
+  // model's own mistake, and a caller-abort means polling already stopped.
+  const requestAgentPredictionWithRetry = async (
+    agent: AgentApiConfig,
+  ): Promise<AgentPredictionResult> => {
+    const firstAttempt = await requestAgentPrediction(agent)
+    if (firstAttempt.ok) {
+      return firstAttempt
+    }
+
+    // Logged now either way; the consequence is deferred only when a retry is actually about to
+    // happen, so it isn't applied ahead of an outcome that hasn't occurred yet.
+    const willRetry = firstAttempt.reason === "connection-error" && shouldPollAgent()
+    recordPredictionFailure(agent, firstAttempt, willRetry)
+    if (!willRetry) {
+      return firstAttempt
+    }
+
+    await sleep(timing.agentApiConnectionErrorRetryDelayMs)
+    if (!shouldPollAgent()) {
+      applyPredictionFailureConsequence(agent, firstAttempt)
+      return firstAttempt
+    }
+
+    const retryAttempt = await requestAgentPrediction(agent)
+    if (retryAttempt.ok) {
+      logTapooDiagnostic(runtime.controlModes.agentApi, "warn", "Recovered after a connection-error retry.")
+      return retryAttempt
+    }
+
+    recordPredictionFailure(agent, retryAttempt)
+    return retryAttempt
+  }
+
   // requestNextAgentTurn asks the next enabled agent for moves, then replays only successful predictions here.
   const requestNextAgentTurn = async (
     nextDelayMs = timing.agentApiCoreDecayIntervalPerCellMs,
@@ -257,19 +338,9 @@ export function handleAgentTurnLoop({
 
       __onActiveAgentChange?.(selectedAgent)
 
-      // The request service owns HTTP, timeout, tool calls, and classified failure handling.
-      const predictionRequest = requestPredictionWithAbort({
-        agent: selectedAgent,
-        lastActionResult: activeActionResult(),
-        state: __readState(),
-        timeoutMs: timing.agentApiResponseTimeoutMs,
-      })
-
-      activeRequest = predictionRequest
-      const prediction = await predictionRequest.promise
-      // Request service returns structured failures; game consequences stay centralized here.
+      const prediction = await requestAgentPredictionWithRetry(selectedAgent)
+      // Failure logging and game consequences are handled inside requestAgentPredictionWithRetry.
       if (prediction.ok === false) {
-        recordPredictionFailure(selectedAgent, prediction)
         return
       }
 

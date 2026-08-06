@@ -274,10 +274,21 @@ export type AgentChatMessage = {
   tool_calls?: AgentToolCall[]
 }
 
+// network-error and connection-error both mean "the provider/infrastructure is at fault, not the
+// model" and get identical game treatment (agent disabled, no penalty — see recordAgentNetworkError
+// in control/agent-api.ts) — they're split apart only so a caller can tell them apart for retry
+// eligibility. connection-error is narrow and deliberate: it is the one case request.ts's bare
+// catch{} produces, meaning the connection itself failed (a reset, a dropped socket, a DNS hiccup)
+// before any HTTP response arrived at all — exactly the transient case a one-shot retry can fix.
+// network-error covers everything else in the bucket: a non-OK HTTP status (the provider did
+// respond, just with an error — retrying a 429 immediately can make rate-limiting worse), a 200 OK
+// response missing the expected message shape, a Tapoo-side tool-handler bug, or an unrecognized
+// provider — none of which a blind retry is likely to fix, so none of them should be retried.
 export type AgentPredictionFailureReason =
   | "caller-abort"
   | "malformed-response"
   | "network-error"
+  | "connection-error"
 
 export type AgentPredictionDiagnostic = {
   message: string
@@ -673,6 +684,7 @@ export type AppConfig = {
     interactiveCoreDecayIntervalPerCellMs: number
     agentApiCoreDecayIntervalPerCellMs: number
     agentApiResponseTimeoutMs: number
+    agentApiConnectionErrorRetryDelayMs: number
   }
   viewport: {
     compactWidth: number

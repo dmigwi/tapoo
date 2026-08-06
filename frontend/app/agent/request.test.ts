@@ -722,46 +722,66 @@ describe("agent request service", () => {
     })
   })
 
-  it.each([
-    [
-      "non-ok response",
+  it("returns network-error for non-ok response", async () => {
+    vi.stubGlobal(
+      "fetch",
       vi.fn().mockResolvedValue({ ok: false, status: 503, statusText: "Unavailable" }),
-      "Provider HTTP response failed.",
-      { endpoint, status: 503, statusText: "Unavailable" },
-    ],
-    [
-      "fetch failure",
-      vi.fn().mockRejectedValue(new TypeError("failed")),
-      "Request failed before a valid response.",
-      { endpoint },
-    ],
-  ])("returns network-error for %s", async (_caseName, fetchMock, expectedMessage, expectedDetails) => {
-    vi.stubGlobal("fetch", fetchMock)
+    )
 
     await expect(requestPrediction(requestInput())).resolves.toMatchObject({
       ok: false,
       reason: "network-error",
       diagnostic: {
-        message: expectedMessage,
-        details: expectedDetails,
+        message: "Provider HTTP response failed.",
+        details: { endpoint, status: 503, statusText: "Unavailable" },
       },
     })
   })
 
-  it("returns provider request failures with actionable diagnostic context", async () => {
+  it("returns connection-error for fetch failure", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("failed")))
 
     await expect(requestPrediction(requestInput())).resolves.toMatchObject({
       ok: false,
-      reason: "network-error",
+      reason: "connection-error",
       diagnostic: {
         message: "Request failed before a valid response.",
-        details: { endpoint },
+        details: { endpoint, error: "TypeError: failed" },
       },
     })
   })
 
-  it("returns network-error when the request times out", async () => {
+  it("returns connection-error request failures with actionable diagnostic context", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("failed")))
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "connection-error",
+      diagnostic: {
+        message: "Request failed before a valid response.",
+        // The actual thrown error is captured as a string here rather than discarded: Error and
+        // DOMException instances serialize to "{}" via JSON.stringify (name/message are
+        // non-enumerable own properties), so a raw caught error logged as-is would silently vanish
+        // from a downloaded log, leaving no way to tell a timeout from a DNS failure after the fact.
+        details: { endpoint, error: "TypeError: failed" },
+      },
+    })
+  })
+
+  it("captures a non-Error thrown value as a string instead of discarding it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue("plain string rejection"))
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "connection-error",
+      diagnostic: {
+        message: "Request failed before a valid response.",
+        details: { endpoint, error: "plain string rejection" },
+      },
+    })
+  })
+
+  it("returns connection-error when the request times out", async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn((_endpoint: string, init?: RequestInit) => {
       return new Promise((_resolve, reject) => {
@@ -777,10 +797,10 @@ describe("agent request service", () => {
 
     await expect(result).resolves.toMatchObject({
       ok: false,
-      reason: "network-error",
+      reason: "connection-error",
       diagnostic: {
         message: "Request failed before a valid response.",
-        details: { endpoint },
+        details: { endpoint, error: "AbortError: aborted" },
       },
     })
   })

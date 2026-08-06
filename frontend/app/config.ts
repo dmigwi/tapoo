@@ -286,6 +286,11 @@ export const CONFIG: AppConfig = {
     // multiple of this (see the request-count derivation in agent/request.ts). Per-request by
     // design — a provider that stops responding is caught on the first round regardless.
     agentApiResponseTimeoutMs: 300_000,           // Translates to 5min
+    // Kept short deliberately: this backs the one-shot connection-error retry (see
+    // requestAgentPredictionWithRetry in control/agent-api.ts) for transient connection drops/
+    // resets, which either clear almost immediately or not at all — a long backoff would just make
+    // the agent sit idle for a failure mode a second attempt is unlikely to fix anyway.
+    agentApiConnectionErrorRetryDelayMs: 5_000,      // Translates to 5sec
   },
   // Viewport thresholds translate measured DOM space into logical maze room.
   viewport: {

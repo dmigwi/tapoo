@@ -17,6 +17,8 @@ import type { AgentRoundState } from "./agent-api"
 const testAgentMovePollIntervalMs = 5
 const testAgentResponseTimeoutMs = 20
 const originalAgentResponseTimeoutMs = CONFIG.timing.agentApiResponseTimeoutMs
+const testAgentConnectionErrorRetryDelayMs = 5
+const originalAgentConnectionErrorRetryDelayMs = CONFIG.timing.agentApiConnectionErrorRetryDelayMs
 type SerializedRequestBody = {
   model: string
   stream: false
@@ -88,14 +90,23 @@ async function flushImmediateAgentTurn(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0)
 }
 
+// flushConnectionErrorRetry advances fake timers past the one-shot connection-error retry's backoff
+// delay, so a test whose fetch mock keeps failing reaches the final disable/no-score-decay outcome
+// instead of stalling mid-retry.
+async function flushConnectionErrorRetry(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiConnectionErrorRetryDelayMs)
+}
+
 describe("agent api turn loop", () => {
   beforeEach(() => {
     CONFIG.timing.agentApiResponseTimeoutMs = testAgentResponseTimeoutMs
+    CONFIG.timing.agentApiConnectionErrorRetryDelayMs = testAgentConnectionErrorRetryDelayMs
     vi.useFakeTimers()
   })
 
   afterEach(() => {
     CONFIG.timing.agentApiResponseTimeoutMs = originalAgentResponseTimeoutMs
+    CONFIG.timing.agentApiConnectionErrorRetryDelayMs = originalAgentConnectionErrorRetryDelayMs
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
@@ -189,6 +200,7 @@ describe("agent api turn loop", () => {
     poller.__setAttached(true)
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
+    await flushConnectionErrorRetry()
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
   })
@@ -645,6 +657,12 @@ describe("agent api turn loop", () => {
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    // First attempt times out, then the one-shot retry fires after its own backoff and times out
+    // the same way — the mock fetch hangs forever regardless of call count, so both attempts abort
+    // on their own timeout rather than ever resolving.
+    await vi.advanceTimersByTimeAsync(testAgentResponseTimeoutMs)
+    await vi.advanceTimersByTimeAsync(testAgentConnectionErrorRetryDelayMs)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(testAgentResponseTimeoutMs)
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
@@ -687,6 +705,7 @@ describe("agent api turn loop", () => {
     poller.__setAttached(true)
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
+    await flushConnectionErrorRetry()
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
@@ -727,6 +746,7 @@ describe("agent api turn loop", () => {
     poller.__setAttached(true)
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
+    await flushConnectionErrorRetry()
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
@@ -741,13 +761,76 @@ describe("agent api turn loop", () => {
     const networkErrorEntry = loadTapooLog<{
       payload: string
       log: string
-      details?: { endpoint: string }
+      details?: { endpoint: string; error: string }
     }>(CONFIG.runtime.controlModes.agentApi).find(
       (entry) => entry.payload === "Request failed before a valid response.",
     )
-    expect(networkErrorEntry?.details).toEqual({ endpoint: "https://agents.example/move" })
+    expect(networkErrorEntry?.details).toEqual({
+      endpoint: "https://agents.example/move",
+      error: "TypeError: network failed",
+    })
     // network-error means the provider/infrastructure actually broke, unlike malformed-response
     // (the model's own recoverable mistake, which stays a "warn") — so this logs as "error".
     expect(networkErrorEntry?.log).toBe("error")
+  })
+
+  it("recovers after a single connection-error retry and completes the turn normally", async () => {
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("network failed"))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const dispatch = vi.fn() as MazeActionDispatch
+    const dispatchAgentAction = vi
+      .fn<(action: MazeAction) => MazeActionResult>()
+      .mockReturnValue(createActionResult({ lastMoveStatus: "applied", visitedBefore: false }))
+    const commitAgentTurn = vi.fn()
+    const onActionResult = vi.fn()
+    const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: dispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState(),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    await flushConnectionErrorRetry()
+
+    // The retry succeeded, so the turn completes normally — no disablement, no network-error/
+    // connection-error penalty, the move gets replayed and charged like any other successful turn.
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(disableAgentAfterNetworkError).not.toHaveBeenCalled()
+    expect(dispatchAgentAction).toHaveBeenCalledWith(
+      { type: "MoveRight" },
+      dispatch,
+      expect.objectContaining({ playerName: "Blue" }),
+    )
+    expect(commitAgentTurn).toHaveBeenCalled()
+
+    const logEntries = loadTapooLog<{ payload: string; log: string }>(
+      CONFIG.runtime.controlModes.agentApi,
+    )
+    expect(logEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ payload: "Request failed before a valid response.", log: "error" }),
+        expect.objectContaining({ payload: "Recovered after a connection-error retry.", log: "warn" }),
+      ]),
+    )
   })
 })

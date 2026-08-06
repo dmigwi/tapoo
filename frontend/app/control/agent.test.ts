@@ -911,6 +911,9 @@ describe("agent control mode", () => {
       vi.fn(() => createControlFixture()),
     )
     await flushImmediateAgentTurn()
+    // The one-shot connection-error retry fires after its own backoff; the stubbed fetch keeps
+    // rejecting, so the retry fails the same way before the agent is finally disabled.
+    await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiConnectionErrorRetryDelayMs)
 
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(
       enabledAgentConfigs()[0],

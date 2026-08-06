@@ -384,20 +384,27 @@ export function requestPredictionWithAbort({
         ]
         duplicateWarningIssued = false
       }
-    } catch {
-      // Fetch failures, timeout aborts, and tool-service failures share one network bucket.
-      // Caller aborts are expected lifecycle cleanup, so this catch does not log them as
-      // network failures or run failure callbacks. Timeout aborts do not set that flag.
+    } catch (error) {
+      // Caller aborts are expected lifecycle cleanup, so this catch does not log them as failures
+      // or run failure callbacks. Timeout aborts do not set that flag, so they fall through below.
       if (wasExpectedAbort) {
         return { ok: false, reason: "caller-abort" }
       }
 
+      // The connection itself failed here (a reset, a dropped socket, a DNS hiccup, a timeout
+      // abort) before any HTTP response arrived. See AgentPredictionFailureReason's comment for
+      // how this differs from the other reasons.
       return {
         ok: false,
-        reason: "network-error",
+        reason: "connection-error",
         diagnostic: {
           message: "Request failed before a valid response.",
-          details: { endpoint: endpointLabel(agent.endpoint) },
+          // String(error) rather than the raw caught value: Error/DOMException instances (fetch's
+          // TypeError, an aborted signal's AbortError) serialize to "{}" via JSON.stringify — their
+          // name/message are non-enumerable own properties — so logging the value as-is would
+          // silently discard exactly the detail this diagnostic exists to capture. String() covers
+          // any thrown shape uniformly via its own toString(), without special-casing by type.
+          details: { endpoint: endpointLabel(agent.endpoint), error: String(error) },
         },
       }
     }
