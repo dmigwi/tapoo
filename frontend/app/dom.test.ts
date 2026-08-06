@@ -42,7 +42,13 @@ function setupTerminalDom(): void {
     <strong id="agent-config-title"></strong>
     <input id="agent-config-player-name" />
     <input id="agent-config-model" />
+    <select id="agent-config-api"></select>
     <input id="agent-config-endpoint" />
+    <input id="agent-config-credential" />
+    <span id="agent-config-credential-label"></span>
+    <span id="agent-config-credential-required"></span>
+    <div id="agent-config-api-version-field"></div>
+    <input id="agent-config-api-version" />
     <input id="agent-config-enabled" />
     <span id="agent-config-enabled-label"></span>
     <button id="agent-config-close"></button>

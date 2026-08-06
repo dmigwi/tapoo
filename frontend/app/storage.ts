@@ -3,7 +3,7 @@ import {
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
 } from "./config"
-import { normalizeAgentEndpoint } from "./agent/config"
+import { isAgentApiProvider, normalizeAgentEndpoint } from "./agent/config"
 import { isAgentSeatId } from "./agent/seats"
 import { canPersistRoundStatus, hasActiveRoundState, isAgentApiMode } from "./status"
 import {
@@ -167,6 +167,14 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   const turnCount = "turnCount" in value ? value.turnCount : undefined
   const decayUnitsCharged = "decayUnitsCharged" in value ? value.decayUnitsCharged : undefined
   const cumulativeRoundCount = "cumulativeRoundCount" in value ? value.cumulativeRoundCount : undefined
+  // api is deliberately not part of the required-key gate above: a record persisted before this
+  // field existed must still load, not be dropped. An absent or unrecognized value coerces to
+  // "ollama" (validAgentApiProvider), the same self-healing shape validWallWeightPreference uses —
+  // the very next savePersistedAgentApiConfigs call then backfills it into storage for free.
+  const apiValue = "api" in value ? value.api : undefined
+  const api = isAgentApiProvider(apiValue) ? apiValue : "ollama"
+  const credentialValue = "credential" in value ? value.credential : undefined
+  const apiVersionValue = "apiVersion" in value ? value.apiVersion : undefined
   const endpointValue = value.endpoint
   const endpoint =
     endpointValue instanceof URL
@@ -187,17 +195,24 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
     (gameLevel === undefined || (typeof gameLevel === "number" && Number.isInteger(gameLevel) && gameLevel >= 0)) &&
     (cumulativeRoundCount === undefined || (typeof cumulativeRoundCount === "number" && Number.isInteger(cumulativeRoundCount) && cumulativeRoundCount >= 0)) &&
     (turnCount === undefined || (typeof turnCount === "number" && Number.isInteger(turnCount) && turnCount >= 0)) &&
-    (decayUnitsCharged === undefined || (typeof decayUnitsCharged === "number" && Number.isInteger(decayUnitsCharged) && decayUnitsCharged >= 0))
+    (decayUnitsCharged === undefined || (typeof decayUnitsCharged === "number" && Number.isInteger(decayUnitsCharged) && decayUnitsCharged >= 0)) &&
+    (credentialValue === undefined || typeof credentialValue === "string") &&
+    (apiVersionValue === undefined || typeof apiVersionValue === "string")
   ) {
     const disabledReason = disabledReasonValue === "network-error" ? disabledReasonValue : undefined
+    const credential = typeof credentialValue === "string" && credentialValue.length > 0 ? credentialValue : undefined
+    const apiVersion = typeof apiVersionValue === "string" && apiVersionValue.length > 0 ? apiVersionValue : undefined
 
     return {
       id: value.id,
       playerName: value.playerName.trim(),
       model: value.model,
       endpoint,
+      api,
       enabled: value.enabled,
       ...(disabledReason ? { disabledReason } : {}),
+      ...(credential ? { credential } : {}),
+      ...(apiVersion ? { apiVersion } : {}),
       ...(typeof gameLevel === "number" ? { gameLevel } : {}),
       ...(typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
       ...(typeof turnCount === "number" ? { turnCount } : {}),

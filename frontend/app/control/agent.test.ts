@@ -27,6 +27,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
       playerName: "Blue",
       model: "llama3.2",
       endpoint: new URL("https://agents.example/blue/move"),
+      api: "ollama",
       enabled: true,
     },
   ]
@@ -83,7 +84,13 @@ function createAgentFormElements(): AgentFormElements {
   const agentConfigTitle = document.createElement("strong")
   const agentConfigPlayerName = document.createElement("input")
   const agentConfigModel = document.createElement("input")
+  const agentConfigApi = document.createElement("select")
   const agentConfigEndpoint = document.createElement("input")
+  const agentConfigCredential = document.createElement("input")
+  const agentConfigCredentialLabel = document.createElement("span")
+  const agentConfigCredentialRequired = document.createElement("span")
+  const agentConfigApiVersionField = document.createElement("label")
+  const agentConfigApiVersion = document.createElement("input")
   const agentConfigEnabledLabel = document.createElement("label")
   const agentConfigEnabled = document.createElement("input")
   const agentConfigEnabledText = document.createElement("span")
@@ -112,11 +119,25 @@ function createAgentFormElements(): AgentFormElements {
   agentConfigEnabled.checked = true
   agentConfigEnabledText.id = "agent-config-enabled-label"
   agentConfigEnabledLabel.append(agentConfigEnabled, agentConfigEnabledText)
+  ;["ollama", "openai", "anthropic"].forEach((value) => {
+    const option = document.createElement("option")
+    option.value = value
+    agentConfigApi.append(option)
+  })
+  agentConfigApi.value = "ollama"
+  agentConfigCredentialRequired.hidden = true
+  agentConfigApiVersionField.hidden = true
+  agentConfigApiVersionField.append(agentConfigApiVersion)
   agentConfigForm.append(
     agentConfigTitle,
     agentConfigPlayerName,
     agentConfigModel,
+    agentConfigApi,
     agentConfigEndpoint,
+    agentConfigCredential,
+    agentConfigCredentialLabel,
+    agentConfigCredentialRequired,
+    agentConfigApiVersionField,
     agentConfigEnabledLabel,
     agentConfigClose,
     agentConfigStatus,
@@ -151,7 +172,13 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigTitle,
     agentConfigPlayerName,
     agentConfigModel,
+    agentConfigApi,
     agentConfigEndpoint,
+    agentConfigCredential,
+    agentConfigCredentialLabel,
+    agentConfigCredentialRequired,
+    agentConfigApiVersionField,
+    agentConfigApiVersion,
     agentConfigEnabled,
     agentConfigEnabledLabel: agentConfigEnabledText,
     agentConfigClose,
@@ -903,6 +930,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -910,6 +938,7 @@ describe("agent control mode", () => {
         playerName: "Grey",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/grey/move"),
+        api: "ollama",
         enabled: false,
       },
     ])
@@ -1014,6 +1043,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -1021,6 +1051,7 @@ describe("agent control mode", () => {
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
+        api: "ollama",
         enabled: true,
       },
     ])
@@ -1069,6 +1100,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -1076,6 +1108,7 @@ describe("agent control mode", () => {
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
+        api: "ollama",
         enabled: true,
       },
     ])
@@ -1106,6 +1139,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: false,
       },
     ])
@@ -1150,6 +1184,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -1157,6 +1192,7 @@ describe("agent control mode", () => {
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
+        api: "ollama",
         enabled: true,
       },
     ])
@@ -1199,6 +1235,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
     ])
@@ -1374,6 +1411,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
     ])
@@ -1479,7 +1517,7 @@ describe("agent control mode", () => {
     const readAgentConfigs = vi.fn(loadPersistedAgentApiConfigs)
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
-    elements.agentConfigEndpoint.value = "localhost:5000"
+    elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
     vi.stubGlobal("fetch", vi.fn())
 
     const mode = createAgentMode(elements, readAgentConfigs)
@@ -1499,7 +1537,8 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Scout",
         model: "gemma4",
-        endpoint: new URL("http://localhost:5000/"),
+        endpoint: new URL("http://localhost:5000/api/chat"),
+        api: "ollama",
         enabled: true,
       }),
     ])
@@ -1509,6 +1548,33 @@ describe("agent control mode", () => {
       elements.agentSeatRoster?.querySelector('[data-agent-seat-id="1"]')
         ?.getAttribute("title"),
     ).toBe("Scout the Trailblazer")
+  })
+
+  it("rejects a bare host:port endpoint that carries no request path", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    elements.agentConfigPlayerName.value = "Scout"
+    elements.agentConfigModel.value = "gemma4"
+    // No path at all — this must not be silently defaulted to a provider's conventional route;
+    // the user has to type the actual path themselves.
+    elements.agentConfigEndpoint.value = "localhost:5000"
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "1")
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(elements.agentConfigStatus.textContent).toBe(CONFIG.agentConfig.invalidEndpointMessage)
+    expect(elements.agentConfigForm.hidden).toBe(false)
+    expect(readAgentConfigs()).toEqual([])
   })
 
   it("shows required-field errors at the bottom of the agent form", () => {
@@ -1640,6 +1706,7 @@ describe("agent control mode", () => {
         playerName: "Scout",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/scout/move"),
+        api: "ollama",
         enabled: true,
       },
     ])

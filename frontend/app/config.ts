@@ -182,12 +182,39 @@ export const CONFIG: AppConfig = {
     playerNamePlaceholder: "Kora",
     modelLabel: "Model",
     modelPlaceholder: "llama3.2",
+    apiLabel: "API",
+    requiredFieldNote: "* Required",
+    anthropicVersionLabel: "Anthropic Version",
+    anthropicVersionPlaceholder: "2023-06-01",
+    // Ollama is listed first and is the markup's preselected <option>, so its endpoint placeholder
+    // is also what the endpoint field is hydrated with on load (data-config-value in
+    // terminal-section.html reads endpointPlaceholders.ollama specifically).
+    providerLabels: {
+      ollama: "Ollama",
+      openai: "OpenAI",
+      anthropic: "Anthropic",
+    },
     endpointLabel: "Endpoint",
+    endpointPlaceholders: {
+      ollama: "http://localhost:11434/api/chat",
+      openai: "http://localhost:8000/v1/chat/completions",
+      anthropic: "http://localhost:8000/v1/messages",
+    },
+    // Same stored field, different real-world name: Anthropic calls it an API key, everyone else
+    // speaking this shape calls it a bearer token. The credential itself and how it becomes a header
+    // are unaffected by which label is showing.
+    credentialLabels: {
+      ollama: "Bearer Token",
+      openai: "Bearer Token",
+      anthropic: "API Key",
+    },
+    credentialRotationTooltip: "Once set, rotate this token/key periodically for better security.",
     submitLabel: "Add Agent",
-    endpointPlaceholder: "http://localhost:11434/api/chat",
     invalidMessage: "Fill in Player Name, Model and Endpoint.",
+    invalidApiMessage: "This agent's API provider is not properly configured.",
     invalidEndpointMessage:
-      "Endpoint must be an http:// or https:// URL, or host:port.",
+      "Endpoint must be a full http:// or https:// URL (or host:port) including the request path.",
+    invalidAnthropicCredentialsMessage: "Anthropic requires an API Key and an Anthropic Version.",
     duplicatePlayerNameMessage: "This player name is already configured.",
     playerNameLengthMessage: "Player Name must be 3-8 characters.",
     editTitle: "Edit Agent",

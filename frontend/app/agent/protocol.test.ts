@@ -28,6 +28,11 @@ describe("agent protocol", () => {
     )
   })
 
+  it("treats an undefined area (maze dimensions not known yet) the same as zero", () => {
+    const { contextWindowFloor } = CONFIG.runtime.modelConfig
+    expect(contextWindowForArea(undefined)).toBe(contextWindowFloor)
+  })
+
   it.each([
     ["bare json", "{\"moves\":[\"MoveRight\"]}", ["MoveRight"]],
     ["json fence", "```json\n{\"moves\":[\"MoveDown\"]}\n```", ["MoveDown"]],

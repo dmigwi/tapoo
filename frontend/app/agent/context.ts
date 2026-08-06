@@ -52,16 +52,6 @@ export const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
   },
 }
 
-// PREDICTION_FORMAT is the Ollama-compatible structured-output schema for the final prediction
-// request. It uses the same shape as EXPECTED_RESPONSE_SCHEMA but omits description so Ollama
-// treats it as a pure JSON Schema constraint, not a model-facing annotation.
-export const PREDICTION_FORMAT = {
-  type: "object",
-  additionalProperties: false,
-  required: EXPECTED_RESPONSE_SCHEMA.required,
-  properties: EXPECTED_RESPONSE_SCHEMA.properties,
-} as const
-
 // SUBMITTED_MOVES_SCHEMA documents the zero-based replay records returned after processing moves.
 export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
   type: "array",

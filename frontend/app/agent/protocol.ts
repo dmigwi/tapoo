@@ -18,10 +18,12 @@ export function endpointLabel(endpoint: URL): string {
   return `${endpoint.origin}${endpoint.pathname}`
 }
 
-// contextWindowForArea scales context room as mazes and traversal histories grow.
-export function contextWindowForArea(area: number): number {
+// contextWindowForArea scales context room as mazes and traversal histories grow. area is
+// undefined before a round's maze dimensions are known; that and an explicit 0 are handled the
+// same way — both fall through to contextWindowFloor via the Math.max below.
+export function contextWindowForArea(area: number | undefined): number {
   const { contextWindowFloor, contextWindowAreaMultiplier } = CONFIG.runtime.modelConfig
-  return Math.max(contextWindowFloor, area * contextWindowAreaMultiplier)
+  return Math.max(contextWindowFloor, (area ?? 0) * contextWindowAreaMultiplier)
 }
 
 // stripMarkdownFence removes optional ```json or ``` wrappers that models add despite instructions.

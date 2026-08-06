@@ -32,6 +32,7 @@ function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
     playerName: "Blue",
     model: "qwen3.6:27b",
     endpoint: new URL("https://agents.example/chat"),
+    api: "ollama",
     enabled: true,
     gameLevel: 4,
     turnCount: 2,

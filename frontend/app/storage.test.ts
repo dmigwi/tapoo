@@ -160,6 +160,7 @@ describe("storage", () => {
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/a/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -167,6 +168,7 @@ describe("storage", () => {
         playerName: "Agent B",
         model: "gemma4",
         endpoint: endpoint("/api/agents/b/move"),
+        api: "ollama",
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_000,
@@ -185,6 +187,7 @@ describe("storage", () => {
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/a/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -192,6 +195,7 @@ describe("storage", () => {
         playerName: "Agent B",
         model: "gemma4",
         endpoint: endpoint("/api/agents/b/move"),
+        api: "ollama",
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_000,
@@ -203,6 +207,37 @@ describe("storage", () => {
 
     savePersistedAgentApiConfigs([])
     expect(loadPersistedAgentApiConfigs()).toEqual([])
+  })
+
+  it("backfills a pre-multi-provider agent record with the ollama default on load", () => {
+    // Simulates a record saved by a build that predates the api field. Written directly to the
+    // storage key as plain base64 JSON (no XOR layer, no AgentApiConfig typing) rather than through
+    // savePersistedAgentApiConfigs, because that function normalizes on save — it would backfill
+    // api before the payload ever reached storage, defeating the point of this test. Plain base64
+    // is a real, currently-supported format: decodeStoredPayload falls back to it whenever a stored
+    // value lacks the STORE_ENCODING_PREFIX.
+    const legacyRecord = {
+      id: 1,
+      playerName: "Legacy",
+      model: "llama3.2",
+      endpoint: endpoint("/api/agents/legacy/move").href,
+      enabled: true,
+    }
+    const storedKey = agentStorageKey(agentConfigs)
+    window.localStorage.setItem(storedKey, window.btoa(JSON.stringify([legacyRecord])))
+
+    const loaded = loadPersistedAgentApiConfigs()
+    expect(loaded).toEqual([
+      { ...legacyRecord, endpoint: endpoint("/api/agents/legacy/move"), api: "ollama" },
+    ])
+
+    // The self-healing rewrite (loadPersistedAgentApiConfigs's JSON.stringify diff check) must have
+    // backfilled storage, not just the in-memory return value, so a second load is unaffected by a
+    // pre-api record no longer being present at all.
+    const storedAfterLoad = window.localStorage.getItem(storedKey)
+    expect(storedAfterLoad).not.toBeNull()
+    expect(storedAfterLoad).toContain(STORE_ENCODING_PREFIX)
+    expect(loadPersistedAgentApiConfigs()).toEqual(loaded)
   })
 
   it("normalizes fixed agent seats without reassigning occupied slots", () => {
@@ -218,6 +253,7 @@ describe("storage", () => {
           playerName: `Aseat${id}`,
           model: models[index % models.length],
           endpoint: endpoint(`/api/agents/${id}/move`),
+          api: "ollama" as const,
           enabled: true,
         }
       },
@@ -242,6 +278,7 @@ describe("storage", () => {
         playerName: `A${index + 1}bot`,
         model: "llama3.2",
         endpoint: endpoint(`/api/agents/${index + 1}/move`),
+        api: "ollama" as const,
         enabled: true,
       }),
     )
@@ -290,6 +327,7 @@ describe("storage", () => {
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/a/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -297,6 +335,7 @@ describe("storage", () => {
         playerName: "Agent B",
         model: "gemma4",
         endpoint: endpoint("/api/agents/b/move"),
+        api: "ollama",
         enabled: true,
       },
     ])
@@ -306,6 +345,7 @@ describe("storage", () => {
       playerName: "Agent B",
       model: "gemma4",
       endpoint: endpoint("/api/agents/b/move"),
+      api: "ollama",
       enabled: true,
     })
 
@@ -315,6 +355,7 @@ describe("storage", () => {
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/a/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -322,6 +363,7 @@ describe("storage", () => {
         playerName: "Agent B",
         model: "gemma4",
         endpoint: endpoint("/api/agents/b/move"),
+        api: "ollama",
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_001,
@@ -337,6 +379,7 @@ describe("storage", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
     ])
@@ -362,6 +405,7 @@ describe("storage", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/blue/move"),
+        api: "ollama",
         enabled: true,
         gameLevel: 3,
         cumulativeRoundCount: 7,
@@ -384,6 +428,7 @@ describe("storage", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/blue/move"),
+        api: "ollama",
         enabled: true,
         gameLevel: 3,
         cumulativeRoundCount: 7,
@@ -411,6 +456,7 @@ describe("storage", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/blue/move"),
+        api: "ollama",
         enabled: true,
         gameLevel: 5,
         cumulativeRoundCount: 12,

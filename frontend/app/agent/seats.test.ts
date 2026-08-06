@@ -22,6 +22,7 @@ function agent(id: number, playerName: string, model = "llama3.2"): AgentApiConf
     playerName,
     model,
     endpoint: new URL("https://example.test/move"),
+    api: "ollama",
     enabled: true,
   }
 }

@@ -1,6 +1,7 @@
 import type {
   Elements,
   AgentApiConfig,
+  AgentApiProvider,
   MazeAction,
   MazeActionControl,
   MazeActionDispatch,
@@ -8,6 +9,7 @@ import type {
 } from "../types"
 import {
   agentConfigValidationError,
+  isAgentApiProvider,
   normalizeAgentEndpoint,
 } from "../agent/config"
 import {
@@ -101,6 +103,7 @@ export function createAgentMode(
   let agentDeleteConfirmChangeHandler: (() => void) | null = null
   let agentDeleteEnabledChangeHandler: (() => void) | null = null
   let agentConfigEnabledChangeHandler: (() => void) | null = null
+  let agentConfigApiChangeHandler: (() => void) | null = null
   let agentFormCloseHandler: (() => void) | null = null
   let agentFormSubmitHandler: ((event: Event) => void) | null = null
   let agentFormOuterClickHandler: ((event: MouseEvent) => void) | null = null
@@ -162,6 +165,10 @@ export function createAgentMode(
         if (elements.agentConfigEnabled && agentConfigEnabledChangeHandler) {
           elements.agentConfigEnabled.removeEventListener("change", agentConfigEnabledChangeHandler )
           agentConfigEnabledChangeHandler = null
+        }
+        if (elements.agentConfigApi && agentConfigApiChangeHandler) {
+          elements.agentConfigApi.removeEventListener("change", agentConfigApiChangeHandler)
+          agentConfigApiChangeHandler = null
         }
         if (elements.agentConfigForm && agentFormSubmitHandler) {
           elements.agentConfigForm.removeEventListener("submit", agentFormSubmitHandler )
@@ -318,6 +325,40 @@ export function createAgentMode(
         syncAgentEnabledToggle(elements.agentConfigEnabled, elements.agentConfigEnabledLabel)
       }
 
+      // syncAgentConfigProviderFields applies the selected provider's copy and field visibility:
+      // the endpoint placeholder, the credential field's label (same input, different real-world
+      // name per provider), and whether the Anthropic-only API-version field shows at all.
+      const syncAgentConfigProviderFields = (): void => {
+        const selectedApi = elements.agentConfigApi?.value
+        const api: AgentApiProvider = isAgentApiProvider(selectedApi) ? selectedApi : "ollama"
+
+        if (elements.agentConfigEndpoint) {
+          const previousDefaults = Object.values(agentConfig.endpointPlaceholders)
+          // The field's value (not just its placeholder) starts out hydrated to Ollama's default via
+          // data-config-value, and switching providers would otherwise leave that real, editable text
+          // behind looking like a deliberate choice. Only ever overwrite it when it still exactly
+          // matches some provider's own default — anything the user actually typed is left alone.
+          if (
+            elements.agentConfigEndpoint.value === "" || previousDefaults.includes(elements.agentConfigEndpoint.value)
+          ) {
+            elements.agentConfigEndpoint.value = agentConfig.endpointPlaceholders[api]
+          }
+          elements.agentConfigEndpoint.placeholder = agentConfig.endpointPlaceholders[api]
+        }
+        if (elements.agentConfigCredentialLabel) {
+          elements.agentConfigCredentialLabel.textContent = agentConfig.credentialLabels[api]
+        }
+        if (elements.agentConfigCredentialRequired) {
+          // Ollama/OpenAI treat an empty credential as "send no auth header" against a trusted
+          // local server; Anthropic's hosted API rejects every request without one. The asterisk
+          // only appears — and is only enforced by agentConfigValidationError — for Anthropic.
+          elements.agentConfigCredentialRequired.hidden = api !== "anthropic"
+        }
+        if (elements.agentConfigApiVersionField) {
+          elements.agentConfigApiVersionField.hidden = api !== "anthropic"
+        }
+      }
+
       // resetAgentConfigForm clears all fields and the seat selection so the form is ready for a fresh add.
       const resetAgentConfigForm = (): void => {
         elements.agentConfigForm?.reset()
@@ -325,7 +366,11 @@ export function createAgentMode(
         if (elements.agentConfigEnabled) {
           elements.agentConfigEnabled.checked = true
         }
+        if (elements.agentConfigApi) {
+          elements.agentConfigApi.value = "ollama"
+        }
         syncAgentConfigEnabledToggle()
+        syncAgentConfigProviderFields()
         clearAgentConfigStatus()
       }
 
@@ -369,6 +414,7 @@ export function createAgentMode(
         }
         elements.agentConfigForm.hidden = false
         syncAgentConfigEnabledToggle()
+        syncAgentConfigProviderFields()
         syncOverlayState()
         elements.agentConfigPlayerName?.focus()
       }
@@ -524,7 +570,13 @@ export function createAgentMode(
           !form ||
           !elements.agentConfigPlayerName ||
           !elements.agentConfigModel ||
+          !elements.agentConfigApi ||
           !elements.agentConfigEndpoint ||
+          !elements.agentConfigCredential ||
+          !elements.agentConfigCredentialLabel ||
+          !elements.agentConfigCredentialRequired ||
+          !elements.agentConfigApiVersionField ||
+          !elements.agentConfigApiVersion ||
           !elements.agentConfigEnabled ||
           !elements.agentConfigEnabledLabel ||
           !elements.agentConfigClose ||
@@ -540,6 +592,13 @@ export function createAgentMode(
           const model = elements.agentConfigModel?.value.trim() ?? ""
           const playerName = elements.agentConfigPlayerName?.value.trim() ?? ""
           const endpoint = elements.agentConfigEndpoint?.value.trim() ?? ""
+          const selectedApi = elements.agentConfigApi?.value
+          const api: AgentApiProvider = isAgentApiProvider(selectedApi) ? selectedApi : "ollama"
+          const credential = elements.agentConfigCredential?.value.trim() ?? ""
+          // A stale API-version value left over from a previous provider selection must never
+          // reach a non-Anthropic agent, even if the field itself is currently hidden rather than
+          // cleared — hidden inputs still carry whatever text was last typed into them.
+          const apiVersion = api === "anthropic" ? elements.agentConfigApiVersion?.value.trim() ?? "" : ""
           const enabled = elements.agentConfigEnabled?.checked ?? false
           clearAgentConfigStatus()
 
@@ -554,6 +613,9 @@ export function createAgentMode(
             existingAgents,
             model,
             playerName,
+            api,
+            credential,
+            apiVersion,
           })
           if (validationError) {
             setAgentConfigError(validationError)
@@ -577,6 +639,9 @@ export function createAgentMode(
             playerName,
             model,
             endpoint: normalizedEndpoint,
+            api,
+            ...(credential ? { credential } : {}),
+            ...(apiVersion ? { apiVersion } : {}),
             enabled,
           }
 
@@ -590,6 +655,9 @@ export function createAgentMode(
 
         agentConfigEnabledChangeHandler = syncAgentConfigEnabledToggle
         elements.agentConfigEnabled.addEventListener("change", agentConfigEnabledChangeHandler)
+
+        agentConfigApiChangeHandler = syncAgentConfigProviderFields
+        elements.agentConfigApi.addEventListener("change", agentConfigApiChangeHandler)
 
         agentFormCloseHandler = closeAgentConfigForm
         elements.agentConfigClose.addEventListener("click", agentFormCloseHandler)

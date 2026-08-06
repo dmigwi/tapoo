@@ -134,7 +134,8 @@
             </button>
           </div>
           <label class="agent-config-form__field">
-            <span data-config-text data-config-key="agentConfig.playerNameLabel"></span>
+            <span class="agent-config-form__field-label"><span data-config-text data-config-key="agentConfig.playerNameLabel"></span>
+            <span class="agent-config-form__required" aria-hidden="true">*</span></span>
             <input
               id="agent-config-player-name"
               name="playerName"
@@ -145,7 +146,8 @@
             />
           </label>
           <label class="agent-config-form__field">
-            <span data-config-text data-config-key="agentConfig.modelLabel"></span>
+            <span class="agent-config-form__field-label"><span data-config-text data-config-key="agentConfig.modelLabel"></span>
+            <span class="agent-config-form__required" aria-hidden="true">*</span></span>
             <input
               id="agent-config-model"
               name="model"
@@ -156,15 +158,48 @@
             />
           </label>
           <label class="agent-config-form__field">
-            <span data-config-text data-config-key="agentConfig.endpointLabel"></span>
+            <span data-config-text data-config-key="agentConfig.apiLabel"></span>
+            <select id="agent-config-api" name="api">
+              <option value="ollama" selected data-config-text data-config-key="agentConfig.providerLabels.ollama"></option>
+              <option value="openai" data-config-text data-config-key="agentConfig.providerLabels.openai"></option>
+              <option value="anthropic" data-config-text data-config-key="agentConfig.providerLabels.anthropic"></option>
+            </select>
+          </label>
+          <label class="agent-config-form__field">
+            <span class="agent-config-form__field-label"><span data-config-text data-config-key="agentConfig.endpointLabel"></span>
+            <span class="agent-config-form__required" aria-hidden="true">*</span></span>
             <input
               id="agent-config-endpoint"
-              name="Ollama API Endpoint"
+              name="endpoint"
               type="url"
               autocomplete="off"
               required
-              data-config-placeholder="agentConfig.endpointPlaceholder"
-              data-config-value="agentConfig.endpointPlaceholder"
+              data-config-placeholder="agentConfig.endpointPlaceholders.ollama"
+              data-config-value="agentConfig.endpointPlaceholders.ollama"
+            />
+          </label>
+          <label class="agent-config-form__field">
+            <span class="agent-config-form__field-label">
+              <span id="agent-config-credential-label" data-config-text data-config-key="agentConfig.credentialLabels.ollama"></span>
+              <span id="agent-config-credential-required" class="agent-config-form__required" aria-hidden="true" hidden>*</span>
+              <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.credentialRotationTooltip">!</span>
+            </span>
+            <input
+              id="agent-config-credential"
+              name="credential"
+              type="password"
+              autocomplete="off"
+            />
+          </label>
+          <label id="agent-config-api-version-field" class="agent-config-form__field" hidden>
+            <span class="agent-config-form__field-label"><span data-config-text data-config-key="agentConfig.anthropicVersionLabel"></span>
+            <span class="agent-config-form__required" aria-hidden="true">*</span></span>
+            <input
+              id="agent-config-api-version"
+              name="apiVersion"
+              type="text"
+              autocomplete="off"
+              data-config-placeholder="agentConfig.anthropicVersionPlaceholder"
             />
           </label>
           <div class="agent-config-form__actions">
@@ -186,6 +221,7 @@
             >
             </button>
           </div>
+          <p class="agent-config-form__required-note" data-config-text data-config-key="agentConfig.requiredFieldNote"></p>
           <span
             id="agent-config-status"
             class="agent-config-form__status"

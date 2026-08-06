@@ -70,6 +70,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
       playerName: "Blue",
       model: "llama3.2",
       endpoint: new URL("https://agents.example/move"),
+      api: "ollama",
       enabled: true,
     },
   ]
@@ -372,6 +373,7 @@ describe("agent api turn loop", () => {
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/api/agents/a/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -379,6 +381,7 @@ describe("agent api turn loop", () => {
         playerName: "Agent B",
         model: "gemma4",
         endpoint: new URL("https://agents.example/api/agents/b/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -386,6 +389,7 @@ describe("agent api turn loop", () => {
         playerName: "Disabled Agent",
         model: "disabled-model",
         endpoint: new URL("https://agents.example/api/agents/disabled/move"),
+        api: "ollama",
         enabled: false,
       },
       {
@@ -393,6 +397,7 @@ describe("agent api turn loop", () => {
         playerName: "Agent C",
         model: "qwen3",
         endpoint: new URL("https://agents.example/api/agents/c/move"),
+        api: "ollama",
         enabled: true,
       },
     ]

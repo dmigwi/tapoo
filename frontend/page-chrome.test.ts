@@ -13,26 +13,40 @@ describe("page chrome data-config-value hydration", () => {
 
   it("pre-fills an input's value from the resolved config text, not only its placeholder", async () => {
     const input = document.createElement("input")
-    input.dataset.configPlaceholder = "agentConfig.endpointPlaceholder"
-    input.dataset.configValue = "agentConfig.endpointPlaceholder"
+    // A two-level dotted path (agentConfig.endpointPlaceholders.ollama) exercises the same reduce
+    // walker as a one-level one; nothing in configValue special-cases depth.
+    input.dataset.configPlaceholder = "agentConfig.endpointPlaceholders.ollama"
+    input.dataset.configValue = "agentConfig.endpointPlaceholders.ollama"
     document.body.append(input)
 
     await import("./page-chrome")
 
-    expect(input.placeholder).toBe(CONFIG.agentConfig.endpointPlaceholder)
-    expect(input.value).toBe(CONFIG.agentConfig.endpointPlaceholder)
-    expect(input.defaultValue).toBe(CONFIG.agentConfig.endpointPlaceholder)
+    expect(input.placeholder).toBe(CONFIG.agentConfig.endpointPlaceholders.ollama)
+    expect(input.value).toBe(CONFIG.agentConfig.endpointPlaceholders.ollama)
+    expect(input.defaultValue).toBe(CONFIG.agentConfig.endpointPlaceholders.ollama)
   })
 
   it("leaves inputs without data-config-value untouched", async () => {
     const input = document.createElement("input")
-    input.dataset.configPlaceholder = "agentConfig.endpointPlaceholder"
+    input.dataset.configPlaceholder = "agentConfig.endpointPlaceholders.ollama"
     input.value = "https://agent.example/move"
     document.body.append(input)
 
     await import("./page-chrome")
 
-    expect(input.placeholder).toBe(CONFIG.agentConfig.endpointPlaceholder)
+    expect(input.placeholder).toBe(CONFIG.agentConfig.endpointPlaceholders.ollama)
     expect(input.value).toBe("https://agent.example/move")
+  })
+
+  it("hydrates both data-tooltip and aria-label from a data-config-title element", async () => {
+    const badge = document.createElement("span")
+    badge.dataset.configTitle = ""
+    badge.dataset.configKey = "agentConfig.credentialRotationTooltip"
+    document.body.append(badge)
+
+    await import("./page-chrome")
+
+    expect(badge.getAttribute("data-tooltip")).toBe(CONFIG.agentConfig.credentialRotationTooltip)
+    expect(badge.getAttribute("aria-label")).toBe(CONFIG.agentConfig.credentialRotationTooltip)
   })
 })

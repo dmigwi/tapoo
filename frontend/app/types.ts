@@ -302,12 +302,25 @@ export type AgentPredictionRequest = {
   promise: Promise<AgentPredictionResult>
 }
 
+// AgentApiProvider selects which wire format an agent's endpoint speaks. Always present on a live
+// config — normalizeAgentApiConfig (storage.ts) defaults a persisted record lacking it to "ollama"
+// rather than rejecting the record, so this being required here never risks dropping an old agent.
+export type AgentApiProvider = "ollama" | "openai" | "anthropic"
+
 // AgentApiConfig stores one HTTP-controlled agent that can join the shared agent-api maze.
 export type AgentApiConfig = {
   id: number
   playerName: string
   model: string
   endpoint: URL
+  api: AgentApiProvider
+  // credential is one stored value behind two labels: "Bearer Token" for ollama/openai, "API Key"
+  // for anthropic. The header it becomes is decided by the provider adapter, not by this field.
+  credential?: string
+  // apiVersion is anthropic-only: the literal value sent as the anthropic-version header. Taken as
+  // user input rather than a constant so it never needs pinning (and re-shipping) as Anthropic's API
+  // evolves.
+  apiVersion?: string
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number
@@ -428,7 +441,13 @@ export type AgentElements = {
   agentConfigTitle?: HTMLElement
   agentConfigPlayerName?: HTMLInputElement
   agentConfigModel?: HTMLInputElement
+  agentConfigApi?: HTMLSelectElement
   agentConfigEndpoint?: HTMLInputElement
+  agentConfigCredential?: HTMLInputElement
+  agentConfigCredentialLabel?: HTMLElement
+  agentConfigCredentialRequired?: HTMLElement
+  agentConfigApiVersionField?: HTMLElement
+  agentConfigApiVersion?: HTMLInputElement
   agentConfigEnabled?: HTMLInputElement
   agentConfigEnabledLabel?: HTMLElement
   agentConfigClose?: HTMLButtonElement
@@ -578,11 +597,23 @@ export type AppConfig = {
     playerNameLengthMessage: string
     modelLabel: string
     modelPlaceholder: string
+    apiLabel: string
+    requiredFieldNote: string
+    providerLabels: Record<AgentApiProvider, string>
     endpointLabel: string
-    endpointPlaceholder: string
+    endpointPlaceholders: Record<AgentApiProvider, string>
+    credentialLabels: Record<AgentApiProvider, string>
+    credentialRotationTooltip: string
+    // Named anthropicVersion*, not apiVersion*, deliberately: this header value is specific to
+    // Anthropic's wire protocol and has no equivalent for Ollama or OpenAI. A generic apiVersion*
+    // name would invite a future provider to reuse it for something that isn't the same thing.
+    anthropicVersionLabel: string
+    anthropicVersionPlaceholder: string
     submitLabel: string
     invalidMessage: string
+    invalidApiMessage: string
     invalidEndpointMessage: string
+    invalidAnthropicCredentialsMessage: string
     editTitle: string
     addSeatLabelTemplate: string
     manageSeatLabelTemplate: string

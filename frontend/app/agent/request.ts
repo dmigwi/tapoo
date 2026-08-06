@@ -2,13 +2,11 @@ import { logTapooDiagnostic, setTapooLogTurn } from "../logs"
 import { CONFIG } from "../config"
 import {
   AGENT_CONTEXT_TOOLS,
-  PREDICTION_FORMAT,
   buildAgentMessages,
   buildAgentToolHandlers,
   buildDuplicateToolCallMessage,
 } from "./context"
 import {
-  contextWindowForArea,
   endpointLabel,
   normalizeToolArguments,
   parseAgentPrediction,
@@ -16,6 +14,8 @@ import {
   previewLoggedTool,
   serializeToolResult,
 } from "./protocol"
+import { PROVIDER_ADAPTERS } from "./providers"
+import type { ProviderAdapter } from "./providers"
 import { resolveBatchEfficiencyRank } from "./efficiency"
 import type {
   AgentChatMessage,
@@ -24,18 +24,16 @@ import type {
   AgentPredictionRequest,
   AgentPredictionResult,
   AgentToolCall,
+  AgentToolDefinition,
   AgentToolHandlers,
   MazeActionResult,
   State,
 } from "../types"
 
+// AgentChatResponse is the shape every provider adapter's readMessage normalizes its raw payload
+// into, so the loop below stays provider-neutral past this one point.
 type AgentChatResponse = {
-  message?: {
-    role?: AgentChatMessage["role"]
-    content?: string
-    thinking?: string
-    tool_calls?: AgentToolCall[]
-  }
+  message?: AgentChatMessage
 }
 
 type RequestAgentPredictionInput = {
@@ -95,40 +93,44 @@ async function buildToolResultMessages(
   return { ok: true, messages: toolMessages }
 }
 
-// requestChatTurn sends one provider-compatible chat request while keeping wire details local.
+// requestChatTurn sends one provider-compatible chat request while keeping wire details local —
+// the actual body/headers/response shape is entirely the chosen provider adapter's concern.
 async function requestChatTurn(
-  endpoint: URL,
-  model: string,
+  agent: AgentApiConfig,
   messages: AgentChatMessage[],
-  tools: object[],
+  tools: AgentToolDefinition[],
   signal: AbortSignal,
   mazeArea: number | undefined,
-  format: Record<string, unknown> | undefined,
+  wantsPredictionFormat: boolean,
   requestCount: number,
   isFirstRequestOfLevel: boolean,
   agentMode: AgentMode,
 ): Promise<AgentChatTurnResult> {
+  const endpointDisplay = endpointLabel(agent.endpoint)
 
-  const msgBody = {
-    model,
-    messages,
-    tools,
-    options: {
-      num_ctx: contextWindowForArea(mazeArea ?? 0),
-      temperature: CONFIG.runtime.modelConfig.temperature,
-      num_predict: CONFIG.runtime.modelConfig.numPredict,
-    },
-    ...(format !== undefined ? { format } : {}),
-    think: false,
-    stream: false,
+  // Defensive: agent.api is typed as AgentApiProvider, but that only binds at compile time.
+  // agentConfigValidationError already rejects an unrecognized provider at form submission, and
+  // storage.ts coerces one out of any persisted record — but a provider added to the type without
+  // being wired into this table, or a record that reached here by some other path, must still fail
+  // the turn cleanly instead of throwing out of a plain object lookup.
+  const adapter = (PROVIDER_ADAPTERS as Partial<Record<string, ProviderAdapter>>)[agent.api]
+  if (!adapter) {
+    return {
+      ok: false,
+      reason: "network-error",
+      diagnostic: {
+        message: "Unsupported agent API provider.",
+        details: { endpoint: endpointDisplay, api: agent.api },
+      },
+    }
   }
 
-  const endpointDisplay = endpointLabel(endpoint)
   const agentApiModeName = CONFIG.runtime.controlModes.agentApi
   const keepFull = isFirstRequestOfLevel && requestCount <= 1
 
   logTapooDiagnostic(agentApiModeName, "info", "Agent request.", {
     endpoint: endpointDisplay,
+    api: agent.api,
     requestCount,
     agentMode,
     tools: tools.map((tool) => previewLoggedTool(tool, keepFull)),
@@ -137,12 +139,14 @@ async function requestChatTurn(
     messages: messages.map((msg) => previewLoggedMessage(msg, keepFull)),
   })
 
-  const response = await fetch(endpoint, {
+  const msgBody = adapter.buildBody({ model: agent.model, messages, tools, mazeArea, wantsPredictionFormat })
+  
+  // credential and apiVersion reach only buildHeaders — never the log above, never the assembled
+  // body, and never anything else that could flow into logTapooDiagnostic (see request storage in
+  // logs.ts; log entries land in sessionStorage and are user-downloadable).
+  const response = await fetch(agent.endpoint, {
     body: JSON.stringify(msgBody),
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-    },
+    headers: adapter.buildHeaders(agent.credential, agent.apiVersion),
     method: "POST",
     signal,
   })
@@ -162,12 +166,12 @@ async function requestChatTurn(
     }
   }
 
-  const responseBody = (await response.json()) as AgentChatResponse
+  const rawResponseBody: unknown = await response.json()
   logTapooDiagnostic(agentApiModeName, "info", "Agent response.", {
     endpoint: endpointDisplay,
-    payload: responseBody,
+    payload: rawResponseBody,
   })
-  return { ok: true, response: responseBody }
+  return { ok: true, response: { message: adapter.readMessage(rawResponseBody) } }
 }
 
 // requestPredictionWithAbort hides request construction, timeout control, and tool-call servicing.
@@ -194,8 +198,8 @@ export function requestPredictionWithAbort({
   // servicing tool calls before the final move prediction arrives.
   const requestChatTurnWithTimeout = async (
     messages: AgentChatMessage[],
-    tools: object[],
-    format: Record<string, unknown> | undefined,
+    tools: AgentToolDefinition[],
+    wantsPredictionFormat: boolean,
     requestCount: number,
     agentMode: AgentMode,
   ): Promise<AgentChatTurnResult> => {
@@ -207,8 +211,8 @@ export function requestPredictionWithAbort({
 
     try {
       return await requestChatTurn(
-        agent.endpoint, agent.model, messages, tools, controller.signal,
-        state.mazeDimensions?.area, format, requestCount, isFirstRequestOfLevel, agentMode,
+        agent, messages, tools, controller.signal,
+        state.mazeDimensions?.area, wantsPredictionFormat, requestCount, isFirstRequestOfLevel, agentMode,
       )
     } finally {
       window.clearTimeout(requestTimeout)
@@ -255,10 +259,12 @@ export function requestPredictionWithAbort({
         const toolsToSend = AGENT_CONTEXT_TOOLS.filter(
           (tool) => !calledToolNames.has(tool.function.name),
         )
-        const format = toolsToSend.length === 0 ? PREDICTION_FORMAT : undefined
-        const agentMode = duplicateWarningIssued ? "warned" : (format === undefined ? "tools" : "predict")
+        const wantsPredictionFormat = toolsToSend.length === 0
+        const agentMode = duplicateWarningIssued ? "warned" : (wantsPredictionFormat ? "predict" : "tools")
 
-        const chatTurn = await requestChatTurnWithTimeout(messages, toolsToSend, format, requestCount, agentMode)
+        const chatTurn = await requestChatTurnWithTimeout(
+          messages, toolsToSend, wantsPredictionFormat, requestCount, agentMode,
+        )
         if (chatTurn.ok === false) {
           // Exit 2: HTTP failure or timeout; the request helper already shaped the failure.
           return chatTurn

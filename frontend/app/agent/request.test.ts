@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { EXPECTED_RESPONSE_SCHEMA, PREDICTION_FORMAT, buildDuplicateToolCallMessage } from "./context"
+import { EXPECTED_RESPONSE_SCHEMA, buildDuplicateToolCallMessage } from "./context"
+import { OLLAMA_PREDICTION_FORMAT } from "./providers"
 import { requestPredictionWithAbort } from "./request"
 import { CONFIG } from "../config"
 import { tapooResetLogs } from "../logs"
@@ -111,6 +112,7 @@ const agent: AgentApiConfig = {
   playerName: "Blue",
   model,
   endpoint: new URL(endpoint),
+  api: "ollama",
   enabled: true,
 }
 
@@ -347,6 +349,7 @@ describe("agent request service", () => {
     // in full, including the system/user prompt and tool descriptions.
     expect(requestEntries[0].details).toEqual({
       endpoint,
+      api: agent.api,
       requestCount: 1,
       agentMode: "tools",
       tools: expectedLoggedTools(uncalledTools([]), true),
@@ -364,6 +367,7 @@ describe("agent request service", () => {
     // level's first turn — further limiting duplication across a single turn's tool-call rounds.
     expect(requestEntries[1].details).toEqual({
       endpoint,
+      api: agent.api,
       requestCount: 2,
       agentMode: "tools",
       tools: expectedLoggedTools(uncalledTools(["get_maze_positions"]), false),
@@ -430,6 +434,7 @@ describe("agent request service", () => {
     // and tool descriptions are previewed too, since both repeat verbatim every turn.
     expect(requestEntries[0].details).toEqual({
       endpoint,
+      api: agent.api,
       requestCount: 1,
       agentMode: "tools",
       tools: expectedLoggedTools(uncalledTools([]), false),
@@ -444,6 +449,7 @@ describe("agent request service", () => {
     // assistant/tool-call messages are turn-unique and always log in full.
     expect(requestEntries[1].details).toEqual({
       endpoint,
+      api: agent.api,
       requestCount: 2,
       agentMode: "tools",
       tools: expectedLoggedTools(uncalledTools(["get_maze_positions"]), false),
@@ -853,7 +859,7 @@ describe("agent request service", () => {
     const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
     const secondBody = JSON.parse(secondRequest.body as string) as SerializedRequestBody
     expect(secondBody.tools).toEqual([])
-    expect(secondBody.format).toEqual(PREDICTION_FORMAT)
+    expect(secondBody.format).toEqual(OLLAMA_PREDICTION_FORMAT.format)
     expect(secondBody.options).toEqual({ num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict })
   })
 
@@ -1008,5 +1014,62 @@ describe("agent request service", () => {
       .filter((entry) => entry.payload === "Agent request.")
       .map((entry) => entry.details?.agentMode)
     expect(agentModes).toEqual(["tools", "predict", "warned"])
+  })
+
+  it("never logs a configured agent's credential or apiVersion", async () => {
+    // Logs land in sessionStorage and are user-downloadable, so a credential reaching one of them
+    // would be a real leak, not an ephemeral one. Both sentinels are deliberately distinctive
+    // strings unlikely to appear anywhere else in a request/response payload.
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+
+    const credentialSentinel = "sk-redaction-sentinel-credential-000111"
+    const apiVersionSentinel = "redaction-sentinel-api-version-222333"
+    const anthropicAgent: AgentApiConfig = {
+      ...agent,
+      api: "anthropic",
+      credential: credentialSentinel,
+      apiVersion: apiVersionSentinel,
+    }
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          role: "assistant",
+          content: [{ type: "text", text: "{\"moves\":[\"MoveRight\"]}" }],
+        }),
+      }),
+    )
+
+    await requestPrediction({ ...requestInput(), agent: anthropicAgent })
+
+    const loggedEntries = loadTapooLog<unknown>(CONFIG.runtime.controlModes.agentApi)
+    const serializedLog = JSON.stringify(loggedEntries)
+
+    expect(serializedLog).not.toContain(credentialSentinel)
+    expect(serializedLog).not.toContain(apiVersionSentinel)
+  })
+
+  it("fails a turn cleanly for an agent whose api has no matching adapter, instead of throwing", async () => {
+    // agent.api is typed as AgentApiProvider, but that only binds at compile time — this exercises
+    // the runtime guard for a provider that reached this far without a PROVIDER_ADAPTERS entry
+    // (e.g. added to the type but not yet wired in, or a corrupted persisted record).
+    const unsupportedAgent = { ...agent, api: "unsupported-provider" as never }
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      requestPrediction({ ...requestInput(), agent: unsupportedAgent }),
+    ).resolves.toEqual({
+      ok: false,
+      reason: "network-error",
+      diagnostic: {
+        message: "Unsupported agent API provider.",
+        details: { endpoint, api: "unsupported-provider" },
+      },
+    })
+    // No request should have gone out — there is no wire format to build a body or headers with.
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
