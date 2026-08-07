@@ -333,10 +333,12 @@ export type AgentApiConfig = {
   // credential is one stored value behind two labels: "Bearer Token" for ollama/openai, "API Key"
   // for anthropic. The header it becomes is decided by the provider adapter, not by this field.
   credential?: string
-  // apiVersion is anthropic-only: the literal value sent as the anthropic-version header. Taken as
-  // user input rather than a constant so it never needs pinning (and re-shipping) as Anthropic's API
-  // evolves.
-  apiVersion?: string
+  // extraHeaders is raw multi-line "Key: Value" user input, provider-agnostic — appended directly
+  // onto every request this agent sends. Covers cases a dedicated field would need re-shipping to
+  // support: anthropic-version (Anthropic's API evolves independently of Tapoo), X-Wait-For-Model
+  // (Hugging Face's router, to dodge cold-start read timeouts), or anything else a given endpoint
+  // needs. Parsed once by parseExtraHeaders (agent/protocol.ts) before reaching a provider adapter.
+  extraHeaders?: string
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number
@@ -462,8 +464,8 @@ export type AgentElements = {
   agentConfigCredential?: HTMLInputElement
   agentConfigCredentialLabel?: HTMLElement
   agentConfigCredentialRequired?: HTMLElement
-  agentConfigApiVersionField?: HTMLElement
-  agentConfigApiVersion?: HTMLInputElement
+  agentConfigExtraHeadersRows?: HTMLElement
+  agentConfigExtraHeadersAdd?: HTMLButtonElement
   agentConfigEnabled?: HTMLInputElement
   agentConfigEnabledLabel?: HTMLElement
   agentConfigClose?: HTMLButtonElement
@@ -642,13 +644,18 @@ export type AppConfig = {
     endpointPlaceholders: Record<AgentApiProvider, string>
     credentialLabels: Record<AgentApiProvider, string>
     credentialRotationTooltip: string
-    anthropicVersionLabel: string
-    anthropicVersionPlaceholder: string
+    extraHeadersLabel: string
+    extraHeadersTooltip: string
+    addHeaderLabel: string
+    removeHeaderLabel: string
+    extraHeadersKeyPlaceholders: Record<AgentApiProvider, string>
+    extraHeadersValuePlaceholders: Record<AgentApiProvider, string>
     submitLabel: string
     invalidMessage: string
     invalidApiMessage: string
     invalidEndpointMessage: string
     invalidAnthropicCredentialsMessage: string
+    invalidExtraHeadersMessage: string
     editTitle: string
     addSeatLabelTemplate: string
     manageSeatLabelTemplate: string

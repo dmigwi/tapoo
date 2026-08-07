@@ -89,8 +89,20 @@ function createAgentFormElements(): AgentFormElements {
   const agentConfigCredential = document.createElement("input")
   const agentConfigCredentialLabel = document.createElement("span")
   const agentConfigCredentialRequired = document.createElement("span")
-  const agentConfigApiVersionField = document.createElement("label")
-  const agentConfigApiVersion = document.createElement("input")
+  const agentConfigExtraHeadersRows = document.createElement("div")
+  const agentConfigExtraHeadersAdd = document.createElement("button")
+  const agentConfigExtraHeadersRow = document.createElement("div")
+  agentConfigExtraHeadersRow.className = "agent-config-form__header-row"
+  const agentConfigExtraHeadersKey = document.createElement("input")
+  agentConfigExtraHeadersKey.className = "agent-config-form__header-key"
+  const agentConfigExtraHeadersValue = document.createElement("input")
+  agentConfigExtraHeadersValue.className = "agent-config-form__header-value"
+  agentConfigExtraHeadersRow.append(
+    agentConfigExtraHeadersKey,
+    agentConfigExtraHeadersValue,
+    agentConfigExtraHeadersAdd,
+  )
+  agentConfigExtraHeadersRows.append(agentConfigExtraHeadersRow)
   const agentConfigEnabledLabel = document.createElement("label")
   const agentConfigEnabled = document.createElement("input")
   const agentConfigEnabledText = document.createElement("span")
@@ -126,8 +138,6 @@ function createAgentFormElements(): AgentFormElements {
   })
   agentConfigApi.value = "ollama"
   agentConfigCredentialRequired.hidden = true
-  agentConfigApiVersionField.hidden = true
-  agentConfigApiVersionField.append(agentConfigApiVersion)
   agentConfigForm.append(
     agentConfigTitle,
     agentConfigPlayerName,
@@ -137,7 +147,7 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigCredential,
     agentConfigCredentialLabel,
     agentConfigCredentialRequired,
-    agentConfigApiVersionField,
+    agentConfigExtraHeadersRows,
     agentConfigEnabledLabel,
     agentConfigClose,
     agentConfigStatus,
@@ -177,8 +187,8 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigCredential,
     agentConfigCredentialLabel,
     agentConfigCredentialRequired,
-    agentConfigApiVersionField,
-    agentConfigApiVersion,
+    agentConfigExtraHeadersRows,
+    agentConfigExtraHeadersAdd,
     agentConfigEnabled,
     agentConfigEnabledLabel: agentConfigEnabledText,
     agentConfigClose,
@@ -1553,6 +1563,125 @@ describe("agent control mode", () => {
     ).toBe("Scout the Trailblazer")
   })
 
+  it("clicking + Add Header appends a row hinted for the currently selected provider", () => {
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "2")
+    elements.agentConfigApi.value = "anthropic"
+    elements.agentConfigApi.dispatchEvent(new Event("change"))
+    elements.agentConfigExtraHeadersAdd.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+
+    const rows = elements.agentConfigExtraHeadersRows.querySelectorAll(
+      ".agent-config-form__header-row",
+    )
+    expect(rows).toHaveLength(2)
+    const secondRowKey = rows[1].querySelector<HTMLInputElement>(".agent-config-form__header-key")
+    expect(secondRowKey?.placeholder).toBe("anthropic-version")
+  })
+
+  it("keeps the + Add Header button working after the form resets for another seat", () => {
+    // The + button lives on the static first row and is wired to a click listener once, at bind
+    // time — resetExtraHeaderRows must not recreate that row, or the fresh node it swaps in would
+    // carry no listener at all and this button would silently stop working after any reopen.
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "2")
+    elements.agentConfigExtraHeadersAdd.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+    expect(
+      elements.agentConfigExtraHeadersRows.querySelectorAll(".agent-config-form__header-row"),
+    ).toHaveLength(2)
+
+    // Closing (which resets the form) and reopening for a different seat drops the extra row
+    // added above — resetAgentConfigForm runs on close, not merely on switching seats while open.
+    elements.agentConfigClose.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+    clickAddSeat(elements, "3")
+    expect(
+      elements.agentConfigExtraHeadersRows.querySelectorAll(".agent-config-form__header-row"),
+    ).toHaveLength(1)
+
+    elements.agentConfigExtraHeadersAdd.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+    expect(
+      elements.agentConfigExtraHeadersRows.querySelectorAll(".agent-config-form__header-row"),
+    ).toHaveLength(2)
+  })
+
+  it("collects multiple header rows into one Key: Value per line string, skipping blank keys", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn(loadPersistedAgentApiConfigs)
+    elements.agentConfigPlayerName.value = "Scout"
+    elements.agentConfigModel.value = "gemma4"
+    elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "1")
+
+    const firstRow = elements.agentConfigExtraHeadersRows.querySelector(
+      ".agent-config-form__header-row",
+    ) as HTMLElement
+    firstRow.querySelector<HTMLInputElement>(".agent-config-form__header-key")!.value = "X-Wait-For-Model"
+    firstRow.querySelector<HTMLInputElement>(".agent-config-form__header-value")!.value = "true"
+
+    elements.agentConfigExtraHeadersAdd.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+    // A row with no key typed in must be skipped rather than submitted as a broken header.
+    const blankRow = elements.agentConfigExtraHeadersRows.querySelectorAll(
+      ".agent-config-form__header-row",
+    )[1] as HTMLElement
+    blankRow.querySelector<HTMLInputElement>(".agent-config-form__header-value")!.value = "ignored"
+
+    elements.agentConfigExtraHeadersAdd.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+    const thirdRow = elements.agentConfigExtraHeadersRows.querySelectorAll(
+      ".agent-config-form__header-row",
+    )[2] as HTMLElement
+    thirdRow.querySelector<HTMLInputElement>(".agent-config-form__header-key")!.value = "X-Custom"
+    thirdRow.querySelector<HTMLInputElement>(".agent-config-form__header-value")!.value = "abc"
+
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(loadPersistedAgentApiConfigs()).toEqual([
+      expect.objectContaining({
+        playerName: "Scout",
+        extraHeaders: "X-Wait-For-Model: true\nX-Custom: abc",
+      }),
+    ])
+  })
+
   it("rejects a bare host:port endpoint that carries no request path", () => {
     const elements = createAgentFormElements()
     const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
@@ -1576,6 +1705,40 @@ describe("agent control mode", () => {
     )
 
     expect(elements.agentConfigStatus.textContent).toBe(CONFIG.agentConfig.invalidEndpointMessage)
+    expect(elements.agentConfigForm.hidden).toBe(false)
+    expect(readAgentConfigs()).toEqual([])
+  })
+
+  it("rejects submission when a typed extra header key isn't a valid HTTP header name", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    elements.agentConfigPlayerName.value = "Scout"
+    elements.agentConfigModel.value = "gemma4"
+    elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "1")
+
+    // A space in the key is a typo an easy mistake to make (e.g. "X Custom Header" instead of
+    // "X-Custom-Header") but is not a valid HTTP header token.
+    const firstRow = elements.agentConfigExtraHeadersRows.querySelector(
+      ".agent-config-form__header-row",
+    ) as HTMLElement
+    firstRow.querySelector<HTMLInputElement>(".agent-config-form__header-key")!.value = "X Custom Header"
+    firstRow.querySelector<HTMLInputElement>(".agent-config-form__header-value")!.value = "value"
+
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(elements.agentConfigStatus.textContent).toBe(CONFIG.agentConfig.invalidExtraHeadersMessage)
     expect(elements.agentConfigForm.hidden).toBe(false)
     expect(readAgentConfigs()).toEqual([])
   })

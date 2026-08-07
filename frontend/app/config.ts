@@ -184,8 +184,22 @@ export const CONFIG: AppConfig = {
     modelPlaceholder: "llama3.2",
     apiLabel: "API",
     requiredFieldNote: "* Required",
-    anthropicVersionLabel: "Anthropic Version",
-    anthropicVersionPlaceholder: "2023-06-01",
+    extraHeadersLabel: "Extra Headers",
+    extraHeadersTooltip: 
+      "Custom HTTP headers sent with every request to this agent's endpoint, e.g. anthropic-version or X-Wait-For-Model.",
+    endpointLabel: "Endpoint",
+    addHeaderLabel:"Add header",
+    removeHeaderLabel: "Remove header",
+    extraHeadersKeyPlaceholders: {
+      ollama: "X-Custom-Header",
+      openai: "X-Wait-For-Model",
+      anthropic: "anthropic-version",
+    },
+    extraHeadersValuePlaceholders: {
+      ollama: "value",
+      openai: "true",
+      anthropic: "2023-06-01",
+    },
     // Ollama is listed first and is the markup's preselected <option>, so its endpoint placeholder
     // is also what the endpoint field is hydrated with on load (data-config-value in
     // terminal-section.html reads endpointPlaceholders.ollama specifically).
@@ -194,7 +208,6 @@ export const CONFIG: AppConfig = {
       openai: "OpenAI",
       anthropic: "Anthropic",
     },
-    endpointLabel: "Endpoint",
     endpointPlaceholders: {
       ollama: "http://localhost:11434/api/chat",
       openai: "http://localhost:8000/v1/chat/completions",
@@ -214,7 +227,8 @@ export const CONFIG: AppConfig = {
     invalidApiMessage: "This agent's API provider is not properly configured.",
     invalidEndpointMessage:
       "Endpoint must be a full http:// or https:// URL (or host:port) including the request path.",
-    invalidAnthropicCredentialsMessage: "Anthropic requires an API Key and an Anthropic Version.",
+    invalidAnthropicCredentialsMessage: "Anthropic requires an API Key.",
+    invalidExtraHeadersMessage: "One of the extra header names isn't a valid HTTP header name.",
     duplicatePlayerNameMessage: "This player name is already configured.",
     playerNameLengthMessage: "Player Name must be 3-8 characters.",
     editTitle: "Edit Agent",
@@ -315,7 +329,7 @@ export const CONFIG: AppConfig = {
       interactive: "interactive",
     },
     storage: {
-      version: 4.2,
+      version: 4.3,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",

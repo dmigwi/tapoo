@@ -18,7 +18,7 @@ import type {
 
 // ProviderRequestInput is everything a provider needs to assemble one chat request body. It
 // intentionally mirrors requestChatTurn's existing parameters rather than the whole AgentApiConfig,
-// so an adapter cannot reach for credential/apiVersion by accident — those two are threaded
+// so an adapter cannot reach for credential/extraHeaders by accident — those two are threaded
 // separately, only into buildHeaders, which is what keeps them out of anything that could end up
 // logged (see the "Agent request." log entry in request.ts). wantsPredictionFormat is the only
 // structured-output signal request.ts needs to send — the schema itself, and how each provider
@@ -32,7 +32,7 @@ export type ProviderRequestInput = {
 }
 
 export type ProviderAdapter = {
-  buildHeaders: (credential: string | undefined, apiVersion: string | undefined) => Record<string, string>
+  buildHeaders: (credential: string | undefined, extraHeaders: Record<string, string>) => Record<string, string>
   buildBody: (input: ProviderRequestInput) => Record<string, unknown>
   readMessage: (body: unknown) => AgentChatMessage | undefined
 }
@@ -81,8 +81,17 @@ export const ANTHROPIC_PREDICTION_FORMAT = {
 // bearerHeaders is shared by ollama and openai: both accept a plain Authorization: Bearer header,
 // sent only when a credential was actually configured — an empty header is worse than none, since
 // some servers reject a malformed Authorization value outright rather than treating it as absent.
-function bearerHeaders(credential: string | undefined): Record<string, string> {
-  return credential ? { ...BASE_HEADERS, "Authorization": `Bearer ${credential}` } : { ...BASE_HEADERS }
+// extraHeaders is spread last so a user's own configured headers can override a default if they
+// choose to — e.g. supplying their own Authorization value.
+function bearerHeaders(
+  credential: string | undefined,
+  extraHeaders: Record<string, string>,
+): Record<string, string> {
+  return {
+    ...BASE_HEADERS,
+    ...(credential ? { "Authorization": `Bearer ${credential}` } : {}),
+    ...extraHeaders,
+  }
 }
 
 // --- Ollama ---
@@ -139,14 +148,11 @@ function openaiMessage(message: AgentChatMessage): Omit<AgentChatMessage, "tool_
 }
 
 // Unlike Ollama's think, there is no single OpenAI-compatible field that reliably disables
-// reasoning across servers — reasoning_effort is OpenAI's own o-series knob (lowers, does not
-// eliminate, reasoning); chat_template_kwargs.enable_thinking is the vLLM/Qwen3-style convention
-// some open-weight reasoning models honor when proxied through a compatible server. Both are sent
-// as a best effort: a server that doesn't recognize a field ignores it rather than rejecting the
-// request, so there is no downside to sending both, only the (unguaranteed) chance one is honored.
+// reasoning across servers. reasoning_effort ("low"/"high"/"max") is the one sent here, since it
+// is documented by multiple reasoning models (OpenAI's o-series, Kimi K3) rather than being a
+// server-specific convention.
 const OPENAI_REASONING_EFFORT_HINT = {
   reasoning_effort: "low",
-  chat_template_kwargs: { enable_thinking: false },
 }
 
 function openaiBuildBody(input: ProviderRequestInput): Record<string, unknown> {
@@ -308,13 +314,20 @@ function anthropicReadMessage(body: unknown): AgentChatMessage | undefined {
   }
 }
 
-function anthropicHeaders(credential: string | undefined, apiVersion: string | undefined): Record<string, string> {
+// anthropic-version has no default here — Anthropic requires it, but pinning a value in code would
+// go stale as their API evolves, so it is the user's responsibility to supply it via extraHeaders
+// (e.g. "anthropic-version: 2023-06-01"); extraHeadersPlaceholders (config.ts) hints at this when
+// Anthropic is the selected provider.
+function anthropicHeaders(
+  credential: string | undefined,
+  extraHeaders: Record<string, string>,
+): Record<string, string> {
   return {
     ...BASE_HEADERS,
     // Required for any Anthropic call made from a browser origin rather than a server backend.
     "anthropic-dangerous-direct-browser-access": "true",
     ...(credential ? { "x-api-key": credential } : {}),
-    ...(apiVersion ? { "anthropic-version": apiVersion } : {}),
+    ...extraHeaders,
   }
 }
 
@@ -322,12 +335,12 @@ function anthropicHeaders(credential: string | undefined, apiVersion: string | u
 // AGENT_CONTEXT_TOOLS table convention: a fourth provider becomes a compile error at this one site.
 export const PROVIDER_ADAPTERS: Record<AgentApiProvider, ProviderAdapter> = {
   ollama: {
-    buildHeaders: (credential) => bearerHeaders(credential),
+    buildHeaders: bearerHeaders,
     buildBody: ollamaBuildBody,
     readMessage: ollamaReadMessage,
   },
   openai: {
-    buildHeaders: (credential) => bearerHeaders(credential),
+    buildHeaders: bearerHeaders,
     buildBody: openaiBuildBody,
     readMessage: openaiReadMessage,
   },

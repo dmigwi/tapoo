@@ -10,6 +10,7 @@ import {
   endpointLabel,
   normalizeToolArguments,
   parseAgentPrediction,
+  parseExtraHeaders,
   previewLoggedMessage,
   previewLoggedTool,
   serializeToolResult,
@@ -141,12 +142,12 @@ async function requestChatTurn(
 
   const msgBody = adapter.buildBody({ model: agent.model, messages, tools, mazeArea, wantsPredictionFormat })
   
-  // credential and apiVersion reach only buildHeaders — never the log above, never the assembled
+  // credential and extraHeaders reach only buildHeaders — never the log above, never the assembled
   // body, and never anything else that could flow into logTapooDiagnostic (see request storage in
   // logs.ts; log entries land in sessionStorage and are user-downloadable).
   const response = await fetch(agent.endpoint, {
     body: JSON.stringify(msgBody),
-    headers: adapter.buildHeaders(agent.credential, agent.apiVersion),
+    headers: adapter.buildHeaders(agent.credential, parseExtraHeaders(agent.extraHeaders)),
     method: "POST",
     signal,
   })

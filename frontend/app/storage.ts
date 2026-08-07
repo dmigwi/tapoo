@@ -174,7 +174,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   const apiValue = "api" in value ? value.api : undefined
   const api = isAgentApiProvider(apiValue) ? apiValue : "ollama"
   const credentialValue = "credential" in value ? value.credential : undefined
-  const apiVersionValue = "apiVersion" in value ? value.apiVersion : undefined
+  const extraHeadersValue = "extraHeaders" in value ? value.extraHeaders : undefined
   const endpointValue = value.endpoint
   const endpoint =
     endpointValue instanceof URL
@@ -197,11 +197,11 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
     (turnCount === undefined || (typeof turnCount === "number" && Number.isInteger(turnCount) && turnCount >= 0)) &&
     (decayUnitsCharged === undefined || (typeof decayUnitsCharged === "number" && Number.isInteger(decayUnitsCharged) && decayUnitsCharged >= 0)) &&
     (credentialValue === undefined || typeof credentialValue === "string") &&
-    (apiVersionValue === undefined || typeof apiVersionValue === "string")
+    (extraHeadersValue === undefined || typeof extraHeadersValue === "string")
   ) {
     const disabledReason = disabledReasonValue === "network-error" ? disabledReasonValue : undefined
     const credential = typeof credentialValue === "string" && credentialValue.length > 0 ? credentialValue : undefined
-    const apiVersion = typeof apiVersionValue === "string" && apiVersionValue.length > 0 ? apiVersionValue : undefined
+    const extraHeaders = typeof extraHeadersValue === "string" && extraHeadersValue.length > 0 ? extraHeadersValue : undefined
 
     return {
       id: value.id,
@@ -212,7 +212,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
       enabled: value.enabled,
       ...(disabledReason ? { disabledReason } : {}),
       ...(credential ? { credential } : {}),
-      ...(apiVersion ? { apiVersion } : {}),
+      ...(extraHeaders ? { extraHeaders } : {}),
       ...(typeof gameLevel === "number" ? { gameLevel } : {}),
       ...(typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
       ...(typeof turnCount === "number" ? { turnCount } : {}),

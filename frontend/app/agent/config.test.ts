@@ -13,7 +13,7 @@ import type { AgentApiConfig } from "../types"
 const baseValidationInput = {
   api: "ollama" as const,
   credential: "",
-  apiVersion: "",
+  extraHeaders: "",
 }
 
 function agent(playerName: string): AgentApiConfig {
@@ -99,7 +99,7 @@ describe("agent config", () => {
     ).toBe(CONFIG.agentConfig.invalidEndpointMessage)
   })
 
-  it("requires a credential and an API version for Anthropic, but not for Ollama or OpenAI", () => {
+  it("requires a credential for Anthropic, but not for Ollama or OpenAI", () => {
     expect(
       agentConfigValidationError({
         ...baseValidationInput,
@@ -116,19 +116,6 @@ describe("agent config", () => {
         ...baseValidationInput,
         api: "anthropic",
         credential: "sk-secret",
-        endpoint: "https://agents.example/messages",
-        existingAgents: [],
-        model: "claude-3.5-sonnet",
-        playerName: "Scout",
-      }),
-    ).toBe(CONFIG.agentConfig.invalidAnthropicCredentialsMessage)
-
-    expect(
-      agentConfigValidationError({
-        ...baseValidationInput,
-        api: "anthropic",
-        credential: "sk-secret",
-        apiVersion: "2023-06-01",
         endpoint: "https://agents.example/messages",
         existingAgents: [],
         model: "claude-3.5-sonnet",
@@ -144,6 +131,72 @@ describe("agent config", () => {
         existingAgents: [],
         model: "gpt-4o",
         playerName: "Scout",
+      }),
+    ).toBeNull()
+  })
+
+  it("accepts well-formed extra header keys, including RFC 7230 token characters", () => {
+    expect(
+      agentConfigValidationError({
+        ...baseValidationInput,
+        endpoint: "https://agents.example/move",
+        existingAgents: [],
+        model: "llama3.2",
+        playerName: "Scout",
+        extraHeaders: "X-Custom-Header: value\nX-Wait-For-Model: true",
+      }),
+    ).toBeNull()
+
+    expect(
+      agentConfigValidationError({
+        ...baseValidationInput,
+        endpoint: "https://agents.example/move",
+        existingAgents: [],
+        model: "llama3.2",
+        playerName: "Scout",
+        // '!#$%&'*+-.^_`|~ are all valid token characters per RFC 7230, unusual as a header name
+        // as they are.
+        extraHeaders: "X-A.B_C~D: value",
+      }),
+    ).toBeNull()
+  })
+
+  it("rejects an extra header key that isn't a valid HTTP header name", () => {
+    expect(
+      agentConfigValidationError({
+        ...baseValidationInput,
+        endpoint: "https://agents.example/move",
+        existingAgents: [],
+        model: "llama3.2",
+        playerName: "Scout",
+        // A space inside the key — likely a typo, e.g. "X Custom Header: value" instead of
+        // "X-Custom-Header: value" — is not a valid HTTP header token.
+        extraHeaders: "X Custom Header: value",
+      }),
+    ).toBe(CONFIG.agentConfig.invalidExtraHeadersMessage)
+
+    expect(
+      agentConfigValidationError({
+        ...baseValidationInput,
+        endpoint: "https://agents.example/move",
+        existingAgents: [],
+        model: "llama3.2",
+        playerName: "Scout",
+        // One well-formed row followed by one malformed row — every row must pass, not just one.
+        extraHeaders: "X-Custom-Header: value\nX@Bad: value",
+      }),
+    ).toBe(CONFIG.agentConfig.invalidExtraHeadersMessage)
+  })
+
+  it("ignores blank lines when checking extra header keys, matching parseExtraHeaders", () => {
+    expect(
+      agentConfigValidationError({
+        ...baseValidationInput,
+        endpoint: "https://agents.example/move",
+        existingAgents: [],
+        model: "llama3.2",
+        playerName: "Scout",
+        extraHeaders: "X-Custom-Header: value\n\n",
       }),
     ).toBeNull()
   })

@@ -1168,6 +1168,98 @@ body {
   box-shadow: 0 0 0 2px rgba(72, 198, 62, 0.12);
 }
 
+.agent-config-form__header-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-config-form__header-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.agent-config-form__header-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-config-form__header-add,
+.agent-config-form__header-remove {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: var(--button-radius);
+  background: rgba(0, 0, 0, 0.54);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.agent-config-form__header-add {
+  border: 1px solid var(--top-bar-edge);
+  color: var(--text-dim);
+}
+
+.agent-config-form__header-add:hover,
+.agent-config-form__header-add:focus-visible {
+  color: var(--text);
+  border-color: rgba(72, 198, 62, 0.52);
+}
+
+.agent-config-form__header-remove {
+  border: 1px solid rgba(208, 94, 79, 0.38);
+  color: rgba(255, 107, 95, 0.72);
+}
+
+.agent-config-form__header-remove:hover,
+.agent-config-form__header-remove:focus-visible {
+  color: var(--target);
+  border-color: var(--target);
+}
+
+/* Reuses the info-badge's themed tooltip mechanic (see its comment above) for these two buttons —
+   same data-tooltip-driven content, just anchored to a 32px square button instead of a round badge. */
+.agent-config-form__header-add::after,
+.agent-config-form__header-remove::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 5;
+  width: max-content;
+  max-width: 300px;
+  padding: 8px 10px;
+  border: 1px solid rgba(72, 198, 62, 0.18);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(13, 19, 13, 0.96) 0%, rgba(5, 8, 5, 0.98) 100%);
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.34),
+    inset 0 0 16px rgba(72, 198, 62, 0.035);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: normal;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.agent-config-form__header-add:hover::after,
+.agent-config-form__header-add:focus-visible::after,
+.agent-config-form__header-remove:hover::after,
+.agent-config-form__header-remove:focus-visible::after {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 .agent-config-form__actions {
   display: flex;
   align-items: center;

@@ -22,11 +22,12 @@
         Tapoo Logs. Each configured AI Agent's stored configuration also includes its own
         turn count and decay units charged for the current level and round; the
         traversal-speed classification described below is computed from those counts on
-        demand, not stored separately. If you supply a bearer token or API key (and, for
-        Anthropic agents, an API version string) when configuring an agent, that value is
-        stored alongside the rest of the agent's configuration under the same light
-        obfuscation described below — it is recoverable by anyone with access to your
-        browser profile, so only enter a credential you would accept being read that way.
+        demand, not stored separately. If you supply a bearer token or API key, or any
+        extra request headers, when configuring an agent, those values are stored
+        alongside the rest of the agent's configuration under the same light obfuscation
+        described below — they are recoverable by anyone with access to your browser
+        profile, so only enter a credential or header value you would accept being read
+        that way.
         Tapoo Logs capture
         requests and responses exchanged during play, stay only on your device (never
         sent over the network), and can be downloaded or cleared from the game controls.

@@ -1054,19 +1054,19 @@ describe("agent request service", () => {
     expect(agentModes).toEqual(["tools", "predict", "warned"])
   })
 
-  it("never logs a configured agent's credential or apiVersion", async () => {
+  it("never logs a configured agent's credential or extraHeaders", async () => {
     // Logs land in sessionStorage and are user-downloadable, so a credential reaching one of them
     // would be a real leak, not an ephemeral one. Both sentinels are deliberately distinctive
     // strings unlikely to appear anywhere else in a request/response payload.
     tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const credentialSentinel = "sk-redaction-sentinel-credential-000111"
-    const apiVersionSentinel = "redaction-sentinel-api-version-222333"
+    const extraHeadersSentinel = "redaction-sentinel-extra-header-222333"
     const anthropicAgent: AgentApiConfig = {
       ...agent,
       api: "anthropic",
       credential: credentialSentinel,
-      apiVersion: apiVersionSentinel,
+      extraHeaders: `anthropic-version: ${extraHeadersSentinel}`,
     }
 
     vi.stubGlobal(
@@ -1086,7 +1086,7 @@ describe("agent request service", () => {
     const serializedLog = JSON.stringify(loggedEntries)
 
     expect(serializedLog).not.toContain(credentialSentinel)
-    expect(serializedLog).not.toContain(apiVersionSentinel)
+    expect(serializedLog).not.toContain(extraHeadersSentinel)
   })
 
   it("echoes an assistant's reasoning_content back on the next round, for reasoning models that require it preserved", async () => {

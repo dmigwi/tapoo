@@ -191,17 +191,35 @@
               autocomplete="off"
             />
           </label>
-          <label id="agent-config-api-version-field" class="agent-config-form__field" hidden>
-            <span class="agent-config-form__field-label"><span data-config-text data-config-key="agentConfig.anthropicVersionLabel"></span>
-            <span class="agent-config-form__required" aria-hidden="true">*</span></span>
-            <input
-              id="agent-config-api-version"
-              name="apiVersion"
-              type="text"
-              autocomplete="off"
-              data-config-placeholder="agentConfig.anthropicVersionPlaceholder"
-            />
-          </label>
+          <div class="agent-config-form__field">
+            <span class="agent-config-form__field-label">
+              <span data-config-text data-config-key="agentConfig.extraHeadersLabel"></span>
+              <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.extraHeadersTooltip">!</span>
+            </span>
+            <div id="agent-config-extra-headers-rows" class="agent-config-form__header-rows">
+              <div class="agent-config-form__header-row">
+                <input
+                  type="text"
+                  class="agent-config-form__header-key"
+                  autocomplete="off"
+                  data-config-placeholder="agentConfig.extraHeadersKeyPlaceholders.ollama"
+                />
+                <input
+                  type="text"
+                  class="agent-config-form__header-value"
+                  autocomplete="off"
+                  data-config-placeholder="agentConfig.extraHeadersValuePlaceholders.ollama"
+                />
+                <button
+                  id="agent-config-extra-headers-add"
+                  type="button"
+                  class="agent-config-form__header-add"
+                  data-config-title
+                  data-config-key="agentConfig.addHeaderLabel"
+                >+</button>
+              </div>
+            </div>
+          </div>
           <div class="agent-config-form__actions">
             <label class="agent-config-form__toggle">
               <input

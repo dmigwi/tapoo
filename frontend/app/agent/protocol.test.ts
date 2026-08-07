@@ -5,6 +5,7 @@ import {
   endpointLabel,
   normalizeToolArguments,
   parseAgentPrediction,
+  parseExtraHeaders,
   previewLoggedMessage,
   previewLoggedTool,
   serializeToolResult,
@@ -18,6 +19,31 @@ describe("agent protocol", () => {
     expect(endpointLabel(new URL("https://agents.example/move?token=secret"))).toBe(
       "https://agents.example/move",
     )
+  })
+
+  it("parses multi-line \"Key: Value\" text into a headers object", () => {
+    expect(parseExtraHeaders("anthropic-version: 2023-06-01\nX-Wait-For-Model: true")).toEqual({
+      "anthropic-version": "2023-06-01",
+      "X-Wait-For-Model": "true",
+    })
+  })
+
+  it("treats undefined or empty input as no headers", () => {
+    expect(parseExtraHeaders(undefined)).toEqual({})
+    expect(parseExtraHeaders("")).toEqual({})
+  })
+
+  it("skips blank lines and lines without a colon, rather than throwing", () => {
+    expect(parseExtraHeaders("X-A: 1\n\nnot-a-header\nX-B: 2")).toEqual({
+      "X-A": "1",
+      "X-B": "2",
+    })
+  })
+
+  it("splits only on the first colon, so a value containing one survives intact", () => {
+    expect(parseExtraHeaders("X-Endpoint: https://example.com/path")).toEqual({
+      "X-Endpoint": "https://example.com/path",
+    })
   })
 
   it("scales context window size from maze area without dropping below the configured floor", () => {

@@ -10,7 +10,28 @@ type AgentConfigValidationInput = {
   playerName: string
   api: AgentApiProvider
   credential: string
-  apiVersion: string
+  extraHeaders: string
+}
+
+// EXTRA_HEADER_NAME_PATTERN matches a valid HTTP header field name per RFC 7230's token grammar:
+// visible ASCII, no whitespace, none of the separator characters a real header name never
+// contains. Catches a typo (a stray space, a colon typed into the key itself) at submit time
+// rather than letting it reach fetch(), which throws a much less legible error mid-turn.
+const EXTRA_HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+
+// extraHeaderKeysFrom reads only the keys out of the same raw "Key: Value" per line text
+// parseExtraHeaders (agent/protocol.ts) parses at request time. Duplicated in miniature here
+// rather than imported, so this leaf module doesn't pull in protocol.ts's heavier dependency
+// chain (logs.ts, traversal.ts) just for form validation — storage.ts imports this file cheaply
+// and has no reason to inherit that.
+function extraHeaderKeysFrom(raw: string): string[] {
+  return raw
+    .split("\n")
+    .map((line) => {
+      const separatorIndex = line.indexOf(":")
+      return separatorIndex === -1 ? "" : line.slice(0, separatorIndex).trim()
+    })
+    .filter((key) => key.length > 0)
 }
 
 // AGENT_API_PROVIDERS keeps provider iteration ordered and type-safe, the same role WALL_WEIGHTS
@@ -59,7 +80,7 @@ export function agentConfigValidationError({
   playerName,
   api,
   credential,
-  apiVersion,
+  extraHeaders,
 }: AgentConfigValidationInput): string | null {
   if (!playerName || !model || !endpoint) {
     return agentConfig.invalidMessage
@@ -95,9 +116,16 @@ export function agentConfigValidationError({
 
   // Unlike Ollama/OpenAI, where an empty credential just means "send no auth header" against a
   // trusted local server, Anthropic's hosted API rejects every request without one — so the
-  // asterisk shown next to those two fields for Anthropic must actually be enforced here.
-  if (api === "anthropic" && (!credential || !apiVersion)) {
+  // asterisk shown next to that field for Anthropic must actually be enforced here.
+  if (api === "anthropic" && !credential) {
     return agentConfig.invalidAnthropicCredentialsMessage
+  }
+
+  const malformedHeaderKey = extraHeaderKeysFrom(extraHeaders).some(
+    (key) => !EXTRA_HEADER_NAME_PATTERN.test(key),
+  )
+  if (malformedHeaderKey) {
+    return agentConfig.invalidExtraHeadersMessage
   }
 
   return null

@@ -51,17 +51,31 @@ describe("PROVIDER_ADAPTERS", () => {
 
 describe("ollama adapter", () => {
   it("omits Authorization when no credential is configured", () => {
-    expect(PROVIDER_ADAPTERS.ollama.buildHeaders(undefined, undefined)).toEqual({
+    expect(PROVIDER_ADAPTERS.ollama.buildHeaders(undefined, {})).toEqual({
       "Accept": "application/json",
       "Content-Type": "application/json",
     })
   })
 
   it("adds a bearer Authorization header when a credential is configured", () => {
-    expect(PROVIDER_ADAPTERS.ollama.buildHeaders("secret-token", undefined)).toEqual({
+    expect(PROVIDER_ADAPTERS.ollama.buildHeaders("secret-token", {})).toEqual({
       "Accept": "application/json",
       "Content-Type": "application/json",
       "Authorization": "Bearer secret-token",
+    })
+  })
+
+  it("merges extraHeaders in, letting them override a default if they collide", () => {
+    expect(
+      PROVIDER_ADAPTERS.ollama.buildHeaders("secret-token", {
+        "X-Wait-For-Model": "true",
+        "Authorization": "Bearer overridden",
+      }),
+    ).toEqual({
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Authorization": "Bearer overridden",
+      "X-Wait-For-Model": "true",
     })
   })
 
@@ -130,7 +144,7 @@ describe("openai adapter", () => {
   it("sends a best-effort low reasoning-effort hint", () => {
     const body = PROVIDER_ADAPTERS.openai.buildBody(requestInput())
     expect(body.reasoning_effort).toBe("low")
-    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false })
+    expect(body.chat_template_kwargs).toBeUndefined()
   })
 
   it("preserves an assistant message's reasoning_content on the wire, unlike tool_name", () => {
@@ -180,16 +194,18 @@ describe("openai adapter", () => {
 })
 
 describe("anthropic adapter", () => {
-  it("omits Authorization-style headers when no credential or version is configured, but always sends the browser-access header", () => {
-    expect(PROVIDER_ADAPTERS.anthropic.buildHeaders(undefined, undefined)).toEqual({
+  it("omits Authorization-style headers when no credential or extra headers are configured, but always sends the browser-access header", () => {
+    expect(PROVIDER_ADAPTERS.anthropic.buildHeaders(undefined, {})).toEqual({
       "Accept": "application/json",
       "Content-Type": "application/json",
       "anthropic-dangerous-direct-browser-access": "true",
     })
   })
 
-  it("adds x-api-key and anthropic-version only when configured", () => {
-    expect(PROVIDER_ADAPTERS.anthropic.buildHeaders("sk-secret", "2023-06-01")).toEqual({
+  it("adds x-api-key when configured, and anthropic-version only via extraHeaders (no dedicated field)", () => {
+    expect(
+      PROVIDER_ADAPTERS.anthropic.buildHeaders("sk-secret", { "anthropic-version": "2023-06-01" }),
+    ).toEqual({
       "Accept": "application/json",
       "Content-Type": "application/json",
       "anthropic-dangerous-direct-browser-access": "true",

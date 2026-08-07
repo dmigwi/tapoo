@@ -101,6 +101,7 @@ export function createAgentMode(
   let agentDeleteEnabledChangeHandler: (() => void) | null = null
   let agentConfigEnabledChangeHandler: (() => void) | null = null
   let agentConfigApiChangeHandler: (() => void) | null = null
+  let agentConfigExtraHeadersAddHandler: (() => void) | null = null
   let agentFormCloseHandler: (() => void) | null = null
   let agentFormSubmitHandler: ((event: Event) => void) | null = null
   let agentFormOuterClickHandler: ((event: MouseEvent) => void) | null = null
@@ -166,6 +167,10 @@ export function createAgentMode(
         if (elements.agentConfigApi && agentConfigApiChangeHandler) {
           elements.agentConfigApi.removeEventListener("change", agentConfigApiChangeHandler)
           agentConfigApiChangeHandler = null
+        }
+        if (elements.agentConfigExtraHeadersAdd && agentConfigExtraHeadersAddHandler) {
+          elements.agentConfigExtraHeadersAdd.removeEventListener("click", agentConfigExtraHeadersAddHandler)
+          agentConfigExtraHeadersAddHandler = null
         }
         if (elements.agentConfigForm && agentFormSubmitHandler) {
           elements.agentConfigForm.removeEventListener("submit", agentFormSubmitHandler )
@@ -322,9 +327,91 @@ export function createAgentMode(
         syncAgentEnabledToggle(elements.agentConfigEnabled, elements.agentConfigEnabledLabel)
       }
 
-      // syncAgentConfigProviderFields applies the selected provider's copy and field visibility:
-      // the endpoint placeholder, the credential field's label (same input, different real-world
-      // name per provider), and whether the Anthropic-only API-version field shows at all.
+      // extraHeaderKeyInputs/extraHeaderValueInputs read the current set of header rows — however
+      // many the user has added — rather than assuming just the one the form starts with.
+      const extraHeaderKeyInputs = (): HTMLInputElement[] =>
+        Array.from(
+          elements.agentConfigExtraHeadersRows?.querySelectorAll<HTMLInputElement>(".agent-config-form__header-key") ?? [],
+        )
+      const extraHeaderValueInputs = (): HTMLInputElement[] =>
+        Array.from(
+          elements.agentConfigExtraHeadersRows?.querySelectorAll<HTMLInputElement>(".agent-config-form__header-value") ?? [],
+        )
+
+      // createExtraHeaderRow builds one key/value input pair, with its own remove control so a row
+      // added by mistake can be taken back out without clearing the whole field.
+      const createExtraHeaderRow = (api: AgentApiProvider): HTMLElement => {
+        const row = document.createElement("div")
+        row.className = "agent-config-form__header-row"
+
+        const keyInput = document.createElement("input")
+        keyInput.className = "agent-config-form__header-key"
+        keyInput.placeholder = agentConfig.extraHeadersKeyPlaceholders[api]
+        keyInput.autocomplete = "off"
+        keyInput.type = "text"
+
+        const valueInput = document.createElement("input")
+        valueInput.className = "agent-config-form__header-value"
+        valueInput.placeholder = agentConfig.extraHeadersValuePlaceholders[api]
+        valueInput.autocomplete = "off"
+        valueInput.type = "text"
+
+        const removeButton = document.createElement("button")
+        removeButton.className = "agent-config-form__header-remove"
+        removeButton.type = "button"
+        // Mirrors what applyConfigAttribute (page-chrome.ts) does for data-config-title elements
+        // in static markup — this button doesn't exist yet at that hydration pass, so it sets its
+        // own data-tooltip/aria-label here instead, to get the same themed CSS tooltip.
+        removeButton.setAttribute("data-tooltip", agentConfig.removeHeaderLabel)
+        removeButton.setAttribute("aria-label", agentConfig.removeHeaderLabel)
+        removeButton.addEventListener("click", () => { row.remove() })
+        removeButton.textContent = "-"
+
+        row.append(keyInput, valueInput, removeButton)
+        return row
+      }
+
+      // resetExtraHeaderRows drops every row down to the single starting one and clears its inputs,
+      // since form.reset() restores input values but does not undo rows added after the form was
+      // built. The first row itself is never recreated (only rows beyond it are removed): its "+"
+      // button is the one static element bindAgentConfigForm wires a click listener to once, and
+      // rebuilding that row from scratch would leave the new node with no listener at all.
+      const resetExtraHeaderRows = (): void => {
+        if (!elements.agentConfigExtraHeadersRows) {
+          return
+        }
+
+        const rows = Array.from(
+          elements.agentConfigExtraHeadersRows.querySelectorAll<HTMLElement>(".agent-config-form__header-row"),
+        )
+        rows.slice(1).forEach((row) => row.remove())
+
+        const [firstKeyInput, firstValueInput] = [extraHeaderKeyInputs()[0], extraHeaderValueInputs()[0]]
+        if (firstKeyInput) {
+          firstKeyInput.value = ""
+        }
+        if (firstValueInput) {
+          firstValueInput.value = ""
+        }
+      }
+
+      // collectExtraHeaders reduces the key/value rows back into the single "Key: Value" per line
+      // string the record stores and parseExtraHeaders (agent/protocol.ts) already knows how to
+      // read — the row-based UI is presentation only, not a change to what gets persisted. Rows
+      // with a blank key are skipped rather than submitted as broken headers.
+      const collectExtraHeaders = (): string => {
+        const keys = extraHeaderKeyInputs()
+        const values = extraHeaderValueInputs()
+        return keys.map((keyInput, index) => [keyInput.value.trim(), values[index]?.value.trim() ?? ""])
+          .filter(([key]) => key.length > 0)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join("\n")
+      }
+
+      // syncAgentConfigProviderFields applies the selected provider's copy: the endpoint placeholder,
+      // the credential field's label (same input, different real-world name per provider), and each
+      // extra-header row's placeholders (a live example of what that provider might need — Extra
+      // Headers itself stays visible for every provider, unlike the Anthropic-only field it replaced).
       const syncAgentConfigProviderFields = (): void => {
         const selectedApi = elements.agentConfigApi?.value
         const api: AgentApiProvider = isAgentApiProvider(selectedApi) ? selectedApi : "ollama"
@@ -351,9 +438,12 @@ export function createAgentMode(
           // only appears — and is only enforced by agentConfigValidationError — for Anthropic.
           elements.agentConfigCredentialRequired.hidden = api !== "anthropic"
         }
-        if (elements.agentConfigApiVersionField) {
-          elements.agentConfigApiVersionField.hidden = api !== "anthropic"
-        }
+        extraHeaderKeyInputs().forEach((input) => {
+          input.placeholder = agentConfig.extraHeadersKeyPlaceholders[api]
+        })
+        extraHeaderValueInputs().forEach((input) => {
+          input.placeholder = agentConfig.extraHeadersValuePlaceholders[api]
+        })
       }
 
       // resetAgentConfigForm clears all fields and the seat selection so the form is ready for a fresh add.
@@ -366,6 +456,7 @@ export function createAgentMode(
         if (elements.agentConfigApi) {
           elements.agentConfigApi.value = "ollama"
         }
+        resetExtraHeaderRows()
         syncAgentConfigEnabledToggle()
         syncAgentConfigProviderFields()
         clearAgentConfigStatus()
@@ -572,8 +663,8 @@ export function createAgentMode(
           !elements.agentConfigCredential ||
           !elements.agentConfigCredentialLabel ||
           !elements.agentConfigCredentialRequired ||
-          !elements.agentConfigApiVersionField ||
-          !elements.agentConfigApiVersion ||
+          !elements.agentConfigExtraHeadersRows ||
+          !elements.agentConfigExtraHeadersAdd ||
           !elements.agentConfigEnabled ||
           !elements.agentConfigEnabledLabel ||
           !elements.agentConfigClose ||
@@ -592,10 +683,7 @@ export function createAgentMode(
           const selectedApi = elements.agentConfigApi?.value
           const api: AgentApiProvider = isAgentApiProvider(selectedApi) ? selectedApi : "ollama"
           const credential = elements.agentConfigCredential?.value.trim() ?? ""
-          // A stale API-version value left over from a previous provider selection must never
-          // reach a non-Anthropic agent, even if the field itself is currently hidden rather than
-          // cleared — hidden inputs still carry whatever text was last typed into them.
-          const apiVersion = api === "anthropic" ? elements.agentConfigApiVersion?.value.trim() ?? "" : ""
+          const extraHeaders = collectExtraHeaders()
           const enabled = elements.agentConfigEnabled?.checked ?? false
           clearAgentConfigStatus()
 
@@ -612,7 +700,7 @@ export function createAgentMode(
             playerName,
             api,
             credential,
-            apiVersion,
+            extraHeaders,
           })
           if (validationError) {
             setAgentConfigError(validationError)
@@ -638,7 +726,7 @@ export function createAgentMode(
             endpoint: normalizedEndpoint,
             api,
             ...(credential ? { credential } : {}),
-            ...(apiVersion ? { apiVersion } : {}),
+            ...(extraHeaders ? { extraHeaders } : {}),
             enabled,
           }
 
@@ -655,6 +743,13 @@ export function createAgentMode(
 
         agentConfigApiChangeHandler = syncAgentConfigProviderFields
         elements.agentConfigApi.addEventListener("change", agentConfigApiChangeHandler)
+
+        agentConfigExtraHeadersAddHandler = () => {
+          const selectedApi = elements.agentConfigApi?.value
+          const api: AgentApiProvider = isAgentApiProvider(selectedApi) ? selectedApi : "ollama"
+          elements.agentConfigExtraHeadersRows?.append(createExtraHeaderRow(api))
+        }
+        elements.agentConfigExtraHeadersAdd.addEventListener("click", agentConfigExtraHeadersAddHandler)
 
         agentFormCloseHandler = closeAgentConfigForm
         elements.agentConfigClose.addEventListener("click", agentFormCloseHandler)
