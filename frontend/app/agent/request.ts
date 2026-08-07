@@ -16,7 +16,7 @@ import {
 } from "./protocol"
 import { PROVIDER_ADAPTERS } from "./providers"
 import type { ProviderAdapter } from "./providers"
-import { resolveBatchEfficiencyRank } from "./efficiency"
+import { resolveBatchEfficiencyClass } from "./efficiency"
 import type {
   AgentChatMessage,
   AgentApiConfig,
@@ -229,10 +229,10 @@ export function requestPredictionWithAbort({
 
       // Tool handlers expose a stable snapshot for this whole prediction turn.
       const toolHandlers = buildAgentToolHandlers(state, lastActionResult, agent)
-      // The rank is computed once up front so it appears unconditionally in the system prompt,
-      // not only when the model chooses to call get_prediction_rules.
-      const batchEfficiencyRank = resolveBatchEfficiencyRank(state.traversalHistory, agent)
-      let messages = buildAgentMessages(agent.playerName, batchEfficiencyRank)
+      // The classification is computed once up front so it appears unconditionally in the system
+      // prompt, not only when the model chooses to call get_prediction_rules.
+      const batchEfficiencyClass = resolveBatchEfficiencyClass(state.traversalHistory, agent)
+      let messages = buildAgentMessages(agent.playerName, batchEfficiencyClass)
       let requestCount = 0
 
       // Track which tools have already been called this turn so duplicate tool calls can be
@@ -332,7 +332,16 @@ export function requestPredictionWithAbort({
 
           messages = [
             ...messages,
-            { role: "assistant", content: response.message.content ?? "", tool_calls: toolCalls },
+            {
+            role: "assistant",
+            content: response.message.content ?? "",
+            // Some reasoning models (e.g. Kimi K3) require their own prior reasoning_content
+            // preserved verbatim across a turn's tool-calling rounds, or they lose the analysis
+            // they already did and redo it from scratch on every round. Providers that don't
+            // return it (Ollama, Anthropic) leave this undefined, which JSON.stringify drops.
+            reasoning_content: response.message.reasoning_content,
+            tool_calls: toolCalls,
+          },
             buildDuplicateToolCallMessage(duplicateToolCalls),
           ]
           duplicateWarningIssued = true
@@ -378,7 +387,16 @@ export function requestPredictionWithAbort({
         // The conversation still accumulates because each provider request needs prior context.
         messages = [
           ...messages,
-          { role: "assistant", content: response.message.content ?? "", tool_calls: toolCalls },
+          {
+            role: "assistant",
+            content: response.message.content ?? "",
+            // Some reasoning models (e.g. Kimi K3) require their own prior reasoning_content
+            // preserved verbatim across a turn's tool-calling rounds, or they lose the analysis
+            // they already did and redo it from scratch on every round. Providers that don't
+            // return it (Ollama, Anthropic) leave this undefined, which JSON.stringify drops.
+            reasoning_content: response.message.reasoning_content,
+            tool_calls: toolCalls,
+          },
           ...toolResult.messages,
           ...(duplicateToolCalls.length > 0 ? [buildDuplicateToolCallMessage(duplicateToolCalls)] : []),
         ]

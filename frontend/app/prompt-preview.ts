@@ -18,7 +18,7 @@ export function previewPlayerNote(): string {
 
 // buildPreviewSections returns the static half of every agent request. Tool *results* are omitted
 // because they depend on the live maze, so publishing them would describe one moment of one round
-// rather than what every request carries. The rank is the one every level opens on, which
+// rather than what every request carries. The classification is the one every level opens on, which
 // get_prediction_rules documents as the state an agent starts from before anything is charged.
 export function buildPreviewSections(): { heading: string; body: string }[] {
   const [system, user] = buildAgentMessages(agentConfig.playerNamePlaceholder, "trailblazer")

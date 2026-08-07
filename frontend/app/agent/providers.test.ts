@@ -127,6 +127,27 @@ describe("openai adapter", () => {
     expect(body.tools).toBe(tools)
   })
 
+  it("sends a best-effort low reasoning-effort hint", () => {
+    const body = PROVIDER_ADAPTERS.openai.buildBody(requestInput())
+    expect(body.reasoning_effort).toBe("low")
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false })
+  })
+
+  it("preserves an assistant message's reasoning_content on the wire, unlike tool_name", () => {
+    const assistantMessage: AgentChatMessage = {
+      role: "assistant",
+      content: "moving on",
+      reasoning_content: "thinking...",
+      tool_calls: [{ id: "call_1", function: { name: "get_game_status", arguments: {} } }],
+    }
+
+    const body = PROVIDER_ADAPTERS.openai.buildBody(requestInput({ messages: [assistantMessage] })) as {
+      messages: AgentChatMessage[]
+    }
+
+    expect(body.messages[0].reasoning_content).toBe("thinking...")
+  })
+
   it("wraps the shared prediction format in a strict json_schema response_format when requested", () => {
     const body = PROVIDER_ADAPTERS.openai.buildBody(requestInput({ wantsPredictionFormat: true }))
     expect(body.response_format).toEqual(OPENAI_PREDICTION_FORMAT.response_format)
@@ -137,6 +158,13 @@ describe("openai adapter", () => {
       choices: [{ message: { role: "assistant", content: "hello" } }],
     })
     expect(message).toEqual({ role: "assistant", content: "hello", tool_calls: undefined })
+  })
+
+  it("carries reasoning_content through unchanged, for reasoning models that require it echoed back", () => {
+    const message = PROVIDER_ADAPTERS.openai.readMessage({
+      choices: [{ message: { role: "assistant", content: "hello", reasoning_content: "thinking..." } }],
+    })
+    expect(message?.reasoning_content).toBe("thinking...")
   })
 
   it("treats a null content (tool-call-only reply) as no content rather than the literal null", () => {

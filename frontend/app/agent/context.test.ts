@@ -6,7 +6,7 @@ import {
   buildAgentMessages,
   buildAgentToolHandlers,
   buildDuplicateToolCallMessage,
-  describeAgentRankIdentity,
+  describeAgentSpeedClassification,
 } from "./context"
 import {
   buildMazeActionResult,
@@ -42,7 +42,7 @@ function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
 }
 
 const expectedAgentPrompt = [
-  "You are Blue and currently hold the rank of navigator. Work smarter to climb to the most coveted rank of trailblazer.",
+  "You are Blue and your traversal speed has dropped to a classification of navigator. You've got an uphill task and need to work smarter to climb into the genius zone of trailblazer classification.",
   `playerName ${CONFIG.runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
   "currentCell is your current position; destinationCell is the target.",
   "The maze is randomly generated at each level with exactly one path to the destination.",
@@ -55,9 +55,10 @@ const expectedAgentPrompt = [
   "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
   "get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is.",
   "lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units.",
+  "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using traversalHistory and the maze dimensions — cells within a small Manhattan distance of your current position — open exits are fixed at construction and can only be known once a cell appears in traversalHistory. Your current cell's own open moves is a natural place to start from. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without any invalid-move. You could also invent a better way to sustain that classification.",
   "get_prediction_rules provides the required response format and move count guidance.",
   "Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
-  "Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more new cells for the same decay — that ratio is your traversal speed, and it is the rank you carry: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course.",
+  "Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more new cells for the same decay — that ratio is your traversal speed, and the classification you carry names which band it falls into: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course.",
   "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
 ].join(" ")
 
@@ -161,7 +162,7 @@ describe("agent context", () => {
       uniqueCellsVisited: 1,
       decayUnitsCharged: 2,
       turnsTaken: 2,
-      batchEfficiencyRank: "backtracker",
+      batchEfficiencyClass: "backtracker",
       expectedResponseSchema,
     })
     expect(toolHandlers.get_last_replay_result({})).toEqual({
@@ -199,7 +200,7 @@ describe("agent context", () => {
       uniqueCellsVisited: 1,
       decayUnitsCharged: 0,
       turnsTaken: 0,
-      batchEfficiencyRank: "trailblazer",
+      batchEfficiencyClass: "trailblazer",
       expectedResponseSchema,
     })
   })
@@ -252,28 +253,31 @@ describe("buildDuplicateToolCallMessage", () => {
   })
 })
 
-describe("describeAgentRankIdentity", () => {
-  it("tells a trailblazer to maintain the rank rather than climb toward it", () => {
-    const description = describeAgentRankIdentity("Blue", "trailblazer")
+describe("describeAgentSpeedClassification", () => {
+  it("tells a trailblazer it's in the genius zone rather than needing to climb toward it", () => {
+    const description = describeAgentSpeedClassification("Blue", "trailblazer")
 
     expect(description).toContain("You are Blue")
-    expect(description).toContain("most coveted rank of trailblazer")
-    expect(description).toContain("Work smarter to maintain it")
+    expect(description).toContain("classifies as trailblazer")
+    expect(description).toContain("genius zone")
+    expect(description).toContain("might set a new record")
   })
 
-  it("tells a backtracker to climb toward trailblazer", () => {
-    const description = describeAgentRankIdentity("Blue", "backtracker")
+  it("tells a backtracker it has dropped from trailblazer and should climb back", () => {
+    const description = describeAgentSpeedClassification("Blue", "backtracker")
 
     expect(description).toContain("You are Blue")
-    expect(description).toContain("rank of backtracker")
-    expect(description).toContain("Work smarter to climb to the most coveted rank of trailblazer")
+    expect(description).toContain("dropped to a classification of backtracker")
+    expect(description).toContain("work smarter to climb into")
+    expect(description).toContain("climb into the genius zone")
   })
 
-  it("tells a navigator to climb toward trailblazer", () => {
-    const description = describeAgentRankIdentity("Blue", "navigator")
+  it("tells a navigator it has dropped from trailblazer and should climb back", () => {
+    const description = describeAgentSpeedClassification("Blue", "navigator")
 
     expect(description).toContain("You are Blue")
-    expect(description).toContain("rank of navigator")
-    expect(description).toContain("Work smarter to climb to the most coveted rank of trailblazer")
+    expect(description).toContain("dropped to a classification of navigator")
+    expect(description).toContain("work smarter to climb into")
+    expect(description).toContain("climb into the genius zone")
   })
 })

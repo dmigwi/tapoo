@@ -17,7 +17,7 @@ import type {
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt =
-  `You are Blue and currently hold the most coveted rank of trailblazer. Work smarter to maintain it. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry's openMoves maps every open exit from that cell directly to the neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries recorded by other players are just as trustworthy as your own. openMoves key count reveals the physical maze structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction. traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units. get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more new cells for the same decay — that ratio is your traversal speed, and it is the rank you carry: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
+  `You are Blue and your traversal speed classifies as trailblazer. You are in the genius zone and might set a new record if you keep it up. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry's openMoves maps every open exit from that cell directly to the neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries recorded by other players are just as trustworthy as your own. openMoves key count reveals the physical maze structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction. traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units. One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using traversalHistory and the maze dimensions — cells within a small Manhattan distance of your current position — open exits are fixed at construction and can only be known once a cell appears in traversalHistory. Your current cell's own open moves is a natural place to start from. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without any invalid-move. You could also invent a better way to sustain that classification. get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more new cells for the same decay — that ratio is your traversal speed, and the classification you carry names which band it falls into: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
 const developerMessage = prompt
 const userMessage = `It is Blue's turn to predict next moves. Use the available tools to see the maze state.`
 const agentContextTools = [
@@ -26,7 +26,7 @@ const agentContextTools = [
     function: {
       name: "get_prediction_rules",
       description:
-        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn. uniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyRank. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyRank is set to backtracker rank when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator rank at 1.0 (one new cell move per decay unit), or trailblazer rank above 1.0 (valid multi-move guesses are paying off — the only rank that can set a new score retention record). turnsTaken is reported for context and does not affect your speed, rank or scores Each turn's decay units are subtracted immediately; the resulting score retention is visible via get_game_status. Before anything is charged on this level, batchEfficiencyRank defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"turnsTaken\":number, \"batchEfficiencyRank\":string,\"expectedResponseSchema\":object}.",
+        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn. uniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator at 1.0 (one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the only classification that can set a new score retention record). turnsTaken is reported for context and does not affect your speed, classification or scores. Each turn's decay units are subtracted immediately; the resulting score retention is visible via get_game_status. Before anything is charged on this level, batchEfficiencyClass defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"turnsTaken\":number, \"batchEfficiencyClass\":string,\"expectedResponseSchema\":object}.",
       parameters: {
         type: "object",
         properties: {},
@@ -703,7 +703,7 @@ describe("agent request service", () => {
         uniqueCellsVisited: 0,
         decayUnitsCharged: 0,
         turnsTaken: 0,
-        batchEfficiencyRank: "trailblazer",
+        batchEfficiencyClass: "trailblazer",
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       },
     ])
@@ -1087,6 +1087,47 @@ describe("agent request service", () => {
 
     expect(serializedLog).not.toContain(credentialSentinel)
     expect(serializedLog).not.toContain(apiVersionSentinel)
+  })
+
+  it("echoes an assistant's reasoning_content back on the next round, for reasoning models that require it preserved", async () => {
+    const openaiAgent: AgentApiConfig = { ...agent, api: "openai" }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "",
+                reasoning_content: "Let me check the maze positions first.",
+                tool_calls: [
+                  { id: "call_positions", function: { index: 0, name: "get_maze_positions", arguments: "{}" } },
+                ],
+              },
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          choices: [
+            { message: { role: "assistant", content: JSON.stringify({ moves: ["MoveRight"] }) } },
+          ],
+        }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      requestPrediction({ ...requestInput(), agent: openaiAgent }),
+    ).resolves.toEqual({ ok: true, moves: ["MoveRight"] })
+
+    const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
+    const secondBody = JSON.parse(secondRequest.body as string) as { messages: { role: string; reasoning_content?: string }[] }
+    const assistantMessage = secondBody.messages.find((msg) => msg.role === "assistant")
+    expect(assistantMessage?.reasoning_content).toBe("Let me check the maze positions first.")
   })
 
   it("fails a turn cleanly for an agent whose api has no matching adapter, instead of throwing", async () => {

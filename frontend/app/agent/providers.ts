@@ -138,12 +138,24 @@ function openaiMessage(message: AgentChatMessage): Omit<AgentChatMessage, "tool_
   return rest
 }
 
+// Unlike Ollama's think, there is no single OpenAI-compatible field that reliably disables
+// reasoning across servers — reasoning_effort is OpenAI's own o-series knob (lowers, does not
+// eliminate, reasoning); chat_template_kwargs.enable_thinking is the vLLM/Qwen3-style convention
+// some open-weight reasoning models honor when proxied through a compatible server. Both are sent
+// as a best effort: a server that doesn't recognize a field ignores it rather than rejecting the
+// request, so there is no downside to sending both, only the (unguaranteed) chance one is honored.
+const OPENAI_REASONING_EFFORT_HINT = {
+  reasoning_effort: "low",
+  chat_template_kwargs: { enable_thinking: false },
+}
+
 function openaiBuildBody(input: ProviderRequestInput): Record<string, unknown> {
   return {
     model: input.model,
     messages: input.messages.map(openaiMessage),
     tools: input.tools,
     max_completion_tokens: CONFIG.runtime.modelConfig.numPredict,
+    ...OPENAI_REASONING_EFFORT_HINT,
     ...(input.wantsPredictionFormat ? OPENAI_PREDICTION_FORMAT : {}),
     ...BASE_BODY,
   }
@@ -154,6 +166,7 @@ type OpenAiResponseBody = {
     message?: {
       role?: AgentChatMessage["role"]
       content?: string | null
+      reasoning_content?: string
       tool_calls?: AgentToolCall[]
     }
   }[]
@@ -168,6 +181,7 @@ function openaiReadMessage(body: unknown): AgentChatMessage | undefined {
   return {
     role: message.role ?? "assistant",
     content: message.content ?? undefined,
+    reasoning_content: message.reasoning_content,
     tool_calls: message.tool_calls,
   }
 }

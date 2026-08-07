@@ -9,9 +9,9 @@ import {
 } from "../traversal"
 import {
   getBatchEfficiencyMetrics,
-  resolveBatchEfficiencyRank,
+  resolveBatchEfficiencyClass,
 } from "./efficiency"
-import type { BatchEfficiencyRank } from "./efficiency"
+import type { BatchEfficiencyClass } from "./efficiency"
 import type {
   AgentChatMessage,
   AgentApiConfig,
@@ -66,29 +66,33 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
 // --- 1. Messages ---
 // System and user messages are the first content the model receives each turn.
 
-// describeAgentRankIdentity states the agent's current rank as a personal identity to
-// defend or escape. It stays deliberately bare: the flat-penalty mechanic that makes the
-// identity worth acting on is already explained once in buildMazeActionPrompt, so repeating it
-// here would only duplicate that reasoning rather than reinforce it.
-export function describeAgentRankIdentity(
+// describeAgentSpeedClassification states the agent's current traversal-speed classification, with
+// enough color to make it land emotionally. It does not restate the mechanics: the flat per-turn
+// charge that makes climbing the classification worthwhile is already explained once in
+// buildMazeActionPrompt, so repeating it here would only duplicate that reasoning rather than
+// reinforce it.
+export function describeAgentSpeedClassification(
   playerName: string,
-  rank: BatchEfficiencyRank,
+  speedClass: BatchEfficiencyClass,
 ): string {
-  if (rank === "trailblazer") {
-    return `You are ${playerName} and currently hold the most coveted rank of trailblazer. Work smarter to maintain it.`
+  if (speedClass === "trailblazer") {
+    return [
+      `You are ${playerName} and your traversal speed classifies as trailblazer. You are in the genius zone and`,
+      `might set a new record if you keep it up.`,
+    ].join(" ")
   }
 
   return [
-    `You are ${playerName} and currently hold the rank of ${rank}. Work smarter to climb to the most coveted rank of`,
-    `trailblazer.`,
+    `You are ${playerName} and your traversal speed has dropped to a classification of ${speedClass}. You've got an`,
+    `uphill task and need to work smarter to climb into the genius zone of trailblazer classification.`,
   ].join(" ")
 }
 
 // buildMazeActionPrompt keeps request guidance compact while naming the active player.
-export function buildMazeActionPrompt(playerName: string, batchEfficiencyRank: BatchEfficiencyRank): string {
+export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: BatchEfficiencyClass): string {
   const maxTurnCost = agentBaseDecayUnits + agentPenaltyDecayUnits
   return [
-    describeAgentRankIdentity(playerName, batchEfficiencyRank),
+    describeAgentSpeedClassification(playerName, batchEfficiencyClass),
     `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
     "currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level",
     "with exactly one path to the destination. traversalHistory entries matching your playerName record your past",
@@ -113,22 +117,28 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyRank: B
     "regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a",
     `further penalty of ${agentPenaltyDecayUnits} decay units on top — the maximum possible in a turn is`,
     `${maxTurnCost} decay units.`,
+    "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a",
+    "picture of the maze around your current cell using traversalHistory and the maze dimensions — cells within a",
+    "small Manhattan distance of your current position — open exits are fixed at construction and can only be known",
+    "once a cell appears in traversalHistory. Your current cell's own open moves is a natural place to start from.",
+    "With enough of that picture assembled, you can often find several consecutive moves that are all certain to",
+    "apply without any invalid-move. You could also invent a better way to sustain that classification.",
     "get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted",
     "order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
     "Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more",
-    "new cells for the same decay — that ratio is your traversal speed, and it is the rank you carry: a trailblazer",
-    "can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost",
-    "certain to fail unless it corrects course. lastMoveStatus reached-target or status won means the game is",
-    "complete — stop predicting.",
+    "new cells for the same decay — that ratio is your traversal speed, and the classification you carry names which",
+    "band it falls into: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply,",
+    "and a backtracker is almost certain to fail unless it corrects course. lastMoveStatus reached-target or status won",
+    "means the game is complete — stop predicting.",
   ].join(" ")
 }
 
 // buildAgentMessages separates durable behavior instructions from the current turn request.
-export function buildAgentMessages(playerName: string, batchEfficiencyRank: BatchEfficiencyRank): AgentChatMessage[] {
+export function buildAgentMessages(playerName: string, batchEfficiencyClass: BatchEfficiencyClass): AgentChatMessage[] {
   return [
     {
       role: "system",
-      content: buildMazeActionPrompt(playerName, batchEfficiencyRank),
+      content: buildMazeActionPrompt(playerName, batchEfficiencyClass),
     },
     {
       role: "user",
@@ -170,9 +180,10 @@ const emptyToolParameters: AgentToolDefinition["function"]["parameters"] = {
 // predictionRulesTool documents the only accepted move response and the suggested batch size.
 // It deliberately does not restate the charging model: buildMazeActionPrompt already carries that,
 // with the actual unit counts, and is sent as the system message on every single turn. The split is
-// that the prompt owns the durable rules — what a turn costs and what each rank implies — while this
-// tool owns the live numbers and how to read them: the raw metrics, the division that yields
-// traversal speed, the thresholds it is scored against, and where to find the resulting retention.
+// that the prompt owns the durable rules — what a turn costs and what each classification implies —
+// while this tool owns the live numbers and how to read them: the raw metrics, the division that
+// yields traversal speed, the thresholds it is scored against, and where to find the resulting
+// retention.
 const predictionRulesTool: AgentToolDefinition = {
   type: "function",
   function: {
@@ -180,18 +191,18 @@ const predictionRulesTool: AgentToolDefinition = {
     description: [
       "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions",
       "response per turn. uniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the",
-      "progress per decay unit spent — a scale grouped by batchEfficiencyRank. Only a cell's first visit counts as",
+      "progress per decay unit spent — a scale grouped by batchEfficiencyClass. Only a cell's first visit counts as",
       "progress. The higher the traversal speed, the higher the likelihood of finding the target on time.",
-      "batchEfficiencyRank is set to backtracker rank when the speed is below 1.0 (units wasted on invalid moves or",
-      "oscillation between visited cells), navigator rank at 1.0 (one new cell move per decay unit),",
-      "or trailblazer rank above 1.0 (valid multi-move guesses are paying off — the only rank that can set a new",
-      "score retention record). turnsTaken is reported for context and does not affect your speed, rank or scores",
-      "Each turn's decay units are subtracted immediately; the resulting score retention is visible via",
-      "get_game_status.",
-      "Before anything is charged on this level, batchEfficiencyRank defaults to trailblazer regardless of these",
+      "batchEfficiencyClass is set to backtracker when the speed is below 1.0 (units wasted on invalid moves or",
+      "oscillation between visited cells), navigator at 1.0 (one new cell move per decay unit),",
+      "or trailblazer above 1.0 (valid multi-move guesses are paying off — the only classification that can set a",
+      "new score retention record). turnsTaken is reported for context and does not affect your speed,",
+      "classification or scores. Each turn's decay units are subtracted immediately; the resulting score retention",
+      "is visible via get_game_status.",
+      "Before anything is charged on this level, batchEfficiencyClass defaults to trailblazer regardless of these",
       "counts, so you start already primed to predict multi-move sequences. Returns JSON:",
       "{\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number,",
-      "\"turnsTaken\":number, \"batchEfficiencyRank\":string,\"expectedResponseSchema\":object}.",
+      "\"turnsTaken\":number, \"batchEfficiencyClass\":string,\"expectedResponseSchema\":object}.",
     ].join(" "),
     parameters: emptyToolParameters,
   },
@@ -324,9 +335,9 @@ export function buildAgentToolHandlers(
         : AGENT_MOVES_PER_TURN_CAP
 
       // Raw counts are exposed instead of the derived rate so the model can compute and verify the
-      // rank itself; all are always concrete numbers (0 is a valid count), never null, so there is
-      // nothing ambiguous for the model to puzzle over before its first request.
-      const batchEfficiencyRank = resolveBatchEfficiencyRank(state.traversalHistory, agent)
+      // classification itself; all are always concrete numbers (0 is a valid count), never null, so
+      // there is nothing ambiguous for the model to puzzle over before its first request.
+      const batchEfficiencyClass = resolveBatchEfficiencyClass(state.traversalHistory, agent)
       const { uniqueCellsVisited, decayUnitsCharged, turnsTaken } =
         getBatchEfficiencyMetrics(state.traversalHistory, agent)
       return {
@@ -334,7 +345,7 @@ export function buildAgentToolHandlers(
         uniqueCellsVisited,
         decayUnitsCharged,
         turnsTaken,
-        batchEfficiencyRank,
+        batchEfficiencyClass,
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       }
     },

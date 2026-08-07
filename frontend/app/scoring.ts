@@ -1,5 +1,5 @@
 import { CONFIG } from "./config"
-import { resolveTraversalSpeedRank } from "./agent/efficiency"
+import { resolveTraversalSpeedClass } from "./agent/efficiency"
 import type {
   AgentSpeedBestComparison,
   AgentSpeedPreviousComparison,
@@ -102,15 +102,16 @@ export function traversalSpeedUnitsToDisplay(traversalSpeedUnits: number): strin
   )
 }
 
-// formatTraversalSpeedLabel renders the speed a round actually achieved together with the rank it
-// earned, e.g. "3.123 (Trailblazer)". Only an achieved speed carries a rank — a delta between two
-// rounds is a difference, not a pace, so deltas stay bare numbers.
+// formatTraversalSpeedLabel renders the speed a round actually achieved together with the
+// classification it earned, e.g. "3.123 (Trailblazer)". Only an achieved speed carries a
+// classification — a delta between two rounds is a difference, not a pace, so deltas stay bare
+// numbers.
 function formatTraversalSpeedLabel(traversalSpeedUnits: number): string {
-  const rank = resolveTraversalSpeedRank(traversalSpeedUnits / scoring.traversalSpeedScaleUnits)
+  const speedClass = resolveTraversalSpeedClass(traversalSpeedUnits / scoring.traversalSpeedScaleUnits)
 
   return [
     traversalSpeedUnitsToDisplay(traversalSpeedUnits),
-    `(${rank.charAt(0).toUpperCase()}${rank.slice(1)})`,
+    `(${speedClass.charAt(0).toUpperCase()}${speedClass.slice(1)})`,
   ].join(" ")
 }
 

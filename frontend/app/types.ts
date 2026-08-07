@@ -266,9 +266,14 @@ export type AgentToolCall = {
 }
 
 // AgentChatMessage is the minimal chat message shape needed by the prediction request loop.
+// reasoning_content is provider-specific (currently only populated by the OpenAI-compatible
+// adapter) and must be echoed back verbatim on an assistant message that carries it — some
+// reasoning models (e.g. Kimi K3) require their own prior reasoning_content preserved across a
+// turn's tool-calling rounds, or they lose context of analysis they already did and redo it.
 export type AgentChatMessage = {
   role: AgentMessageRole
   content?: string
+  reasoning_content?: string
   tool_call_id?: string
   tool_name?: string
   tool_calls?: AgentToolCall[]

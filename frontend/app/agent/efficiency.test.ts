@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   getBatchEfficiencyMetrics,
-  resolveBatchEfficiencyRank,
+  resolveBatchEfficiencyClass,
 } from "./efficiency"
 import type { AgentApiConfig, TraversalHistoryEntry } from "../types"
 
@@ -22,18 +22,18 @@ function visit(playerName: string, row: number, col: number): TraversalHistoryEn
   return { playerName, row, col, openMoves: [] }
 }
 
-describe("resolveBatchEfficiencyRank", () => {
+describe("resolveBatchEfficiencyClass", () => {
   it("defaults to trailblazer when the agent has been charged nothing yet", () => {
     const agent = createAgent({ decayUnitsCharged: undefined })
 
-    expect(resolveBatchEfficiencyRank([visit("Blue", 0, 1)], agent)).toBe("trailblazer")
+    expect(resolveBatchEfficiencyClass([visit("Blue", 0, 1)], agent)).toBe("trailblazer")
   })
 
   it("defaults to trailblazer when decayUnitsCharged is explicitly zero", () => {
     // Also the guard that keeps the rate from dividing by zero.
     const agent = createAgent({ decayUnitsCharged: 0 })
 
-    expect(resolveBatchEfficiencyRank([visit("Blue", 0, 1)], agent)).toBe("trailblazer")
+    expect(resolveBatchEfficiencyClass([visit("Blue", 0, 1)], agent)).toBe("trailblazer")
   })
 
   it("only counts distinct cells attributed to the requesting agent's playerName", () => {
@@ -44,14 +44,14 @@ describe("resolveBatchEfficiencyRank", () => {
       visit("Red", 0, 2),
     ]
 
-    expect(resolveBatchEfficiencyRank(traversalHistory, agent)).toBe("backtracker")
+    expect(resolveBatchEfficiencyClass(traversalHistory, agent)).toBe("backtracker")
   })
 
   it("falls below the baseline when decay outpaces distinct progress (oscillation)", () => {
     const agent = createAgent({ decayUnitsCharged: 4 })
     const traversalHistory = [visit("Blue", 0, 0)]
 
-    expect(resolveBatchEfficiencyRank(traversalHistory, agent)).toBe("backtracker")
+    expect(resolveBatchEfficiencyClass(traversalHistory, agent)).toBe("backtracker")
   })
 
   it("rises above the baseline when a batch advances multiple distinct cells per decay unit", () => {
@@ -65,14 +65,14 @@ describe("resolveBatchEfficiencyRank", () => {
       visit("Blue", 0, 3),
     ]
 
-    expect(resolveBatchEfficiencyRank(traversalHistory, agent)).toBe("trailblazer")
+    expect(resolveBatchEfficiencyClass(traversalHistory, agent)).toBe("trailblazer")
   })
 
   it("labels exactly the baseline rate as navigator", () => {
     const agent = createAgent({ decayUnitsCharged: 1 })
     const traversalHistory = [visit("Blue", 0, 0)]
 
-    expect(resolveBatchEfficiencyRank(traversalHistory, agent)).toBe("navigator")
+    expect(resolveBatchEfficiencyClass(traversalHistory, agent)).toBe("navigator")
   })
 
   it("drops a single-stepping agent below the baseline once a mistake is charged", () => {
@@ -87,7 +87,7 @@ describe("resolveBatchEfficiencyRank", () => {
       visit("Blue", 0, 3),
     ]
 
-    expect(resolveBatchEfficiencyRank(traversalHistory, agent)).toBe("backtracker")
+    expect(resolveBatchEfficiencyClass(traversalHistory, agent)).toBe("backtracker")
   })
 })
 

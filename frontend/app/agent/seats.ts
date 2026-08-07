@@ -1,5 +1,5 @@
 import { CONFIG } from "../config"
-import { resolveBatchEfficiencyRank } from "./efficiency"
+import { resolveBatchEfficiencyClass } from "./efficiency"
 import type { AgentApiConfig, AgentSeat, TraversalHistoryEntry } from "../types"
 
 const { agentConfig } = CONFIG
@@ -76,17 +76,17 @@ function seatTemplate(
     .replace("{seat}", agentSeatLabel(seatId))
 }
 
-// agentDisplayName names the agent after its current efficiency rank everywhere the UI shows it
-// — tooltips, dialog titles — so the identity the model is defending stays visible to a human
-// observer too, e.g. "Kora the Trailblazer". An agent with no tracked requests yet defaults to
-// Trailblazer, matching the rank stated in its very first prompt.
+// agentDisplayName names the agent after its current speed classification everywhere the UI shows
+// it — tooltips, dialog titles — so the classification the model is working from stays visible to
+// a human observer too, e.g. "Kora the Trailblazer". An agent with no tracked requests yet defaults
+// to Trailblazer, matching the classification stated in its very first prompt.
 function agentDisplayName(agent: AgentApiConfig, traversalHistory: TraversalHistoryEntry[]): string {
-  const rank = resolveBatchEfficiencyRank(traversalHistory, agent)
-  return `${agent.playerName} the ${capitalize(rank)}`
+  const speedClass = resolveBatchEfficiencyClass(traversalHistory, agent)
+  return `${agent.playerName} the ${capitalize(speedClass)}`
 }
 
-// capitalize renders lowercase rank identifiers (kept lowercase for model-facing JSON/prose)
-// as UI-facing title case.
+// capitalize renders lowercase speed-classification identifiers (kept lowercase for model-facing
+// JSON/prose) as UI-facing title case.
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
