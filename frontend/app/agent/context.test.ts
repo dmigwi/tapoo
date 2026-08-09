@@ -46,6 +46,7 @@ const expectedAgentPrompt = [
   `playerName ${CONFIG.runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
   "currentCell is your current position; destinationCell is the target.",
   "The maze is randomly generated at each level with exactly one path to the destination.",
+  "For the current level, maze dimensions and wall/open-exit structure are fixed once generated.",
   "traversalHistory entries matching your playerName record your past moves in chronological order.",
   "Each entry's openMoves maps every open exit from that cell directly to the neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries recorded by other players are just as trustworthy as your own.",
   "openMoves key count reveals the physical maze structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction.",
@@ -53,11 +54,12 @@ const expectedAgentPrompt = [
   "Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination.",
   "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
   "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
-  "get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is.",
+  "After the first turn, call get_last_prediction_outcome before predicting so you know whether the previous submitted moves fully applied, partially failed, reached the target, or were rejected.",
+  "lastPlayerName identifies whose outcome it is.",
   "lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units.",
   "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using traversalHistory and the maze dimensions — cells within a small Manhattan distance of your current position — open exits are fixed at construction and can only be known once a cell appears in traversalHistory. Your current cell's own open moves is a natural place to start from. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without any invalid-move. You could also invent a better way to sustain that classification.",
   "get_prediction_rules provides the required response format and move count guidance.",
-  "Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
+  "Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
   "Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more new cells for the same decay — that ratio is your traversal speed, and the classification you carry names which band it falls into: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course.",
   "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
 ].join(" ")
@@ -131,7 +133,7 @@ describe("agent context", () => {
       "get_game_status",
       "get_maze_positions",
       "get_traversal_history",
-      "get_last_replay_result",
+      "get_last_prediction_outcome",
     ])
     expect(toolHandlers.get_game_status({})).toEqual({
       level: 4,
@@ -163,9 +165,10 @@ describe("agent context", () => {
       decayUnitsCharged: 2,
       turnsTaken: 2,
       batchEfficiencyClass: "backtracker",
+      mazeDimensions: { numCols: 2, numRows: 1, totalMazeCells: 2 },
       expectedResponseSchema,
     })
-    expect(toolHandlers.get_last_replay_result({})).toEqual({
+    expect(toolHandlers.get_last_prediction_outcome({})).toEqual({
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
       lastReplayStartIndex: 0,
@@ -201,6 +204,7 @@ describe("agent context", () => {
       decayUnitsCharged: 0,
       turnsTaken: 0,
       batchEfficiencyClass: "trailblazer",
+      mazeDimensions: { numCols: 2, numRows: 1, totalMazeCells: 2 },
       expectedResponseSchema,
     })
   })

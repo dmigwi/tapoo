@@ -310,7 +310,7 @@ export const CONFIG: AppConfig = {
     // requestAgentPredictionWithRetry in control/agent-api.ts) for transient connection drops/
     // resets, which either clear almost immediately or not at all — a long backoff would just make
     // the agent sit idle for a failure mode a second attempt is unlikely to fix anyway.
-    agentApiConnectionErrorRetryDelayMs: 5_000,      // Translates to 5sec
+    agentApiConnectionErrorRetryDelayMs: 60_000,      // Translates to 1min
   },
   // Viewport thresholds translate measured DOM space into logical maze room.
   viewport: {

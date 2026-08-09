@@ -152,7 +152,7 @@ function openaiMessage(message: AgentChatMessage): Omit<AgentChatMessage, "tool_
 // is documented by multiple reasoning models (OpenAI's o-series, Kimi K3) rather than being a
 // server-specific convention.
 const OPENAI_REASONING_EFFORT_HINT = {
-  reasoning_effort: "low",
+  reasoning_effort: "high",
 }
 
 function openaiBuildBody(input: ProviderRequestInput): Record<string, unknown> {

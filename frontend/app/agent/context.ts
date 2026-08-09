@@ -95,7 +95,8 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
     describeAgentSpeedClassification(playerName, batchEfficiencyClass),
     `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
     "currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level",
-    "with exactly one path to the destination. traversalHistory entries matching your playerName record your past",
+    "with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure",
+    "are fixed once generated. traversalHistory entries matching your playerName record your past",
     "moves in chronological order. Each entry's openMoves maps every open exit from that cell directly to the",
     "neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since",
     "creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries",
@@ -108,7 +109,8 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
     "to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start",
     "to destination; the only valid path may require moving away from the target before turning towards it. Tool",
     "results reflect the maze state at the time of each call — a repeat call may return updated or identical data",
-    "depending on what has changed. get_last_replay_result reflects the most recent replay across all agents;",
+    "depending on what has changed. After the first turn, call get_last_prediction_outcome before predicting so you know",
+    "whether the previous submitted moves fully applied, partially failed, reached the target, or were rejected.",
     "lastPlayerName identifies whose outcome it is. lastMoveStatus being null means no moves have been made yet;",
     "invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid",
     "JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty",
@@ -123,7 +125,7 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
     "once a cell appears in traversalHistory. Your current cell's own open moves is a natural place to start from.",
     "With enough of that picture assembled, you can often find several consecutive moves that are all certain to",
     "apply without any invalid-move. You could also invent a better way to sustain that classification.",
-    "get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted",
+    "get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in",
     "order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
     "Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more",
     "new cells for the same decay — that ratio is your traversal speed, and the classification you carry names which",
@@ -199,10 +201,14 @@ const predictionRulesTool: AgentToolDefinition = {
       "new score retention record). turnsTaken is reported for context and does not affect your speed,",
       "classification or scores. Each turn's decay units are subtracted immediately; the resulting score retention",
       "is visible via get_game_status.",
+      "mazeDimensions.totalMazeCells is the full level size. Dimensions and the physical wall/open-exit structure stay",
+      "fixed for the current level; only your current cell, traversalHistory, score, and outcome details change as moves execute.",
       "Before anything is charged on this level, batchEfficiencyClass defaults to trailblazer regardless of these",
       "counts, so you start already primed to predict multi-move sequences. Returns JSON:",
       "{\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number,",
-      "\"turnsTaken\":number, \"batchEfficiencyClass\":string,\"expectedResponseSchema\":object}.",
+      "\"turnsTaken\":number, \"batchEfficiencyClass\":string,",
+      "\"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null,",
+      "\"expectedResponseSchema\":object}.",
     ].join(" "),
     parameters: emptyToolParameters,
   },
@@ -262,17 +268,19 @@ const traversalHistoryTool: AgentToolDefinition = {
   },
 }
 
-// lastReplayResultTool reports the previous replay outcome so agents can correct course.
-const lastReplayResultTool: AgentToolDefinition = {
+// lastPredictionOutcomeTool reports the previous prediction outcome so agents can correct course.
+const lastPredictionOutcomeTool: AgentToolDefinition = {
   type: "function",
   function: {
-    name: "get_last_replay_result",
+    name: "get_last_prediction_outcome",
     description: [
-      "Get the previous turn replay result. lastMoveStatus values: null=first turn, no history yet; applied=move",
-      "executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move",
-      "hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, requested a",
-      "tool that does not exist, or ignored a duplicate tool call warning — in all cases no moves were replayed and a",
-      "fixed score penalty was charged; network-error=HTTP failure, no score charged.",
+      "Required feedback for the next prediction after the first turn. Use this to learn whether the previous",
+      "submitted moves fully applied, partially failed, reached the target, or were rejected. lastMoveStatus values:",
+      "null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination",
+      "reached, stop predicting; invalid-move=move hit a wall or boundary, execution stopped; malformed-response=previous",
+      "response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning —",
+      "in all cases no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score",
+      "charged.",
       "lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is",
       "their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within",
       "lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore",
@@ -291,7 +299,7 @@ export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
   gameStatusTool,
   mazePositionsTool,
   traversalHistoryTool,
-  lastReplayResultTool,
+  lastPredictionOutcomeTool,
 ]
 
 // --- 3. Tool handlers ---
@@ -346,6 +354,13 @@ export function buildAgentToolHandlers(
         decayUnitsCharged,
         turnsTaken,
         batchEfficiencyClass,
+        mazeDimensions: state.mazeDimensions
+          ? {
+              numCols: state.mazeDimensions.numCols,
+              numRows: state.mazeDimensions.numRows,
+              totalMazeCells: state.mazeDimensions.area,
+            }
+          : null,
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       }
     },
@@ -375,7 +390,7 @@ export function buildAgentToolHandlers(
         })),
       }
     },
-    get_last_replay_result() {
+    get_last_prediction_outcome() {
       return {
         lastPlayerName: lastActionResult?.lastPlayerName ?? null,
         lastMoveStatus: lastActionResult?.lastMoveStatus ?? null,
