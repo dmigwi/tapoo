@@ -43,21 +43,22 @@ function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
 
 const expectedAgentPrompt = [
   "You are Blue and your traversal speed has dropped to a classification of navigator. You've got an uphill task and need to work smarter to climb into the genius zone of trailblazer classification.",
-  `playerName ${CONFIG.runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
+  "Call get_maze_structure to read currentCell, destinationCell, and nearby maze structure before planning moves.",
+  `When present in filteredTraversalHistory, playerName ${CONFIG.runtime.interactivePlayerName} marks the start cell.`,
   "currentCell is your current position; destinationCell is the target.",
   "The maze is randomly generated at each level with exactly one path to the destination.",
   "For the current level, maze dimensions and wall/open-exit structure are fixed once generated.",
-  "traversalHistory entries matching your playerName record your past moves in chronological order.",
+  "filteredTraversalHistory entries matching your playerName record nearby past moves in chronological order.",
   "Each entry's openMoves maps every open exit from that cell directly to the neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries recorded by other players are just as trustworthy as your own.",
   "openMoves key count reveals the physical maze structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction.",
-  "traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected.",
-  "Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination.",
+  "filteredTraversalHistory is cut from the full first-visit history; cells revisited during backtracking are not duplicated, so apparent gaps are expected.",
+  "Revisiting a cell already in filteredTraversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination.",
   "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
   "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
   "After the first turn, call get_last_prediction_outcome before predicting so you know whether the previous submitted moves fully applied, partially failed, reached the target, or were rejected.",
   "lastPlayerName identifies whose outcome it is.",
   "lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units.",
-  "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using traversalHistory and the maze dimensions — cells within a small Manhattan distance of your current position — open exits are fixed at construction and can only be known once a cell appears in traversalHistory. Your current cell's own open moves is a natural place to start from. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without any invalid-move. You could also invent a better way to sustain that classification.",
+  "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using get_maze_structure. It returns filteredTraversalHistory — cells within manhattanDistance of your current position. manhattanDistance is the local context ceiling used to cap suggestedMovesPerTurn from get_prediction_rules. Open exits are fixed at construction and can only be known once a cell appears in filteredTraversalHistory. Your current cell's own open moves is a natural place to start from. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without any invalid-move. You could also invent a better way to sustain that classification.",
   "get_prediction_rules provides the required response format and move count guidance.",
   "Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
   "Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more new cells for the same decay — that ratio is your traversal speed, and the classification you carry names which band it falls into: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course.",
@@ -131,8 +132,7 @@ describe("agent context", () => {
     expect(AGENT_CONTEXT_TOOLS.map((tool) => tool.function.name)).toEqual([
       "get_prediction_rules",
       "get_game_status",
-      "get_maze_positions",
-      "get_traversal_history",
+      "get_maze_structure",
       "get_last_prediction_outcome",
     ])
     expect(toolHandlers.get_game_status({})).toEqual({
@@ -141,12 +141,11 @@ describe("agent context", () => {
       score: 700,
       mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
     })
-    expect(toolHandlers.get_maze_positions({})).toEqual({
+    expect(toolHandlers.get_maze_structure({})).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 1 },
-    })
-    expect(toolHandlers.get_traversal_history({})).toEqual({
-      traversalHistory: [
+      manhattanDistance: CONFIG.runtime.modelConfig.manhattanDistance,
+      filteredTraversalHistory: [
         {
           playerName: "Self",
           cell: { row: 0, col: 0 },
@@ -209,6 +208,81 @@ describe("agent context", () => {
     })
   })
 
+  it("filters maze structure by Manhattan distance without trimming internal history", () => {
+    const fullTraversalHistory = [
+      selfVisit(0, 0, ["MoveRight"]),
+      agentVisit(4, 4, "Blue", ["MoveRight", "MoveUp"]),
+      agentVisit(4, 8, "Blue", ["MoveRight"]),
+      agentVisit(4, 9, "Blue"),
+      agentVisit(9, 9, "Blue"),
+      agentVisit(1, 4, "Blue"),
+      agentVisit(0, 4, "Blue"),
+    ]
+    const state = createState({
+      mazeDimensions: { numCols: 10, numRows: 10, area: 100 },
+      playerPosition: { x: 9, y: 9 },
+      finalPosition: { x: 15, y: 9 },
+      traversalHistory: fullTraversalHistory,
+    })
+    const toolHandlers = buildAgentToolHandlers(state, null, createAgent())
+
+    expect(toolHandlers.get_maze_structure({})).toEqual({
+      currentCell: { row: 4, col: 4 },
+      destinationCell: { row: 4, col: 7 },
+      manhattanDistance: CONFIG.runtime.modelConfig.manhattanDistance,
+      filteredTraversalHistory: [
+        {
+          playerName: "Blue",
+          cell: { row: 4, col: 4 },
+          openMoves: {
+            MoveRight: { row: 4, col: 5, visited: false },
+            MoveUp: { row: 3, col: 4, visited: false },
+          },
+        },
+        {
+          playerName: "Blue",
+          cell: { row: 4, col: 8 },
+          openMoves: { MoveRight: { row: 4, col: 9, visited: true } },
+        },
+        {
+          playerName: "Blue",
+          cell: { row: 1, col: 4 },
+          openMoves: {},
+        },
+        {
+          playerName: "Blue",
+          cell: { row: 0, col: 4 },
+          openMoves: {},
+        },
+      ],
+    })
+    expect(state.traversalHistory).toEqual(fullTraversalHistory)
+  })
+
+  it("keeps maze-structure distance at the configured ceiling even when suggested moves shrink", () => {
+    const state = createState({
+      mazeDimensions: { numCols: 40, numRows: 40, area: 1600 },
+      playerPosition: { x: 9, y: 9 },
+      traversalHistory: [
+        selfVisit(0, 0),
+        agentVisit(4, 4, "Blue"),
+        agentVisit(4, 8, "Blue"),
+      ],
+    })
+    const toolHandlers = buildAgentToolHandlers(state, null, createAgent())
+
+    expect(toolHandlers.get_prediction_rules({})).toMatchObject({
+      suggestedMovesPerTurn: 3,
+    })
+    expect(toolHandlers.get_maze_structure({})).toMatchObject({
+      manhattanDistance: CONFIG.runtime.modelConfig.manhattanDistance,
+      filteredTraversalHistory: [
+        { playerName: "Blue", cell: { row: 4, col: 4 }, openMoves: {} },
+        { playerName: "Blue", cell: { row: 4, col: 8 }, openMoves: {} },
+      ],
+    })
+  })
+
   it("builds the initial agent chat message without embedding the full maze state", () => {
     expect(buildAgentMessages("Blue", "navigator")).toEqual([
       {
@@ -242,11 +316,11 @@ describe("buildDuplicateToolCallMessage", () => {
   it("lists multiple duplicate calls together, in order", () => {
     const message = buildDuplicateToolCallMessage([
       { id: "call_2", function: { name: "get_game_status", arguments: {} } },
-      { id: "call_3", function: { name: "get_maze_positions", arguments: {} } },
+      { id: "call_3", function: { name: "get_maze_structure", arguments: {} } },
     ])
 
     expect(message.content).toContain(
-      "get_game_status (call_2), get_maze_positions (call_3) won't yield any new information.",
+      "get_game_status (call_2), get_maze_structure (call_3) won't yield any new information.",
     )
   })
 

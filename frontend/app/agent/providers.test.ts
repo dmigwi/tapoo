@@ -281,7 +281,7 @@ describe("anthropic adapter", () => {
   it("coalesces consecutive tool-result messages into a single user turn", () => {
     const toolMessages: AgentChatMessage[] = [
       { role: "tool", tool_call_id: "call_1", tool_name: "get_game_status", content: "{\"a\":1}" },
-      { role: "tool", tool_call_id: "call_2", tool_name: "get_maze_positions", content: "{\"b\":2}" },
+      { role: "tool", tool_call_id: "call_2", tool_name: "get_maze_structure", content: "{\"b\":2}" },
     ]
 
     const body = PROVIDER_ADAPTERS.anthropic.buildBody(requestInput({ messages: toolMessages })) as {

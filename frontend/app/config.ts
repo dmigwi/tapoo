@@ -341,14 +341,17 @@ export const CONFIG: AppConfig = {
     // Ollama's num_ctx, temperature and num_predict (see requestChatTurn in agent/request.ts),
     // tuned for parseable moves over good prose. Only the prompt can overrun, so num_ctx is the
     // one knob worth tuning: num_ctx = max(floor, mazeArea * multiplier).
-    // Known limit: the multiplier budgets fewer tokens per cell than get_traversal_history spends per
-    // visited cell, so large mazes overrun it — the fix is to bound that tool rather than raise this.
+    // Known limit: the multiplier budgets fewer tokens per cell than full history can spend per
+    // visited cell, so model-facing history stays bounded instead of raising this.
     modelConfig: {
       // Ollama's default is too small for the prompt, and it answers 500 rather than truncating.
       // Also the value used before generation, while area is still unknown.
       contextWindowFloor: 3000,
       // Tokens per cell: history grows with the maze, and every round resends the conversation.
       contextWindowAreaMultiplier: 5,
+      // Model-facing local context radius. Also caps suggestedMovesPerTurn so batch guidance
+      // cannot exceed the history window the model can inspect.
+      manhattanDistance: 4, // Simulation corridor-run distribution: p50=1, p75=2, p90=3, p95=4.
       // Under Ollama's default: an unparseable reply is charged malformed-response, so format
       // compliance beats creativity.
       temperature: 0.5,
@@ -358,9 +361,6 @@ export const CONFIG: AppConfig = {
     },
   },
 }
-
-// AGENT_MOVES_PER_TURN_CAP is the p95 of actual corridor run lengths measured across all levels.
-export const AGENT_MOVES_PER_TURN_CAP = 4  // simulation: p50=1, p75=2, p90=3, p95=4
 
 // PAGE_COPYRIGHT_TEXT is the fully composed footer text shared by static browser pages.
 export const PAGE_COPYRIGHT_TEXT = CONFIG.chrome.pageVersionTemplate

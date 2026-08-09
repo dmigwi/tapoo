@@ -751,7 +751,7 @@ describe("agent control mode", () => {
             tool_calls: [
               {
                 function: {
-	                  name: "get_maze_positions",
+	                  name: "get_maze_structure",
                   arguments: {},
                 },
               },
@@ -839,7 +839,7 @@ describe("agent control mode", () => {
             tool_calls: [
               {
                 function: {
-	                  name: "get_maze_positions",
+	                  name: "get_maze_structure",
                   arguments: {},
                 },
               },
@@ -886,11 +886,21 @@ describe("agent control mode", () => {
     const toolResult = JSON.parse(requestBody.messages.at(-1)?.content ?? "") as {
       currentCell: { row: number; col: number }
       destinationCell: { row: number; col: number }
+      filteredTraversalHistory: unknown[]
+      manhattanDistance: number
     }
 
     expect(toolResult).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 2 },
+      manhattanDistance: CONFIG.runtime.modelConfig.manhattanDistance,
+      filteredTraversalHistory: [
+        {
+          playerName: "Self",
+          cell: { row: 0, col: 0 },
+          openMoves: {},
+        },
+      ],
     })
   })
 

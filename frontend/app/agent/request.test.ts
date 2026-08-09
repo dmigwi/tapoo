@@ -17,7 +17,7 @@ import type {
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt =
-  `You are Blue and your traversal speed classifies as trailblazer. You are in the genius zone and might set a new record if you keep it up. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry's openMoves maps every open exit from that cell directly to the neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries recorded by other players are just as trustworthy as your own. openMoves key count reveals the physical maze structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction. traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. After the first turn, call get_last_prediction_outcome before predicting so you know whether the previous submitted moves fully applied, partially failed, reached the target, or were rejected. lastPlayerName identifies whose outcome it is. lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units. One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using traversalHistory and the maze dimensions — cells within a small Manhattan distance of your current position — open exits are fixed at construction and can only be known once a cell appears in traversalHistory. Your current cell's own open moves is a natural place to start from. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without any invalid-move. You could also invent a better way to sustain that classification. get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more new cells for the same decay — that ratio is your traversal speed, and the classification you carry names which band it falls into: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
+  `You are Blue and your traversal speed classifies as trailblazer. You are in the genius zone and might set a new record if you keep it up. Call get_maze_structure to read currentCell, destinationCell, and nearby maze structure before planning moves. When present in filteredTraversalHistory, playerName Self marks the start cell. The maze has one valid path to the destination, and the current level's wall/open-exit structure is fixed once generated. Do not assume a direct route; the valid path may require moving away from the target before turning towards it. Use nearby openMoves to build a local map. Backtracking through visited cells is expected after a dead end, and records from other players are as trustworthy as your own. After the first turn, call get_last_prediction_outcome before predicting so you can correct course from the last prediction result. applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units. get_prediction_rules provides the required response format and suggested move count. Submitted moves execute in order until the destination is reached or the first invalid move is hit. Longer predictions help only when they are likely to apply; shorter predictions are better when the local map is uncertain. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
 const developerMessage = prompt
 const userMessage = `It is Blue's turn to predict next moves. Use the available tools to see the maze state.`
 const agentContextTools = [
@@ -26,7 +26,7 @@ const agentContextTools = [
     function: {
       name: "get_prediction_rules",
       description:
-        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn. uniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator at 1.0 (one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the only classification that can set a new score retention record). turnsTaken is reported for context and does not affect your speed, classification or scores. Each turn's decay units are subtracted immediately; the resulting score retention is visible via get_game_status. mazeDimensions.totalMazeCells is the full level size. Dimensions and the physical wall/open-exit structure stay fixed for the current level; only your current cell, traversalHistory, score, and outcome details change as moves execute. Before anything is charged on this level, batchEfficiencyClass defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"turnsTaken\":number, \"batchEfficiencyClass\":string, \"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null, \"expectedResponseSchema\":object}.",
+        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn. uniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator at 1.0 (one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the only classification that can set a new score retention record). turnsTaken is reported for context and does not affect your speed, classification or scores. Each turn's decay units are subtracted immediately; the resulting score retention is visible via get_game_status. mazeDimensions.totalMazeCells is the full level size. Dimensions and the physical wall/open-exit structure stay fixed for the current level; only your current cell, filteredTraversalHistory, score, and outcome details change as moves execute. Before anything is charged on this level, batchEfficiencyClass defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"turnsTaken\":number, \"batchEfficiencyClass\":string, \"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null, \"expectedResponseSchema\":object}.",
       parameters: {
         type: "object",
         properties: {},
@@ -50,22 +50,9 @@ const agentContextTools = [
   {
     type: "function" as const,
     function: {
-      name: "get_maze_positions",
+      name: "get_maze_structure",
       description:
-        "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. Use get_traversal_history to find which moves are open from the current cell. Returns JSON: {\"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null}.",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: [],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "get_traversal_history",
-      description:
-        "Get all players' visit records in chronological order, structured as an adjacency list. cell is that entry's position. openMoves maps each open exit directly to the neighboring cell it leads to and whether that neighbor has already been visited — the exits from a cell are fixed since creation, so this lets you reconstruct the physical maze structure you have already explored without computing adjacency from row/col yourself. Use the full, unfiltered list for maze-structure reconstruction — every player's openMoves data is equally trustworthy; filter by playerName only when you specifically want one player's own chronological move sequence. Returns JSON: {\"traversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
+        "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. manhattanDistance is the configured local context ceiling that also caps suggestedMovesPerTurn from get_prediction_rules. filteredTraversalHistory includes only first-visit records within that true Manhattan distance from currentCell, preserving chronological order. Each included entry's openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether that neighbor has already been visited in the full internal history, even when that neighbor is outside the filtered result. Returns JSON: {\"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null, \"manhattanDistance\":number, \"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
       parameters: {
         type: "object",
         properties: {},
@@ -210,22 +197,50 @@ function thinkingToolCallResponse(toolCalls: unknown[]) {
   }
 }
 
-// positionsContent mirrors the exact JSON string sent by the positions tool.
-function positionsContent(overrides: Partial<State> = {}): string {
+// mazeStructureContent mirrors the exact JSON string sent by the maze-structure tool.
+function mazeStructureContent(overrides: Partial<State> = {}): string {
   const nextState = { ...state, ...overrides }
+  const currentCell = nextState.playerPosition
+    ? {
+        row: Math.floor((nextState.playerPosition.y - 1) / 2),
+        col: Math.floor((nextState.playerPosition.x - 1) / 2),
+      }
+    : null
+  const destinationCell = nextState.finalPosition
+    ? {
+        row: Math.floor((nextState.finalPosition.y - 1) / 2),
+        col: Math.floor((nextState.finalPosition.x - 1) / 2),
+      }
+    : null
+  const { manhattanDistance } = CONFIG.runtime.modelConfig
+  const visitedCells = new Set(
+    nextState.traversalHistory.map(({ row, col }) => `${row},${col}`),
+  )
+  const filteredTraversalHistory = currentCell
+    ? nextState.traversalHistory
+        .filter(({ row, col }) => Math.abs(row - currentCell.row) + Math.abs(col - currentCell.col) <= manhattanDistance)
+        .map(({ playerName, row, col, openMoves }) => ({
+          playerName,
+          cell: { row, col },
+          openMoves: Object.fromEntries(
+            openMoves.map((move) => {
+              const [rowDelta, colDelta] = {
+                MoveLeft: [0, -1],
+                MoveRight: [0, 1],
+                MoveUp: [-1, 0],
+                MoveDown: [1, 0],
+              }[move]
+              const neighbor = { row: row + rowDelta, col: col + colDelta }
+              return [move, { ...neighbor, visited: visitedCells.has(`${neighbor.row},${neighbor.col}`) }]
+            }),
+          ),
+        }))
+    : []
   return JSON.stringify({
-    currentCell: nextState.playerPosition
-      ? {
-          row: Math.floor((nextState.playerPosition.y - 1) / 2),
-          col: Math.floor((nextState.playerPosition.x - 1) / 2),
-        }
-      : null,
-    destinationCell: nextState.finalPosition
-      ? {
-          row: Math.floor((nextState.finalPosition.y - 1) / 2),
-          col: Math.floor((nextState.finalPosition.x - 1) / 2),
-        }
-      : null,
+    currentCell,
+    destinationCell,
+    manhattanDistance,
+    filteredTraversalHistory,
   })
 }
 
@@ -258,10 +273,10 @@ describe("agent request service", () => {
           content: "",
           tool_calls: [
             {
-              id: "call_positions",
+              id: "call_structure",
               function: {
                 index: 0,
-                name: "get_maze_positions",
+                name: "get_maze_structure",
                 arguments: {},
               },
             },
@@ -269,13 +284,13 @@ describe("agent request service", () => {
         },
         {
           role: "tool",
-          tool_call_id: "call_positions",
-          tool_name: "get_maze_positions",
+          tool_call_id: "call_structure",
+          tool_name: "get_maze_structure",
           content:
-            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7}}",
+            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"manhattanDistance\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"openMoves\":{}}]}",
         },
       ],
-      tools: uncalledTools(["get_maze_positions"]),
+      tools: uncalledTools(["get_maze_structure"]),
       options: { num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict },
       think: false,
       stream: false,
@@ -289,10 +304,10 @@ describe("agent request service", () => {
       .mockResolvedValueOnce(
         toolCallResponse([
           {
-              id: "call_positions",
+              id: "call_structure",
               function: {
                 index: 0,
-                name: "get_maze_positions",
+                name: "get_maze_structure",
                 arguments: {},
               },
             },
@@ -319,8 +334,8 @@ describe("agent request service", () => {
       .mockResolvedValueOnce(
         toolCallResponse([
           {
-            id: "call_positions",
-            function: { index: 0, name: "get_maze_positions", arguments: {} },
+            id: "call_structure",
+            function: { index: 0, name: "get_maze_structure", arguments: {} },
           },
         ]),
       )
@@ -370,7 +385,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 2,
       agentMode: "tools",
-      tools: expectedLoggedTools(uncalledTools(["get_maze_positions"]), false),
+      tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
         { role: "user", content: `${userMessage.slice(0, 25)}...` },
@@ -379,17 +394,17 @@ describe("agent request service", () => {
           content: "",
           tool_calls: [
             {
-              id: "call_positions",
-              function: { index: 0, name: "get_maze_positions", arguments: {} },
+              id: "call_structure",
+              function: { index: 0, name: "get_maze_structure", arguments: {} },
             },
           ],
         },
         {
           role: "tool",
-          tool_call_id: "call_positions",
-          tool_name: "get_maze_positions",
+          tool_call_id: "call_structure",
+          tool_name: "get_maze_structure",
           content:
-            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7}}",
+            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"manhattanDistance\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"openMoves\":{}}]}",
         },
       ],
     })
@@ -421,8 +436,8 @@ describe("agent request service", () => {
       .mockResolvedValueOnce(
         toolCallResponse([
           {
-            id: "call_positions",
-            function: { index: 0, name: "get_maze_positions", arguments: {} },
+            id: "call_structure",
+            function: { index: 0, name: "get_maze_structure", arguments: {} },
           },
         ]),
       )
@@ -470,7 +485,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 2,
       agentMode: "tools",
-      tools: expectedLoggedTools(uncalledTools(["get_maze_positions"]), false),
+      tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
         { role: "user", content: `${userMessage.slice(0, 25)}...` },
@@ -479,17 +494,17 @@ describe("agent request service", () => {
           content: "",
           tool_calls: [
             {
-              id: "call_positions",
-              function: { index: 0, name: "get_maze_positions", arguments: {} },
+              id: "call_structure",
+              function: { index: 0, name: "get_maze_structure", arguments: {} },
             },
           ],
         },
         {
           role: "tool",
-          tool_call_id: "call_positions",
-          tool_name: "get_maze_positions",
+          tool_call_id: "call_structure",
+          tool_name: "get_maze_structure",
           content:
-            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7}}",
+            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"manhattanDistance\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"openMoves\":{}}]}",
         },
       ],
     })
@@ -539,7 +554,7 @@ describe("agent request service", () => {
         toolCallResponse([
           {
             id: "call_1",
-            function: { index: 0, name: "get_maze_positions", arguments: {} },
+            function: { index: 0, name: "get_maze_structure", arguments: {} },
           },
         ]),
       )
@@ -569,7 +584,7 @@ describe("agent request service", () => {
             id: "call_1",
             function: {
               index: 0,
-              name: "get_maze_positions",
+              name: "get_maze_structure",
               arguments: {},
             },
           },
@@ -578,8 +593,8 @@ describe("agent request service", () => {
       {
         role: "tool",
         tool_call_id: "call_1",
-        tool_name: "get_maze_positions",
-        content: positionsContent({
+        tool_name: "get_maze_structure",
+        content: mazeStructureContent({
           finalPosition: { x: 3, y: 1 },
           playerPosition: { x: 1, y: 1 },
         }),
@@ -592,8 +607,8 @@ describe("agent request service", () => {
       .fn()
       .mockResolvedValueOnce(
         toolCallResponse([
-          { function: { name: "get_maze_positions", arguments: {} } },
-          { function: { name: "get_traversal_history", arguments: "{}" } },
+          { function: { name: "get_game_status", arguments: {} } },
+          { function: { name: "get_maze_structure", arguments: "{}" } },
         ]),
       )
       .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveDown\"]}"))
@@ -606,19 +621,18 @@ describe("agent request service", () => {
     expect(secondRequestBody.messages.slice(-2)).toEqual([
       {
         role: "tool",
-        tool_name: "get_maze_positions",
-        content: positionsContent(),
+        tool_name: "get_game_status",
+        content: JSON.stringify({
+          score: state.score,
+          level: state.level,
+          status: state.status,
+          mazeDimensions: state.mazeDimensions,
+        }),
       },
       {
         role: "tool",
-        tool_name: "get_traversal_history",
-        content: JSON.stringify({
-          traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
-            playerName,
-            cell: { row, col },
-            openMoves: {},
-          })),
-        }),
+        tool_name: "get_maze_structure",
+        content: mazeStructureContent(),
       },
     ])
   })
@@ -630,20 +644,16 @@ describe("agent request service", () => {
         function: { index: 0, name: "get_game_status", arguments: {} },
       },
       {
-        id: "call_positions",
-        function: { index: 1, name: "get_maze_positions", arguments: {} },
-      },
-      {
-        id: "call_history",
-        function: { index: 2, name: "get_traversal_history", arguments: {} },
+        id: "call_structure",
+        function: { index: 1, name: "get_maze_structure", arguments: {} },
       },
       {
         id: "call_replay",
-        function: { index: 3, name: "get_last_prediction_outcome", arguments: {} },
+        function: { index: 2, name: "get_last_prediction_outcome", arguments: {} },
       },
       {
         id: "call_rules",
-        function: { index: 4, name: "get_prediction_rules", arguments: {} },
+        function: { index: 3, name: "get_prediction_rules", arguments: {} },
       },
     ])
     const fetchMock = vi
@@ -661,7 +671,7 @@ describe("agent request service", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
     const secondRequestBody = JSON.parse(secondRequest.body as string) as SerializedRequestBody
-    const toolMessages = secondRequestBody.messages.slice(-5) as Array<{
+    const toolMessages = secondRequestBody.messages.slice(-4) as Array<{
       role: string
       tool_call_id: string
       tool_name: string
@@ -669,8 +679,7 @@ describe("agent request service", () => {
     }>
     expect(toolMessages.map(({ role, tool_call_id, tool_name }) => ({ role, tool_call_id, tool_name }))).toEqual([
       { role: "tool", tool_call_id: "call_status",    tool_name: "get_game_status" },
-      { role: "tool", tool_call_id: "call_positions", tool_name: "get_maze_positions" },
-      { role: "tool", tool_call_id: "call_history",   tool_name: "get_traversal_history" },
+      { role: "tool", tool_call_id: "call_structure", tool_name: "get_maze_structure" },
       { role: "tool", tool_call_id: "call_replay",    tool_name: "get_last_prediction_outcome" },
       { role: "tool", tool_call_id: "call_rules",     tool_name: "get_prediction_rules" },
     ])
@@ -681,14 +690,7 @@ describe("agent request service", () => {
         score: state.score,
         mazeDimensions: state.mazeDimensions,
       },
-      JSON.parse(positionsContent()) as unknown,
-      {
-        traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
-          playerName,
-          cell: { row, col },
-          openMoves: {},
-        })),
-      },
+      JSON.parse(mazeStructureContent()) as unknown,
       {
         lastPlayerName: null,
         lastMoveStatus: null,
@@ -699,7 +701,10 @@ describe("agent request service", () => {
         chargedMovesCount: 0,
       },
       {
-        suggestedMovesPerTurn: Math.min(getNavigationProfile(mazeDimensions).__maxCorridorLength, 4),
+        suggestedMovesPerTurn: Math.min(
+          getNavigationProfile(mazeDimensions).__maxCorridorLength,
+          CONFIG.runtime.modelConfig.manhattanDistance,
+        ),
         uniqueCellsVisited: 0,
         decayUnitsCharged: 0,
         turnsTaken: 0,
@@ -818,7 +823,7 @@ describe("agent request service", () => {
       .fn()
       .mockResolvedValueOnce(
         toolCallResponse([
-          { function: { name: "get_maze_positions", arguments: {} } },
+          { function: { name: "get_maze_structure", arguments: {} } },
         ]),
       )
       .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
@@ -883,7 +888,7 @@ describe("agent request service", () => {
   })
 
   it("proactively removes tools when all available tools were called in the previous round", async () => {
-    // When r0 calls all 5 tools, calledToolNames covers every available tool before r1 is sent.
+    // When r0 calls every tool, calledToolNames covers every available tool before r1 is sent.
     // The proactive check fires first, setting availableTools=[] so r1 goes straight to the
     // format-constrained prediction without sending tools or making another tool-call round.
     const allToolCalls = agentContextTools.map(({ function: { name } }, i) => ({
@@ -909,7 +914,7 @@ describe("agent request service", () => {
   it("reminds about a duplicate call while still offering the tools genuinely left uncalled", async () => {
     // Round 1: model calls get_game_status (new tool, processed normally).
     // Round 2: model calls get_game_status again (all-duplicate round → reminder naming that
-    // specific call is appended; the other 4 tools remain genuinely uncalled, so round 3 still
+    // specific call is appended; the other tools remain genuinely uncalled, so round 3 still
     // offers them rather than being forced into prediction mode).
     // Round 3: model answers directly anyway.
     const fetchMock = vi
@@ -934,7 +939,7 @@ describe("agent request service", () => {
     const thirdRequest = fetchMock.mock.calls[2][1] as RequestInit
     const thirdBody = JSON.parse(thirdRequest.body as string) as SerializedRequestBody
 
-    // Round 3 still offers the 4 tools genuinely never called, at full definition, with
+    // Round 3 still offers the tools genuinely never called, at full definition, with
     // get_game_status dropped entirely — no early forcing into prediction mode.
     expect(thirdBody.tools).toEqual(uncalledTools(["get_game_status"]))
     expect(thirdBody.format).toBeUndefined()
@@ -950,8 +955,8 @@ describe("agent request service", () => {
 
   it("services the new call in a mixed round and only reminds about the duplicate", async () => {
     // Round 1: model calls get_game_status (new).
-    // Round 2: model calls get_game_status again (duplicate) AND get_maze_positions (new) in the
-    // same response — only get_maze_positions should be serviced; get_game_status should get a
+    // Round 2: model calls get_game_status again (duplicate) AND get_maze_structure (new) in the
+    // same response — only get_maze_structure should be serviced; get_game_status should get a
     // reminder instead of a re-served payload.
     // Round 3: model predicts.
     const fetchMock = vi
@@ -964,7 +969,7 @@ describe("agent request service", () => {
       .mockResolvedValueOnce(
         toolCallResponse([
           { id: "call_2", function: { index: 0, name: "get_game_status", arguments: {} } },
-          { id: "call_3", function: { index: 1, name: "get_maze_positions", arguments: {} } },
+          { id: "call_3", function: { index: 1, name: "get_maze_structure", arguments: {} } },
         ]),
       )
       .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
@@ -983,8 +988,8 @@ describe("agent request service", () => {
       {
         role: "tool",
         tool_call_id: "call_3",
-        tool_name: "get_maze_positions",
-        content: positionsContent(),
+        tool_name: "get_maze_structure",
+        content: mazeStructureContent(),
       },
       buildDuplicateToolCallMessage([
         { id: "call_2", function: { index: 0, name: "get_game_status", arguments: {} } },
@@ -1002,7 +1007,7 @@ describe("agent request service", () => {
   })
 
   it("gives one reminder before failing on a second all-duplicate round", async () => {
-    // Round 1 (agentMode: tools): model calls all 5 tools — natural exhaustion, predict mode next.
+    // Round 1 (agentMode: tools): model calls every tool — natural exhaustion, predict mode next.
     // Round 2 (agentMode: predict): model re-requests an already-called tool — first violation:
     // no payload is re-served, just a reminder naming that specific call.
     // Round 3 (agentMode: warned): model re-requests it again despite the reminder — second
@@ -1106,9 +1111,9 @@ describe("agent request service", () => {
               message: {
                 role: "assistant",
                 content: "",
-                reasoning_content: "Let me check the maze positions first.",
+                reasoning_content: "Let me check the maze structure first.",
                 tool_calls: [
-                  { id: "call_positions", function: { index: 0, name: "get_maze_positions", arguments: "{}" } },
+                  { id: "call_structure", function: { index: 0, name: "get_maze_structure", arguments: "{}" } },
                 ],
               },
             },
@@ -1132,7 +1137,7 @@ describe("agent request service", () => {
     const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
     const secondBody = JSON.parse(secondRequest.body as string) as { messages: { role: string; reasoning_content?: string }[] }
     const assistantMessage = secondBody.messages.find((msg) => msg.role === "assistant")
-    expect(assistantMessage?.reasoning_content).toBe("Let me check the maze positions first.")
+    expect(assistantMessage?.reasoning_content).toBe("Let me check the maze structure first.")
   })
 
   it("fails a turn cleanly for an agent whose api has no matching adapter, instead of throwing", async () => {

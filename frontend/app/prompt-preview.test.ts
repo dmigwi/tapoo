@@ -21,9 +21,9 @@ describe("prompt preview content", () => {
   it("keeps the previewed agent name distinct from the traversal-history marker", () => {
     const system = bodyOf(promptPreview.systemHeading)
 
-    // The prompt separately states that "Self" appears first in traversalHistory and marks the
-    // start cell. Previewing the agent under that same name would read as one player rather than
-    // two roles, so both names must appear and they must differ.
+    // The prompt uses "Self" for the shared start marker when that filtered record is visible.
+    // Previewing the agent under that same name would read as one player rather than two roles,
+    // so both names must appear and they must differ.
     expect(agentConfig.playerNamePlaceholder).not.toBe(runtime.interactivePlayerName)
     expect(system).toContain(runtime.interactivePlayerName)
     expect(system).toContain(agentConfig.playerNamePlaceholder)

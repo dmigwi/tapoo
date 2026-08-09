@@ -729,6 +729,7 @@ export type AppConfig = {
     modelConfig: {
       contextWindowFloor: number
       contextWindowAreaMultiplier: number
+      manhattanDistance: number
       temperature: number
       numPredict: number
     }

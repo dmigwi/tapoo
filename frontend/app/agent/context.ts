@@ -1,4 +1,4 @@
-import { AGENT_MOVES_PER_TURN_CAP, CONFIG } from "../config"
+import { CONFIG } from "../config"
 import { getNavigationProfile } from "../maze"
 import {
   MOVE_ACTIONS,
@@ -93,18 +93,19 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
   const maxTurnCost = agentBaseDecayUnits + agentPenaltyDecayUnits
   return [
     describeAgentSpeedClassification(playerName, batchEfficiencyClass),
-    `playerName ${runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
+    "Call get_maze_structure to read currentCell, destinationCell, and nearby maze structure before planning moves.",
+    `When present in filteredTraversalHistory, playerName ${runtime.interactivePlayerName} marks the start cell.`,
     "currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level",
     "with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure",
-    "are fixed once generated. traversalHistory entries matching your playerName record your past",
+    "are fixed once generated. filteredTraversalHistory entries matching your playerName record nearby past",
     "moves in chronological order. Each entry's openMoves maps every open exit from that cell directly to the",
     "neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since",
     "creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries",
     "recorded by other players are just as trustworthy as your own. openMoves key count reveals the physical maze",
     "structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a",
     "corridor; three or more is a junction.",
-    "traversalHistory only records the first visit to each cell; cells revisited during backtracking are not",
-    "duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once",
+    "filteredTraversalHistory is cut from the full first-visit history; cells revisited during backtracking are not",
+    "duplicated, so apparent gaps are expected. Revisiting a cell already in filteredTraversalHistory is not a mistake — once",
     "the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way",
     "to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start",
     "to destination; the only valid path may require moving away from the target before turning towards it. Tool",
@@ -120,9 +121,11 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
     `further penalty of ${agentPenaltyDecayUnits} decay units on top — the maximum possible in a turn is`,
     `${maxTurnCost} decay units.`,
     "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a",
-    "picture of the maze around your current cell using traversalHistory and the maze dimensions — cells within a",
-    "small Manhattan distance of your current position — open exits are fixed at construction and can only be known",
-    "once a cell appears in traversalHistory. Your current cell's own open moves is a natural place to start from.",
+    "picture of the maze around your current cell using get_maze_structure. It returns filteredTraversalHistory —",
+    "cells within manhattanDistance of your current position. manhattanDistance is the local context ceiling used",
+    "to cap suggestedMovesPerTurn from get_prediction_rules. Open exits are fixed at construction and can only be",
+    "known once a cell appears in filteredTraversalHistory. Your current cell's own open moves is a natural place",
+    "to start from.",
     "With enough of that picture assembled, you can often find several consecutive moves that are all certain to",
     "apply without any invalid-move. You could also invent a better way to sustain that classification.",
     "get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in",
@@ -202,7 +205,7 @@ const predictionRulesTool: AgentToolDefinition = {
       "classification or scores. Each turn's decay units are subtracted immediately; the resulting score retention",
       "is visible via get_game_status.",
       "mazeDimensions.totalMazeCells is the full level size. Dimensions and the physical wall/open-exit structure stay",
-      "fixed for the current level; only your current cell, traversalHistory, score, and outcome details change as moves execute.",
+      "fixed for the current level; only your current cell, filteredTraversalHistory, score, and outcome details change as moves execute.",
       "Before anything is charged on this level, batchEfficiencyClass defaults to trailblazer regardless of these",
       "counts, so you start already primed to predict multi-move sequences. Returns JSON:",
       "{\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number,",
@@ -230,38 +233,23 @@ const gameStatusTool: AgentToolDefinition = {
   },
 }
 
-// mazePositionsTool gives agents their current location and destination in one call.
-const mazePositionsTool: AgentToolDefinition = {
+// mazeStructureTool gives agents position anchors plus nearby explored structure in one compact call.
+const mazeStructureTool: AgentToolDefinition = {
   type: "function",
   function: {
-    name: "get_maze_positions",
+    name: "get_maze_structure",
     description: [
-      "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp decreases",
-      "row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. Use",
-      "get_traversal_history to find which moves are open from the current cell. Returns JSON:",
+      "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down,",
+      "col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col",
+      "by 1 and MoveRight increases it by 1. manhattanDistance is the configured local context ceiling that also caps",
+      "suggestedMovesPerTurn from get_prediction_rules. filteredTraversalHistory includes only first-visit records",
+      "within that true Manhattan distance from currentCell, preserving chronological order. Each included entry's",
+      "openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether",
+      "that neighbor has already been visited in the full internal history, even when that neighbor is outside the",
+      "filtered result. Returns JSON:",
       "{\"currentCell\":{\"row\":number, \"col\":number}|null,",
-      "\"destinationCell\":{\"row\":number, \"col\":number}|null}.",
-    ].join(" "),
-    parameters: emptyToolParameters,
-  },
-}
-
-// traversalHistoryTool lets agents avoid repeating explored logical cells across turns.
-// Each entry's openMoves resolves every open exit directly to the neighboring cell it leads to
-// and whether that neighbor is already visited, so the model can reconstruct dead ends,
-// corridors, and junctions without computing adjacency from row/col itself.
-const traversalHistoryTool: AgentToolDefinition = {
-  type: "function",
-  function: {
-    name: "get_traversal_history",
-    description: [
-      "Get all players' visit records in chronological order, structured as an adjacency list. cell is that entry's",
-      "position. openMoves maps each open exit directly to the neighboring cell it leads to and whether that neighbor",
-      "has already been visited — the exits from a cell are fixed since creation, so this lets you reconstruct the",
-      "physical maze structure you have already explored without computing adjacency from row/col yourself. Use the",
-      "full, unfiltered list for maze-structure reconstruction — every player's openMoves data is equally trustworthy;",
-      "filter by playerName only when you specifically want one player's own chronological move sequence.",
-      "Returns JSON: {\"traversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number},",
+      "\"destinationCell\":{\"row\":number, \"col\":number}|null, \"manhattanDistance\":number,",
+      "\"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number},",
       "\"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
     ].join(" "),
     parameters: emptyToolParameters,
@@ -297,8 +285,7 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
 export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
   predictionRulesTool,
   gameStatusTool,
-  mazePositionsTool,
-  traversalHistoryTool,
+  mazeStructureTool,
   lastPredictionOutcomeTool,
 ]
 
@@ -306,7 +293,7 @@ export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
 // Handlers execute when the model calls a tool and produce the tool result messages.
 
 // resolvedOpenMoves maps each of an entry's open exits to its neighboring cell (using the same
-// row/col deltas mazePositionsTool documents) and whether that neighbor is already visited, using
+// row/col deltas mazeStructureTool documents) and whether that neighbor is already visited, using
 // a precomputed key set so every lookup stays O(1) rather than rescanning traversalHistory per
 // neighbor per entry. Precomputing the neighbor cells here spares the model from re-deriving
 // adjacency via coordinate arithmetic itself across dozens of traversalHistory entries.
@@ -323,6 +310,28 @@ function resolvedOpenMoves(
   )
 }
 
+// suggestedMovesPerTurn is the prediction-size hint; the configured Manhattan distance is its
+// ceiling, ensuring move batches never outgrow the local context window the model can inspect.
+// The navigation profile's max corridor length comes from maze generation; the cap keeps that
+// generation-derived value within the observed practical range for prediction batches.
+// Never 0: a zero suggestion reads as "batch nothing", which no playable round intends. Dimensions
+// should exist while running, so the fallback only protects unreachable or malformed state.
+function suggestedMovesPerTurn(state: State): number {
+  const distance = runtime.modelConfig.manhattanDistance
+  return state.mazeDimensions
+    ? Math.min(getNavigationProfile(state.mazeDimensions).__maxCorridorLength, distance)
+    : distance
+}
+
+// isWithinManhattanDistance checks whether a logical cell belongs inside the local context window.
+function isWithinManhattanDistance(
+  first: CellCoordinate,
+  second: CellCoordinate,
+  manhattanDistance: number,
+): boolean {
+  return (Math.abs(first.row - second.row) + Math.abs(first.col - second.col)) <= manhattanDistance
+}
+
 // buildAgentToolHandlers binds the latest state snapshot to the context tools for this request.
 export function buildAgentToolHandlers(
   state: State,
@@ -331,25 +340,13 @@ export function buildAgentToolHandlers(
 ): AgentToolHandlers {
   return {
     get_prediction_rules() {
-      // The max corridor length governs DFS maze carving, not player path planning.
-      // AGENT_MOVES_PER_TURN_CAP (p95 of actual run lengths) is the tighter bound for predictions.
-      // getNavigationProfile dereferences the dimensions, so it stays inside the null branch.
-      // Never 0: a zero suggestion reads as "batch nothing", an instruction the model can follow
-      // and that no level ever intends. Dimensions are always present while a round is running,
-      // so the fallback only guards the unreachable case, and the cap is the right value there —
-      // it is the ceiling every level's suggestion is clamped to anyway.
-      const suggestedMovesPerTurn = state.mazeDimensions
-        ? Math.min(getNavigationProfile(state.mazeDimensions).__maxCorridorLength, AGENT_MOVES_PER_TURN_CAP)
-        : AGENT_MOVES_PER_TURN_CAP
-
       // Raw counts are exposed instead of the derived rate so the model can compute and verify the
       // classification itself; all are always concrete numbers (0 is a valid count), never null, so
       // there is nothing ambiguous for the model to puzzle over before its first request.
       const batchEfficiencyClass = resolveBatchEfficiencyClass(state.traversalHistory, agent)
-      const { uniqueCellsVisited, decayUnitsCharged, turnsTaken } =
-        getBatchEfficiencyMetrics(state.traversalHistory, agent)
+      const { uniqueCellsVisited, decayUnitsCharged, turnsTaken } = getBatchEfficiencyMetrics(state.traversalHistory, agent)
       return {
-        suggestedMovesPerTurn,
+        suggestedMovesPerTurn: suggestedMovesPerTurn(state),
         uniqueCellsVisited,
         decayUnitsCharged,
         turnsTaken,
@@ -372,18 +369,21 @@ export function buildAgentToolHandlers(
         mazeDimensions: state.mazeDimensions,
       }
     },
-    get_maze_positions() {
-      return {
-        currentCell: state.playerPosition ? cellCoordinateFromGridPoint(state.playerPosition) : null,
-        destinationCell: state.finalPosition ? cellCoordinateFromGridPoint(state.finalPosition) : null,
-      }
-    },
-    get_traversal_history() {
+    get_maze_structure() {
+      const currentCell = state.playerPosition ? cellCoordinateFromGridPoint(state.playerPosition) : null
+      const destinationCell = state.finalPosition ? cellCoordinateFromGridPoint(state.finalPosition) : null
+      const { manhattanDistance } = runtime.modelConfig
       const history = cloneTraversalHistory(state.traversalHistory)
       const visitedCellKeys = new Set(history.map((entry) => mazeCellKey(entry)))
+      const filteredHistory = currentCell
+        ? history.filter((entry) => isWithinManhattanDistance(entry, currentCell, manhattanDistance))
+        : []
 
       return {
-        traversalHistory: history.map((entry) => ({
+        currentCell,
+        destinationCell,
+        manhattanDistance,
+        filteredTraversalHistory: filteredHistory.map((entry) => ({
           playerName: entry.playerName,
           cell: { row: entry.row, col: entry.col },
           openMoves: resolvedOpenMoves(entry, visitedCellKeys),
