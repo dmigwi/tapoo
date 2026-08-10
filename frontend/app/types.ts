@@ -342,15 +342,20 @@ export type AgentApiConfig = {
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number
-  // gameLevel and cumulativeRoundCount are the level and round the counters below were last tracked
-  // against; a mismatch on either against the current round means the agent's efficiency tracking resets.
+  // gameLevel and cumulativeRoundCount identify the round where the counters below were last synced.
+  // levelTurnCount must match State.turnCount for that round; a mismatch means the stored agent view
+  // is contradictory and the agent-api runtime resets before asking any model for another prediction.
   // Level alone can't tell a retry of the same level apart from continuing it, hence cumulativeRoundCount.
   gameLevel?: number
   cumulativeRoundCount?: number
+  // levelTurnCount mirrors State.turnCount (every seat gets the same value on every commit) purely
+  // as the staleness signal above — it is not a per-agent count and must not be read as one.
+  levelTurnCount?: number
+  // turnCount is this agent's own tally of turns it has personally taken this round, incremented
+  // only when this agent is the one who just played. decayUnitsCharged is this agent's own share of
+  // the round's score decay, and is what its traversal speed is measured against. state.scoreDecayUnits
+  // cannot serve here: it is shared by every seat, so it attributes no spend to any individual agent.
   turnCount?: number
-  // decayUnitsCharged is this agent's own share of the round's score decay, and is what its traversal
-  // speed is measured against. state.scoreDecayUnits cannot serve here: it is shared by every seat,
-  // so it attributes no spend to any individual agent.
   decayUnitsCharged?: number
 }
 

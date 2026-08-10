@@ -98,7 +98,7 @@ describe("getBatchEfficiencyMetrics", () => {
     expect(getBatchEfficiencyMetrics([], agent)).toEqual({
       uniqueCellsVisited: 0,
       decayUnitsCharged: 0,
-      turnsTaken: 0,
+      playerTurnsTaken: 0,
     })
   })
 
@@ -114,7 +114,7 @@ describe("getBatchEfficiencyMetrics", () => {
     expect(getBatchEfficiencyMetrics(traversalHistory, agent)).toEqual({
       uniqueCellsVisited: 2,
       decayUnitsCharged: 5,
-      turnsTaken: 3,
+      playerTurnsTaken: 3,
     })
   })
 })

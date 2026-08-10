@@ -205,6 +205,38 @@ describe("agent api turn loop", () => {
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
   })
 
+  it("restarts before polling when an agent turn count mismatches the current round", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const dispatch = vi.fn() as MazeActionDispatch
+    const currentState = createState({ cumulativeRoundCount: 8, level: 3, turnCount: 2 })
+    const staleAgent: AgentApiConfig = {
+      ...enabledAgentConfigs()[0],
+      cumulativeRoundCount: 8,
+      gameLevel: 3,
+      levelTurnCount: 1,
+    }
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: vi.fn(),
+      __dispatch: dispatch,
+      __dispatchAgentAction: vi.fn(),
+      __onActionResult: vi.fn(),
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: () => [staleAgent],
+      __readState: () => currentState,
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    expect(dispatch).toHaveBeenCalledWith({ type: "restart" }, { playerName: "Self" })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it("replays valid predictions and decays score by a flat valid-turn charge plus a flat mistake penalty", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

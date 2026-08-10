@@ -113,6 +113,27 @@ export function handleAgentTurnLoop({
     return true
   }
 
+  // agentTurnCountMismatch catches configs that claim to belong to this exact round but disagree
+  // with the round's completed turn count; old configs from other rounds are allowed to reset lazily.
+  const agentTurnCountMismatch = (agent: AgentApiConfig, currentState: State): boolean =>
+    agent.gameLevel === currentState.level &&
+    agent.cumulativeRoundCount === currentState.cumulativeRoundCount &&
+    (agent.levelTurnCount ?? 0) !== currentState.turnCount
+
+  // resetAfterAgentStateMismatch protects the model from receiving contradictory turn context.
+  const resetAfterAgentStateMismatch = (agent: AgentApiConfig, currentState: State): void => {
+    logTapooDiagnostic(runtime.controlModes.agentApi, "error", "Agent turn count mismatch; resetting game state.", {
+      agentId: agent.id,
+      playerName: agent.playerName,
+      stateTurnCount: currentState.turnCount,
+      agentLevelTurnCount: agent.levelTurnCount ?? 0,
+      level: currentState.level,
+      cumulativeRoundCount: currentState.cumulativeRoundCount,
+    })
+    __onActiveAgentChange?.(null)
+    __dispatch({ type: "restart" }, { playerName: runtime.interactivePlayerName })
+  }
+
   // clearScheduledTurn stops any queued request cycle.
   const clearScheduledTurn = (): void => {
     if (scheduledTurn === null) {
@@ -173,7 +194,8 @@ export function handleAgentTurnLoop({
   const recordMalformedAgentResponse = (agent: AgentApiConfig): void => {
     const chargedMovesCount = agentPenaltyDecayUnits
     __commitAgentTurn(chargedMovesCount)
-    recordAgentTurnStats(agent, __readState().level, __readState().cumulativeRoundCount, chargedMovesCount)
+    const {level,cumulativeRoundCount, turnCount } = __readState()
+    recordAgentTurnStats(agent, level, cumulativeRoundCount, chargedMovesCount, turnCount)
 
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
@@ -336,6 +358,12 @@ export function handleAgentTurnLoop({
         return
       }
 
+      const currentState = __readState()
+      if (agentTurnCountMismatch(selectedAgent, currentState)) {
+        resetAfterAgentStateMismatch(selectedAgent, currentState)
+        return
+      }
+
       __onActiveAgentChange?.(selectedAgent)
 
       const prediction = await requestAgentPredictionWithRetry(selectedAgent)
@@ -389,9 +417,8 @@ export function handleAgentTurnLoop({
         (appliedMoveCount > 0 ? agentBaseDecayUnits : 0) + (hasInvalidMove ? agentPenaltyDecayUnits : 0)
 
       __commitAgentTurn(chargedMovesCount)
-      recordAgentTurnStats(
-        selectedAgent, __readState().level, __readState().cumulativeRoundCount, chargedMovesCount,
-      )
+      const {level, cumulativeRoundCount, turnCount } = __readState()
+      recordAgentTurnStats(selectedAgent, level, cumulativeRoundCount, chargedMovesCount, turnCount)
 
       const nextResult = mergeReplayResult(lastReplayResult, {
         lastPlayerName: selectedAgent.playerName,

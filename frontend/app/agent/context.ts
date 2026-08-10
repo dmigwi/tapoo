@@ -93,48 +93,35 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
   const maxTurnCost = agentBaseDecayUnits + agentPenaltyDecayUnits
   return [
     describeAgentSpeedClassification(playerName, batchEfficiencyClass),
-    "Call get_maze_structure to read currentCell, destinationCell, and nearby maze structure before planning moves.",
+    "Call every available tool once each turn before returning moves. Start with get_maze_structure to read currentCell,",
+    "destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested",
+    "move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status,",
+    "score, and the previous prediction outcome.",
     `When present in filteredTraversalHistory, playerName ${runtime.interactivePlayerName} marks the start cell.`,
-    "currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level",
-    "with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure",
-    "are fixed once generated. filteredTraversalHistory entries matching your playerName record nearby past",
-    "moves in chronological order. Each entry's openMoves maps every open exit from that cell directly to the",
-    "neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since",
-    "creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries",
-    "recorded by other players are just as trustworthy as your own. openMoves key count reveals the physical maze",
-    "structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a",
-    "corridor; three or more is a junction.",
-    "filteredTraversalHistory is cut from the full first-visit history; cells revisited during backtracking are not",
-    "duplicated, so apparent gaps are expected. Revisiting a cell already in filteredTraversalHistory is not a mistake — once",
-    "the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way",
-    "to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start",
-    "to destination; the only valid path may require moving away from the target before turning towards it. Tool",
-    "results reflect the maze state at the time of each call — a repeat call may return updated or identical data",
-    "depending on what has changed. After the first turn, call get_last_prediction_outcome before predicting so you know",
-    "whether the previous submitted moves fully applied, partially failed, reached the target, or were rejected.",
-    "lastPlayerName identifies whose outcome it is. lastMoveStatus being null means no moves have been made yet;",
-    "invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid",
-    "JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty",
-    `of ${agentPenaltyDecayUnits} decay units was charged;`,
-    `applied means it succeeded. A turn with any valid moves costs a constant ${agentBaseDecayUnits} decay units`,
-    "regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a",
-    `further penalty of ${agentPenaltyDecayUnits} decay units on top — the maximum possible in a turn is`,
-    `${maxTurnCost} decay units.`,
+    "The maze is randomly generated at the start of each level with exactly one path to the destination. For the current",
+    "level, maze dimensions and wall/open-exit structure are fixed once generated. Use openMoves from nearby",
+    "filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy",
+    "as your own.",
+    "Revisiting a cell already in filteredTraversalHistory is not a mistake — once the current path is confirmed as",
+    "leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or",
+    "the destination. By design, the maze never guarantees a direct route from start to destination; the only valid",
+    "path may require moving away from the target before turning towards it.",
+    "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome.",
+    `A turn with any valid moves costs a constant ${agentBaseDecayUnits} decay units regardless of how many moves it`,
+    "applied; invalid moves (any moves after the last valid applied move) add a further penalty of",
+    `${agentPenaltyDecayUnits} decay units on top — the maximum possible in a turn is ${maxTurnCost} decay units. A`,
+    `malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a`,
+    `fixed ${agentPenaltyDecayUnits} decay units with no moves applied.`,
     "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a",
-    "picture of the maze around your current cell using get_maze_structure. It returns filteredTraversalHistory —",
-    "cells within manhattanDistance of your current position. manhattanDistance is the local context ceiling used",
-    "to cap suggestedMovesPerTurn from get_prediction_rules. Open exits are fixed at construction and can only be",
-    "known once a cell appears in filteredTraversalHistory. Your current cell's own open moves is a natural place",
-    "to start from.",
+    "picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
+    "currentCell's openMoves are a natural place to start when extracting high-confidence multi-move predictions.",
     "With enough of that picture assembled, you can often find several consecutive moves that are all certain to",
     "apply without any invalid-move. You could also invent a better way to sustain that classification.",
     "get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in",
     "order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
-    "Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more",
-    "new cells for the same decay — that ratio is your traversal speed, and the classification you carry names which",
-    "band it falls into: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply,",
-    "and a backtracker is almost certain to fail unless it corrects course. lastMoveStatus reached-target or status won",
-    "means the game is complete — stop predicting.",
+    "Because the charge above is per turn rather than per move, a longer prediction whose moves all land covers more",
+    "new cells for the same decay. get_prediction_rules explains the live traversal-speed metrics and classification.",
+    "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
   ].join(" ")
 }
 
@@ -155,7 +142,7 @@ export function buildAgentMessages(playerName: string, batchEfficiencyClass: Bat
 // buildDuplicateToolCallMessage names exactly which tool call(s) already have results, rather
 // than claiming no tool call can return anything new — other tools may still be genuinely
 // uncalled, and the model remains free to request those. It is explicitly labeled "Warning:" and
-// uses the same "duplicate tool call warning" phrase as buildMazeActionPrompt's malformed-response
+// uses the same "duplicate tool call warning" phrase as lastPredictionOutcomeTool's malformed-response
 // explanation, so a model that ignores it can tie the resulting penalty back to this message.
 // describeToolCall renders each call as "name (id)", falling back to placeholders for the rare
 // case a provider omits either field.
@@ -182,57 +169,6 @@ const emptyToolParameters: AgentToolDefinition["function"]["parameters"] = {
   required: [],
 }
 
-// predictionRulesTool documents the only accepted move response and the suggested batch size.
-// It deliberately does not restate the charging model: buildMazeActionPrompt already carries that,
-// with the actual unit counts, and is sent as the system message on every single turn. The split is
-// that the prompt owns the durable rules — what a turn costs and what each classification implies —
-// while this tool owns the live numbers and how to read them: the raw metrics, the division that
-// yields traversal speed, the thresholds it is scored against, and where to find the resulting
-// retention.
-const predictionRulesTool: AgentToolDefinition = {
-  type: "function",
-  function: {
-    name: "get_prediction_rules",
-    description: [
-      "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions",
-      "response per turn. uniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the",
-      "progress per decay unit spent — a scale grouped by batchEfficiencyClass. Only a cell's first visit counts as",
-      "progress. The higher the traversal speed, the higher the likelihood of finding the target on time.",
-      "batchEfficiencyClass is set to backtracker when the speed is below 1.0 (units wasted on invalid moves or",
-      "oscillation between visited cells), navigator at 1.0 (one new cell move per decay unit),",
-      "or trailblazer above 1.0 (valid multi-move guesses are paying off — the only classification that can set a",
-      "new score retention record). turnsTaken is reported for context and does not affect your speed,",
-      "classification or scores. Each turn's decay units are subtracted immediately; the resulting score retention",
-      "is visible via get_game_status.",
-      "mazeDimensions.totalMazeCells is the full level size. Dimensions and the physical wall/open-exit structure stay",
-      "fixed for the current level; only your current cell, filteredTraversalHistory, score, and outcome details change as moves execute.",
-      "Before anything is charged on this level, batchEfficiencyClass defaults to trailblazer regardless of these",
-      "counts, so you start already primed to predict multi-move sequences. Returns JSON:",
-      "{\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number,",
-      "\"turnsTaken\":number, \"batchEfficiencyClass\":string,",
-      "\"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null,",
-      "\"expectedResponseSchema\":object}.",
-    ].join(" "),
-    parameters: emptyToolParameters,
-  },
-}
-
-// gameStatusTool exposes round progress and maze dimensions without leaking full state.
-const gameStatusTool: AgentToolDefinition = {
-  type: "function",
-  function: {
-    name: "get_game_status",
-    description: [
-      "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won",
-      "(destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number,",
-      "\"status\":string, \"score\":number, \"mazeDimensions\":{\"numCols\":number, \"numRows\":number,",
-      "\"area\":number}}. numCols is the number of columns, numRows is the number of rows, area is the total cell",
-      "count.",
-    ].join(" "),
-    parameters: emptyToolParameters,
-  },
-}
-
 // mazeStructureTool gives agents position anchors plus nearby explored structure in one compact call.
 const mazeStructureTool: AgentToolDefinition = {
   type: "function",
@@ -241,16 +177,50 @@ const mazeStructureTool: AgentToolDefinition = {
     description: [
       "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down,",
       "col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col",
-      "by 1 and MoveRight increases it by 1. manhattanDistance is the configured local context ceiling that also caps",
-      "suggestedMovesPerTurn from get_prediction_rules. filteredTraversalHistory includes only first-visit records",
-      "within that true Manhattan distance from currentCell, preserving chronological order. Each included entry's",
-      "openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether",
-      "that neighbor has already been visited in the full internal history, even when that neighbor is outside the",
-      "filtered result. Returns JSON:",
-      "{\"currentCell\":{\"row\":number, \"col\":number}|null,",
+      "by 1 and MoveRight increases it by 1. filteredTraversalHistory includes only first-visit records within",
+      "manhattanDistance of currentCell, preserving chronological order; currentCell is always included because",
+      "its distance is 0. Each included entry's openMoves maps every fixed open exit from that cell directly to the",
+      "neighboring cell it leads to and whether that neighbor has already been visited in the full internal history,",
+      "even when that neighbor is outside the filtered result. openMoves key count reveals local structure: one open",
+      "exit is usually a dead end, two is a corridor, and three or more is a junction.",
+      "Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null,",
       "\"destinationCell\":{\"row\":number, \"col\":number}|null, \"manhattanDistance\":number,",
       "\"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number},",
       "\"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
+    ].join(" "),
+    parameters: emptyToolParameters,
+  },
+}
+
+// predictionRulesTool documents the only accepted move response and the suggested batch size.
+// It deliberately does not restate the charging model: buildMazeActionPrompt already carries that,
+// with the actual unit counts, and is sent as the system message on every single turn. The split is
+// that the prompt owns the durable rules — what a turn costs and what each classification implies —
+// while this tool owns the live numbers and how to read them: the raw metrics, the division that
+// yields traversal speed, the thresholds it is scored against, and where to find the resulting
+// score.
+const predictionRulesTool: AgentToolDefinition = {
+  type: "function",
+  function: {
+    name: "get_prediction_rules",
+    description: [
+      "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions",
+      "response per turn; it is capped by manhattanDistance from get_maze_structure. uniqueCellsVisited divided by",
+      "decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by",
+      "batchEfficiencyClass. Only a cell's first visit counts as progress. The higher the traversal speed, the higher",
+      "the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below",
+      "1.0 (units wasted on invalid moves or oscillation between visited cells), navigator at 1.0",
+      "(one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the",
+      "only classification that can set a new best-score record). totalTurnCount is the number of all completed prediction",
+      "turns in this game level. playerTurnsTaken is the completed turns taken by the player and is reported for context;",
+      "neither count affects your speed, classification or scores. The resulting score is visible via",
+      "get_last_prediction_outcome. mazeDimensions.totalMazeCells is the full level size.",
+      "Before anything is charged on this level, batchEfficiencyClass defaults to trailblazer regardless of these",
+      "counts, so you start already primed to predict multi-move sequences. Returns JSON:",
+      "{\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number,",
+      "\"totalTurnCount\":number, \"playerTurnsTaken\":number, \"batchEfficiencyClass\":string,",
+      "\"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null,",
+      "\"expectedResponseSchema\":object}.",
     ].join(" "),
     parameters: emptyToolParameters,
   },
@@ -262,8 +232,9 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
   function: {
     name: "get_last_prediction_outcome",
     description: [
-      "Required feedback for the next prediction after the first turn. Use this to learn whether the previous",
-      "submitted moves fully applied, partially failed, reached the target, or were rejected. lastMoveStatus values:",
+      "Call every turn, including the first, to learn whether the previous submitted moves fully applied, partially",
+      "failed, reached the target, or were rejected. status is the current",
+      "game status, score is the current score after that outcome, and lastMoveStatus values are:",
       "null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination",
       "reached, stop predicting; invalid-move=move hit a wall or boundary, execution stopped; malformed-response=previous",
       "response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning —",
@@ -273,9 +244,11 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
       "their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within",
       "lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore",
       "indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount",
-      "is the total decay units charged toward score that turn. Returns JSON: {\"lastPlayerName\":string|null,",
-      "\"lastMoveStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[],",
-      "\"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
+      "is the total decay units charged toward score that turn.",
+      "Returns JSON: {\"status\":string, \"score\":number,",
+      "\"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"lastReplayStartIndex\":number|null,",
+      "\"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null,",
+      "\"chargedMovesCount\":number}.",
     ].join(" "),
     parameters: emptyToolParameters,
   },
@@ -283,9 +256,8 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
 
 // AGENT_CONTEXT_TOOLS exposes focused context slices instead of one oversized state object.
 export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
-  predictionRulesTool,
-  gameStatusTool,
   mazeStructureTool,
+  predictionRulesTool,
   lastPredictionOutcomeTool,
 ]
 
@@ -344,12 +316,13 @@ export function buildAgentToolHandlers(
       // classification itself; all are always concrete numbers (0 is a valid count), never null, so
       // there is nothing ambiguous for the model to puzzle over before its first request.
       const batchEfficiencyClass = resolveBatchEfficiencyClass(state.traversalHistory, agent)
-      const { uniqueCellsVisited, decayUnitsCharged, turnsTaken } = getBatchEfficiencyMetrics(state.traversalHistory, agent)
+      const { uniqueCellsVisited, decayUnitsCharged, playerTurnsTaken } = getBatchEfficiencyMetrics(state.traversalHistory, agent)
       return {
         suggestedMovesPerTurn: suggestedMovesPerTurn(state),
         uniqueCellsVisited,
         decayUnitsCharged,
-        turnsTaken,
+        totalTurnCount: state.turnCount,
+        playerTurnsTaken,
         batchEfficiencyClass,
         mazeDimensions: state.mazeDimensions
           ? {
@@ -359,14 +332,6 @@ export function buildAgentToolHandlers(
             }
           : null,
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
-      }
-    },
-    get_game_status() {
-      return {
-        score: state.score,
-        level: state.level,
-        status: state.status,
-        mazeDimensions: state.mazeDimensions,
       }
     },
     get_maze_structure() {
@@ -380,6 +345,7 @@ export function buildAgentToolHandlers(
         : []
 
       return {
+        level: state.level,
         currentCell,
         destinationCell,
         manhattanDistance,
@@ -392,6 +358,8 @@ export function buildAgentToolHandlers(
     },
     get_last_prediction_outcome() {
       return {
+        status: state.status,
+        score: state.score,
         lastPlayerName: lastActionResult?.lastPlayerName ?? null,
         lastMoveStatus: lastActionResult?.lastMoveStatus ?? null,
         lastReplayStartIndex: lastActionResult?.lastReplayStartIndex ?? null,

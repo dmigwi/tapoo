@@ -165,6 +165,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
   const gameLevel = "gameLevel" in value ? value.gameLevel : undefined
   const turnCount = "turnCount" in value ? value.turnCount : undefined
+  const levelTurnCount = "levelTurnCount" in value ? value.levelTurnCount : undefined
   const decayUnitsCharged = "decayUnitsCharged" in value ? value.decayUnitsCharged : undefined
   const cumulativeRoundCount = "cumulativeRoundCount" in value ? value.cumulativeRoundCount : undefined
   // api is deliberately not part of the required-key gate above: a record persisted before this
@@ -195,6 +196,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
     (gameLevel === undefined || (typeof gameLevel === "number" && Number.isInteger(gameLevel) && gameLevel >= 0)) &&
     (cumulativeRoundCount === undefined || (typeof cumulativeRoundCount === "number" && Number.isInteger(cumulativeRoundCount) && cumulativeRoundCount >= 0)) &&
     (turnCount === undefined || (typeof turnCount === "number" && Number.isInteger(turnCount) && turnCount >= 0)) &&
+    (levelTurnCount === undefined || (typeof levelTurnCount === "number" && Number.isInteger(levelTurnCount) && levelTurnCount >= 0)) &&
     (decayUnitsCharged === undefined || (typeof decayUnitsCharged === "number" && Number.isInteger(decayUnitsCharged) && decayUnitsCharged >= 0)) &&
     (credentialValue === undefined || typeof credentialValue === "string") &&
     (extraHeadersValue === undefined || typeof extraHeadersValue === "string")
@@ -216,6 +218,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
       ...(typeof gameLevel === "number" ? { gameLevel } : {}),
       ...(typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
       ...(typeof turnCount === "number" ? { turnCount } : {}),
+      ...(typeof levelTurnCount === "number" ? { levelTurnCount } : {}),
       ...(typeof decayUnitsCharged === "number" ? { decayUnitsCharged } : {}),
       ...(typeof cumulativeRoundCount === "number" ? { cumulativeRoundCount } : {}),
     }
@@ -316,11 +319,12 @@ export function disableAgentApiConfigForNetworkError(
   return nextConfigs
 }
 
-// recordAgentTurnStats persists one agent's post-turn counters — requests made and decay units
-// charged — resetting both when the current level or round no longer matches what they were last
-// tracked against. decayUnitsCharged is accumulated per agent because state.scoreDecayUnits is
-// shared across every seat and so cannot say which agent spent what; the agent's traversal speed
-// (progress per decay unit) is measured against its own share.
+// recordAgentTurnStats persists one agent's post-turn counters. levelTurnCount is synchronized to
+// the round's completed turn count for every agent in the current attempt — a staleness signal only,
+// not a per-agent count — while turnCount and decayUnitsCharged are each accumulated only for the
+// agent that actually played, because neither State.turnCount nor state.scoreDecayUnits is split by
+// seat: the former counts every agent's turns together, the latter is shared spend with no
+// attribution to any individual agent.
 //
 // Both gameLevel and cumulativeRoundCount are required in the isSameAttempt check below — do
 // not simplify this to cumulativeRoundCount alone. Reasoning:
@@ -335,33 +339,36 @@ export function disableAgentApiConfigForNetworkError(
 //     cumulativeRoundCount value an old, unrelated agent record already holds. gameLevel is
 //     what catches that collision, since the new round's level will almost never match the
 //     stale record's level. Dropping gameLevel would let a post-reset session silently inherit
-//     a stale turnCount from a prior session, corrupting the batchEfficiencyLevel an agent
+//     stale decayUnitsCharged from a prior session, corrupting the batchEfficiencyLevel an agent
 //     is scored against.
 export function recordAgentTurnStats(
   turnAgent: AgentApiConfig,
   level: number,
   cumulativeRoundCount: number,
   chargedDecayUnits: number,
+  levelTurnCount: number,
 ): AgentApiConfig {
   let updatedAgent: AgentApiConfig = turnAgent
 
   const nextConfigs = loadPersistedAgentApiConfigs().map((agent) => {
-    if (agent.id !== turnAgent.id) {
-      return agent
-    }
-
     const isSameAttempt = agent.gameLevel === level && agent.cumulativeRoundCount === cumulativeRoundCount
-    const priorTurnCount = isSameAttempt ? (agent.turnCount ?? 0) : 0
     const priorDecayUnitsCharged = isSameAttempt ? (agent.decayUnitsCharged ?? 0) : 0
-    updatedAgent = {
+    const priorTurnCount = isSameAttempt ? (agent.turnCount ?? 0) : 0
+    const isTurnAgent = agent.id === turnAgent.id
+    const nextAgent = {
       ...agent,
       gameLevel: level,
       cumulativeRoundCount,
-      turnCount: priorTurnCount + 1,
-      decayUnitsCharged: priorDecayUnitsCharged + chargedDecayUnits,
+      levelTurnCount,
+      turnCount: priorTurnCount + (isTurnAgent ? 1 : 0),
+      decayUnitsCharged: priorDecayUnitsCharged + (isTurnAgent ? chargedDecayUnits : 0),
     }
 
-    return updatedAgent
+    if (isTurnAgent) {
+      updatedAgent = nextAgent
+    }
+
+    return nextAgent
   })
 
   savePersistedAgentApiConfigs(nextConfigs)

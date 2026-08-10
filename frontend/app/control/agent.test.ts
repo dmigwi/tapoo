@@ -884,6 +884,7 @@ describe("agent control mode", () => {
 
     const requestBody = JSON.parse(request.body) as { messages: { content?: string }[] }
     const toolResult = JSON.parse(requestBody.messages.at(-1)?.content ?? "") as {
+      level: number
       currentCell: { row: number; col: number }
       destinationCell: { row: number; col: number }
       filteredTraversalHistory: unknown[]
@@ -891,6 +892,7 @@ describe("agent control mode", () => {
     }
 
     expect(toolResult).toEqual({
+      level: 1,
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 2 },
       manhattanDistance: CONFIG.runtime.modelConfig.manhattanDistance,

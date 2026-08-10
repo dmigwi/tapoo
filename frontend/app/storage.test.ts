@@ -372,7 +372,7 @@ describe("storage", () => {
     expect(loadPersistedAgentApiConfigs()).toEqual(nextConfigs)
   })
 
-  it("accumulates an agent's turnCount and decayUnitsCharged across turns within the same level and round", () => {
+  it("syncs round levelTurnCount for every seat while turnCount and decayUnitsCharged only accumulate for the playing agent", () => {
     savePersistedAgentApiConfigs([
       {
         id: 1,
@@ -382,20 +382,34 @@ describe("storage", () => {
         api: "ollama",
         enabled: true,
       },
+      {
+        id: 2,
+        playerName: "Red",
+        model: "llama3.2",
+        endpoint: endpoint("/api/agents/red/move"),
+        api: "ollama",
+        enabled: true,
+      },
     ])
 
     // A clean turn costs 1 decay unit; a turn that hit an invalid move costs 3. Requests count
     // one per turn either way, so the two counters deliberately diverge.
-    const firstTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 1)
+    const firstTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 1, 1)
     expect(firstTurnAgent).toMatchObject({
-      gameLevel: 3, cumulativeRoundCount: 7, turnCount: 1, decayUnitsCharged: 1,
+      gameLevel: 3, cumulativeRoundCount: 7, levelTurnCount: 1, turnCount: 1, decayUnitsCharged: 1,
+    })
+    // Red never played: its own turnCount and decayUnitsCharged stay at zero, but levelTurnCount
+    // still syncs to the round's shared total — that field is a staleness signal, not a per-agent count.
+    expect(loadPersistedAgentApiConfigs()[1]).toMatchObject({
+      gameLevel: 3, cumulativeRoundCount: 7, levelTurnCount: 1, turnCount: 0, decayUnitsCharged: 0,
     })
 
-    const secondTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 3)
+    const secondTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 3, 2)
     expect(secondTurnAgent).toMatchObject({
-      gameLevel: 3, cumulativeRoundCount: 7, turnCount: 2, decayUnitsCharged: 4,
+      gameLevel: 3, cumulativeRoundCount: 7, levelTurnCount: 2, turnCount: 2, decayUnitsCharged: 4,
     })
-    expect(loadPersistedAgentApiConfigs()[0]).toMatchObject({ turnCount: 2, decayUnitsCharged: 4 })
+    expect(loadPersistedAgentApiConfigs()[0]).toMatchObject({ levelTurnCount: 2, turnCount: 2, decayUnitsCharged: 4 })
+    expect(loadPersistedAgentApiConfigs()[1]).toMatchObject({ levelTurnCount: 2, turnCount: 0, decayUnitsCharged: 0 })
   })
 
   it("resets both counters when the level changes", () => {
@@ -414,7 +428,7 @@ describe("storage", () => {
       },
     ])
 
-    const nextLevelAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 4, 7, 1)
+    const nextLevelAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 4, 7, 1, 1)
 
     expect(nextLevelAgent).toMatchObject({
       gameLevel: 4, cumulativeRoundCount: 7, turnCount: 1, decayUnitsCharged: 1,
@@ -437,7 +451,7 @@ describe("storage", () => {
       },
     ])
 
-    const retryAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 8, 1)
+    const retryAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 8, 1, 1)
 
     expect(retryAgent).toMatchObject({
       gameLevel: 3, cumulativeRoundCount: 8, turnCount: 1, decayUnitsCharged: 1,
@@ -466,7 +480,7 @@ describe("storage", () => {
     ])
 
     // New session, different level, but the round counter happens to collide.
-    const postResetAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 1, 12, 1)
+    const postResetAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 1, 12, 1, 1)
 
     // Must NOT inherit the stale turnCount: 9 or decayUnitsCharged: 25 — gameLevel differing
     // (1 vs 5) is what catches this. If recordAgentTurnStats is ever "simplified" to compare only
