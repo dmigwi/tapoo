@@ -103,34 +103,46 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigExtraHeadersAdd,
   )
   agentConfigExtraHeadersRows.append(agentConfigExtraHeadersRow)
+  const agentConfigEchoBackReasoningLabel = document.createElement("label")
+  const agentConfigEchoBackReasoning = document.createElement("input")
+  const agentConfigEchoBackReasoningText = document.createElement("span")
   const agentConfigEnabledLabel = document.createElement("label")
   const agentConfigEnabled = document.createElement("input")
   const agentConfigEnabledText = document.createElement("span")
   const agentConfigClose = document.createElement("button")
   const agentConfigStatus = document.createElement("p")
-  const agentDeleteDialog = document.createElement("section")
-  const agentDeleteTitle = document.createElement("strong")
+  const agentManageDialog = document.createElement("section")
+  const agentManageTitle = document.createElement("strong")
   const agentDeleteTarget = document.createElement("p")
-  const agentDeleteEnabledLabel = document.createElement("label")
-  const agentDeleteEnabled = document.createElement("input")
-  const agentDeleteEnabledText = document.createElement("span")
-  const agentDeleteApply = document.createElement("button")
+  const agentManageEnabledLabel = document.createElement("label")
+  const agentManageEnabled = document.createElement("input")
+  const agentManageEnabledText = document.createElement("span")
+  const agentManageEchoBackReasoningLabel = document.createElement("label")
+  const agentManageEchoBackReasoning = document.createElement("input")
+  const agentManageEchoBackReasoningText = document.createElement("span")
+  const agentManageApply = document.createElement("button")
   const agentDeleteConfirm = document.createElement("input")
-  const agentDeleteClose = document.createElement("button")
+  const agentManageClose = document.createElement("button")
 
   agentSeatRoster.hidden = true
   agentSeatsBody.hidden = true
   agentConfigForm.hidden = true
   agentConfigForm.noValidate = true
-  agentDeleteDialog.hidden = true
+  agentManageDialog.hidden = true
   agentConfigEnabledLabel.className = "agent-config-form__toggle"
-  agentDeleteEnabledLabel.className = "agent-config-form__toggle"
-  agentDeleteEnabled.type = "checkbox"
+  agentManageEnabledLabel.className = "agent-config-form__toggle"
+  agentManageEnabled.type = "checkbox"
+  agentManageEchoBackReasoningLabel.className = "agent-config-form__toggle"
+  agentManageEchoBackReasoning.type = "checkbox"
   agentDeleteConfirm.type = "checkbox"
   agentConfigEnabled.type = "checkbox"
   agentConfigEnabled.checked = true
   agentConfigEnabledText.id = "agent-config-enabled-label"
   agentConfigEnabledLabel.append(agentConfigEnabled, agentConfigEnabledText)
+  agentConfigEchoBackReasoningLabel.className = "agent-config-form__toggle"
+  agentConfigEchoBackReasoning.type = "checkbox"
+  agentConfigEchoBackReasoningText.id = "agent-config-echo-back-reasoning-label"
+  agentConfigEchoBackReasoningLabel.append(agentConfigEchoBackReasoning, agentConfigEchoBackReasoningText)
   ;["ollama", "openai", "anthropic"].forEach((value) => {
     const option = document.createElement("option")
     option.value = value
@@ -148,22 +160,26 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigCredentialLabel,
     agentConfigCredentialRequired,
     agentConfigExtraHeadersRows,
+    agentConfigEchoBackReasoningLabel,
     agentConfigEnabledLabel,
     agentConfigClose,
     agentConfigStatus,
   )
   const app = document.createElement("div")
-  agentDeleteEnabledText.id = "agent-delete-enabled-label"
-  agentDeleteEnabledLabel.append(agentDeleteEnabled, agentDeleteEnabledText)
-  agentDeleteDialog.append(
-    agentDeleteTitle,
+  agentManageEnabledText.id = "agent-manage-enabled-label"
+  agentManageEnabledLabel.append(agentManageEnabled, agentManageEnabledText)
+  agentManageEchoBackReasoningText.id = "agent-manage-echo-back-reasoning-label"
+  agentManageEchoBackReasoningLabel.append(agentManageEchoBackReasoning, agentManageEchoBackReasoningText)
+  agentManageDialog.append(
+    agentManageTitle,
     agentDeleteTarget,
-    agentDeleteEnabledLabel,
-    agentDeleteApply,
+    agentManageEnabledLabel,
+    agentManageEchoBackReasoningLabel,
+    agentManageApply,
     agentDeleteConfirm,
-    agentDeleteClose,
+    agentManageClose,
   )
-  app.append(agentSeatsBody, agentConfigForm, agentDeleteDialog)
+  app.append(agentSeatsBody, agentConfigForm, agentManageDialog)
   agentSeatsBody.append(tapooLogsReset, tapooLogsDownload, agentSeatRoster)
 
   return {
@@ -189,18 +205,22 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigCredentialRequired,
     agentConfigExtraHeadersRows,
     agentConfigExtraHeadersAdd,
+    agentConfigEchoBackReasoning,
+    agentConfigEchoBackReasoningLabel: agentConfigEchoBackReasoningText,
     agentConfigEnabled,
     agentConfigEnabledLabel: agentConfigEnabledText,
     agentConfigClose,
     agentConfigStatus,
-    agentDeleteDialog,
-    agentDeleteTitle,
+    agentManageDialog,
+    agentManageTitle,
     agentDeleteTarget,
-    agentDeleteEnabled,
-    agentDeleteEnabledLabel: agentDeleteEnabledText,
-    agentDeleteApply,
+    agentManageEnabled,
+    agentManageEnabledLabel: agentManageEnabledText,
+    agentManageEchoBackReasoning,
+    agentManageEchoBackReasoningLabel: agentManageEchoBackReasoningText,
+    agentManageApply,
     agentDeleteConfirm,
-    agentDeleteClose,
+    agentManageClose,
   }
 }
 
@@ -1097,8 +1117,8 @@ describe("agent control mode", () => {
       { type: "pause" },
       { playerName: "Self" },
     )
-    expect(elements.agentDeleteDialog?.hidden).toBe(false)
-    expect(elements.agentDeleteTitle?.textContent).toBe(
+    expect(elements.agentManageDialog?.hidden).toBe(false)
+    expect(elements.agentManageTitle?.textContent).toBe(
       "Manage Red the Trailblazer (gemma4) in seat 02",
     )
     expect(elements.agentDeleteTarget?.textContent).toBe("Delete now?")
@@ -1106,16 +1126,16 @@ describe("agent control mode", () => {
 
     elements.agentDeleteConfirm.checked = true
     elements.agentDeleteConfirm.dispatchEvent(new Event("change"))
-    expect(elements.agentDeleteEnabled?.disabled).toBe(true)
+    expect(elements.agentManageEnabled?.disabled).toBe(true)
     expect(
-      elements.agentDeleteEnabled
+      elements.agentManageEnabled
         ?.closest(".agent-config-form__toggle")
         ?.classList.contains("agent-config-form__toggle--disabled"),
     ).toBe(true)
 
     elements.agentDeleteConfirm.checked = false
     elements.agentDeleteConfirm.dispatchEvent(new Event("change"))
-    expect(elements.agentDeleteEnabled?.disabled).toBe(false)
+    expect(elements.agentManageEnabled?.disabled).toBe(false)
   })
 
   it("deletes only the selected non-current agent after confirmation", () => {
@@ -1149,7 +1169,7 @@ describe("agent control mode", () => {
 
     clickDeleteSeat(elements, "2")
     elements.agentDeleteConfirm.checked = true
-    elements.agentDeleteApply?.click()
+    elements.agentManageApply?.click()
 
     expect(loadPersistedAgentApiConfigs()).toEqual([
       expect.objectContaining({ id: 1, playerName: "Blue" }),
@@ -1179,22 +1199,22 @@ describe("agent control mode", () => {
     )
 
     clickDeleteSeat(elements, "1")
-    expect(elements.agentDeleteEnabled?.checked).toBe(false)
-    expect(elements.agentDeleteEnabledLabel?.textContent).toBe(
+    expect(elements.agentManageEnabled?.checked).toBe(false)
+    expect(elements.agentManageEnabledLabel?.textContent).toBe(
       CONFIG.agentConfig.agentDisabledLabel,
     )
 
-    elements.agentDeleteEnabled.checked = true
-    elements.agentDeleteEnabled.dispatchEvent(new Event("change"))
-    expect(elements.agentDeleteEnabledLabel?.textContent).toBe(
+    elements.agentManageEnabled.checked = true
+    elements.agentManageEnabled.dispatchEvent(new Event("change"))
+    expect(elements.agentManageEnabledLabel?.textContent).toBe(
       CONFIG.agentConfig.agentEnabledLabel,
     )
-    elements.agentDeleteApply?.click()
+    elements.agentManageApply?.click()
 
     expect(loadPersistedAgentApiConfigs()).toEqual([
       expect.objectContaining({ id: 1, enabled: true }),
     ])
-    expect(elements.agentDeleteDialog?.hidden).toBe(true)
+    expect(elements.agentManageDialog?.hidden).toBe(true)
     expect(
       elements.agentSeatRoster
         ?.querySelector('[data-agent-seat-id="1"]')
@@ -1308,8 +1328,8 @@ describe("agent control mode", () => {
 
     clickDeleteSeat(elements, "1")
 
-    expect(elements.agentDeleteDialog?.hidden).toBe(false)
-    expect(elements.agentDeleteTitle?.textContent).toBe(
+    expect(elements.agentManageDialog?.hidden).toBe(false)
+    expect(elements.agentManageTitle?.textContent).toBe(
       "Manage Blue the Backtracker (llama3.2) in seat 01",
     )
   })
@@ -1427,7 +1447,7 @@ describe("agent control mode", () => {
   })
 
   it("closes the manage/delete dialog with Escape without dispatching pause", () => {
-    // The delete dialog focuses a <button> (agentDeleteApply), unlike the add/edit form which
+    // The delete dialog focuses a <button> (agentManageApply), unlike the add/edit form which
     // focuses an <input>. Escape must still close it rather than falling through to the global
     // session shortcut, regardless of which element type currently holds focus.
     savePersistedAgentApiConfigs([
@@ -1454,12 +1474,12 @@ describe("agent control mode", () => {
 
     clickDeleteSeat(elements, "1")
     dispatch.mockClear()
-    elements.agentDeleteApply?.dispatchEvent(
+    elements.agentManageApply?.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
     )
 
     expect(dispatch).not.toHaveBeenCalled()
-    expect(elements.agentDeleteDialog?.hidden).toBe(true)
+    expect(elements.agentManageDialog?.hidden).toBe(true)
     expect(
       elements.body.classList.contains("terminal-body--agent-form-active"),
     ).toBe(false)

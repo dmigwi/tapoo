@@ -220,6 +220,21 @@
               </div>
             </div>
           </div>
+          <div class="agent-config-form__field">
+            <span class="agent-config-form__field-label">
+              <span data-config-text data-config-key="agentConfig.echoBackReasoningLabel"></span>
+              <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.echoBackReasoningTooltip">!</span>
+            </span>
+            <label class="agent-config-form__toggle">
+              <input
+                id="agent-config-echo-back-reasoning"
+                name="echoBackReasoning"
+                type="checkbox"
+              />
+              <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
+              <span id="agent-config-echo-back-reasoning-label"></span>
+            </label>
+          </div>
           <div class="agent-config-form__actions">
             <label class="agent-config-form__toggle">
               <input
@@ -248,15 +263,15 @@
           ></span>
         </form>
         <section
-          id="agent-delete-dialog"
-          class="agent-config-form agent-delete-dialog"
+          id="agent-manage-dialog"
+          class="agent-config-form agent-manage-dialog"
           hidden
           aria-label="Manage agent"
         >
           <div class="agent-config-form__header">
-            <strong id="agent-delete-title" data-config-text data-config-key="agentConfig.editTitle"></strong>
+            <strong id="agent-manage-title" data-config-text data-config-key="agentConfig.editTitle"></strong>
             <button
-              id="agent-delete-close"
+              id="agent-manage-close"
               class="agent-config-form__close"
               type="button"
               aria-label="Close agent management"
@@ -274,16 +289,31 @@
           </label>
           <label class="agent-config-form__toggle">
             <input
-              id="agent-delete-enabled"
+              id="agent-manage-enabled"
               name="deleteEnabled"
               type="checkbox"
             />
             <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
-            <span id="agent-delete-enabled-label"></span>
+            <span id="agent-manage-enabled-label"></span>
           </label>
+          <div class="agent-config-form__field">
+            <span class="agent-config-form__field-label">
+              <span data-config-text data-config-key="agentConfig.echoBackReasoningLabel"></span>
+              <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.echoBackReasoningTooltip">!</span>
+            </span>
+            <label class="agent-config-form__toggle">
+              <input
+                id="agent-manage-echo-back-reasoning"
+                name="deleteEchoBackReasoning"
+                type="checkbox"
+              />
+              <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
+              <span id="agent-manage-echo-back-reasoning-label"></span>
+            </label>
+          </div>
           <div class="agent-config-form__actions">
             <button
-              id="agent-delete-apply"
+              id="agent-manage-apply"
               class="agent-config-form__submit"
               type="button"
               data-config-text

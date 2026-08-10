@@ -50,14 +50,24 @@ const BASE_BODY = {
 }
 
 // PREDICTION_FORMAT is the JSON Schema constraint every provider's structured-output request
-// enforces, shared across all three. It reuses EXPECTED_RESPONSE_SCHEMA's shape but drops the
-// description: that text is a prompt-facing annotation for the get_prediction_rules tool result,
-// not something any provider's schema-validation payload needs.
+// enforces, shared across all three. It cannot just reuse EXPECTED_RESPONSE_SCHEMA.properties
+// verbatim: that schema's moves.minItems is useful prompt-facing documentation (read by the model
+// via get_prediction_rules, never validated against), but OpenAI's strict json_schema
+// response_format only accepts a restricted JSON Schema subset that excludes array keywords like
+// minItems/maxItems outright — confirmed by a real 400 from an OpenAI-compatible endpoint:
+// "Invalid fields for schema with types ['array']: {'minItems'}", param "response_format". Also
+// drops EXPECTED_RESPONSE_SCHEMA's own description for the same reason it always did: that text is
+// prompt-facing annotation, not something any provider's schema-validation payload needs.
 const PREDICTION_FORMAT = {
   type: "object",
   additionalProperties: false,
   required: EXPECTED_RESPONSE_SCHEMA.required,
-  properties: EXPECTED_RESPONSE_SCHEMA.properties,
+  properties: {
+    moves: {
+      type: EXPECTED_RESPONSE_SCHEMA.properties.moves.type,
+      items: EXPECTED_RESPONSE_SCHEMA.properties.moves.items,
+    },
+  },
 } as const
 
 // Each provider wraps that same schema differently on the wire — grouped together here (rather

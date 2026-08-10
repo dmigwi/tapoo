@@ -176,6 +176,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   const api = isAgentApiProvider(apiValue) ? apiValue : "ollama"
   const credentialValue = "credential" in value ? value.credential : undefined
   const extraHeadersValue = "extraHeaders" in value ? value.extraHeaders : undefined
+  const echoBackReasoningValue = "echoBackReasoning" in value ? value.echoBackReasoning : undefined
   const endpointValue = value.endpoint
   const endpoint =
     endpointValue instanceof URL
@@ -199,7 +200,8 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
     (levelTurnCount === undefined || (typeof levelTurnCount === "number" && Number.isInteger(levelTurnCount) && levelTurnCount >= 0)) &&
     (decayUnitsCharged === undefined || (typeof decayUnitsCharged === "number" && Number.isInteger(decayUnitsCharged) && decayUnitsCharged >= 0)) &&
     (credentialValue === undefined || typeof credentialValue === "string") &&
-    (extraHeadersValue === undefined || typeof extraHeadersValue === "string")
+    (extraHeadersValue === undefined || typeof extraHeadersValue === "string") &&
+    (echoBackReasoningValue === undefined || typeof echoBackReasoningValue === "boolean")
   ) {
     const disabledReason = disabledReasonValue === "network-error" ? disabledReasonValue : undefined
     const credential = typeof credentialValue === "string" && credentialValue.length > 0 ? credentialValue : undefined
@@ -215,6 +217,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
       ...(disabledReason ? { disabledReason } : {}),
       ...(credential ? { credential } : {}),
       ...(extraHeaders ? { extraHeaders } : {}),
+      ...(echoBackReasoningValue === true ? { echoBackReasoning: true } : {}),
       ...(typeof gameLevel === "number" ? { gameLevel } : {}),
       ...(typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
       ...(typeof turnCount === "number" ? { turnCount } : {}),

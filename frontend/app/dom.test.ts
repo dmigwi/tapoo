@@ -49,18 +49,22 @@ function setupTerminalDom(): void {
     <span id="agent-config-credential-required"></span>
     <div id="agent-config-extra-headers-rows"></div>
     <button id="agent-config-extra-headers-add"></button>
+    <input id="agent-config-echo-back-reasoning" />
+    <span id="agent-config-echo-back-reasoning-label"></span>
     <input id="agent-config-enabled" />
     <span id="agent-config-enabled-label"></span>
     <button id="agent-config-close"></button>
     <p id="agent-config-status"></p>
-    <section id="agent-delete-dialog"></section>
-    <strong id="agent-delete-title"></strong>
+    <section id="agent-manage-dialog"></section>
+    <strong id="agent-manage-title"></strong>
     <p id="agent-delete-target"></p>
-    <input id="agent-delete-enabled" />
-    <span id="agent-delete-enabled-label"></span>
-    <button id="agent-delete-apply"></button>
+    <input id="agent-manage-enabled" />
+    <span id="agent-manage-enabled-label"></span>
+    <input id="agent-manage-echo-back-reasoning" />
+    <span id="agent-manage-echo-back-reasoning-label"></span>
+    <button id="agent-manage-apply"></button>
     <input id="agent-delete-confirm" />
-    <button id="agent-delete-close"></button>
+    <button id="agent-manage-close"></button>
   `
 }
 

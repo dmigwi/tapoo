@@ -267,9 +267,10 @@ export type AgentToolCall = {
 
 // AgentChatMessage is the minimal chat message shape needed by the prediction request loop.
 // reasoning_content is provider-specific (currently only populated by the OpenAI-compatible
-// adapter) and must be echoed back verbatim on an assistant message that carries it — some
-// reasoning models (e.g. Kimi K3) require their own prior reasoning_content preserved across a
-// turn's tool-calling rounds, or they lose context of analysis they already did and redo it.
+// adapter). Whether it gets echoed back verbatim on the next assistant message is the per-agent
+// AgentApiConfig.echoBackReasoning flag's call, not automatic — model guidance conflicts: some
+// reasoning models (e.g. Kimi K3) require it echoed back across a turn's tool-calling rounds or
+// they lose context of analysis they already did, while others (e.g. Gemma) require it withheld.
 export type AgentChatMessage = {
   role: AgentMessageRole
   content?: string
@@ -339,6 +340,13 @@ export type AgentApiConfig = {
   // (Hugging Face's router, to dodge cold-start read timeouts), or anything else a given endpoint
   // needs. Parsed once by parseExtraHeaders (agent/protocol.ts) before reaching a provider adapter.
   extraHeaders?: string
+  // echoBackReasoning controls whether a provider-returned reasoning_content is echoed back on
+  // the next request's assistant message. Off by default because model guidance conflicts: some
+  // reasoning models (e.g. Kimi K3) require it echoed back verbatim across a turn's tool-calling
+  // rounds or they lose the analysis they already did, while others (e.g. Gemma) explicitly
+  // require it withheld from multi-turn context. See the on-form tooltip that asks the user to
+  // confirm their model's own guidance before turning this on.
+  echoBackReasoning?: boolean
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number
@@ -471,18 +479,22 @@ export type AgentElements = {
   agentConfigCredentialRequired?: HTMLElement
   agentConfigExtraHeadersRows?: HTMLElement
   agentConfigExtraHeadersAdd?: HTMLButtonElement
+  agentConfigEchoBackReasoning?: HTMLInputElement
+  agentConfigEchoBackReasoningLabel?: HTMLElement
   agentConfigEnabled?: HTMLInputElement
   agentConfigEnabledLabel?: HTMLElement
   agentConfigClose?: HTMLButtonElement
   agentConfigStatus?: HTMLElement
-  agentDeleteDialog?: HTMLElement
-  agentDeleteTitle?: HTMLElement
+  agentManageDialog?: HTMLElement
+  agentManageTitle?: HTMLElement
   agentDeleteTarget?: HTMLElement
-  agentDeleteEnabled?: HTMLInputElement
-  agentDeleteEnabledLabel?: HTMLElement
-  agentDeleteApply?: HTMLButtonElement
+  agentManageEnabled?: HTMLInputElement
+  agentManageEnabledLabel?: HTMLElement
+  agentManageEchoBackReasoning?: HTMLInputElement
+  agentManageEchoBackReasoningLabel?: HTMLElement
+  agentManageApply?: HTMLButtonElement
   agentDeleteConfirm?: HTMLInputElement
-  agentDeleteClose?: HTMLButtonElement
+  agentManageClose?: HTMLButtonElement
 }
 
 // Elements combines shared terminal handles with optional agent-api controls.
@@ -655,6 +667,10 @@ export type AppConfig = {
     removeHeaderLabel: string
     extraHeadersKeyPlaceholders: Record<AgentApiProvider, string>
     extraHeadersValuePlaceholders: Record<AgentApiProvider, string>
+    echoBackReasoningLabel: string
+    echoBackReasoningTooltip: string
+    echoBackReasoningOnLabel: string
+    echoBackReasoningOffLabel: string
     submitLabel: string
     invalidMessage: string
     invalidApiMessage: string

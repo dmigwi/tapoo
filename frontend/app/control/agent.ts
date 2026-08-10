@@ -93,15 +93,17 @@ export function createAgentMode(
   let agentMovePoller: AgentMovePoller | null = null
   let activeAgentId: number | null = null
   let selectedSeatId: number | null = null
-  let deleteSeatId: number | null = null
+  let manageSeatId: number | null = null
   let agentRosterClickHandler: ((event: MouseEvent) => void) | null = null
-  let agentDeleteCloseHandler: (() => void) | null = null
-  let agentDeleteApplyHandler: (() => void) | null = null
+  let agentManageCloseHandler: (() => void) | null = null
+  let agentManageApplyHandler: (() => void) | null = null
   let agentDeleteConfirmChangeHandler: (() => void) | null = null
-  let agentDeleteEnabledChangeHandler: (() => void) | null = null
+  let agentManageEnabledChangeHandler: (() => void) | null = null
+  let agentManageEchoBackReasoningChangeHandler: (() => void) | null = null
   let agentConfigEnabledChangeHandler: (() => void) | null = null
   let agentConfigApiChangeHandler: (() => void) | null = null
   let agentConfigExtraHeadersAddHandler: (() => void) | null = null
+  let agentConfigEchoBackReasoningChangeHandler: (() => void) | null = null
   let agentFormCloseHandler: (() => void) | null = null
   let agentFormSubmitHandler: ((event: Event) => void) | null = null
   let agentFormOuterClickHandler: ((event: MouseEvent) => void) | null = null
@@ -112,11 +114,11 @@ export function createAgentMode(
 
   // Open overlays temporarily own focus, so normal app refocus should pause until they close.
   const isAgentConfigFormOpen = (): boolean => elements.agentConfigForm?.hidden === false
-  const isAgentDeleteDialogOpen = (): boolean => elements.agentDeleteDialog?.hidden === false
-  // At most one overlay is ever open (openAgentConfigForm/openAgentDeleteDialog each close the
+  const isAgentManageDialogOpen = (): boolean => elements.agentManageDialog?.hidden === false
+  // At most one overlay is ever open (openAgentConfigForm/openAgentManageDialog each close the
   // other before opening), but callers that only care whether the app should yield focus or dim
   // don't need to know which — this is the shared "something is showing" check for those callers.
-  const isAnyAgentOverlayOpen = (): boolean => isAgentConfigFormOpen() || isAgentDeleteDialogOpen()
+  const isAnyAgentOverlayOpen = (): boolean => isAgentConfigFormOpen() || isAgentManageDialogOpen()
   const focusCurrentApp = (): void => {
     if (isAnyAgentOverlayOpen()) {
       return
@@ -144,21 +146,25 @@ export function createAgentMode(
           elements.agentSeatRoster.removeEventListener("click", agentRosterClickHandler)
           agentRosterClickHandler = null
         }
-        if (elements.agentDeleteClose && agentDeleteCloseHandler) {
-          elements.agentDeleteClose.removeEventListener("click", agentDeleteCloseHandler )
-          agentDeleteCloseHandler = null
+        if (elements.agentManageClose && agentManageCloseHandler) {
+          elements.agentManageClose.removeEventListener("click", agentManageCloseHandler )
+          agentManageCloseHandler = null
         }
-        if (elements.agentDeleteApply && agentDeleteApplyHandler) {
-          elements.agentDeleteApply.removeEventListener("click", agentDeleteApplyHandler )
-          agentDeleteApplyHandler = null
+        if (elements.agentManageApply && agentManageApplyHandler) {
+          elements.agentManageApply.removeEventListener("click", agentManageApplyHandler )
+          agentManageApplyHandler = null
         }
         if (elements.agentDeleteConfirm && agentDeleteConfirmChangeHandler) {
           elements.agentDeleteConfirm.removeEventListener("change", agentDeleteConfirmChangeHandler )
           agentDeleteConfirmChangeHandler = null
         }
-        if (elements.agentDeleteEnabled && agentDeleteEnabledChangeHandler) {
-          elements.agentDeleteEnabled.removeEventListener("change", agentDeleteEnabledChangeHandler )
-          agentDeleteEnabledChangeHandler = null
+        if (elements.agentManageEnabled && agentManageEnabledChangeHandler) {
+          elements.agentManageEnabled.removeEventListener("change", agentManageEnabledChangeHandler )
+          agentManageEnabledChangeHandler = null
+        }
+        if (elements.agentManageEchoBackReasoning && agentManageEchoBackReasoningChangeHandler) {
+          elements.agentManageEchoBackReasoning.removeEventListener("change", agentManageEchoBackReasoningChangeHandler)
+          agentManageEchoBackReasoningChangeHandler = null
         }
         if (elements.agentConfigEnabled && agentConfigEnabledChangeHandler) {
           elements.agentConfigEnabled.removeEventListener("change", agentConfigEnabledChangeHandler )
@@ -171,6 +177,10 @@ export function createAgentMode(
         if (elements.agentConfigExtraHeadersAdd && agentConfigExtraHeadersAddHandler) {
           elements.agentConfigExtraHeadersAdd.removeEventListener("click", agentConfigExtraHeadersAddHandler)
           agentConfigExtraHeadersAddHandler = null
+        }
+        if (elements.agentConfigEchoBackReasoning && agentConfigEchoBackReasoningChangeHandler) {
+          elements.agentConfigEchoBackReasoning.removeEventListener("change", agentConfigEchoBackReasoningChangeHandler)
+          agentConfigEchoBackReasoningChangeHandler = null
         }
         if (elements.agentConfigForm && agentFormSubmitHandler) {
           elements.agentConfigForm.removeEventListener("submit", agentFormSubmitHandler )
@@ -306,25 +316,47 @@ export function createAgentMode(
         }
       }
 
-      // syncAgentEnabledToggle keeps the toggle label and CSS state aligned with the checkbox value.
+      // syncToggleState keeps a toggle's label and CSS state aligned with its checkbox value. Takes
+      // the on/off copy explicitly so it can drive any of the form's toggles, not just enabled/disabled.
+      const syncToggleState = (
+        input: HTMLInputElement | undefined,
+        label: HTMLElement | undefined,
+        onLabel: string,
+        offLabel: string,
+      ): void => {
+        const isOn = input?.checked ?? false
+        input
+          ?.closest(".agent-config-form__toggle")
+          ?.classList.toggle("agent-config-form__toggle--off", !isOn)
+        if (label) {
+          label.textContent = isOn ? onLabel : offLabel
+        }
+      }
+
+      // syncAgentEnabledToggle specializes syncToggleState for the shared enabled/disabled toggle,
+      // used by both the add/edit form and the delete dialog.
       const syncAgentEnabledToggle = (
         input: HTMLInputElement | undefined,
         label: HTMLElement | undefined,
       ): void => {
-        const agentEnabled = input?.checked ?? false
-        input
-          ?.closest(".agent-config-form__toggle")
-          ?.classList.toggle("agent-config-form__toggle--off", !agentEnabled)
-        if (label) {
-          label.textContent = agentEnabled
-            ? agentConfig.agentEnabledLabel
-            : agentConfig.agentDisabledLabel
-        }
+        syncToggleState(input, label, agentConfig.agentEnabledLabel, agentConfig.agentDisabledLabel)
       }
 
       // syncAgentConfigEnabledToggle specializes syncAgentEnabledToggle for the add/edit form fields.
       const syncAgentConfigEnabledToggle = (): void => {
         syncAgentEnabledToggle(elements.agentConfigEnabled, elements.agentConfigEnabledLabel)
+      }
+
+      // syncAgentConfigEchoBackReasoningToggle keeps the Echo Back Reasoning toggle's label and CSS
+      // state aligned with its checkbox — off by default (see the field's tooltip and
+      // AgentApiConfig.echoBackReasoning), since model guidance on this conflicts across providers.
+      const syncAgentConfigEchoBackReasoningToggle = (): void => {
+        syncToggleState(
+          elements.agentConfigEchoBackReasoning,
+          elements.agentConfigEchoBackReasoningLabel,
+          agentConfig.echoBackReasoningOnLabel,
+          agentConfig.echoBackReasoningOffLabel,
+        )
       }
 
       // extraHeaderKeyInputs/extraHeaderValueInputs read the current set of header rows — however
@@ -456,8 +488,12 @@ export function createAgentMode(
         if (elements.agentConfigApi) {
           elements.agentConfigApi.value = "ollama"
         }
+        if (elements.agentConfigEchoBackReasoning) {
+          elements.agentConfigEchoBackReasoning.checked = false
+        }
         resetExtraHeaderRows()
         syncAgentConfigEnabledToggle()
+        syncAgentConfigEchoBackReasoningToggle()
         syncAgentConfigProviderFields()
         clearAgentConfigStatus()
       }
@@ -491,8 +527,8 @@ export function createAgentMode(
 
         // Both overlays share one screen position, so leaving the other open would render them
         // superimposed rather than merely stacked.
-        if (isAgentDeleteDialogOpen()) {
-          closeAgentDeleteDialog()
+        if (isAgentManageDialogOpen()) {
+          closeAgentManageDialog()
         }
 
         pauseIfRunning()
@@ -502,37 +538,50 @@ export function createAgentMode(
         }
         elements.agentConfigForm.hidden = false
         syncAgentConfigEnabledToggle()
+        syncAgentConfigEchoBackReasoningToggle()
         syncAgentConfigProviderFields()
         syncOverlayState()
         elements.agentConfigPlayerName?.focus()
       }
 
-      // closeAgentDeleteDialog hides the delete/disable dialog and clears the pending seat id.
-      const closeAgentDeleteDialog = (): void => {
-        if (!elements.agentDeleteDialog) {
+      // closeAgentManageDialog hides the manage dialog and clears the pending seat id.
+      const closeAgentManageDialog = (): void => {
+        if (!elements.agentManageDialog) {
           return
         }
 
-        elements.agentDeleteDialog.hidden = true
-        deleteSeatId = null
+        elements.agentManageDialog.hidden = true
+        manageSeatId = null
         syncOverlayState()
       }
 
-      // syncAgentDeleteOptions disables the enable/disable toggle when the delete checkbox is checked.
-      const syncAgentDeleteOptions = (): void => {
+      // syncAgentManageOptions disables the enable/disable and echo-back-reasoning toggles when the
+      // delete checkbox is checked — neither matters once the agent is about to be removed.
+      const syncAgentManageOptions = (): void => {
         const shouldDelete = elements.agentDeleteConfirm?.checked ?? false
-        if (elements.agentDeleteEnabled) {
-          elements.agentDeleteEnabled.disabled = shouldDelete
-          elements.agentDeleteEnabled.closest(".agent-config-form__toggle")
+        if (elements.agentManageEnabled) {
+          elements.agentManageEnabled.disabled = shouldDelete
+          elements.agentManageEnabled.closest(".agent-config-form__toggle")
             ?.classList.toggle("agent-config-form__toggle--disabled", shouldDelete)
         }
-        syncAgentEnabledToggle(elements.agentDeleteEnabled, elements.agentDeleteEnabledLabel)
+        if (elements.agentManageEchoBackReasoning) {
+          elements.agentManageEchoBackReasoning.disabled = shouldDelete
+          elements.agentManageEchoBackReasoning.closest(".agent-config-form__toggle")
+            ?.classList.toggle("agent-config-form__toggle--disabled", shouldDelete)
+        }
+        syncAgentEnabledToggle(elements.agentManageEnabled, elements.agentManageEnabledLabel)
+        syncToggleState(
+          elements.agentManageEchoBackReasoning,
+          elements.agentManageEchoBackReasoningLabel,
+          agentConfig.echoBackReasoningOnLabel,
+          agentConfig.echoBackReasoningOffLabel,
+        )
       }
 
-      // openAgentDeleteDialog pauses an active round and opens the manage/delete overlay for the chosen seat.
-      const openAgentDeleteDialog = (seatId: number): void => {
+      // openAgentManageDialog pauses an active round and opens the manage overlay for the chosen seat.
+      const openAgentManageDialog = (seatId: number): void => {
         const agent = readAgentConfigs().find((config) => config.id === seatId)
-        if (!agent || agent.id === currentPlayingAgentId() || !elements.agentDeleteDialog) {
+        if (!agent || agent.id === currentPlayingAgentId() || !elements.agentManageDialog) {
           return
         }
 
@@ -543,23 +592,26 @@ export function createAgentMode(
         }
 
         pauseIfRunning()
-        deleteSeatId = seatId
-        if (elements.agentDeleteTitle) {
-          elements.agentDeleteTitle.textContent = agentSeatManageLabel(agent, readState().traversalHistory)
+        manageSeatId = seatId
+        if (elements.agentManageTitle) {
+          elements.agentManageTitle.textContent = agentSeatManageLabel(agent, readState().traversalHistory)
         }
         if (elements.agentDeleteTarget) {
           elements.agentDeleteTarget.textContent = agentConfig.deleteMessageTemplate
         }
-        elements.agentDeleteDialog.hidden = false
-        if (elements.agentDeleteEnabled) {
-          elements.agentDeleteEnabled.checked = agent.enabled
+        elements.agentManageDialog.hidden = false
+        if (elements.agentManageEnabled) {
+          elements.agentManageEnabled.checked = agent.enabled
+        }
+        if (elements.agentManageEchoBackReasoning) {
+          elements.agentManageEchoBackReasoning.checked = agent.echoBackReasoning ?? false
         }
         if (elements.agentDeleteConfirm) {
           elements.agentDeleteConfirm.checked = false
         }
-        syncAgentDeleteOptions()
+        syncAgentManageOptions()
         syncOverlayState()
-        elements.agentDeleteApply?.focus()
+        elements.agentManageApply?.focus()
       }
 
       // bindAgentRoster attaches a single delegated click handler to the seat roster container.
@@ -588,7 +640,7 @@ export function createAgentMode(
 
           const seatIdToDelete = agentSeatIdFromDataset(button.dataset.agentSeatDelete)
           if (seatIdToDelete !== null) {
-            openAgentDeleteDialog(seatIdToDelete)
+            openAgentManageDialog(seatIdToDelete)
           }
         }
 
@@ -665,6 +717,8 @@ export function createAgentMode(
           !elements.agentConfigCredentialRequired ||
           !elements.agentConfigExtraHeadersRows ||
           !elements.agentConfigExtraHeadersAdd ||
+          !elements.agentConfigEchoBackReasoning ||
+          !elements.agentConfigEchoBackReasoningLabel ||
           !elements.agentConfigEnabled ||
           !elements.agentConfigEnabledLabel ||
           !elements.agentConfigClose ||
@@ -684,6 +738,7 @@ export function createAgentMode(
           const api: AgentApiProvider = isAgentApiProvider(selectedApi) ? selectedApi : "ollama"
           const credential = elements.agentConfigCredential?.value.trim() ?? ""
           const extraHeaders = collectExtraHeaders()
+          const echoBackReasoning = elements.agentConfigEchoBackReasoning?.checked ?? false
           const enabled = elements.agentConfigEnabled?.checked ?? false
           clearAgentConfigStatus()
 
@@ -727,6 +782,7 @@ export function createAgentMode(
             api,
             ...(credential ? { credential } : {}),
             ...(extraHeaders ? { extraHeaders } : {}),
+            ...(echoBackReasoning ? { echoBackReasoning } : {}),
             enabled,
           }
 
@@ -751,10 +807,13 @@ export function createAgentMode(
         }
         elements.agentConfigExtraHeadersAdd.addEventListener("click", agentConfigExtraHeadersAddHandler)
 
+        agentConfigEchoBackReasoningChangeHandler = syncAgentConfigEchoBackReasoningToggle
+        elements.agentConfigEchoBackReasoning.addEventListener("change", agentConfigEchoBackReasoningChangeHandler)
+
         agentFormCloseHandler = closeAgentConfigForm
         elements.agentConfigClose.addEventListener("click", agentFormCloseHandler)
 
-        // Only one overlay is ever open at a time (openAgentConfigForm/openAgentDeleteDialog each
+        // Only one overlay is ever open at a time (openAgentConfigForm/openAgentManageDialog each
         // close the other), so whichever one closeActiveAgentOverlay finds open is the right one.
         agentFormOuterClickHandler = (event: MouseEvent): void => {
           if (event.target === elements.body) {
@@ -764,45 +823,61 @@ export function createAgentMode(
         elements.body.addEventListener("click", agentFormOuterClickHandler)
       }
 
-      // bindAgentDeleteDialog wires the confirm-delete, enable-toggle, apply, and close handlers.
-      const bindAgentDeleteDialog = (): void => {
+      // bindAgentManageDialog wires the confirm-delete, enable-toggle, echo-back-reasoning, apply, and close handlers.
+      const bindAgentManageDialog = (): void => {
         if (
-          !elements.agentDeleteClose ||
-          !elements.agentDeleteEnabled ||
-          !elements.agentDeleteEnabledLabel ||
-          !elements.agentDeleteApply ||
+          !elements.agentManageClose ||
+          !elements.agentManageEnabled ||
+          !elements.agentManageEnabledLabel ||
+          !elements.agentManageEchoBackReasoning ||
+          !elements.agentManageEchoBackReasoningLabel ||
+          !elements.agentManageApply ||
           !elements.agentDeleteConfirm
         ) {
           return
         }
 
-        agentDeleteCloseHandler = closeAgentDeleteDialog
-        agentDeleteConfirmChangeHandler = syncAgentDeleteOptions
-        agentDeleteEnabledChangeHandler = syncAgentDeleteOptions
-        agentDeleteApplyHandler = (): void => {
-          // Delete wins over enable/disable edits because the seat becomes empty.
-          if (!deleteSeatId) {
-            closeAgentDeleteDialog()
+        agentManageCloseHandler = closeAgentManageDialog
+        agentDeleteConfirmChangeHandler = syncAgentManageOptions
+        agentManageEnabledChangeHandler = syncAgentManageOptions
+        agentManageEchoBackReasoningChangeHandler = syncAgentManageOptions
+        agentManageApplyHandler = (): void => {
+          // Delete wins over enable/disable/echo-back-reasoning edits because the seat becomes empty.
+          if (!manageSeatId) {
+            closeAgentManageDialog()
             return
           }
 
-          const enabled = elements.agentDeleteEnabled?.checked ?? false
+          const enabled = elements.agentManageEnabled?.checked ?? false
+          const echoBackReasoning = elements.agentManageEchoBackReasoning?.checked ?? false
           const shouldDelete = elements.agentDeleteConfirm?.checked ?? false
           const nextAgents = shouldDelete
-            ? readAgentConfigs().filter((agent) => agent.id !== deleteSeatId)
-            : readAgentConfigs().map((agent) =>
-                agent.id === deleteSeatId ? { ...agent, enabled } : agent,
-              )
+            ? readAgentConfigs().filter((agent) => agent.id !== manageSeatId)
+            : readAgentConfigs().map((agent) => {
+                if (agent.id !== manageSeatId) {
+                  return agent
+                }
+
+                // Omit the key entirely rather than storing false, matching how the add form only
+                // ever persists this field when it is true (see agentFormSubmitHandler above).
+                const nextAgent: AgentApiConfig = { ...agent, enabled }
+                delete nextAgent.echoBackReasoning
+                if (echoBackReasoning) {
+                  nextAgent.echoBackReasoning = echoBackReasoning
+                }
+                return nextAgent
+              })
           savePersistedAgentApiConfigs(nextAgents)
-          closeAgentDeleteDialog()
+          closeAgentManageDialog()
           renderAgentRoster()
           syncCurrentPoller()
         }
 
-        elements.agentDeleteClose.addEventListener("click", agentDeleteCloseHandler)
+        elements.agentManageClose.addEventListener("click", agentManageCloseHandler)
         elements.agentDeleteConfirm.addEventListener("change", agentDeleteConfirmChangeHandler)
-        elements.agentDeleteEnabled.addEventListener("change", agentDeleteEnabledChangeHandler)
-        elements.agentDeleteApply.addEventListener("click", agentDeleteApplyHandler)
+        elements.agentManageEnabled.addEventListener("change", agentManageEnabledChangeHandler)
+        elements.agentManageEchoBackReasoning.addEventListener("change", agentManageEchoBackReasoningChangeHandler)
+        elements.agentManageApply.addEventListener("click", agentManageApplyHandler)
       }
 
       // closeActiveAgentOverlay dismisses whichever overlay is open and returns true so callers can skip further handling.
@@ -812,8 +887,8 @@ export function createAgentMode(
           return true
         }
 
-        if (isAgentDeleteDialogOpen()) {
-          closeAgentDeleteDialog()
+        if (isAgentManageDialogOpen()) {
+          closeAgentManageDialog()
           return true
         }
 
@@ -854,7 +929,7 @@ export function createAgentMode(
       bindLogButtons()
       bindAgentRoster()
       bindAgentConfigForm()
-      bindAgentDeleteDialog()
+      bindAgentManageDialog()
 
       // keydownHandler routes global keyboard shortcuts while yielding control to open overlays.
       keydownHandler = (event: KeyboardEvent): void => {

@@ -1399,7 +1399,7 @@ body {
   color: var(--target);
 }
 
-.agent-delete-dialog .agent-config-form__actions {
+.agent-manage-dialog .agent-config-form__actions {
   justify-content: flex-end;
 }
 

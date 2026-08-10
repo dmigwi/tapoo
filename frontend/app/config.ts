@@ -222,6 +222,13 @@ export const CONFIG: AppConfig = {
       anthropic: "API Key",
     },
     credentialRotationTooltip: "Once set, rotate this token/key periodically for better security!",
+    echoBackReasoningLabel: "Echo Back Reasoning",
+    echoBackReasoningTooltip:
+      "Confirm your model's own multi-turn usage guidance before enabling. Some reasoning models " +
+      "(e.g. Kimi K3) require prior reasoning content echoed back on every turn or they lose their " +
+      "analysis; others (e.g. Gemma) explicitly require it withheld. Off by default.",
+    echoBackReasoningOnLabel: "Reasoning content will be sent back.",
+    echoBackReasoningOffLabel: "Reasoning content will not be sent back.",
     submitLabel: "Add Agent",
     invalidMessage: "Fill in Player Name, Model and Endpoint.",
     invalidApiMessage: "This agent's API provider is not properly configured.",

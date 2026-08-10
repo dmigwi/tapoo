@@ -153,6 +153,11 @@ async function requestChatTurn(
   })
 
   if (!response.ok) {
+    // The provider's own error body usually names the exact rejected field (e.g. an unrecognized
+    // request parameter) — status/statusText alone rarely do. Read it as text rather than
+    // response.json(): a strict-validation rejection isn't guaranteed to be valid JSON, and a
+    // failed parse here must not shadow the real failure this diagnostic exists to capture.
+    const responseBodyText = await response.text().catch(() => undefined)
     return {
       ok: false,
       reason: "network-error",
@@ -162,6 +167,7 @@ async function requestChatTurn(
           endpoint: endpointDisplay,
           status: response.status,
           statusText: response.statusText,
+          responseBody: responseBodyText,
         },
       },
     }
@@ -334,15 +340,14 @@ export function requestPredictionWithAbort({
           messages = [
             ...messages,
             {
-            role: "assistant",
-            content: response.message.content ?? "",
-            // Some reasoning models (e.g. Kimi K3) require their own prior reasoning_content
-            // preserved verbatim across a turn's tool-calling rounds, or they lose the analysis
-            // they already did and redo it from scratch on every round. Providers that don't
-            // return it (Ollama, Anthropic) leave this undefined, which JSON.stringify drops.
-            reasoning_content: response.message.reasoning_content,
-            tool_calls: toolCalls,
-          },
+              role: "assistant",
+              content: response.message.content ?? "",
+              // Only echoed back when the agent's own echoBackReasoning flag is on — model
+              // guidance conflicts here (Kimi K3 requires it echoed back, Gemma requires it
+              // withheld), so this defaults off. See AgentApiConfig.echoBackReasoning.
+              ...(agent.echoBackReasoning ? { reasoning_content: response.message.reasoning_content } : {}),
+              tool_calls: toolCalls,
+            },
             buildDuplicateToolCallMessage(duplicateToolCalls),
           ]
           duplicateWarningIssued = true
@@ -391,11 +396,10 @@ export function requestPredictionWithAbort({
           {
             role: "assistant",
             content: response.message.content ?? "",
-            // Some reasoning models (e.g. Kimi K3) require their own prior reasoning_content
-            // preserved verbatim across a turn's tool-calling rounds, or they lose the analysis
-            // they already did and redo it from scratch on every round. Providers that don't
-            // return it (Ollama, Anthropic) leave this undefined, which JSON.stringify drops.
-            reasoning_content: response.message.reasoning_content,
+            // Only echoed back when the agent's own echoBackReasoning flag is on — model guidance
+            // conflicts here (Kimi K3 requires it echoed back, Gemma requires it withheld), so
+            // this defaults off. See AgentApiConfig.echoBackReasoning.
+            ...(agent.echoBackReasoning ? { reasoning_content: response.message.reasoning_content } : {}),
             tool_calls: toolCalls,
           },
           ...toolResult.messages,

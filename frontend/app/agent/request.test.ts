@@ -717,10 +717,15 @@ describe("agent request service", () => {
     })
   })
 
-  it("returns network-error for non-ok response", async () => {
+  it("returns network-error for non-ok response, including the provider's raw error body", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({ ok: false, status: 503, statusText: "Unavailable" }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        statusText: "Unavailable",
+        text: vi.fn().mockResolvedValue("{\"error\":\"model overloaded\"}"),
+      }),
     )
 
     await expect(requestPrediction(requestInput())).resolves.toMatchObject({
@@ -728,7 +733,38 @@ describe("agent request service", () => {
       reason: "network-error",
       diagnostic: {
         message: "Provider HTTP response failed.",
-        details: { endpoint, status: 503, statusText: "Unavailable" },
+        details: {
+          endpoint,
+          status: 503,
+          statusText: "Unavailable",
+          responseBody: "{\"error\":\"model overloaded\"}",
+        },
+      },
+    })
+  })
+
+  it("still reports a non-ok response when reading its body fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        text: vi.fn().mockRejectedValue(new Error("stream already used")),
+      }),
+    )
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "network-error",
+      diagnostic: {
+        message: "Provider HTTP response failed.",
+        details: {
+          endpoint,
+          status: 500,
+          statusText: "Internal Server Error",
+          responseBody: undefined,
+        },
       },
     })
   })
@@ -1084,8 +1120,8 @@ describe("agent request service", () => {
     expect(serializedLog).not.toContain(extraHeadersSentinel)
   })
 
-  it("echoes an assistant's reasoning_content back on the next round, for reasoning models that require it preserved", async () => {
-    const openaiAgent: AgentApiConfig = { ...agent, api: "openai" }
+  it("echoes an assistant's reasoning_content back on the next round when echoBackReasoning is on, for reasoning models that require it preserved (e.g. Kimi K3)", async () => {
+    const openaiAgent: AgentApiConfig = { ...agent, api: "openai", echoBackReasoning: true }
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -1123,6 +1159,48 @@ describe("agent request service", () => {
     const secondBody = JSON.parse(secondRequest.body as string) as { messages: { role: string; reasoning_content?: string }[] }
     const assistantMessage = secondBody.messages.find((msg) => msg.role === "assistant")
     expect(assistantMessage?.reasoning_content).toBe("Let me check the maze structure first.")
+  })
+
+  it("withholds reasoning_content by default, for models that require it not be sent back (e.g. Gemma)", async () => {
+    const openaiAgent: AgentApiConfig = { ...agent, api: "openai" }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "",
+                reasoning_content: "Let me check the maze structure first.",
+                tool_calls: [
+                  { id: "call_structure", function: { index: 0, name: "get_maze_structure", arguments: "{}" } },
+                ],
+              },
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          choices: [
+            { message: { role: "assistant", content: JSON.stringify({ moves: ["MoveRight"] }) } },
+          ],
+        }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      requestPrediction({ ...requestInput(), agent: openaiAgent }),
+    ).resolves.toEqual({ ok: true, moves: ["MoveRight"] })
+
+    const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
+    const secondBody = JSON.parse(secondRequest.body as string) as { messages: { role: string; reasoning_content?: string }[] }
+    const assistantMessage = secondBody.messages.find((msg) => msg.role === "assistant")
+    expect(assistantMessage?.reasoning_content).toBeUndefined()
+    expect(assistantMessage && "reasoning_content" in assistantMessage).toBe(false)
   })
 
   it("fails a turn cleanly for an agent whose api has no matching adapter, instead of throwing", async () => {

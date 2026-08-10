@@ -42,15 +42,15 @@ function createButton({
 // RenderElements narrows Elements to the two agent overlays these render tests toggle; the rest
 // of AgentElements stays optional because the renderer never reads it.
 type RenderElements = Elements &
-  Required<Pick<AgentElements, "agentConfigForm" | "agentDeleteDialog">>
+  Required<Pick<AgentElements, "agentConfigForm" | "agentManageDialog">>
 
 function createElements(): RenderElements {
   const screen = document.createElement("div")
   const touchControls = document.createElement("div")
   const agentConfigForm = document.createElement("form")
-  const agentDeleteDialog = document.createElement("section")
+  const agentManageDialog = document.createElement("section")
   agentConfigForm.hidden = true
-  agentDeleteDialog.hidden = true
+  agentManageDialog.hidden = true
   const touchButtons = [
     createButton({ action: "walls" }),
     createButton({ move: "MoveUp" }),
@@ -71,7 +71,7 @@ function createElements(): RenderElements {
     touchControls,
     touchButtons,
     agentConfigForm,
-    agentDeleteDialog,
+    agentManageDialog,
   }
 }
 
@@ -379,7 +379,7 @@ describe("render", () => {
   it("hides an open agent configuration form when agent-api play starts", () => {
     const elements = createElements()
     elements.agentConfigForm.hidden = false
-    elements.agentDeleteDialog.hidden = false
+    elements.agentManageDialog.hidden = false
     elements.body.classList.add("terminal-body--agent-form-active")
 
     render(
@@ -391,7 +391,7 @@ describe("render", () => {
     )
 
     expect(elements.agentConfigForm.hidden).toBe(true)
-    expect(elements.agentDeleteDialog?.hidden).toBe(true)
+    expect(elements.agentManageDialog?.hidden).toBe(true)
     expect(
       elements.body.classList.contains("terminal-body--agent-form-active"),
     ).toBe(false)
