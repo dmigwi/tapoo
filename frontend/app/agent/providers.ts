@@ -223,6 +223,8 @@ function anthropicAssistantContent(message: AgentChatMessage): AnthropicContentB
     if (!call.function?.name) continue
     blocks.push({
       type: "tool_use",
+      // Falls back to the function name for an id-less call — anthropicBuildBody's tool_result
+      // branch mirrors this exact fallback so the two block types stay pairable by id.
       id: call.id ?? call.function.name,
       name: call.function.name,
       input: typeof call.function.arguments === "object" && call.function.arguments !== null
@@ -246,7 +248,10 @@ function anthropicBuildBody(input: ProviderRequestInput): Record<string, unknown
     if (message.role === "tool") {
       const toolResultBlock: AnthropicContentBlock = {
         type: "tool_result",
-        tool_use_id: message.tool_call_id ?? "",
+        // Falls back to tool_name the same way anthropicAssistantContent's tool_use.id does — both
+        // must agree on the same id for an id-less call, or Anthropic can't pair this result back
+        // to the tool_use block that requested it.
+        tool_use_id: message.tool_call_id ?? message.tool_name ?? "",
         content: message.content ?? "",
       }
 

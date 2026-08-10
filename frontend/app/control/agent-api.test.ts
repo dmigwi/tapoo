@@ -302,13 +302,13 @@ describe("agent api turn loop", () => {
       dispatch,
       expect.objectContaining({ model: "llama3.2", playerName: "Blue" }),
     )
-    expect(commitAgentTurn).toHaveBeenCalledWith(3)
+    expect(commitAgentTurn).toHaveBeenCalledWith(2)
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "invalid-move",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastAppliedMoveIndex: 1,
-        chargedMovesCount: 3,
+        chargedMovesCount: 2,
       }),
     )
   })
@@ -640,14 +640,14 @@ describe("agent api turn loop", () => {
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
     expect(commitAgentTurn).toHaveBeenCalledWith(
-      CONFIG.scoring.agentPenaltyDecayUnits,
+      CONFIG.scoring.agentMalformedPenaltyDecayUnits,
     )
 
     expect(dispatchAgentAction).not.toHaveBeenCalled()
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "malformed-response",
-        chargedMovesCount: CONFIG.scoring.agentPenaltyDecayUnits,
+        chargedMovesCount: CONFIG.scoring.agentMalformedPenaltyDecayUnits,
       }),
     )
     // malformed-response is the model's own recoverable mistake, already charged its own decay

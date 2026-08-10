@@ -695,8 +695,10 @@ export type AppConfig = {
     budgetMultiplier: number
     percentScale: number
     retentionFullScaleUnits: number
-    agentPenaltyDecayUnits: number
     agentBaseDecayUnits: number
+    agentPartialInvalidPenaltyDecayUnits: number
+    agentZeroProgressPenaltyDecayUnits: number
+    agentMalformedPenaltyDecayUnits: number
     traversalSpeedScaleUnits: number
   }
   timing: {

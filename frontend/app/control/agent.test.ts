@@ -578,7 +578,7 @@ describe("agent control mode", () => {
 
     expect(dispatch).toHaveBeenCalledTimes(2)
     expect(commitAgentTurn).toHaveBeenCalledWith(
-      3,
+      2,
     )
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
@@ -586,7 +586,7 @@ describe("agent control mode", () => {
         lastMoveStatus: "invalid-move",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastAppliedMoveIndex: 0,
-        chargedMovesCount: 3,
+        chargedMovesCount: 2,
       }),
     )
   })

@@ -286,8 +286,10 @@ export const CONFIG: AppConfig = {
     percentScale: 100,
     budgetMultiplier: 100,
     retentionFullScaleUnits: 1_000_000, // Represents 100% scores retention without using floating-point percentages.
-    agentPenaltyDecayUnits: 2, // Penalty for any agent mistake (invalid move or malformed error).
-    agentBaseDecayUnits: 1,    // Constant decay for a turn that applied any valid moves.
+    agentBaseDecayUnits: 1,               // Constant decay for a turn that applied any valid moves.
+    agentPartialInvalidPenaltyDecayUnits: 1, // Added on top of the base charge when at least one move applied before an invalid move (total 2).
+    agentZeroProgressPenaltyDecayUnits: 2,   // Flat charge when the very first submitted move was already invalid — no progress made.
+    agentMalformedPenaltyDecayUnits: 3,      // Flat charge for a malformed/protocol-violation response — costlier than any gameplay mistake.
     traversalSpeedScaleUnits: 100, // Scales the traversal speed ratio as its display precision.
   },
   // Timing values drive refresh cadence, score decay, and the slower agent-api pacing.

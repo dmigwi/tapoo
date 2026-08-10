@@ -27,7 +27,12 @@ import type {
 } from "../types"
 
 const { runtime, scoring } = CONFIG
-const { agentBaseDecayUnits, agentPenaltyDecayUnits } = scoring
+const {
+  agentBaseDecayUnits,
+  agentPartialInvalidPenaltyDecayUnits,
+  agentZeroProgressPenaltyDecayUnits,
+  agentMalformedPenaltyDecayUnits,
+} = scoring
 
 // --- Shared constants ---
 // These are referenced by both the message builders and the tool layer below.
@@ -90,28 +95,28 @@ export function describeAgentSpeedClassification(
 
 // buildMazeActionPrompt keeps request guidance compact while naming the active player.
 export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: BatchEfficiencyClass): string {
-  const maxTurnCost = agentBaseDecayUnits + agentPenaltyDecayUnits
+  const partialInvalidTurnCost = agentBaseDecayUnits + agentPartialInvalidPenaltyDecayUnits
   return [
     describeAgentSpeedClassification(playerName, batchEfficiencyClass),
-    "Call every available tool once each turn before returning moves. Start with get_maze_structure to read currentCell,",
+    "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell,",
     "destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested",
     "move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status,",
     "score, and the previous prediction outcome.",
-    `When present in filteredTraversalHistory, playerName ${runtime.interactivePlayerName} marks the start cell.`,
     "The maze is randomly generated at the start of each level with exactly one path to the destination. For the current",
-    "level, maze dimensions and wall/open-exit structure are fixed once generated. Use openMoves from nearby",
-    "filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy",
-    "as your own.",
+    "level, maze dimensions and wall/open-exit structure are fixed once generated. When present in filteredTraversalHistory,",
+    `playerName ${runtime.interactivePlayerName} marks the start cell. Use openMoves from filteredTraversalHistory`,
+    "entries to build a local map; entries recorded by other players are just as trustworthy as your own.",
     "Revisiting a cell already in filteredTraversalHistory is not a mistake — once the current path is confirmed as",
     "leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or",
     "the destination. By design, the maze never guarantees a direct route from start to destination; the only valid",
     "path may require moving away from the target before turning towards it.",
     "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome.",
     `A turn with any valid moves costs a constant ${agentBaseDecayUnits} decay units regardless of how many moves it`,
-    "applied; invalid moves (any moves after the last valid applied move) add a further penalty of",
-    `${agentPenaltyDecayUnits} decay units on top — the maximum possible in a turn is ${maxTurnCost} decay units. A`,
-    `malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a`,
-    `fixed ${agentPenaltyDecayUnits} decay units with no moves applied.`,
+    `applied. If any of those moves is invalid, that adds a further penalty of ${agentPartialInvalidPenaltyDecayUnits}`,
+    `decay unit on top - for ${partialInvalidTurnCost} decay units in total. If the very first submitted move is already invalid —`,
+    `no progress at all — the turn instead costs a flat ${agentZeroProgressPenaltyDecayUnits} decay units.`,
+    "A malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a",
+    `fixed ${agentMalformedPenaltyDecayUnits} decay units with no moves applied — the costliest outcome of all.`,
     "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a",
     "picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
     "currentCell's openMoves are a natural place to start when extracting high-confidence multi-move predictions.",

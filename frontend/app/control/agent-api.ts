@@ -16,7 +16,12 @@ import type {
 } from "../types"
 
 const { runtime, scoring, timing } = CONFIG
-const { agentBaseDecayUnits, agentPenaltyDecayUnits } = scoring
+const {
+  agentBaseDecayUnits,
+  agentPartialInvalidPenaltyDecayUnits,
+  agentZeroProgressPenaltyDecayUnits,
+  agentMalformedPenaltyDecayUnits,
+} = scoring
 
 // sleep resolves after delayMs — used only for the connection-error retry backoff below.
 function sleep(delayMs: number): Promise<void> {
@@ -190,9 +195,12 @@ export function handleAgentTurnLoop({
     awaitAgent()
   }
 
-  // recordMalformedAgentResponse spends the fixed mistake decay without replaying any move.
+  // recordMalformedAgentResponse spends the fixed mistake decay without replaying any move. This
+  // is the costliest single-turn outcome — a protocol violation (bad JSON, a hallucinated tool, or
+  // ignoring a duplicate-call warning) is worse than any gameplay misjudgment, so it must never be
+  // cheaper than an honest attempt that partially or wholly fails (see the invalid-move branch below).
   const recordMalformedAgentResponse = (agent: AgentApiConfig): void => {
-    const chargedMovesCount = agentPenaltyDecayUnits
+    const chargedMovesCount = agentMalformedPenaltyDecayUnits
     __commitAgentTurn(chargedMovesCount)
     const {level,cumulativeRoundCount, turnCount } = __readState()
     recordAgentTurnStats(agent, level, cumulativeRoundCount, chargedMovesCount, turnCount)
@@ -375,7 +383,7 @@ export function handleAgentTurnLoop({
       const { moves: submittedMoves } = prediction
       let lastReplayResult: MazeActionResult | null = null
       let appliedMoveCount = 0
-      let hasInvalidMove = false
+      let invalidMovesPenalty = 0
 
       for (const move of submittedMoves) {
         const replayState = __dispatchAgentAction({ type: move }, __dispatch, selectedAgent)
@@ -394,7 +402,7 @@ export function handleAgentTurnLoop({
         }
 
         // Invalid moves stop replay; moves queued behind it were never executed and aren't charged.
-        hasInvalidMove = true
+        invalidMovesPenalty = agentPartialInvalidPenaltyDecayUnits
         break
       }
 
@@ -406,15 +414,24 @@ export function handleAgentTurnLoop({
       }
 
       // A turn with any valid moves costs a flat decay charge regardless of how many moves it
-      // applied, and a wrong guess costs a flat mistake penalty regardless of how many speculative
-      // moves were queued behind it. Together these make single-move-per-turn play the costliest
-      // way to solve the maze — batching more moves per turn is strictly cheaper per move, so
-      // agents are pushed toward longer, more carefully reasoned predictions rather than
-      // conservative single-stepping. The most a single turn can ever be charged is
-      // agentBaseDecayUnits + agentPenaltyDecayUnits, when a turn applies at least one valid move
-      // before hitting an invalid one.
-      const chargedMovesCount =
-        (appliedMoveCount > 0 ? agentBaseDecayUnits : 0) + (hasInvalidMove ? agentPenaltyDecayUnits : 0)
+      // applied, and a wrong guess adds a flat mistake penalty on top regardless of how many
+      // speculative moves were queued behind it. Together these make single-move-per-turn play the
+      // costliest way to solve the maze — batching more moves per turn is strictly cheaper per
+      // move, so agents are pushed toward longer, more carefully reasoned predictions rather than
+      // conservative single-stepping.
+      //
+      // Three distinct outcomes, deliberately kept in this order (cheapest to costliest):
+      //   - Fully valid (appliedMoveCount > 0, no invalid move): agentBaseDecayUnits alone.
+      //   - Partial success (appliedMoveCount > 0, then an invalid move): base +
+      //     agentPartialInvalidPenaltyDecayUnits — strictly more than a clean turn (so tacking on
+      //     an unconfident guess is never free), but strictly less than making zero progress.
+      //   - Zero progress (the very first move was already invalid): agentZeroProgressPenaltyDecayUnits
+      //     flat, no base — standing in place is exactly as costly as a partial attempt, never
+      //     cheaper. recordMalformedAgentResponse's agentMalformedPenaltyDecayUnits stays the
+      //     costliest outcome of all, since a protocol violation is worse than any gameplay mistake.
+      const chargedMovesCount = appliedMoveCount > 0 
+        ? (agentBaseDecayUnits + invalidMovesPenalty) 
+        : agentZeroProgressPenaltyDecayUnits
 
       __commitAgentTurn(chargedMovesCount)
       const {level, cumulativeRoundCount, turnCount } = __readState()
