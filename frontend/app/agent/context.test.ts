@@ -146,7 +146,8 @@ describe("agent context", () => {
     })
     expect(toolHandlers.get_prediction_rules({})).toEqual({
       suggestedMovesPerTurn: 4,
-      uniqueCellsVisited: 1,
+      playerUniqueCellsVisited: 1,
+      allUniqueCellsVisited: 2,
       decayUnitsCharged: 2,
       totalTurnCount: 0,
       playerTurnsTaken: 2,
@@ -188,7 +189,8 @@ describe("agent context", () => {
 
     expect(toolHandlers.get_prediction_rules({})).toEqual({
       suggestedMovesPerTurn: 4,
-      uniqueCellsVisited: 1,
+      playerUniqueCellsVisited: 1,
+      allUniqueCellsVisited: 2,
       decayUnitsCharged: 0,
       totalTurnCount: 0,
       playerTurnsTaken: 0,

@@ -96,13 +96,14 @@ describe("getBatchEfficiencyMetrics", () => {
     const agent = createAgent({ turnCount: undefined, decayUnitsCharged: undefined })
 
     expect(getBatchEfficiencyMetrics([], agent)).toEqual({
-      uniqueCellsVisited: 0,
+      playerUniqueCellsVisited: 0,
+      allUniqueCellsVisited: 0,
       decayUnitsCharged: 0,
       playerTurnsTaken: 0,
     })
   })
 
-  it("counts only distinct cells attributed to the requesting agent's playerName", () => {
+  it("counts only distinct cells attributed to the requesting agent's playerName, alongside every player's combined total", () => {
     const agent = createAgent({ turnCount: 3, decayUnitsCharged: 5 })
     const traversalHistory = [
       visit("Self", 0, 0),
@@ -112,7 +113,8 @@ describe("getBatchEfficiencyMetrics", () => {
     ]
 
     expect(getBatchEfficiencyMetrics(traversalHistory, agent)).toEqual({
-      uniqueCellsVisited: 2,
+      playerUniqueCellsVisited: 2,
+      allUniqueCellsVisited: 4,
       decayUnitsCharged: 5,
       playerTurnsTaken: 3,
     })

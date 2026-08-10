@@ -1,11 +1,11 @@
 import type { AgentApiConfig, TraversalHistoryEntry } from "../types"
 
 // BATCH_EFFICIENCY_BASELINE_RATE is the break-even traversal speed: one new cell reached for every
-// decay unit spent. It is compared against traversalSpeed = uniqueCellsVisited / decayUnitsCharged
-// (see resolveBatchEfficiencyClass), the same formula surfaced to the model itself. A maze's entire
-// budget is one decay unit per cell, so an agent holding exactly this pace arrives with nothing to
-// spare — below it the score runs out before the destination does, above it there is margin left
-// for mistakes.
+// decay unit spent. It is compared against traversalSpeed = playerUniqueCellsVisited /
+// decayUnitsCharged (see resolveBatchEfficiencyClass), the same formula surfaced to the model
+// itself. A maze's entire budget is one decay unit per cell, so an agent holding exactly this pace
+// arrives with nothing to spare — below it the score runs out before the destination does, above
+// it there is margin left for mistakes.
 export const BATCH_EFFICIENCY_BASELINE_RATE = 1
 
 // BatchEfficiencyClass names the traversal-speed group the rate falls into, not just a grade, so
@@ -15,14 +15,21 @@ export type BatchEfficiencyClass = "backtracker" | "navigator" | "trailblazer"
 
 // BatchEfficiencyMetrics are the raw counts behind the traversal speed, exposed to the model
 // directly so it can compute and verify the rate/classification itself instead of treating the
-// classification as an unexplained label. playerTurnsTaken is this specific agent's own completed
+// classification as an unexplained label. playerUniqueCellsVisited is scoped to this specific
+// agent (see countDistinctCellsForAgent) — it alone feeds the traversal-speed rate. allUniqueCellsVisited
+// is the same traversalHistory's total length: every cell any player has reached this level,
+// regardless of who got there first — a separate, non-agent-scoped figure that lets the model
+// gauge how much of mazeDimensions.totalMazeCells has been collectively explored so far, distinct
+// from its own individual progress. playerTurnsTaken is this specific agent's own completed
 // prediction-turn count for the current level (agent.turnCount, incremented only on that agent's
 // own commits — see recordAgentTurnStats in storage.ts) — not the round's shared total, which is
-// State.turnCount / agent.levelTurnCount. It deliberately does not feed the rate: a turn is charged
-// the same decay whether it carried one move or many, so dividing by requests would leave the rate
-// blind to the batching it is meant to reward.
+// State.turnCount / agent.levelTurnCount. Neither playerTurnsTaken nor allUniqueCellsVisited feeds
+// the rate: a turn is charged the same decay whether it carried one move or many, so dividing by
+// requests would leave the rate blind to the batching it is meant to reward, and the rate is about
+// this agent's own spend, not the team's combined exploration.
 export type BatchEfficiencyMetrics = {
-  uniqueCellsVisited: number
+  playerUniqueCellsVisited: number
+  allUniqueCellsVisited: number
   decayUnitsCharged: number
   playerTurnsTaken: number
 }
@@ -43,7 +50,10 @@ export function getBatchEfficiencyMetrics(
   agent: AgentApiConfig,
 ): BatchEfficiencyMetrics {
   return {
-    uniqueCellsVisited: countDistinctCellsForAgent(traversalHistory, agent),
+    playerUniqueCellsVisited: countDistinctCellsForAgent(traversalHistory, agent),
+    // traversalHistory records only first visits (see countDistinctCellsForAgent), so its length
+    // is already every distinct cell any player has reached this level — no further dedup needed.
+    allUniqueCellsVisited: traversalHistory.length,
     decayUnitsCharged: agent.decayUnitsCharged ?? 0,
     playerTurnsTaken: agent.turnCount ?? 0,
   }
@@ -67,8 +77,8 @@ export function resolveBatchEfficiencyClass(
 
   // traversalSpeed, per BATCH_EFFICIENCY_BASELINE_RATE's formula; decayUnitsCharged is guaranteed
   // > 0 here since the fresh-agent case above already returned for a falsy count.
-  const { uniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(traversalHistory, agent)
-  return resolveTraversalSpeedClass(uniqueCellsVisited / decayUnitsCharged)
+  const { playerUniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(traversalHistory, agent)
+  return resolveTraversalSpeedClass(playerUniqueCellsVisited / decayUnitsCharged)
 }
 
 // resolveTraversalSpeedClass is the single place the rate thresholds live. The win summary scores a
