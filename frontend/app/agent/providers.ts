@@ -138,22 +138,32 @@ function ollamaReadMessage(body: unknown): AgentChatMessage | undefined {
   return {
     role: message.role ?? "assistant",
     content: message.content,
-    // thinking is Ollama's wire name for the same concept OpenAI-compatible servers call
-    // reasoning_content — mapped onto that shared internal field so request.ts's echoBackReasoning
-    // handling (and every other reasoning_content consumer) works identically across providers.
-    reasoning_content: message.thinking,
+    // thinking is Ollama's wire name for the same concept the openai-compatible adapter below
+    // calls reasoning — mapped onto that shared internal field so request.ts's echoBackReasoning
+    // handling (and every other reasoning consumer) works identically across providers.
+    reasoning: message.thinking,
     tool_calls: message.tool_calls,
   }
 }
 
 // --- OpenAI (and OpenAI-compatible servers: vLLM, LM Studio, llama.cpp, etc.) ---
 
-// openaiMessage drops tool_name: it is an Ollama-only field request.ts stamps onto every tool-result
-// message (for its own diagnostics), and OpenAI-compatible servers running strict schema validation
-// reject unrecognized message fields outright.
-function openaiMessage(message: AgentChatMessage): Omit<AgentChatMessage, "tool_name"> {
-  const rest: AgentChatMessage = { ...message }
+// openaiMessage translates one internal-dialect message onto the openai wire shape: drops
+// tool_name (an Ollama-only field request.ts stamps onto every tool-result message for its own
+// diagnostics, which OpenAI-compatible servers running strict schema validation reject outright),
+// and renames reasoning to reasoning_content — the wire name this adapter's servers use, mirroring
+// openaiReadMessage's reverse translation on the way in. request.ts only ever builds/reads the
+// internal reasoning field; this is the one place that name changes for the wire.
+function openaiMessage(
+  message: AgentChatMessage,
+): Omit<AgentChatMessage, "tool_name" | "reasoning"> & { reasoning_content?: string } {
+  const rest: AgentChatMessage & { reasoning_content?: string } = { ...message }
   delete rest.tool_name
+  const reasoning = rest.reasoning
+  delete rest.reasoning
+  if (reasoning !== undefined) {
+    rest.reasoning_content = reasoning
+  }
   return rest
 }
 
@@ -203,7 +213,10 @@ function openaiReadMessage(body: unknown): AgentChatMessage | undefined {
   return {
     role: message.role ?? "assistant",
     content: message.content ?? undefined,
-    reasoning_content: message.reasoning_content,
+    // reasoning_content is the openai-compatible wire name for the same concept Ollama calls
+    // thinking — mapped onto the shared internal reasoning field so request.ts's echoBackReasoning
+    // handling works identically regardless of which provider is active.
+    reasoning: message.reasoning_content,
     tool_calls: message.tool_calls,
   }
 }

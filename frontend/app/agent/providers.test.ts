@@ -107,11 +107,11 @@ describe("ollama adapter", () => {
     expect(PROVIDER_ADAPTERS.ollama.readMessage({})).toBeUndefined()
   })
 
-  it("maps Ollama's thinking field onto the shared reasoning_content dialect field", () => {
+  it("maps Ollama's thinking field onto the shared reasoning dialect field", () => {
     const message = PROVIDER_ADAPTERS.ollama.readMessage({
       message: { role: "assistant", content: "hello", thinking: "pondering..." },
     })
-    expect(message?.reasoning_content).toBe("pondering...")
+    expect(message?.reasoning).toBe("pondering...")
   })
 })
 
@@ -146,19 +146,20 @@ describe("openai adapter", () => {
     expect(body.chat_template_kwargs).toBeUndefined()
   })
 
-  it("preserves an assistant message's reasoning_content on the wire, unlike tool_name", () => {
+  it("renames the internal reasoning field to the wire's reasoning_content, unlike tool_name which it just drops", () => {
     const assistantMessage: AgentChatMessage = {
       role: "assistant",
       content: "moving on",
-      reasoning_content: "thinking...",
+      reasoning: "thinking...",
       tool_calls: [{ id: "call_1", function: { name: "get_game_status", arguments: {} } }],
     }
 
     const body = PROVIDER_ADAPTERS.openai.buildBody(requestInput({ messages: [assistantMessage] })) as {
-      messages: AgentChatMessage[]
+      messages: (AgentChatMessage & { reasoning_content?: string })[]
     }
 
     expect(body.messages[0].reasoning_content).toBe("thinking...")
+    expect(body.messages[0].reasoning).toBeUndefined()
   })
 
   it("wraps the shared prediction format in a strict json_schema response_format when requested", () => {
@@ -173,11 +174,11 @@ describe("openai adapter", () => {
     expect(message).toEqual({ role: "assistant", content: "hello", tool_calls: undefined })
   })
 
-  it("carries reasoning_content through unchanged, for reasoning models that require it echoed back", () => {
+  it("maps the wire's reasoning_content onto the shared internal reasoning field", () => {
     const message = PROVIDER_ADAPTERS.openai.readMessage({
       choices: [{ message: { role: "assistant", content: "hello", reasoning_content: "thinking..." } }],
     })
-    expect(message?.reasoning_content).toBe("thinking...")
+    expect(message?.reasoning).toBe("thinking...")
   })
 
   it("treats a null content (tool-call-only reply) as no content rather than the literal null", () => {

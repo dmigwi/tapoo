@@ -1124,7 +1124,7 @@ describe("agent request service", () => {
     expect(serializedLog).not.toContain(extraHeadersSentinel)
   })
 
-  it("echoes an assistant's reasoning_content back on the next round when echoBackReasoning is on, for reasoning models that require it preserved (e.g. Kimi K3)", async () => {
+  it("echoes an assistant's reasoning back on the next round when echoBackReasoning is on, for reasoning models that require it preserved (e.g. Kimi K3)", async () => {
     const openaiAgent: AgentApiConfig = { ...agent, api: "openai", echoBackReasoning: true }
     const fetchMock = vi
       .fn()

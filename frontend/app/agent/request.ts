@@ -344,7 +344,7 @@ export function requestPredictionWithAbort({
               // Only echoed back when the agent's own echoBackReasoning flag is on — model
               // guidance conflicts here (Kimi K3 requires it echoed back, Gemma requires it
               // withheld), so this defaults off. See AgentApiConfig.echoBackReasoning.
-              ...(agent.echoBackReasoning ? { reasoning_content: response.message.reasoning_content } : {}),
+              ...(agent.echoBackReasoning ? { reasoning: response.message.reasoning } : {}),
               tool_calls: toolCalls,
             },
             buildDuplicateToolCallMessage(duplicateToolCalls),
@@ -398,7 +398,7 @@ export function requestPredictionWithAbort({
             // Only echoed back when the agent's own echoBackReasoning flag is on — model guidance
             // conflicts here (Kimi K3 requires it echoed back, Gemma requires it withheld), so
             // this defaults off. See AgentApiConfig.echoBackReasoning.
-            ...(agent.echoBackReasoning ? { reasoning_content: response.message.reasoning_content } : {}),
+            ...(agent.echoBackReasoning ? { reasoning: response.message.reasoning } : {}),
             tool_calls: toolCalls,
           },
           ...toolResult.messages,

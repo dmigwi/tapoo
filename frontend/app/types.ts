@@ -280,15 +280,16 @@ export type AgentToolCall = {
 }
 
 // AgentChatMessage is the minimal chat message shape needed by the prediction request loop.
-// reasoning_content is provider-specific (currently only populated by the OpenAI-compatible
-// adapter). Whether it gets echoed back verbatim on the next assistant message is the per-agent
+// reasoning is populated by every provider adapter (each from its own wire field name — Ollama's
+// thinking, the openai adapter's reasoning_content), so request.ts never needs to know which one
+// is active. Whether it gets echoed back verbatim on the next assistant message is the per-agent
 // AgentApiConfig.echoBackReasoning flag's call, not automatic — model guidance conflicts: some
 // reasoning models (e.g. Kimi K3) require it echoed back across a turn's tool-calling rounds or
 // they lose context of analysis they already did, while others (e.g. Gemma) require it withheld.
 export type AgentChatMessage = {
   role: AgentMessageRole
   content?: string
-  reasoning_content?: string
+  reasoning?: string
   tool_call_id?: string
   tool_name?: string
   tool_calls?: AgentToolCall[]
@@ -354,7 +355,7 @@ export type AgentApiConfig = {
   // (Hugging Face's router, to dodge cold-start read timeouts), or anything else a given endpoint
   // needs. Parsed once by parseExtraHeaders (agent/protocol.ts) before reaching a provider adapter.
   extraHeaders?: string
-  // echoBackReasoning controls whether a provider-returned reasoning_content is echoed back on
+  // echoBackReasoning controls whether a provider-returned reasoning is echoed back on
   // the next request's assistant message. Off by default because model guidance conflicts: some
   // reasoning models (e.g. Kimi K3) require it echoed back verbatim across a turn's tool-calling
   // rounds or they lose the analysis they already did, while others (e.g. Gemma) explicitly
