@@ -47,7 +47,7 @@ const expectedAgentPrompt = [
   "The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated.",
   `When present in filteredTraversalHistory, playerName ${CONFIG.runtime.interactivePlayerName} marks the start cell.`,
   "Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own.",
-  "Revisiting a cell already in filteredTraversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
+  "Revisiting a cell already in filteredTraversalHistory is not a mistake — once you have actually visited a cell and its type is dead-end, backtracking through it is usually the only way to reach unexplored territory or the destination. type, read directly from a visited cell's own entry, is the only reliable way to know it is a dead-end. Never assume a cell you have not yet visited is a dead-end — the absence of a connection to it from cells you already know proves nothing, since an unexplored cell's own exits are unknown until you move there. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined distance (row difference plus col difference) for each candidate, not just one axis — a cell closer in column can be equally or further away overall once row is included. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
   "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome.",
   "A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied. If any of those moves is invalid, that adds a further penalty of 1 decay unit on top - for 2 decay units in total. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2 decay units. A malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all.",
   "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
@@ -135,11 +135,13 @@ describe("agent context", () => {
         {
           playerName: "Self",
           cell: { row: 0, col: 0 },
+          type: "dead-end",
           openMoves: { MoveRight: { row: 0, col: 1, visited: true } },
         },
         {
           playerName: "Blue",
           cell: { row: 0, col: 1 },
+          type: "dead-end",
           openMoves: { MoveRight: { row: 0, col: 2, visited: false } },
         },
       ],
@@ -228,6 +230,7 @@ describe("agent context", () => {
         {
           playerName: "Blue",
           cell: { row: 4, col: 4 },
+          type: "corridor",
           openMoves: {
             MoveRight: { row: 4, col: 5, visited: false },
             MoveUp: { row: 3, col: 4, visited: false },
@@ -236,16 +239,19 @@ describe("agent context", () => {
         {
           playerName: "Blue",
           cell: { row: 4, col: 8 },
+          type: "dead-end",
           openMoves: { MoveRight: { row: 4, col: 9, visited: true } },
         },
         {
           playerName: "Blue",
           cell: { row: 1, col: 4 },
+          type: "dead-end",
           openMoves: {},
         },
         {
           playerName: "Blue",
           cell: { row: 0, col: 4 },
+          type: "dead-end",
           openMoves: {},
         },
       ],

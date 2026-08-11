@@ -106,10 +106,15 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
     "level, maze dimensions and wall/open-exit structure are fixed once generated. When present in filteredTraversalHistory,",
     `playerName ${runtime.interactivePlayerName} marks the start cell. Use openMoves from filteredTraversalHistory`,
     "entries to build a local map; entries recorded by other players are just as trustworthy as your own.",
-    "Revisiting a cell already in filteredTraversalHistory is not a mistake — once the current path is confirmed as",
-    "leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or",
-    "the destination. By design, the maze never guarantees a direct route from start to destination; the only valid",
-    "path may require moving away from the target before turning towards it.",
+    "Revisiting a cell already in filteredTraversalHistory is not a mistake — once you have actually visited a cell",
+    "and its type is dead-end, backtracking through it is usually the only way to reach unexplored territory or the",
+    "destination. type, read directly from a visited cell's own entry, is the only reliable way to know it is a",
+    "dead-end. Never assume a cell you have not yet visited is a dead-end — the absence of a connection to it from cells",
+    "you already know proves nothing, since an unexplored cell's own exits are unknown until you move there.",
+    "When judging whether one candidate cell is closer to destinationCell than another, compare the full combined",
+    "distance (row difference plus col difference) for each candidate, not just one axis — a cell closer in column can",
+    "be equally or further away overall once row is included. By design, the maze never guarantees a direct route from start",
+    "to destination; the only valid path may require moving away from the target before turning towards it.",
     "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome.",
     `A turn with any valid moves costs a constant ${agentBaseDecayUnits} decay units regardless of how many moves it`,
     `applied. If any of those moves is invalid, that adds a further penalty of ${agentPartialInvalidPenaltyDecayUnits}`,
@@ -189,12 +194,15 @@ const mazeStructureTool: AgentToolDefinition = {
       "yourself from currentCell and destinationCell's row/col if you need it. Each included entry's",
       "openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether",
       "that neighbor has already been visited in the full internal history, even when that neighbor is outside the",
-      "filtered result. openMoves key count reveals local structure: one open exit is usually a dead end, two is a",
-      "corridor, and three or more is a junction.",
+      "filtered result. type is precomputed from that same exit count so you never need to count it yourself:",
+      "dead-end (one exit), corridor (two exits), or junction (three or more). type only ever exists for a cell",
+      "already in filteredTraversalHistory — an unvisited cell, including one that only appears as a neighbor inside",
+      "another cell's openMoves, has no known type and must never be assumed to be of a specific type before visiting.",
+      "The only way to learn an unvisited cell's own structure is to move there and read its own entry on a later turn.",
       "Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null,",
       "\"destinationCell\":{\"row\":number, \"col\":number}|null, \"historyWindowRadius\":number,",
       "\"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number},",
-      "\"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
+      "\"type\":string, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
     ].join(" "),
     parameters: emptyToolParameters,
   },
@@ -284,6 +292,20 @@ export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
 
 // --- 3. Tool handlers ---
 // Handlers execute when the model calls a tool and produce the tool result messages.
+
+// classifyCellType names a visited cell's local structure from its fixed exit count, sparing the
+// model from re-deriving "one exit is a dead-end, two is a corridor, three or more is a junction"
+// from openMoves key counts itself on every turn. Real gameplay logs showed the model getting this
+// wrong even though the rule was already spelled out in mazeStructureTool's description — handing
+// it the precomputed label removes the room for that misreading, the same way historyWindowRadius
+// and playerUniqueCellsVisited/allUniqueCellsVisited hand over other conclusions instead of raw
+// material to re-derive.
+function classifyCellType(exitCount: number): "dead-end" | "corridor" | "junction" {
+  if (exitCount <= 1) {
+    return "dead-end"
+  }
+  return exitCount === 2 ? "corridor" : "junction"
+}
 
 // resolvedOpenMoves maps each of an entry's open exits to its neighboring cell (using the same
 // row/col deltas mazeStructureTool documents) and whether that neighbor is already visited, using
@@ -381,6 +403,7 @@ export function buildAgentToolHandlers(
         filteredTraversalHistory: filteredHistory.map((entry) => ({
           playerName: entry.playerName,
           cell: { row: entry.row, col: entry.col },
+          type: classifyCellType(entry.openMoves.length),
           openMoves: resolvedOpenMoves(entry, visitedCellKeys),
         })),
       }
