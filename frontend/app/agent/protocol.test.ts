@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 
 import {
-  contextWindowForArea,
   endpointLabel,
   normalizeToolArguments,
   parseAgentPrediction,
@@ -10,7 +9,6 @@ import {
   previewLoggedTool,
   serializeToolResult,
 } from "./protocol"
-import { CONFIG } from "../config"
 import type { AgentChatMessage, AgentToolDefinition } from "../types"
 
 // Agent-config tests keep form validation separate from the larger agent control mode.
@@ -44,19 +42,6 @@ describe("agent protocol", () => {
     expect(parseExtraHeaders("X-Endpoint: https://example.com/path")).toEqual({
       "X-Endpoint": "https://example.com/path",
     })
-  })
-
-  it("scales context window size from maze area without dropping below the configured floor", () => {
-    const { contextWindowFloor, contextWindowAreaMultiplier } = CONFIG.runtime.modelConfig
-    expect(contextWindowForArea(0)).toBe(contextWindowFloor)
-    expect(contextWindowForArea(contextWindowFloor)).toBe(
-      contextWindowFloor * contextWindowAreaMultiplier,
-    )
-  })
-
-  it("treats an undefined area (maze dimensions not known yet) the same as zero", () => {
-    const { contextWindowFloor } = CONFIG.runtime.modelConfig
-    expect(contextWindowForArea(undefined)).toBe(contextWindowFloor)
   })
 
   it.each([

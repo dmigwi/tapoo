@@ -4,11 +4,9 @@
 // structured-output intent flag rather than a literal wire field) both before a request is built
 // and after a response is read back. Kept apart from ../agent/config.ts, which validates the
 // human-facing form fields rather than anything that goes on the wire, so storage.ts can keep
-// importing that leaf cheaply — this file pulls in contextWindowForArea (protocol.ts), which
-// storage.ts's restore path has no reason to depend on.
+// importing that leaf cheaply.
 import { CONFIG } from "../config"
 import { EXPECTED_RESPONSE_SCHEMA } from "./context"
-import { contextWindowForArea } from "./protocol"
 import type {
   AgentApiProvider,
   AgentChatMessage,
@@ -27,7 +25,6 @@ export type ProviderRequestInput = {
   model: string
   messages: AgentChatMessage[]
   tools: AgentToolDefinition[]
-  mazeArea: number | undefined
   wantsPredictionFormat: boolean
 }
 
@@ -114,7 +111,7 @@ function ollamaBuildBody(input: ProviderRequestInput): Record<string, unknown> {
     messages: input.messages,
     tools: input.tools,
     options: {
-      num_ctx: contextWindowForArea(input.mazeArea),
+      num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor,
       temperature: CONFIG.runtime.modelConfig.temperature,
       num_predict: CONFIG.runtime.modelConfig.numPredict,
     },

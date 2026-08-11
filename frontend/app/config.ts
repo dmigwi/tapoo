@@ -348,16 +348,14 @@ export const CONFIG: AppConfig = {
     },
     interactivePlayerName: "Self",
     // Ollama's num_ctx, temperature and num_predict (see requestChatTurn in agent/request.ts),
-    // tuned for parseable moves over good prose. Only the prompt can overrun, so num_ctx is the
-    // one knob worth tuning: num_ctx = max(floor, mazeArea * multiplier).
-    // Known limit: the multiplier budgets fewer tokens per cell than full history can spend per
-    // visited cell, so model-facing history stays bounded instead of raising this.
+    // tuned for parseable moves over good prose.
     modelConfig: {
-      // Ollama's default is too small for the prompt, and it answers 500 rather than truncating.
-      // Also the value used before generation, while area is still unknown.
+      // Ollama's num_ctx, sent as a fixed value on every request rather than scaled by maze area:
+      // filteredTraversalHistory is capped by manhattanDistance regardless of maze size, and
+      // messages is rebuilt fresh every turn rather than accumulated across a round, so per-turn
+      // payload size does not grow with the maze. Ollama's own default is too small for the
+      // prompt anyway, and it answers 500 rather than truncating.
       contextWindowFloor: 3000,
-      // Tokens per cell: history grows with the maze, and every round resends the conversation.
-      contextWindowAreaMultiplier: 5,
       // Model-facing local context radius. Also caps suggestedMovesPerTurn so batch guidance
       // cannot exceed the history window the model can inspect.
       manhattanDistance: 4, // Simulation corridor-run distribution: p50=1, p75=2, p90=3, p95=4.

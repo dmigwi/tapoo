@@ -101,7 +101,6 @@ async function requestChatTurn(
   messages: AgentChatMessage[],
   tools: AgentToolDefinition[],
   signal: AbortSignal,
-  mazeArea: number | undefined,
   wantsPredictionFormat: boolean,
   requestCount: number,
   isFirstRequestOfLevel: boolean,
@@ -140,7 +139,7 @@ async function requestChatTurn(
     tools: tools.map((tool) => previewLoggedTool(tool, keepFull)),
   })
 
-  const msgBody = adapter.buildBody({ model: agent.model, messages, tools, mazeArea, wantsPredictionFormat })
+  const msgBody = adapter.buildBody({ model: agent.model, messages, tools, wantsPredictionFormat })
   
   // credential and extraHeaders reach only buildHeaders — never the log above, never the assembled
   // body, and never anything else that could flow into logTapooDiagnostic (see request storage in
@@ -220,7 +219,7 @@ export function requestPredictionWithAbort({
     try {
       return await requestChatTurn(
         agent, messages, tools, controller.signal,
-        state.mazeDimensions?.area, wantsPredictionFormat, requestCount, isFirstRequestOfLevel, agentMode,
+        wantsPredictionFormat, requestCount, isFirstRequestOfLevel, agentMode,
       )
     } finally {
       window.clearTimeout(requestTimeout)

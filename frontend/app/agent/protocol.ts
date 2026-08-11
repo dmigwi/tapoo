@@ -1,7 +1,6 @@
 // Protocol helpers for the agent-api wire format: request sizing, response parsing, tool-call
 // argument/result marshalling, and the log previews applied to outbound payloads. Kept apart from
 // config.ts, which validates the agent records a human configures rather than anything on the wire.
-import { CONFIG } from "../config"
 import { trimLoggedDescription } from "../logs"
 import { isMoveAction } from "../traversal"
 import type {
@@ -42,14 +41,6 @@ export function parseExtraHeaders(raw: string | undefined): Record<string, strin
   }
 
   return headers
-}
-
-// contextWindowForArea scales context room as mazes and traversal histories grow. area is
-// undefined before a round's maze dimensions are known; that and an explicit 0 are handled the
-// same way — both fall through to contextWindowFloor via the Math.max below.
-export function contextWindowForArea(area: number | undefined): number {
-  const { contextWindowFloor, contextWindowAreaMultiplier } = CONFIG.runtime.modelConfig
-  return Math.max(contextWindowFloor, (area ?? 0) * contextWindowAreaMultiplier)
 }
 
 // stripMarkdownFence removes optional ```json or ``` wrappers that models add despite instructions.

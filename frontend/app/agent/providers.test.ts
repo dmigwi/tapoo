@@ -31,7 +31,6 @@ function requestInput(overrides: Partial<ProviderRequestInput> = {}): ProviderRe
       { role: "user", content: "It is Blue's turn." },
     ],
     tools,
-    mazeArea: 100,
     wantsPredictionFormat: false,
     ...overrides,
   }
@@ -95,13 +94,6 @@ describe("ollama adapter", () => {
   it("includes the shared prediction format only when requested", () => {
     const body = PROVIDER_ADAPTERS.ollama.buildBody(requestInput({ wantsPredictionFormat: true }))
     expect(body.format).toEqual(OLLAMA_PREDICTION_FORMAT.format)
-  })
-
-  it("scales num_ctx with the maze area rather than always using the floor", () => {
-    const body = PROVIDER_ADAPTERS.ollama.buildBody(requestInput({ mazeArea: 10_000 })) as {
-      options: { num_ctx: number }
-    }
-    expect(body.options.num_ctx).toBeGreaterThan(contextWindowFloor)
   })
 
   it("reads the reply straight from the top-level message field", () => {
