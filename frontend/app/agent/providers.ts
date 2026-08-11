@@ -158,7 +158,7 @@ function openaiMessage(message: AgentChatMessage): Omit<AgentChatMessage, "tool_
 }
 
 // Unlike Ollama's think, there is no single OpenAI-compatible field that reliably disables
-// reasoning across servers. reasoning_effort ("low"/"high"/"max") is the one sent here, since it
+// reasoning across servers. reasoning_effort ("low"/"medium"/"high"/"max") is the one sent here, since it
 // is documented by multiple reasoning models (OpenAI's o-series, Kimi K3) rather than being a
 // server-specific convention.
 const OPENAI_REASONING_EFFORT_HINT = {

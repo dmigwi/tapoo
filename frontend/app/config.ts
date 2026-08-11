@@ -364,9 +364,12 @@ export const CONFIG: AppConfig = {
       // Under Ollama's default: an unparseable reply is charged malformed-response, so format
       // compliance beats creativity.
       temperature: 0.5,
-      // Counts thinking, hence think: false — with it on, models hit the cap before emitting any
-      // JSON. Sized well above what a compliant reply needs, so it is not a working limit.
-      numPredict: 4000,
+      // Counts thinking, hence think: false for Ollama — with it on, models hit the cap before
+      // emitting any JSON. OpenAI-compatible reasoning_effort models count thinking the same way
+      // (usage.completion_tokens includes reasoning_tokens as a subset, not a separate budget), so
+      // this must stay sized well above what a compliant reply needs plus a full reasoning pass,
+      // not just the reply alone.
+      numPredict: 10000,
     },
   },
 }
