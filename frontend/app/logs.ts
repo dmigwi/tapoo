@@ -101,7 +101,7 @@ export function logTapooDiagnostic(
   details?: unknown,
 ): void {
   const entry: LogEntry = {
-    timestamp: Date.now() / 1000,
+    epochMs: Date.now(),
     time: getLocalTimestamp(),
     level: currentLevel,
     turn: currentTurn,
@@ -159,10 +159,11 @@ export function tapooDownloadLogs(modeName: MazeControlModeName): void {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json",
   })
+  const firstEntryEpochMs = entries.length > 0 ? entries[0].epochMs : Date.now()
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement("a")
   anchor.href = url
-  anchor.download = `${payload.name}-v${payload.version}-${modeName}-logs-${Date.now()}.json`
+  anchor.download = `${payload.name}-v${payload.version}-${modeName}-logs-${Math.round(firstEntryEpochMs/1000)}.json`
   anchor.hidden = true
   document.body.append(anchor)
   anchor.click()

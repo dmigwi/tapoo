@@ -72,7 +72,7 @@ describe("tapoo logs", () => {
     expect(downloadedPayload.mode).toBe("interactive")
     expect(downloadedPayload.entries).toHaveLength(1)
     expect(downloadedText).toContain("before reset")
-    expect(downloadedText).toMatch(/"timestamp": \d+(\.\d+)?/)
+    expect(downloadedText).toMatch(/"epochMs": \d+(\.\d+)?/)
     expect(downloadedText).toMatch(
       /"time": "\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}[+-]\d{2}-\d{2}"/,
     )

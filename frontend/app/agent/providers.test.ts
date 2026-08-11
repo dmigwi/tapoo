@@ -86,7 +86,7 @@ describe("ollama adapter", () => {
       messages: requestInput().messages,
       tools,
       options: { num_ctx: contextWindowFloor, temperature, num_predict: numPredict },
-      think: false,
+      think: true,
       stream: false,
     })
   })
@@ -105,6 +105,13 @@ describe("ollama adapter", () => {
 
   it("returns undefined when the response has no message", () => {
     expect(PROVIDER_ADAPTERS.ollama.readMessage({})).toBeUndefined()
+  })
+
+  it("maps Ollama's thinking field onto the shared reasoning_content dialect field", () => {
+    const message = PROVIDER_ADAPTERS.ollama.readMessage({
+      message: { role: "assistant", content: "hello", thinking: "pondering..." },
+    })
+    expect(message?.reasoning_content).toBe("pondering...")
   })
 })
 

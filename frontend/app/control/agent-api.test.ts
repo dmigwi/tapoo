@@ -22,7 +22,7 @@ const originalAgentConnectionErrorRetryDelayMs = CONFIG.timing.agentApiConnectio
 type SerializedRequestBody = {
   model: string
   stream: false
-  think: false
+  think: true
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
@@ -522,17 +522,17 @@ describe("agent api turn loop", () => {
     expect(firstRequestBody).toEqual(expect.objectContaining({
       model: "llama3.2",
       stream: false,
-      think: false,
+      think: true,
     }))
     expect(secondRequestBody).toEqual(expect.objectContaining({
       model: "gemma4",
       stream: false,
-      think: false,
+      think: true,
     }))
     expect(thirdRequestBody).toEqual(expect.objectContaining({
       model: "qwen3",
       stream: false,
-      think: false,
+      think: true,
     }))
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       1,

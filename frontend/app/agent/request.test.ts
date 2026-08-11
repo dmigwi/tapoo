@@ -122,7 +122,7 @@ type SerializedRequestBody = {
   messages: unknown[]
   model: string
   stream: false
-  think: false
+  think: true
   tools: unknown[]
   format?: unknown
   options?: unknown
@@ -281,7 +281,7 @@ describe("agent request service", () => {
       ],
       tools: uncalledTools(["get_maze_structure"]),
       options: { num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict },
-      think: false,
+      think: true,
       stream: false,
     }
     const expectedJsonOutput = {
@@ -531,7 +531,7 @@ describe("agent request service", () => {
       ],
       tools: agentContextTools,
       options: { num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict },
-      think: false,
+      think: true,
       stream: false,
     })
   })

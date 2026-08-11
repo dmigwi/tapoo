@@ -44,6 +44,7 @@ const BASE_HEADERS = {
 // the body, not the headers, of the fetch call each adapter's buildBody feeds into.
 const BASE_BODY = {
   stream: false,
+  think: true,
 }
 
 // PREDICTION_FORMAT is the JSON Schema constraint every provider's structured-output request
@@ -102,8 +103,7 @@ function bearerHeaders(
 }
 
 // --- Ollama ---
-// The provider Tapoo originally spoke natively. buildBody's shape here must stay byte-identical to
-// the body requestChatTurn built before this file existed, since request.test.ts asserts it exactly.
+// The provider Tapoo originally spoke natively.
 
 function ollamaBuildBody(input: ProviderRequestInput): Record<string, unknown> {
   return {
@@ -116,7 +116,6 @@ function ollamaBuildBody(input: ProviderRequestInput): Record<string, unknown> {
       num_predict: CONFIG.runtime.modelConfig.numPredict,
     },
     ...(input.wantsPredictionFormat ? OLLAMA_PREDICTION_FORMAT : {}),
-    think: false,
     ...BASE_BODY,
   }
 }
@@ -139,6 +138,10 @@ function ollamaReadMessage(body: unknown): AgentChatMessage | undefined {
   return {
     role: message.role ?? "assistant",
     content: message.content,
+    // thinking is Ollama's wire name for the same concept OpenAI-compatible servers call
+    // reasoning_content — mapped onto that shared internal field so request.ts's echoBackReasoning
+    // handling (and every other reasoning_content consumer) works identically across providers.
+    reasoning_content: message.thinking,
     tool_calls: message.tool_calls,
   }
 }

@@ -549,7 +549,7 @@ export type SummaryComparisonTemplates = {
 export type LogLevel = "error" | "info" | "warn"
 
 // LogEntry is one structured record in the Tapoo log buffer.
-// timestamp is Unix time in seconds — machine-readable and suitable for sorting or arithmetic.
+// epochMs is Unix time in milliseconds — machine-readable and suitable for sorting or arithmetic.
 // time is the same instant expressed in local timezone as a human-readable string, so downloaded
 // logs are interpretable without UTC conversion.
 // turn is the agent turn being resolved when the entry was written. One turn issues several
@@ -565,7 +565,7 @@ export type LogLevel = "error" | "info" | "warn"
 // details holds arbitrary context — request payloads, response bodies, error objects — and is
 // omitted when there is nothing beyond the payload to record.
 export type LogEntry = {
-  timestamp: number
+  epochMs: number
   time: string
   turn: number
   level: number
