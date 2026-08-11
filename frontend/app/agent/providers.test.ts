@@ -134,9 +134,9 @@ describe("openai adapter", () => {
     ])
   })
 
-  it("caps tokens with max_completion_tokens and omits response_format without a schema", () => {
+  it("caps tokens with max_tokens and omits response_format without a schema", () => {
     const body = PROVIDER_ADAPTERS.openai.buildBody(requestInput())
-    expect(body.max_completion_tokens).toBe(numPredict)
+    expect(body.max_tokens).toBe(numPredict)
     expect(body.response_format).toBeUndefined()
     expect(body.tools).toBe(tools)
   })

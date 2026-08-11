@@ -74,13 +74,27 @@ export type MazeAction =
   | { type: MoveAction }
   | { type: SessionAction }
 
-// MoveStatus keeps single-move and batch-replay outcomes in one shared vocabulary.
+// MoveStatus is the granular outcome of the single last move actually dispatched this turn — it
+// tells the story of that one move, not the batch as a whole. See PredictionOutcomeStatus for the
+// collective summary of everything a multi-move prediction attempted.
 export type MoveStatus =
   | "applied"
   | "invalid-move"
   | "network-error"
   | "reached-target"
   | "malformed-response"
+
+// PredictionOutcomeStatus summarizes an entire submitted prediction as one story, distinct from
+// MoveStatus's single-move granularity: all-applied (every submitted move applied cleanly, or the
+// target was reached), partially-applied (some moves applied before one failed), invalid-prediction
+// (a real prediction was replayed, but the very first submitted move was already invalid — nothing
+// was gained), or empty-prediction (a malformed-response or network-error meant there was no usable
+// prediction to replay at all).
+export type PredictionOutcomeStatus =
+  | "all-applied"        // every submitted move applied cleanly, or the target was reached
+  | "partially-applied"  // some moves applied before one failed
+  | "invalid-prediction" // a real prediction replayed, but the first submitted move was already invalid
+  | "empty-prediction"   // malformed-response or network-error meant nothing was replayed at all
 
 // WinSummaryPreviousComparison describes how the current win compares to the last completed attempt.
 export type WinSummaryPreviousComparison = "none" | "faster" | "slower" | "matched"
@@ -380,6 +394,10 @@ export type MazeActionResult = {
   lastSubmittedMovesSchema?: AgentSubmittedMovesSchema
   lastSubmittedMoves?: string[]
   lastMoveStatus?: MoveStatus
+  // predictionStatus only ever gets set by the agent-api batch-replay path — a single interactive
+  // move dispatch (control.ts's buildReplayState) has no "collective prediction" to summarize, so
+  // it leaves this field alone entirely rather than setting a degenerate one-move value for it.
+  predictionStatus?: PredictionOutcomeStatus
   lastAppliedMoveIndex?: number | null
   visitedBefore?: boolean
   chargedMovesCount?: number

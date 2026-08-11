@@ -26,7 +26,7 @@ const agentContextTools = [
     function: {
       name: "get_maze_structure",
       description:
-        "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. filteredTraversalHistory includes only first-visit records within manhattanDistance of currentCell, preserving chronological order; currentCell is always included because its distance is 0. Each included entry's openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether that neighbor has already been visited in the full internal history, even when that neighbor is outside the filtered result. openMoves key count reveals local structure: one open exit is usually a dead end, two is a corridor, and three or more is a junction. Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null, \"manhattanDistance\":number, \"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
+        "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. filteredTraversalHistory includes only first-visit records within historyWindowRadius of currentCell, preserving chronological order; currentCell is always included because its distance is 0. historyWindowRadius is a fixed configured radius — the maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell — unrelated to how far destinationCell is; compute that yourself from currentCell and destinationCell's row/col if you need it. Each included entry's openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether that neighbor has already been visited in the full internal history, even when that neighbor is outside the filtered result. openMoves key count reveals local structure: one open exit is usually a dead end, two is a corridor, and three or more is a junction. Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null, \"historyWindowRadius\":number, \"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
       parameters: {
         type: "object",
         properties: {},
@@ -39,7 +39,7 @@ const agentContextTools = [
     function: {
       name: "get_prediction_rules",
       description:
-        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn; it is capped by manhattanDistance from get_maze_structure. playerUniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator at 1.0 (one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the only classification that can set a new best-score record). allUniqueCellsVisited is every cell any player has reached this level, not just your own — compare it against mazeDimensions.totalMazeCells to know how much of the maze, the team has collectively explored so far. At the initial game levels the single solution path covers nearly all of totalMazeCells, so expect to explore most of the maze before reaching the destination; the path's length relative to totalMazeCells drops only slightly as the level number grows, so at higher levels the destination can be reachable well before allUniqueCellsVisited approaches totalMazeCells. It does not affect your traversal speed, which is scored on playerUniqueCellsVisited against decayUnitsCharged. totalTurnCount is the number of all completed prediction turns in this game level. playerTurnsTaken is the completed turns taken by the player and is reported for context; neither count affects your speed, classification or scores. The resulting score is visible via get_last_prediction_outcome. mazeDimensions.totalMazeCells is the full level size. Before anything is charged on this level, batchEfficiencyClass defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"playerUniqueCellsVisited\":number, \"allUniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"batchEfficiencyClass\":string, \"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null, \"expectedResponseSchema\":object}.",
+        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn; it is capped by historyWindowRadius from get_maze_structure. playerUniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator at 1.0 (one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the only classification that can set a new best-score record). allUniqueCellsVisited is every cell any player has reached this level, not just your own — compare it against mazeDimensions.totalMazeCells to know how much of the maze, the team has collectively explored so far. At the initial game levels the single solution path covers nearly all of totalMazeCells, so expect to explore most of the maze before reaching the destination; the path's length relative to totalMazeCells drops only slightly as the level number grows, so at higher levels the destination can be reachable well before allUniqueCellsVisited approaches totalMazeCells. It does not affect your traversal speed, which is scored on playerUniqueCellsVisited against decayUnitsCharged. totalTurnCount is the number of all completed prediction turns in this game level. playerTurnsTaken is the completed turns taken by the player and is reported for context; neither count affects your speed, classification or scores. The resulting score is visible via get_last_prediction_outcome. mazeDimensions.totalMazeCells is the full level size. Before anything is charged on this level, batchEfficiencyClass defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"playerUniqueCellsVisited\":number, \"allUniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"batchEfficiencyClass\":string, \"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null, \"expectedResponseSchema\":object}.",
       parameters: {
         type: "object",
         properties: {},
@@ -52,7 +52,7 @@ const agentContextTools = [
     function: {
       name: "get_last_prediction_outcome",
       description:
-        "Call every turn, including the first, to learn whether the previous submitted moves fully applied, partially failed, reached the target, or were rejected. status is the current game status, score is the current score after that outcome, and lastMoveStatus values are: null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move hit a wall or boundary, execution stopped; malformed-response=previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged. lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total decay units charged toward score that turn. Returns JSON: {\"status\":string, \"score\":number, \"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
+        "Get the outcome of the previous submitted moves: whether they fully applied, partially failed, reached the target, or were rejected. status is the current game status, score is the current score after that outcome. lastMoveStatus is the outcome of only the single last move actually dispatched that turn: null=first turn, no history yet; applied=that move executed and was added to traversal history; invalid-move=that move hit a wall or boundary, execution stopped there; reached-target=destination reached, stop predicting; malformed-response=previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged. predictionStatus instead summarizes the entire submitted prediction as one story: all-applied=every submitted move that turn applied cleanly, or the target was reached; partially-applied=some submitted moves applied before one failed; invalid-prediction=a real prediction was replayed but the very first submitted move was already invalid, no progress made; empty-prediction=a malformed-response or network-error meant there was no usable prediction to replay at all. lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. On an empty-prediction turn these four fields are always reset to null/empty, matching that no moves were replayed — they never carry over stale data from an earlier turn. chargedMovesCount is the total decay units charged toward score that turn. Returns JSON: {\"status\":string, \"score\":number, \"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"predictionStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
       parameters: {
         type: "object",
         properties: {},
@@ -199,13 +199,13 @@ function mazeStructureContent(overrides: Partial<State> = {}): string {
         col: Math.floor((nextState.finalPosition.x - 1) / 2),
       }
     : null
-  const { manhattanDistance } = CONFIG.runtime.modelConfig
+  const { manhattanDistance: historyWindowRadius } = CONFIG.runtime.modelConfig
   const visitedCells = new Set(
     nextState.traversalHistory.map(({ row, col }) => `${row},${col}`),
   )
   const filteredTraversalHistory = currentCell
     ? nextState.traversalHistory
-        .filter(({ row, col }) => Math.abs(row - currentCell.row) + Math.abs(col - currentCell.col) <= manhattanDistance)
+        .filter(({ row, col }) => Math.abs(row - currentCell.row) + Math.abs(col - currentCell.col) <= historyWindowRadius)
         .map(({ playerName, row, col, openMoves }) => ({
           playerName,
           cell: { row, col },
@@ -227,7 +227,7 @@ function mazeStructureContent(overrides: Partial<State> = {}): string {
     level: nextState.level,
     currentCell,
     destinationCell,
-    manhattanDistance,
+    historyWindowRadius,
     filteredTraversalHistory,
   })
 }
@@ -275,7 +275,7 @@ describe("agent request service", () => {
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
           content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"manhattanDistance\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"openMoves\":{}}]}",
+            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"openMoves\":{}}]}",
         },
       ],
       tools: uncalledTools(["get_maze_structure"]),
@@ -392,7 +392,7 @@ describe("agent request service", () => {
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
           content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"manhattanDistance\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"openMoves\":{}}]}",
+            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"openMoves\":{}}]}",
         },
       ],
     })
@@ -492,7 +492,7 @@ describe("agent request service", () => {
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
           content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"manhattanDistance\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"openMoves\":{}}]}",
+            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"openMoves\":{}}]}",
         },
       ],
     })
@@ -615,6 +615,7 @@ describe("agent request service", () => {
           score: state.score,
           lastPlayerName: null,
           lastMoveStatus: null,
+          predictionStatus: null,
           lastReplayStartIndex: null,
           lastSubmittedMoves: [],
           lastAppliedMoveIndex: null,
@@ -678,6 +679,7 @@ describe("agent request service", () => {
         score: state.score,
         lastPlayerName: null,
         lastMoveStatus: null,
+        predictionStatus: null,
         lastReplayStartIndex: null,
         lastSubmittedMoves: [],
         lastAppliedMoveIndex: null,

@@ -183,13 +183,16 @@ const mazeStructureTool: AgentToolDefinition = {
       "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down,",
       "col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col",
       "by 1 and MoveRight increases it by 1. filteredTraversalHistory includes only first-visit records within",
-      "manhattanDistance of currentCell, preserving chronological order; currentCell is always included because",
-      "its distance is 0. Each included entry's openMoves maps every fixed open exit from that cell directly to the",
-      "neighboring cell it leads to and whether that neighbor has already been visited in the full internal history,",
-      "even when that neighbor is outside the filtered result. openMoves key count reveals local structure: one open",
-      "exit is usually a dead end, two is a corridor, and three or more is a junction.",
+      "historyWindowRadius of currentCell, preserving chronological order; currentCell is always included because",
+      "its distance is 0. historyWindowRadius is a fixed configured radius — the maximum Manhattan distance a visited",
+      "cell in filteredTraversalHistory can be from currentCell — unrelated to how far destinationCell is; compute that",
+      "yourself from currentCell and destinationCell's row/col if you need it. Each included entry's",
+      "openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether",
+      "that neighbor has already been visited in the full internal history, even when that neighbor is outside the",
+      "filtered result. openMoves key count reveals local structure: one open exit is usually a dead end, two is a",
+      "corridor, and three or more is a junction.",
       "Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null,",
-      "\"destinationCell\":{\"row\":number, \"col\":number}|null, \"manhattanDistance\":number,",
+      "\"destinationCell\":{\"row\":number, \"col\":number}|null, \"historyWindowRadius\":number,",
       "\"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number},",
       "\"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
     ].join(" "),
@@ -210,7 +213,7 @@ const predictionRulesTool: AgentToolDefinition = {
     name: "get_prediction_rules",
     description: [
       "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions",
-      "response per turn; it is capped by manhattanDistance from get_maze_structure. playerUniqueCellsVisited divided by",
+      "response per turn; it is capped by historyWindowRadius from get_maze_structure. playerUniqueCellsVisited divided by",
       "decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by",
       "batchEfficiencyClass. Only a cell's first visit counts as progress. The higher the traversal speed, the higher",
       "the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below",
@@ -243,23 +246,30 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
   function: {
     name: "get_last_prediction_outcome",
     description: [
-      "Call every turn, including the first, to learn whether the previous submitted moves fully applied, partially",
-      "failed, reached the target, or were rejected. status is the current",
-      "game status, score is the current score after that outcome, and lastMoveStatus values are:",
-      "null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination",
-      "reached, stop predicting; invalid-move=move hit a wall or boundary, execution stopped; malformed-response=previous",
-      "response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning —",
-      "in all cases no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score",
-      "charged.",
+      "Get the outcome of the previous submitted moves: whether they fully applied, partially failed, reached the",
+      "target, or were rejected. status is the current game status, score is the current score after that outcome.",
+      "lastMoveStatus is the outcome of only the single last move actually dispatched that turn:",
+      "null=first turn, no history yet; applied=that move executed and was added to traversal history;",
+      "invalid-move=that move hit a wall or boundary, execution stopped there; reached-target=destination reached,",
+      "stop predicting;",
+      "malformed-response=previous response was not valid JSON, requested a tool that does not exist, or ignored a",
+      "duplicate tool call warning — no moves were replayed and a fixed score penalty was charged; network-error=HTTP",
+      "failure, no score charged. predictionStatus instead summarizes the entire submitted prediction as one story:",
+      "all-applied=every submitted move that turn applied cleanly, or the target was reached; partially-applied=some",
+      "submitted moves applied before one failed; invalid-prediction=a real prediction was replayed but the very first",
+      "submitted move was already invalid, no progress made; empty-prediction=a malformed-response or network-error",
+      "meant there was no usable prediction to replay at all.",
       "lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is",
       "their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within",
       "lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore",
-      "indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount",
-      "is the total decay units charged toward score that turn.",
+      "indicates whether the cell entered by the last valid move was already in traversal history. On an",
+      "empty-prediction turn these four fields are always reset to null/empty, matching that no moves were replayed —",
+      "they never carry over stale data from an earlier turn.",
+      "chargedMovesCount is the total decay units charged toward score that turn.",
       "Returns JSON: {\"status\":string, \"score\":number,",
-      "\"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"lastReplayStartIndex\":number|null,",
-      "\"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null,",
-      "\"chargedMovesCount\":number}.",
+      "\"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"predictionStatus\":string|null,",
+      "\"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null,",
+      "\"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
     ].join(" "),
     parameters: emptyToolParameters,
   },
@@ -350,18 +360,24 @@ export function buildAgentToolHandlers(
     get_maze_structure() {
       const currentCell = state.playerPosition ? cellCoordinateFromGridPoint(state.playerPosition) : null
       const destinationCell = state.finalPosition ? cellCoordinateFromGridPoint(state.finalPosition) : null
-      const { manhattanDistance } = runtime.modelConfig
+      // Named historyWindowRadius on the wire (not manhattanDistance) even though it comes from
+      // runtime.modelConfig.manhattanDistance: sitting beside currentCell/destinationCell under the
+      // name "manhattanDistance" reads as the live distance between them, which it is not — it's a
+      // fixed configured radius. A model that computes the real distance itself and finds this
+      // field disagreeing has no way to know it isn't supposed to match, and can burn real
+      // reasoning trying to reconcile the two.
+      const historyWindowRadius = runtime.modelConfig.manhattanDistance
       const history = cloneTraversalHistory(state.traversalHistory)
       const visitedCellKeys = new Set(history.map((entry) => mazeCellKey(entry)))
       const filteredHistory = currentCell
-        ? history.filter((entry) => isWithinManhattanDistance(entry, currentCell, manhattanDistance))
+        ? history.filter((entry) => isWithinManhattanDistance(entry, currentCell, historyWindowRadius))
         : []
 
       return {
         level: state.level,
         currentCell,
         destinationCell,
-        manhattanDistance,
+        historyWindowRadius,
         filteredTraversalHistory: filteredHistory.map((entry) => ({
           playerName: entry.playerName,
           cell: { row: entry.row, col: entry.col },
@@ -375,6 +391,7 @@ export function buildAgentToolHandlers(
         score: state.score,
         lastPlayerName: lastActionResult?.lastPlayerName ?? null,
         lastMoveStatus: lastActionResult?.lastMoveStatus ?? null,
+        predictionStatus: lastActionResult?.predictionStatus ?? null,
         lastReplayStartIndex: lastActionResult?.lastReplayStartIndex ?? null,
         lastSubmittedMoves: lastActionResult?.lastSubmittedMoves ?? [],
         lastAppliedMoveIndex: lastActionResult?.lastAppliedMoveIndex ?? null,

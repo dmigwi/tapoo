@@ -604,6 +604,7 @@ describe("agent control mode", () => {
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
         lastMoveStatus: "invalid-move",
+        predictionStatus: "partially-applied",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastAppliedMoveIndex: 0,
         chargedMovesCount: 2,
@@ -908,14 +909,14 @@ describe("agent control mode", () => {
       currentCell: { row: number; col: number }
       destinationCell: { row: number; col: number }
       filteredTraversalHistory: unknown[]
-      manhattanDistance: number
+      historyWindowRadius: number
     }
 
     expect(toolResult).toEqual({
       level: 1,
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 2 },
-      manhattanDistance: CONFIG.runtime.modelConfig.manhattanDistance,
+      historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
       filteredTraversalHistory: [
         {
           playerName: "Self",

@@ -130,7 +130,7 @@ describe("agent context", () => {
       level: 4,
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 1 },
-      manhattanDistance: CONFIG.runtime.modelConfig.manhattanDistance,
+      historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
       filteredTraversalHistory: [
         {
           playerName: "Self",
@@ -160,6 +160,7 @@ describe("agent context", () => {
       score: 700,
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
+      predictionStatus: null,
       lastReplayStartIndex: 0,
       lastSubmittedMoves: ["0:MoveRight"],
       lastAppliedMoveIndex: 0,
@@ -222,7 +223,7 @@ describe("agent context", () => {
       level: 4,
       currentCell: { row: 4, col: 4 },
       destinationCell: { row: 4, col: 7 },
-      manhattanDistance: CONFIG.runtime.modelConfig.manhattanDistance,
+      historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
       filteredTraversalHistory: [
         {
           playerName: "Blue",
@@ -269,7 +270,7 @@ describe("agent context", () => {
     })
     expect(toolHandlers.get_maze_structure({})).toMatchObject({
       level: 4,
-      manhattanDistance: CONFIG.runtime.modelConfig.manhattanDistance,
+      historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
       filteredTraversalHistory: [
         { playerName: "Blue", cell: { row: 4, col: 4 }, openMoves: {} },
         { playerName: "Blue", cell: { row: 4, col: 8 }, openMoves: {} },

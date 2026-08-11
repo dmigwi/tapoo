@@ -12,6 +12,7 @@ import type {
   MazeAction,
   MazeActionDispatch,
   MazeActionResult,
+  PredictionOutcomeStatus,
   State,
 } from "../types"
 
@@ -176,6 +177,19 @@ export function handleAgentTurnLoop({
     }
   }
 
+  // noReplayThisTurn clears the previous turn's replay details rather than letting mergeMazeActionResult
+  // carry them forward. Neither malformed-response nor network-error replays anything, so
+  // lastSubmittedMoves/lastAppliedMoveIndex/lastReplayStartIndex/visitedBefore must say so — leaving
+  // them at whatever a prior successful turn set contradicts the "no moves were replayed" this tool
+  // already documents, and reads as this failure's own data when it is really leftover from turns ago.
+  const noReplayThisTurn = {
+    lastSubmittedMoves: [],
+    lastAppliedMoveIndex: null,
+    lastReplayStartIndex: undefined,
+    visitedBefore: undefined,
+    predictionStatus: "empty-prediction" as const,
+  }
+
   // recordAgentNetworkError disables failed agents and records the no-score-decay network state.
   const recordAgentNetworkError = (agent: AgentApiConfig | null): void => {
     if (!agent) {
@@ -188,6 +202,7 @@ export function handleAgentTurnLoop({
       lastPlayerName: agent.playerName,
       lastMoveStatus: "network-error",
       chargedMovesCount: 0,
+      ...noReplayThisTurn,
     })
 
     lastActionResult = nextResult
@@ -209,6 +224,7 @@ export function handleAgentTurnLoop({
       lastPlayerName: agent.playerName,
       lastMoveStatus: "malformed-response",
       chargedMovesCount,
+      ...noReplayThisTurn,
     })
     lastActionResult = nextResult
 
@@ -429,9 +445,17 @@ export function handleAgentTurnLoop({
       //     flat, no base — standing in place is exactly as costly as a partial attempt, never
       //     cheaper. recordMalformedAgentResponse's agentMalformedPenaltyDecayUnits stays the
       //     costliest outcome of all, since a protocol violation is worse than any gameplay mistake.
-      const chargedMovesCount = appliedMoveCount > 0 
-        ? (agentBaseDecayUnits + invalidMovesPenalty) 
+      const chargedMovesCount = appliedMoveCount > 0
+        ? (agentBaseDecayUnits + invalidMovesPenalty)
         : agentZeroProgressPenaltyDecayUnits
+
+      // predictionStatus summarizes the whole submitted batch as one story, mirroring the three
+      // chargedMovesCount tiers above exactly — distinct from lastMoveStatus below, which stays the
+      // single last move's own granular outcome (reached-target included) and is left untouched.
+      const predictionStatus: PredictionOutcomeStatus =
+        appliedMoveCount > 0
+          ? (invalidMovesPenalty > 0 ? "partially-applied" : "all-applied")
+          : "invalid-prediction"
 
       __commitAgentTurn(chargedMovesCount)
       const {level, cumulativeRoundCount, turnCount } = __readState()
@@ -440,6 +464,7 @@ export function handleAgentTurnLoop({
       const nextResult = mergeReplayResult(lastReplayResult, {
         lastPlayerName: selectedAgent.playerName,
         lastMoveStatus: lastReplayResult.lastMoveStatus,
+        predictionStatus,
         visitedBefore: lastReplayResult.visitedBefore,
         lastSubmittedMoves: submittedMoves.map((move, index) => `${index}:${move}`),
         lastAppliedMoveIndex: appliedMoveCount > 0 ? appliedMoveCount - 1 : null,

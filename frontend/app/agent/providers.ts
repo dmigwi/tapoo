@@ -170,7 +170,13 @@ function openaiBuildBody(input: ProviderRequestInput): Record<string, unknown> {
     model: input.model,
     messages: input.messages.map(openaiMessage),
     tools: input.tools,
-    max_completion_tokens: CONFIG.runtime.modelConfig.numPredict,
+    // max_tokens, not max_completion_tokens: the latter is OpenAI's own newer alias, but it isn't
+    // a documented field for Hugging Face's Inference Providers router (its payload spec lists
+    // only max_tokens) or for most self-hosted OpenAI-compatible servers this adapter's endpoint
+    // placeholders target (vLLM, LM Studio, llama.cpp). A silently-ignored cap here was
+    // indistinguishable from a respected one in a short reply, but surfaced directly once a
+    // verbose reasoning model ran long enough to actually hit — and blow past — an uncapped limit.
+    max_tokens: CONFIG.runtime.modelConfig.numPredict,
     ...OPENAI_REASONING_EFFORT_HINT,
     ...(input.wantsPredictionFormat ? OPENAI_PREDICTION_FORMAT : {}),
     ...BASE_BODY,

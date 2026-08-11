@@ -306,6 +306,7 @@ describe("agent api turn loop", () => {
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "invalid-move",
+        predictionStatus: "partially-applied",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastAppliedMoveIndex: 1,
         chargedMovesCount: 2,
@@ -658,6 +659,58 @@ describe("agent api turn loop", () => {
     expect(malformedEntry?.log).toBe("warn")
   })
 
+  it("clears stale replay details on a malformed response instead of carrying over the previous turn's", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveSideways\"]}" },
+        }),
+      }),
+    )
+
+    const onActionResult = vi.fn()
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: vi.fn(),
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi.fn(),
+      __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState(),
+    })
+
+    // Seed replay details as if a previous turn had actually applied moves — the exact shape
+    // get_last_prediction_outcome must NOT still be showing once this turn's malformed response
+    // lands, since nothing was replayed this time.
+    poller.__setLastActionResult(createActionResult({
+      lastMoveStatus: "applied",
+      lastSubmittedMoves: ["0:MoveRight", "1:MoveRight"],
+      lastReplayStartIndex: 0,
+      lastAppliedMoveIndex: 1,
+      visitedBefore: false,
+      chargedMovesCount: 1,
+    }))
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    expect(onActionResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastMoveStatus: "malformed-response",
+        predictionStatus: "empty-prediction",
+        lastSubmittedMoves: [],
+        lastAppliedMoveIndex: null,
+        lastReplayStartIndex: undefined,
+        visitedBefore: undefined,
+      }),
+    )
+  })
+
   it("disables the agent after response timeouts without score decay", async () => {
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
       return new Promise<Response>((_resolve, reject) => {
@@ -747,6 +800,59 @@ describe("agent api turn loop", () => {
         chargedMovesCount: 0,
         lastMoveStatus: "network-error",
         lastPlayerName: "Blue",
+      }),
+    )
+  })
+
+  it("clears stale replay details on a network error instead of carrying over the previous turn's", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: vi.fn(),
+        text: vi.fn().mockResolvedValue(""),
+      }),
+    )
+
+    const onActionResult = vi.fn()
+    const agentConfigs = enabledAgentConfigs()
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: vi.fn(),
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi.fn(),
+      __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
+      __readAgentConfigs: () => agentConfigs,
+      __readState: () => createState(),
+    })
+
+    // Seed replay details as if a previous turn had actually applied moves — a network error
+    // must not leave this data looking like it belongs to the failed turn.
+    poller.__setLastActionResult(createActionResult({
+      lastMoveStatus: "applied",
+      lastSubmittedMoves: ["0:MoveRight", "1:MoveRight"],
+      lastReplayStartIndex: 0,
+      lastAppliedMoveIndex: 1,
+      visitedBefore: false,
+      chargedMovesCount: 1,
+    }))
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    await flushConnectionErrorRetry()
+
+    expect(onActionResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastMoveStatus: "network-error",
+        predictionStatus: "empty-prediction",
+        lastSubmittedMoves: [],
+        lastAppliedMoveIndex: null,
+        lastReplayStartIndex: undefined,
+        visitedBefore: undefined,
       }),
     )
   })
