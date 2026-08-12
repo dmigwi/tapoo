@@ -792,6 +792,7 @@ export type AppConfig = {
     modelConfig: {
       contextWindowFloor: number
       manhattanDistance: number
+      suggestedMovesPerTurnRange: { min: number; max: number }
       temperature: number
       numPredict: number
     }

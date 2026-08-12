@@ -147,7 +147,7 @@ describe("agent context", () => {
       ],
     })
     expect(toolHandlers.get_prediction_rules({})).toEqual({
-      suggestedMovesPerTurn: 4,
+      suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,
       playerUniqueCellsVisited: 1,
       allUniqueCellsVisited: 2,
       decayUnitsCharged: 2,
@@ -171,19 +171,18 @@ describe("agent context", () => {
     })
   })
 
-  // A zero suggestion would read as "batch nothing" - a followable instruction no level intends -
-  // so the count stays positive even in the unreachable case where dimensions are missing.
-  it("never suggests zero moves per turn, even without maze dimensions", () => {
+  // suggestedMovesPerTurn is a static configured range, not derived from maze dimensions — it stays
+  // the same even in the unreachable case where dimensions are missing.
+  it("suggests the same static moves-per-turn range regardless of maze dimensions", () => {
     const toolHandlers = buildAgentToolHandlers(
       createState({ mazeDimensions: null }),
       null,
       createAgent({}),
     )
 
-    const { suggestedMovesPerTurn } = toolHandlers.get_prediction_rules({}) as {
-      suggestedMovesPerTurn: number
-    }
-    expect(suggestedMovesPerTurn).toBeGreaterThan(0)
+    expect(toolHandlers.get_prediction_rules({})).toMatchObject({
+      suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,
+    })
   })
 
   it("defaults a fresh agent's prediction rules to a trailblazer level regardless of raw counts", () => {
@@ -191,7 +190,7 @@ describe("agent context", () => {
     const toolHandlers = buildAgentToolHandlers(createState(), null, freshAgent)
 
     expect(toolHandlers.get_prediction_rules({})).toEqual({
-      suggestedMovesPerTurn: 4,
+      suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,
       playerUniqueCellsVisited: 1,
       allUniqueCellsVisited: 2,
       decayUnitsCharged: 0,
@@ -259,7 +258,7 @@ describe("agent context", () => {
     expect(state.traversalHistory).toEqual(fullTraversalHistory)
   })
 
-  it("keeps maze-structure distance at the configured ceiling even when suggested moves shrink", () => {
+  it("keeps both the moves-per-turn range and the maze-structure distance unaffected by a larger maze area", () => {
     const state = createState({
       mazeDimensions: { numCols: 40, numRows: 40, area: 1600 },
       playerPosition: { x: 9, y: 9 },
@@ -272,7 +271,7 @@ describe("agent context", () => {
     const toolHandlers = buildAgentToolHandlers(state, null, createAgent())
 
     expect(toolHandlers.get_prediction_rules({})).toMatchObject({
-      suggestedMovesPerTurn: 3,
+      suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,
     })
     expect(toolHandlers.get_maze_structure({})).toMatchObject({
       level: 4,

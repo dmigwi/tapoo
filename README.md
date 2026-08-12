@@ -68,6 +68,7 @@ Tapoo increases maze area as levels rise. Progress continues until the current t
 - Adjustable wall weights with live cycling during play
 - Per-level scoring and progression
 - Pause, resume, retry, and next-level flow
+- HTTP-driven AI agent play against Ollama, OpenAI-compatible, and Anthropic APIs, with up to 6 (configurable) agent seats
 - Best-effort persistence for terminal and browser sessions
 - Manual GitHub Pages deployment for the web build
 - Go and TypeScript test coverage in CI
@@ -77,19 +78,47 @@ Tapoo increases maze area as levels rise. Progress continues until the current t
 <details>
 <summary><strong>Browser App</strong></summary>
 
-The browser build outputs a bundled file at [public/js/tapoo.min.js](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/public/js/tapoo.min.js) and serves the SPA from [public/index.html](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/public/index.html).
+The browser build outputs a bundled file at [public/js/tapoo.min.js](/public/js/tapoo.min.js) and serves the SPA from [public/index.html](/public/index.html).
 
-This compiles [frontend/tapoo.ts](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/frontend/tapoo.ts) with `esbuild` into a minified browser bundle.
+This compiles [frontend/tapoo.ts](/frontend/tapoo.ts) with `esbuild` into a minified browser bundle.
 
 Available pages:
 
 - `/index.html` for the game
-- `/agents.html` for the AI Agents placeholder page
+- `/agents.html` for configuring and running HTTP-driven AI agents
+- `/prompts.html` for previewing the exact prompts and tool definitions sent to an agent
+- `/privacy.html` for the browser storage and agent data privacy notice
+
+</details>
+
+<details>
+<summary><strong>AI Agents</strong></summary>
+
+Instead of (or alongside) a human player, up to 6 agent seats can each be configured to play the maze by calling an HTTP chat-completions endpoint every turn.
+
+### Supported providers
+
+- **Ollama** — native `/api/chat` shape
+- **OpenAI-compatible** — `/v1/chat/completions` (also covers self-hosted servers such as vLLM, LM Studio, and llama.cpp, and routers such as Hugging Face's Inference Providers)
+- **Anthropic** — `/v1/messages`
+
+### Per-agent configuration
+
+Each seat is configured independently from the `/agents.html` overlay:
+
+- player name, model, endpoint, and API provider
+- credential (bearer token or API key) and custom extra headers, e.g. `anthropic-version`
+- **reasoning effort** — how hard the model reasons before replying; the available levels and default depend on the provider, since reasoning support varies by model (e.g. Kimi K3 handles heavy reasoning well, Gemma 4 does not)
+- **echo back reasoning** — whether prior reasoning content is replayed on the next request, off by default since guidance on this conflicts across reasoning models; locked off automatically whenever reasoning effort is set to `none`, and has no effect for Anthropic agents
+
+The `/prompts.html` page mirrors the exact system prompt, tool definitions, and required response format an agent receives, so its behavior can be inspected without capturing live traffic.
 
 </details>
 
 <details>
 <summary><strong>Persistence</strong></summary>
+
+Tapoo carries a semantic version (`MAJOR.MINOR.PATCH`), shown in the terminal intro banner and in the browser footer. Browser storage additionally carries its own separate schema version, independent of the app version above — see the browser storage note below.
 
 ### Terminal
 
@@ -109,8 +138,10 @@ If the persisted state cannot be read or validated, Tapoo falls back to default 
 
 The SPA stores gameplay state in browser storage:
 
-- `localStorage` for durable preferences such as level and wall weight
+- `localStorage` for durable preferences such as level and wall weight, and for configured agent seats (including credentials, endpoints, and per-agent reasoning settings)
 - `sessionStorage` for the active round snapshot
+
+Every stored entry is tagged with the current storage schema version. On startup, Tapoo automatically discards any entries left over from an older schema version rather than attempting to migrate them — so upgrading Tapoo can silently reset previously stored preferences and agent configuration.
 
 Privacy note: browser storage stays on the current device unless the user clears it, resets progress, or removes configured agent data. Browser storage is lightly obfuscated to discourage casual tampering, but it should not be treated as strong encryption for personal data. When AI Agent play is configured, gameplay context such as player name, current cell, destination cell, submitted moves, score, level, and traversal history may be sent to the configured agent API endpoint.
 
@@ -139,6 +170,18 @@ make test
 make ci
 ```
 
+### Benchmarks
+
+Go and TypeScript carve mazes independently from different random sources, so [scripts/bench-report.mjs](/scripts/bench-report.mjs) runs both ports' benchmark suites ([maze/bench](/maze/bench) and [frontend/bench](/frontend/bench)) and statistically checks that the two generators still produce equivalent-distribution mazes rather than merely eyeballing the numbers. A flagged case means a reproducible behavioral gap between the ports, not just run-to-run noise.
+
+```bash
+make go-bench        # Go maze generation only
+make frontend-bench  # TypeScript maze generation only
+make ci-bench        # both, with the cross-port parity check
+```
+
+Each run also writes `bench-report.json` with the full comparison.
+
 </details>
 
 <details>
@@ -162,7 +205,7 @@ make frontend-install
 ./scripts/install-hooks.sh
 ```
 
-The hook installer copies [scripts/hooks/pre-commit](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/scripts/hooks/pre-commit) into `.git/hooks/pre-commit`.
+The hook installer copies [scripts/hooks/pre-commit](/scripts/hooks/pre-commit) into `.git/hooks/pre-commit`.
 
 ### Why the hook matters
 
@@ -225,7 +268,7 @@ pnpm run coverage:frontend
 
 ### Continuous Integration
 
-The main CI workflow lives at [`.github/workflows/go.yml`](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/.github/workflows/go.yml) and runs:
+The main CI workflow lives at [`.github/workflows/go.yml`](/.github/workflows/go.yml) and runs:
 
 - Go linting
 - `govulncheck`
@@ -235,7 +278,7 @@ The main CI workflow lives at [`.github/workflows/go.yml`](/Users/dmigwi/theSecr
 
 ### GitHub Pages
 
-The Pages workflow lives at [`.github/workflows/pages.yml`](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/.github/workflows/pages.yml).
+The Pages workflow lives at [`.github/workflows/pages.yml`](/.github/workflows/pages.yml).
 
 Pages deployment is manual-only.
 
@@ -265,5 +308,5 @@ scripts/       Frontend build and hook helpers
 
 ## License
 
-This project is licensed under the Apache License 2.0. See [LICENSE](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/LICENSE).
+This project is licensed under the Apache License 2.0. See [LICENSE](/LICENSE).
 Tapoo is distributed on an `AS IS` basis, without warranties or guaranteed support.

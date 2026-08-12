@@ -393,9 +393,17 @@ export const CONFIG: AppConfig = {
       // payload size does not grow with the maze. Ollama's own default is too small for the
       // prompt anyway, and it answers 500 rather than truncating.
       contextWindowFloor: 3000,
-      // Model-facing local context radius. Also caps suggestedMovesPerTurn so batch guidance
-      // cannot exceed the history window the model can inspect.
+      // Model-facing local context radius — how far back into traversal history get_maze_structure
+      // looks. Deliberately independent of suggestedMovesPerTurnRange below: one bounds what the
+      // model can see, the other suggests how many moves to batch per turn, and scaling batch size
+      // off the maze-area-derived navigation profile (the old behavior) coupled two unrelated
+      // concerns for no real benefit.
       manhattanDistance: 4, // Simulation corridor-run distribution: p50=1, p75=2, p90=3, p95=4.
+      // A static range rather than a single number that shrank with maze area: observed batching
+      // accuracy drops off sharply past the 2nd predicted move, so min is the safer, lower-confidence
+      // batch size (p50) and max is the more aggressive, higher-confidence one (p95) — the model
+      // picks within the range based on its own confidence for the cells ahead, not a fixed count.
+      suggestedMovesPerTurnRange: { min: 2, max: 4 },
       // Under Ollama's default: an unparseable reply is charged malformed-response, so format
       // compliance beats creativity.
       temperature: 0.5,

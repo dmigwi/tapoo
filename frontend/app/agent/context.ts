@@ -1,5 +1,4 @@
 import { CONFIG } from "../config"
-import { getNavigationProfile } from "../maze"
 import {
   MOVE_ACTIONS,
   MOVE_DELTAS,
@@ -224,13 +223,15 @@ const predictionRulesTool: AgentToolDefinition = {
   function: {
     name: "get_prediction_rules",
     description: [
-      "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions",
-      "response per turn; it is capped by historyWindowRadius from get_maze_structure. playerUniqueCellsVisited divided by",
-      "decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by",
-      "batchEfficiencyClass. Only a cell's first visit counts as progress. The higher the traversal speed, the higher",
-      "the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below",
-      "1.0 (units wasted on invalid moves or oscillation between visited cells), navigator at 1.0",
-      "(one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the",
+      "Get move response rules. suggestedMovesPerTurn is a min/max range for how many moves to include in your",
+      "predictions response per turn: submit min moves when you are only confident about the immediate next cell or two,",
+      "and go up to max only when the local map supports a longer high-confidence run. Batching accuracy drops sharply the",
+      "further out a prediction reaches, so lean toward min rather than max whenever you are unsure.",
+      "playerUniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay",
+      "unit spent — a scale grouped by batchEfficiencyClass. Only a cell's first visit counts as progress. The higher",
+      "the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyClass is set to",
+      "backtracker when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator",
+      "at 1.0 (one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the",
       "only classification that can set a new best-score record). allUniqueCellsVisited is every cell any player has",
       "reached this level, not just your own — compare it against mazeDimensions.totalMazeCells to know how much of the",
       "maze, the team has collectively explored so far. At the initial game levels the single solution path covers nearly",
@@ -243,7 +244,7 @@ const predictionRulesTool: AgentToolDefinition = {
       "get_last_prediction_outcome. mazeDimensions.totalMazeCells is the full level size.",
       "Before anything is charged on this level, batchEfficiencyClass defaults to trailblazer regardless of these",
       "counts, so you start already primed to predict multi-move sequences. Returns JSON:",
-      "{\"suggestedMovesPerTurn\":number, \"playerUniqueCellsVisited\":number, \"allUniqueCellsVisited\":number,",
+      "{\"suggestedMovesPerTurn\":{\"min\":number,\"max\":number}, \"allUniqueCellsVisited\":number, \"playerUniqueCellsVisited\":number,",
       "\"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"batchEfficiencyClass\":string,",
       "\"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null,",
       "\"expectedResponseSchema\":object}.",
@@ -333,19 +334,6 @@ function resolvedOpenMoves(
   )
 }
 
-// suggestedMovesPerTurn is the prediction-size hint; the configured Manhattan distance is its
-// ceiling, ensuring move batches never outgrow the local context window the model can inspect.
-// The navigation profile's max corridor length comes from maze generation; the cap keeps that
-// generation-derived value within the observed practical range for prediction batches.
-// Never 0: a zero suggestion reads as "batch nothing", which no playable round intends. Dimensions
-// should exist while running, so the fallback only protects unreachable or malformed state.
-function suggestedMovesPerTurn(state: State): number {
-  const distance = runtime.modelConfig.manhattanDistance
-  return state.mazeDimensions
-    ? Math.min(getNavigationProfile(state.mazeDimensions).__maxCorridorLength, distance)
-    : distance
-}
-
 // isWithinManhattanDistance checks whether a logical cell belongs inside the local context window.
 function isWithinManhattanDistance(
   first: CellCoordinate,
@@ -370,9 +358,9 @@ export function buildAgentToolHandlers(
       const { playerUniqueCellsVisited, allUniqueCellsVisited, decayUnitsCharged, playerTurnsTaken } =
         getBatchEfficiencyMetrics(state.traversalHistory, agent)
       return {
-        suggestedMovesPerTurn: suggestedMovesPerTurn(state),
-        playerUniqueCellsVisited,
+        suggestedMovesPerTurn: runtime.modelConfig.suggestedMovesPerTurnRange,
         allUniqueCellsVisited,
+        playerUniqueCellsVisited,
         decayUnitsCharged,
         totalTurnCount: state.turnCount,
         playerTurnsTaken,
