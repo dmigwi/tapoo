@@ -921,7 +921,7 @@ describe("agent control mode", () => {
         {
           playerName: "Self",
           cell: { row: 0, col: 0 },
-          type: "dead-end",
+          cellType: "dead-end",
           openMoves: {},
         },
       ],

@@ -172,7 +172,7 @@ function openaiMessage(
 // is documented by multiple reasoning models (OpenAI's o-series, Kimi K3) rather than being a
 // server-specific convention.
 const OPENAI_REASONING_EFFORT_HINT = {
-  reasoning_effort: "high",
+  reasoning_effort: "max",
 }
 
 function openaiBuildBody(input: ProviderRequestInput): Record<string, unknown> {

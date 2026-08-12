@@ -140,9 +140,9 @@ describe("openai adapter", () => {
     expect(body.tools).toBe(tools)
   })
 
-  it("sends a best-effort high reasoning-effort hint", () => {
+  it("sends a best-effort max reasoning-effort hint", () => {
     const body = PROVIDER_ADAPTERS.openai.buildBody(requestInput())
-    expect(body.reasoning_effort).toBe("high")
+    expect(body.reasoning_effort).toBe("max")
     expect(body.chat_template_kwargs).toBeUndefined()
   })
 

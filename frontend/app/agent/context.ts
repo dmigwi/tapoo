@@ -106,11 +106,14 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
     "level, maze dimensions and wall/open-exit structure are fixed once generated. When present in filteredTraversalHistory,",
     `playerName ${runtime.interactivePlayerName} marks the start cell. Use openMoves from filteredTraversalHistory`,
     "entries to build a local map; entries recorded by other players are just as trustworthy as your own.",
-    "Revisiting a cell already in filteredTraversalHistory is not a mistake — once you have actually visited a cell",
-    "and its type is dead-end, backtracking through it is usually the only way to reach unexplored territory or the",
-    "destination. type, read directly from a visited cell's own entry, is the only reliable way to know it is a",
-    "dead-end. Never assume a cell you have not yet visited is a dead-end — the absence of a connection to it from cells",
-    "you already know proves nothing, since an unexplored cell's own exits are unknown until you move there.",
+    "Revisiting a cell already in filteredTraversalHistory is not a mistake. cellType is the only reliable way to",
+    "know it is a dead-end — never assume a cell you have not yet visited is one, since an unexplored cell's own exits",
+    "are unknown until you land there and the absence of a connection from cells you already know proves nothing.",
+    "Only backtrack when your current cell's cellType is dead-end, and only toward a specific",
+    "visited cell in filteredTraversalHistory with an open exit whose alreadyExplored is false; that cell is one of",
+    "your actual backtrack targets, not a guess. At higher levels, more junctions mean more short dead-end branches",
+    "along the solution path, so expect to rule out several before finding the right one — a single clean backtrack is",
+    "the exception, not the rule.",
     "When judging whether one candidate cell is closer to destinationCell than another, compare the full combined",
     "distance (row difference plus col difference) for each candidate, not just one axis — a cell closer in column can",
     "be equally or further away overall once row is included. By design, the maze never guarantees a direct route from start",
@@ -193,16 +196,17 @@ const mazeStructureTool: AgentToolDefinition = {
       "cell in filteredTraversalHistory can be from currentCell — unrelated to how far destinationCell is; compute that",
       "yourself from currentCell and destinationCell's row/col if you need it. Each included entry's",
       "openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether",
-      "that neighbor has already been visited in the full internal history, even when that neighbor is outside the",
-      "filtered result. type is precomputed from that same exit count so you never need to count it yourself:",
-      "dead-end (one exit), corridor (two exits), or junction (three or more). type only ever exists for a cell",
-      "already in filteredTraversalHistory — an unvisited cell, including one that only appears as a neighbor inside",
-      "another cell's openMoves, has no known type and must never be assumed to be of a specific type before visiting.",
+      "that neighbor's own alreadyExplored is true — meaning it has been explored and exists in the full maze traversal history —",
+      "even when that neighbor itself is outside the filtered result.", 
+      "cellType is precomputed from that same exit count, so you never need to count it yourself: dead-end (one exit),",
+      "corridor (two exits), or junction (three or more). cellType only ever exists for a cell already in filteredTraversalHistory",
+      "— an unvisited cell, including one that only appears as a neighbor inside another cell's openMoves, has no known",
+      "cellType and must never be assumed to be of a specific cellType before visiting.",
       "The only way to learn an unvisited cell's own structure is to move there and read its own entry on a later turn.",
       "Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null,",
       "\"destinationCell\":{\"row\":number, \"col\":number}|null, \"historyWindowRadius\":number,",
       "\"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number},",
-      "\"type\":string, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
+      "\"cellType\":string, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"alreadyExplored\":boolean}, ...}}]}.",
     ].join(" "),
     parameters: emptyToolParameters,
   },
@@ -308,19 +312,23 @@ function classifyCellType(exitCount: number): "dead-end" | "corridor" | "junctio
 }
 
 // resolvedOpenMoves maps each of an entry's open exits to its neighboring cell (using the same
-// row/col deltas mazeStructureTool documents) and whether that neighbor is already visited, using
-// a precomputed key set so every lookup stays O(1) rather than rescanning traversalHistory per
-// neighbor per entry. Precomputing the neighbor cells here spares the model from re-deriving
-// adjacency via coordinate arithmetic itself across dozens of traversalHistory entries.
+// row/col deltas mazeStructureTool documents) and whether that neighbor already has a record in
+// the full internal history, using a precomputed key set so every lookup stays O(1) rather than
+// rescanning traversalHistory per neighbor per entry. alreadyExplored (not the more generic
+// "visited") names this deliberately: it must read unambiguously as a property of the neighbor
+// cell itself, not of the move that reaches it or of the current cell, even once a model has
+// paraphrased it away from its original nested position under openMoves. Precomputing the
+// neighbor cells here spares the model from re-deriving adjacency via coordinate arithmetic
+// itself across dozens of traversalHistory entries.
 function resolvedOpenMoves(
   entry: TraversalHistoryEntry,
   visitedCellKeys: Set<string>,
-): Record<string, CellCoordinate & { visited: boolean }> {
+): Record<string, CellCoordinate & { alreadyExplored: boolean }> {
   return Object.fromEntries(
     entry.openMoves.map((move) => {
       const [rowDelta, colDelta] = MOVE_DELTAS[move]
       const neighbor = { row: entry.row + rowDelta, col: entry.col + colDelta }
-      return [move, { ...neighbor, visited: visitedCellKeys.has(mazeCellKey(neighbor)) }]
+      return [move, { ...neighbor, alreadyExplored: visitedCellKeys.has(mazeCellKey(neighbor)) }]
     }),
   )
 }
@@ -403,7 +411,7 @@ export function buildAgentToolHandlers(
         filteredTraversalHistory: filteredHistory.map((entry) => ({
           playerName: entry.playerName,
           cell: { row: entry.row, col: entry.col },
-          type: classifyCellType(entry.openMoves.length),
+          cellType: classifyCellType(entry.openMoves.length),
           openMoves: resolvedOpenMoves(entry, visitedCellKeys),
         })),
       }
