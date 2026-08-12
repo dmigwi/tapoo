@@ -220,20 +220,35 @@
               </div>
             </div>
           </div>
-          <div class="agent-config-form__field">
-            <span class="agent-config-form__field-label">
-              <span data-config-text data-config-key="agentConfig.echoBackReasoningLabel"></span>
-              <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.echoBackReasoningTooltip">!</span>
-            </span>
-            <label class="agent-config-form__toggle">
-              <input
-                id="agent-config-echo-back-reasoning"
-                name="echoBackReasoning"
-                type="checkbox"
-              />
-              <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
-              <span id="agent-config-echo-back-reasoning-label"></span>
-            </label>
+          <div class="agent-config-form__row">
+            <div class="agent-config-form__field">
+              <span class="agent-config-form__field-label">
+                <span data-config-text data-config-key="agentConfig.reasoningEffortLabel"></span>
+                <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.reasoningEffortTooltip">!</span>
+              </span>
+              <select id="agent-config-reasoning-effort" name="reasoningEffort">
+                <option value="none" selected data-config-text data-config-key="agentConfig.reasoningEffortLabels.none"></option>
+                <option value="low" data-config-text data-config-key="agentConfig.reasoningEffortLabels.low"></option>
+                <option value="medium" data-config-text data-config-key="agentConfig.reasoningEffortLabels.medium"></option>
+                <option value="high" data-config-text data-config-key="agentConfig.reasoningEffortLabels.high"></option>
+                <option value="max" data-config-text data-config-key="agentConfig.reasoningEffortLabels.max"></option>
+              </select>
+            </div>
+            <div class="agent-config-form__field">
+              <span class="agent-config-form__field-label">
+                <span data-config-text data-config-key="agentConfig.echoBackReasoningLabel"></span>
+                <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.echoBackReasoningTooltip">!</span>
+              </span>
+              <label class="agent-config-form__toggle">
+                <input
+                  id="agent-config-echo-back-reasoning"
+                  name="echoBackReasoning"
+                  type="checkbox"
+                />
+                <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
+                <span id="agent-config-echo-back-reasoning-label"></span>
+              </label>
+            </div>
           </div>
           <div class="agent-config-form__actions">
             <label class="agent-config-form__toggle">
@@ -296,20 +311,35 @@
             <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
             <span id="agent-manage-enabled-label"></span>
           </label>
-          <div class="agent-config-form__field">
-            <span class="agent-config-form__field-label">
-              <span data-config-text data-config-key="agentConfig.echoBackReasoningLabel"></span>
-              <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.echoBackReasoningTooltip">!</span>
-            </span>
-            <label class="agent-config-form__toggle">
-              <input
-                id="agent-manage-echo-back-reasoning"
-                name="deleteEchoBackReasoning"
-                type="checkbox"
-              />
-              <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
-              <span id="agent-manage-echo-back-reasoning-label"></span>
-            </label>
+          <div class="agent-config-form__row">
+            <div class="agent-config-form__field">
+              <span class="agent-config-form__field-label">
+                <span data-config-text data-config-key="agentConfig.reasoningEffortLabel"></span>
+                <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.reasoningEffortTooltip">!</span>
+              </span>
+              <select id="agent-manage-reasoning-effort" name="reasoningEffort">
+                <option value="none" selected data-config-text data-config-key="agentConfig.reasoningEffortLabels.none"></option>
+                <option value="low" data-config-text data-config-key="agentConfig.reasoningEffortLabels.low"></option>
+                <option value="medium" data-config-text data-config-key="agentConfig.reasoningEffortLabels.medium"></option>
+                <option value="high" data-config-text data-config-key="agentConfig.reasoningEffortLabels.high"></option>
+                <option value="max" data-config-text data-config-key="agentConfig.reasoningEffortLabels.max"></option>
+              </select>
+            </div>
+            <div class="agent-config-form__field">
+              <span class="agent-config-form__field-label">
+                <span data-config-text data-config-key="agentConfig.echoBackReasoningLabel"></span>
+                <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.echoBackReasoningTooltip">!</span>
+              </span>
+              <label class="agent-config-form__toggle">
+                <input
+                  id="agent-manage-echo-back-reasoning"
+                  name="deleteEchoBackReasoning"
+                  type="checkbox"
+                />
+                <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
+                <span id="agent-manage-echo-back-reasoning-label"></span>
+              </label>
+            </div>
           </div>
           <div class="agent-config-form__actions">
             <button

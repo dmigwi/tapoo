@@ -12,6 +12,7 @@ import type { AgentApiConfig } from "../types"
 // so each test only spells out the fields it's actually varying.
 const baseValidationInput = {
   api: "ollama" as const,
+  reasoningEffort: "max" as const,
   credential: "",
   extraHeaders: "",
 }
@@ -212,6 +213,23 @@ describe("agent config", () => {
         endpoint: "https://agents.example/move",
         existingAgents: [],
         model: "llama3.2",
+        playerName: "Scout",
+      }),
+    ).toBe(CONFIG.agentConfig.invalidApiMessage)
+  })
+
+  it("rejects a reasoning-effort value the selected provider doesn't offer", () => {
+    // "none" is a real, valid value overall (Ollama/OpenAI both offer it) — just not one Anthropic
+    // supports, so this exercises the provider-scoped check rather than isAgentReasoningEffort alone.
+    expect(
+      agentConfigValidationError({
+        ...baseValidationInput,
+        api: "anthropic",
+        credential: "sk-secret",
+        reasoningEffort: "none",
+        endpoint: "https://agents.example/messages",
+        existingAgents: [],
+        model: "claude-3.5-sonnet",
         playerName: "Scout",
       }),
     ).toBe(CONFIG.agentConfig.invalidApiMessage)

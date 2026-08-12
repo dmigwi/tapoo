@@ -3,7 +3,7 @@ import {
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
 } from "./config"
-import { isAgentApiProvider, normalizeAgentEndpoint } from "./agent/config"
+import { isAgentApiProvider, isAgentReasoningEffort, normalizeAgentEndpoint } from "./agent/config"
 import { isAgentSeatId } from "./agent/seats"
 import { canPersistRoundStatus, hasActiveRoundState } from "./status"
 import {
@@ -174,6 +174,15 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   // the very next savePersistedAgentApiConfigs call then backfills it into storage for free.
   const apiValue = "api" in value ? value.api : undefined
   const api = isAgentApiProvider(apiValue) ? apiValue : "ollama"
+  // reasoningEffort follows the same self-healing coercion as api just above, rather than
+  // echoBackReasoning's optional-passthrough below: every agent always reasons at some concrete,
+  // provider-valid level, so an absent, stale, or now-invalid-for-this-provider value (e.g. a
+  // record saved under Anthropic's set, then the provider changed) coerces to that provider's
+  // default instead of being dropped or left unvalidated.
+  const reasoningEffortValue = "reasoningEffort" in value ? value.reasoningEffort : undefined
+  const reasoningEffort = isAgentReasoningEffort(reasoningEffortValue) && agentConfig.reasoningEffortOptions[api].includes(reasoningEffortValue)
+      ? reasoningEffortValue
+      : agentConfig.reasoningEffortDefaults[api]
   const credentialValue = "credential" in value ? value.credential : undefined
   const extraHeadersValue = "extraHeaders" in value ? value.extraHeaders : undefined
   const echoBackReasoningValue = "echoBackReasoning" in value ? value.echoBackReasoning : undefined
@@ -213,6 +222,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
       model: value.model,
       endpoint,
       api,
+      reasoningEffort,
       enabled: value.enabled,
       ...(disabledReason ? { disabledReason } : {}),
       ...(credential ? { credential } : {}),

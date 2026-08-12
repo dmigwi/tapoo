@@ -25,7 +25,7 @@ const VERSION_MAJOR = 2
 const VERSION_MINOR = 3
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 3
+const VERSION_PATCH = 4
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -222,13 +222,45 @@ export const CONFIG: AppConfig = {
       anthropic: "API Key",
     },
     credentialRotationTooltip: "Once set, rotate this token/key periodically for better security!",
+    reasoningEffortLabel: "Reasoning Effort",
+    reasoningEffortTooltip:
+      "How much internal reasoning the model does before replying. Confirm your model's own usage " +
+      "guidance before choosing a level — options depend on the API: Ollama only distinguishes " +
+      "on/off, Anthropic always reasons at some level.",
+    // Ollama: think is a boolean, so "none" maps to false and every other level maps to true —
+    // "max" is offered rather than "low"/"medium"/"high" since Ollama exposes no finer control.
+    // Anthropic has no off switch: enabling extended thinking always spends some budget_tokens.
+    reasoningEffortOptions: {
+      ollama: ["none", "max"],
+      openai: ["none", "low", "medium", "high", "max"],
+      anthropic: ["low", "medium", "high", "max"],
+    },
+    // Defaults to each provider's own minimum rather than "max": reasoning support and quality vary
+    // by model, not just by provider — e.g. Kimi K3 handles "max" well, Gemma 4 does not — so a user
+    // should opt into a heavier level deliberately, based on their specific model's documented
+    // guidance, rather than the form silently assuming heavy reasoning is safe for every model.
+    // Anthropic has no "none" (see reasoningEffortOptions above), so its minimum is "low".
+    reasoningEffortDefaults: {
+      ollama: "none",
+      openai: "none",
+      anthropic: "low",
+    },
+    reasoningEffortLabels: {
+      none: "None",
+      low: "Low",
+      medium: "Medium",
+      high: "High",
+      max: "Max",
+    },
     echoBackReasoningLabel: "Echo Back Reasoning",
     echoBackReasoningTooltip:
-      "Confirm your model's own multi-turn usage guidance before enabling. Some reasoning models " +
-      "(e.g. Kimi K3) require prior reasoning content echoed back on every turn or they lose their " +
-      "analysis; others (e.g. Gemma) explicitly require it withheld. Off by default.",
-    echoBackReasoningOnLabel: "Reasoning content will be sent back.",
-    echoBackReasoningOffLabel: "Reasoning content will not be sent back.",
+      "Whether the model's reasoning content is echoed back on the next request. Confirm your " +
+      "model's own multi-turn usage guidance before enabling — some reasoning models (e.g. Kimi K3) " +
+      "require it echoed back every turn or they lose their analysis, others (e.g. Gemma) require it " +
+      "withheld. Off by default; has no effect for Anthropic agents, which can't replay reasoning " +
+      "content without its original signature.",
+    echoBackReasoningOnLabel: "Reasoning will be sent back.",
+    echoBackReasoningOffLabel: "Reasoning will not be sent back.",
     submitLabel: "Add Agent",
     invalidMessage: "Fill in Player Name, Model and Endpoint.",
     invalidApiMessage: "This agent's API provider is not properly configured.",
@@ -343,7 +375,7 @@ export const CONFIG: AppConfig = {
       interactive: "interactive",
     },
     storage: {
-      version: 4.4,
+      version: 4.5,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",

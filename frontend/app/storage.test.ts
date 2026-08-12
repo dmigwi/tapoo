@@ -188,6 +188,7 @@ describe("storage", () => {
         model: "llama3.2",
         endpoint: endpoint("/api/agents/a/move"),
         api: "ollama",
+        reasoningEffort: "none",
         enabled: true,
       },
       {
@@ -196,6 +197,7 @@ describe("storage", () => {
         model: "gemma4",
         endpoint: endpoint("/api/agents/b/move"),
         api: "ollama",
+        reasoningEffort: "none",
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_000,
@@ -228,7 +230,12 @@ describe("storage", () => {
 
     const loaded = loadPersistedAgentApiConfigs()
     expect(loaded).toEqual([
-      { ...legacyRecord, endpoint: endpoint("/api/agents/legacy/move"), api: "ollama" },
+      {
+        ...legacyRecord,
+        endpoint: endpoint("/api/agents/legacy/move"),
+        api: "ollama",
+        reasoningEffort: "none",
+      },
     ])
 
     // The self-healing rewrite (loadPersistedAgentApiConfigs's JSON.stringify diff check) must have
@@ -356,6 +363,7 @@ describe("storage", () => {
         model: "llama3.2",
         endpoint: endpoint("/api/agents/a/move"),
         api: "ollama",
+        reasoningEffort: "none",
         enabled: true,
       },
       {
@@ -364,6 +372,7 @@ describe("storage", () => {
         model: "gemma4",
         endpoint: endpoint("/api/agents/b/move"),
         api: "ollama",
+        reasoningEffort: "none",
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_001,

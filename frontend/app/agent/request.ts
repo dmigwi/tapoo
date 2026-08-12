@@ -139,18 +139,25 @@ async function requestChatTurn(
   const agentApiModeName = CONFIG.runtime.controlModes.agentApi
   const keepFull = isFirstRequestOfLevel && requestCount <= 1
 
+  // Defensive fallback, same rationale as the adapter lookup above: normalizeAgentApiConfig
+  // (storage.ts) always coerces a persisted record's reasoningEffort to a provider-valid value, but
+  // a record that reached here by some other path should still get that provider's own default
+  // rather than an undefined value reaching a provider adapter.
+  const reasoningEffort = agent.reasoningEffort ?? CONFIG.agentConfig.reasoningEffortDefaults[agent.api]
+
   logTapooDiagnostic(agentApiModeName, "info", "Agent request.", {
     endpoint: endpointDisplay,
     api: agent.api,
     requestCount,
     agentMode,
+    reasoning: reasoningEffort,
     // The full accumulated conversation is sent on every provider request. Static prompts are
     // previewed after the first request, while assistant/tool context stays available in full.
     messages: messages.map((msg) => previewLoggedMessage(msg, keepFull)),
     tools: tools.map((tool) => previewLoggedTool(tool, keepFull)),
   })
 
-  const msgBody = adapter.buildBody({ model: agent.model, messages, tools, wantsPredictionFormat })
+  const msgBody = adapter.buildBody({ model: agent.model, messages, tools, wantsPredictionFormat, reasoningEffort })
   
   // credential and extraHeaders reach only buildHeaders — never the log above, never the assembled
   // body, and never anything else that could flow into logTapooDiagnostic (see request storage in

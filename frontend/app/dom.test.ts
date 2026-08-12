@@ -49,6 +49,7 @@ function setupTerminalDom(): void {
     <span id="agent-config-credential-required"></span>
     <div id="agent-config-extra-headers-rows"></div>
     <button id="agent-config-extra-headers-add"></button>
+    <select id="agent-config-reasoning-effort"></select>
     <input id="agent-config-echo-back-reasoning" />
     <span id="agent-config-echo-back-reasoning-label"></span>
     <input id="agent-config-enabled" />
@@ -60,6 +61,7 @@ function setupTerminalDom(): void {
     <p id="agent-delete-target"></p>
     <input id="agent-manage-enabled" />
     <span id="agent-manage-enabled-label"></span>
+    <select id="agent-manage-reasoning-effort"></select>
     <input id="agent-manage-echo-back-reasoning" />
     <span id="agent-manage-echo-back-reasoning-label"></span>
     <button id="agent-manage-apply"></button>

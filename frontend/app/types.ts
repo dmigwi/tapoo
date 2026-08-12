@@ -339,6 +339,13 @@ export type AgentPredictionRequest = {
 // rather than rejecting the record, so this being required here never risks dropping an old agent.
 export type AgentApiProvider = "ollama" | "openai" | "anthropic"
 
+// AgentReasoningEffort is a shared vocabulary across all three providers, even though each
+// provider only recognizes a subset of it (agentConfig.reasoningEffortOptions, config.ts) and maps
+// it onto a completely different wire mechanism: Ollama's boolean think, OpenAI-compatible's
+// qualitative reasoning_effort string, Anthropic's numeric thinking.budget_tokens. Anthropic has no
+// "none" — it always reasons at some level once thinking is enabled.
+export type AgentReasoningEffort = "none" | "low" | "medium" | "high" | "max"
+
 // AgentApiConfig stores one HTTP-controlled agent that can join the shared agent-api maze.
 export type AgentApiConfig = {
   id: number
@@ -346,6 +353,12 @@ export type AgentApiConfig = {
   model: string
   endpoint: URL
   api: AgentApiProvider
+  // reasoningEffort picks how hard the model reasons before replying, filtered to the options its
+  // provider actually supports (agentConfig.reasoningEffortOptions). Optional here purely to avoid
+  // forcing every existing AgentApiConfig test fixture to specify it — normalizeAgentApiConfig
+  // (storage.ts) always coerces a persisted record to a concrete, provider-valid value, the same way
+  // it already does for api, so a genuinely absent value should never reach a provider adapter.
+  reasoningEffort?: AgentReasoningEffort
   // credential is one stored value behind two labels: "Bearer Token" for ollama/openai, "API Key"
   // for anthropic. The header it becomes is decided by the provider adapter, not by this field.
   credential?: string
@@ -498,6 +511,7 @@ export type AgentElements = {
   agentConfigCredentialRequired?: HTMLElement
   agentConfigExtraHeadersRows?: HTMLElement
   agentConfigExtraHeadersAdd?: HTMLButtonElement
+  agentConfigReasoningEffort?: HTMLSelectElement
   agentConfigEchoBackReasoning?: HTMLInputElement
   agentConfigEchoBackReasoningLabel?: HTMLElement
   agentConfigEnabled?: HTMLInputElement
@@ -509,6 +523,7 @@ export type AgentElements = {
   agentDeleteTarget?: HTMLElement
   agentManageEnabled?: HTMLInputElement
   agentManageEnabledLabel?: HTMLElement
+  agentManageReasoningEffort?: HTMLSelectElement
   agentManageEchoBackReasoning?: HTMLInputElement
   agentManageEchoBackReasoningLabel?: HTMLElement
   agentManageApply?: HTMLButtonElement
@@ -686,6 +701,11 @@ export type AppConfig = {
     removeHeaderLabel: string
     extraHeadersKeyPlaceholders: Record<AgentApiProvider, string>
     extraHeadersValuePlaceholders: Record<AgentApiProvider, string>
+    reasoningEffortLabel: string
+    reasoningEffortTooltip: string
+    reasoningEffortOptions: Record<AgentApiProvider, AgentReasoningEffort[]>
+    reasoningEffortDefaults: Record<AgentApiProvider, AgentReasoningEffort>
+    reasoningEffortLabels: Record<AgentReasoningEffort, string>
     echoBackReasoningLabel: string
     echoBackReasoningTooltip: string
     echoBackReasoningOnLabel: string

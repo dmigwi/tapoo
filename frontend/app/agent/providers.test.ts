@@ -32,6 +32,7 @@ function requestInput(overrides: Partial<ProviderRequestInput> = {}): ProviderRe
     ],
     tools,
     wantsPredictionFormat: false,
+    reasoningEffort: "max",
     ...overrides,
   }
 }
@@ -96,6 +97,11 @@ describe("ollama adapter", () => {
     expect(body.format).toEqual(OLLAMA_PREDICTION_FORMAT.format)
   })
 
+  it("disables think only for the none reasoning effort", () => {
+    expect(PROVIDER_ADAPTERS.ollama.buildBody(requestInput({ reasoningEffort: "none" })).think).toBe(false)
+    expect(PROVIDER_ADAPTERS.ollama.buildBody(requestInput({ reasoningEffort: "max" })).think).toBe(true)
+  })
+
   it("reads the reply straight from the top-level message field", () => {
     const message = PROVIDER_ADAPTERS.ollama.readMessage({
       message: { role: "assistant", content: "hello", tool_calls: [{ id: "call_1" }] },
@@ -140,10 +146,17 @@ describe("openai adapter", () => {
     expect(body.tools).toBe(tools)
   })
 
-  it("sends a best-effort max reasoning-effort hint", () => {
+  it("sends the configured reasoning-effort level", () => {
     const body = PROVIDER_ADAPTERS.openai.buildBody(requestInput())
     expect(body.reasoning_effort).toBe("max")
     expect(body.chat_template_kwargs).toBeUndefined()
+
+    expect(PROVIDER_ADAPTERS.openai.buildBody(requestInput({ reasoningEffort: "low" })).reasoning_effort).toBe("low")
+  })
+
+  it("omits reasoning_effort entirely for the none level, unlike Ollama's boolean think", () => {
+    const body = PROVIDER_ADAPTERS.openai.buildBody(requestInput({ reasoningEffort: "none" }))
+    expect(body.reasoning_effort).toBeUndefined()
   })
 
   it("renames the internal reasoning field to the wire's reasoning_content, unlike tool_name which it just drops", () => {
@@ -332,6 +345,20 @@ describe("anthropic adapter", () => {
     expect(withFormat.output_config).toEqual(ANTHROPIC_PREDICTION_FORMAT.output_config)
   })
 
+  it("always enables thinking, scaling budget_tokens with the configured reasoning-effort level", () => {
+    const budgetFor = (reasoningEffort: "low" | "medium" | "high" | "max") =>
+      (PROVIDER_ADAPTERS.anthropic.buildBody(requestInput({ reasoningEffort })) as {
+        thinking: { type: string; budget_tokens: number }
+      }).thinking
+
+    expect(budgetFor("low")).toEqual({ type: "enabled", budget_tokens: 2000 })
+    expect(budgetFor("medium")).toEqual({ type: "enabled", budget_tokens: 4000 })
+    expect(budgetFor("high")).toEqual({ type: "enabled", budget_tokens: 6000 })
+    expect(budgetFor("max")).toEqual({ type: "enabled", budget_tokens: 8000 })
+    // Every level stays strictly under max_tokens, which Anthropic requires.
+    expect(budgetFor("max").budget_tokens).toBeLessThan(numPredict)
+  })
+
   it("folds text and tool_use content blocks into the internal message shape", () => {
     const message = PROVIDER_ADAPTERS.anthropic.readMessage({
       role: "assistant",
@@ -358,6 +385,19 @@ describe("anthropic adapter", () => {
 
     expect(message).toEqual({ role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" })
     expect(message).not.toHaveProperty("tool_calls")
+  })
+
+  it("maps a thinking block onto the shared internal reasoning field", () => {
+    const message = PROVIDER_ADAPTERS.anthropic.readMessage({
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "pondering...", signature: "sig" },
+        { type: "text", text: "Checking status first." },
+      ],
+    })
+
+    expect(message?.reasoning).toBe("pondering...")
+    expect(message?.content).toBe("Checking status first.")
   })
 
   it("returns undefined when the response has no content block array", () => {

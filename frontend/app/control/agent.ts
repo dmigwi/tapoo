@@ -2,6 +2,7 @@ import type {
   Elements,
   AgentApiConfig,
   AgentApiProvider,
+  AgentReasoningEffort,
   MazeAction,
   MazeActionControl,
   MazeActionDispatch,
@@ -10,6 +11,7 @@ import type {
 import {
   agentConfigValidationError,
   isAgentApiProvider,
+  isAgentReasoningEffort,
   normalizeAgentEndpoint,
 } from "../agent/config"
 import {
@@ -100,10 +102,12 @@ export function createAgentMode(
   let agentDeleteConfirmChangeHandler: (() => void) | null = null
   let agentManageEnabledChangeHandler: (() => void) | null = null
   let agentManageEchoBackReasoningChangeHandler: (() => void) | null = null
+  let agentManageReasoningEffortChangeHandler: (() => void) | null = null
   let agentConfigEnabledChangeHandler: (() => void) | null = null
   let agentConfigApiChangeHandler: (() => void) | null = null
   let agentConfigExtraHeadersAddHandler: (() => void) | null = null
   let agentConfigEchoBackReasoningChangeHandler: (() => void) | null = null
+  let agentConfigReasoningEffortChangeHandler: (() => void) | null = null
   let agentFormCloseHandler: (() => void) | null = null
   let agentFormSubmitHandler: ((event: Event) => void) | null = null
   let agentFormOuterClickHandler: ((event: MouseEvent) => void) | null = null
@@ -166,6 +170,10 @@ export function createAgentMode(
           elements.agentManageEchoBackReasoning.removeEventListener("change", agentManageEchoBackReasoningChangeHandler)
           agentManageEchoBackReasoningChangeHandler = null
         }
+        if (elements.agentManageReasoningEffort && agentManageReasoningEffortChangeHandler) {
+          elements.agentManageReasoningEffort.removeEventListener("change", agentManageReasoningEffortChangeHandler)
+          agentManageReasoningEffortChangeHandler = null
+        }
         if (elements.agentConfigEnabled && agentConfigEnabledChangeHandler) {
           elements.agentConfigEnabled.removeEventListener("change", agentConfigEnabledChangeHandler )
           agentConfigEnabledChangeHandler = null
@@ -181,6 +189,10 @@ export function createAgentMode(
         if (elements.agentConfigEchoBackReasoning && agentConfigEchoBackReasoningChangeHandler) {
           elements.agentConfigEchoBackReasoning.removeEventListener("change", agentConfigEchoBackReasoningChangeHandler)
           agentConfigEchoBackReasoningChangeHandler = null
+        }
+        if (elements.agentConfigReasoningEffort && agentConfigReasoningEffortChangeHandler) {
+          elements.agentConfigReasoningEffort.removeEventListener("change", agentConfigReasoningEffortChangeHandler)
+          agentConfigReasoningEffortChangeHandler = null
         }
         if (elements.agentConfigForm && agentFormSubmitHandler) {
           elements.agentConfigForm.removeEventListener("submit", agentFormSubmitHandler )
@@ -316,18 +328,32 @@ export function createAgentMode(
         }
       }
 
-      // syncToggleState keeps a toggle's label and CSS state aligned with its checkbox value. Takes
-      // the on/off copy explicitly so it can drive any of the form's toggles, not just enabled/disabled.
+      // syncToggleState keeps a toggle's label and CSS state aligned with its checkbox value, and
+      // now also owns locking it from user interaction: every caller that needs to disable a toggle
+      // (the delete-confirmation checkbox freezing enabled/echo-back, reasoning effort "none" locking
+      // echo-back) used to hand-roll the same .disabled assignment plus
+      // .agent-config-form__toggle--disabled class toggle — centralized here instead so there is one
+      // place that defines what "disabled" means for a toggle. A disabled toggle is always forced off
+      // rather than left showing whatever it last held: a control a user cannot interact with should
+      // never silently claim to be on. Takes the on/off copy explicitly so it can drive any of the
+      // form's toggles, not just enabled/disabled.
       const syncToggleState = (
         input: HTMLInputElement | undefined,
         label: HTMLElement | undefined,
         onLabel: string,
         offLabel: string,
+        disabled = false,
       ): void => {
+        if (input) {
+          input.disabled = disabled
+          if (disabled) {
+            input.checked = false
+          }
+        }
         const isOn = input?.checked ?? false
-        input
-          ?.closest(".agent-config-form__toggle")
-          ?.classList.toggle("agent-config-form__toggle--off", !isOn)
+        const toggle = input?.closest(".agent-config-form__toggle")
+        toggle?.classList.toggle("agent-config-form__toggle--off", !isOn)
+        toggle?.classList.toggle("agent-config-form__toggle--disabled", disabled)
         if (label) {
           label.textContent = isOn ? onLabel : offLabel
         }
@@ -338,8 +364,9 @@ export function createAgentMode(
       const syncAgentEnabledToggle = (
         input: HTMLInputElement | undefined,
         label: HTMLElement | undefined,
+        disabled = false,
       ): void => {
-        syncToggleState(input, label, agentConfig.agentEnabledLabel, agentConfig.agentDisabledLabel)
+        syncToggleState(input, label, agentConfig.agentEnabledLabel, agentConfig.agentDisabledLabel, disabled)
       }
 
       // syncAgentConfigEnabledToggle specializes syncAgentEnabledToggle for the add/edit form fields.
@@ -440,13 +467,52 @@ export function createAgentMode(
           .join("\n")
       }
 
+      // syncReasoningEffortOptions hides/disables the <option>s a provider doesn't support (each of
+      // the three exposes a different subset — see agentConfig.reasoningEffortOptions) and resets an
+      // now-unsupported selection to that provider's own default, rather than leaving a stale value
+      // selected under a provider that never offered it. Shared by the add form (called on every
+      // provider change) and the manage dialog (called once at open time against the agent's fixed,
+      // non-editable provider).
+      const syncReasoningEffortOptions = (
+        select: HTMLSelectElement | undefined,
+        api: AgentApiProvider,
+      ): void => {
+        if (!select) {
+          return
+        }
+
+        const allowed = agentConfig.reasoningEffortOptions[api]
+        Array.from(select.options).forEach((option) => {
+          const isAllowed = allowed.includes(option.value as AgentReasoningEffort)
+          option.hidden = !isAllowed
+          option.disabled = !isAllowed
+        })
+
+        if (!allowed.includes(select.value as AgentReasoningEffort)) {
+          select.value = agentConfig.reasoningEffortDefaults[api]
+        }
+      }
+
       // syncAgentConfigProviderFields applies the selected provider's copy: the endpoint placeholder,
-      // the credential field's label (same input, different real-world name per provider), and each
+      // the credential field's label (same input, different real-world name per provider), each
       // extra-header row's placeholders (a live example of what that provider might need — Extra
-      // Headers itself stays visible for every provider, unlike the Anthropic-only field it replaced).
+      // Headers itself stays visible for every provider, unlike the Anthropic-only field it replaced),
+      // and the reasoning-effort dropdown's available options.
       const syncAgentConfigProviderFields = (): void => {
         const selectedApi = elements.agentConfigApi?.value
         const api: AgentApiProvider = isAgentApiProvider(selectedApi) ? selectedApi : "ollama"
+        syncReasoningEffortOptions(elements.agentConfigReasoningEffort, api)
+        // Echo-back-reasoning is locked off whenever reasoning effort is "none" — there is no
+        // reasoning content produced at that level, so echoing it back has nothing to send and
+        // leaving the toggle clickable would let a user turn on a setting with no effect until they
+        // pick a level that actually reasons.
+        syncToggleState(
+          elements.agentConfigEchoBackReasoning,
+          elements.agentConfigEchoBackReasoningLabel,
+          agentConfig.echoBackReasoningOnLabel,
+          agentConfig.echoBackReasoningOffLabel,
+          elements.agentConfigReasoningEffort?.value === "none",
+        )
 
         if (elements.agentConfigEndpoint) {
           const previousDefaults = Object.values(agentConfig.endpointPlaceholders)
@@ -555,26 +621,23 @@ export function createAgentMode(
         syncOverlayState()
       }
 
-      // syncAgentManageOptions disables the enable/disable and echo-back-reasoning toggles when the
-      // delete checkbox is checked — neither matters once the agent is about to be removed.
+      // syncAgentManageOptions disables the enable/disable toggle when the delete checkbox is
+      // checked (it won't matter once the agent is about to be removed — syncToggleState forces it
+      // off along with locking it), and disables the echo-back-reasoning toggle the same way whenever
+      // either that same delete checkbox is checked or reasoning effort is "none": at that level
+      // there is no reasoning content to echo back, so the toggle having no effect until a level that
+      // actually reasons is picked (see syncAgentConfigProviderFields's add-form counterpart for the
+      // same rule).
       const syncAgentManageOptions = (): void => {
         const shouldDelete = elements.agentDeleteConfirm?.checked ?? false
-        if (elements.agentManageEnabled) {
-          elements.agentManageEnabled.disabled = shouldDelete
-          elements.agentManageEnabled.closest(".agent-config-form__toggle")
-            ?.classList.toggle("agent-config-form__toggle--disabled", shouldDelete)
-        }
-        if (elements.agentManageEchoBackReasoning) {
-          elements.agentManageEchoBackReasoning.disabled = shouldDelete
-          elements.agentManageEchoBackReasoning.closest(".agent-config-form__toggle")
-            ?.classList.toggle("agent-config-form__toggle--disabled", shouldDelete)
-        }
-        syncAgentEnabledToggle(elements.agentManageEnabled, elements.agentManageEnabledLabel)
+        const reasoningIsNone = elements.agentManageReasoningEffort?.value === "none"
+        syncAgentEnabledToggle(elements.agentManageEnabled, elements.agentManageEnabledLabel, shouldDelete)
         syncToggleState(
           elements.agentManageEchoBackReasoning,
           elements.agentManageEchoBackReasoningLabel,
           agentConfig.echoBackReasoningOnLabel,
           agentConfig.echoBackReasoningOffLabel,
+          shouldDelete || reasoningIsNone,
         )
       }
 
@@ -602,6 +665,14 @@ export function createAgentMode(
         elements.agentManageDialog.hidden = false
         if (elements.agentManageEnabled) {
           elements.agentManageEnabled.checked = agent.enabled
+        }
+        if (elements.agentManageReasoningEffort) {
+          // Unlike the add form, this dialog has no live provider <select> to react to — the
+          // provider is fixed to whatever the already-persisted agent record carries, so options are
+          // filtered once here at open time rather than on a change event.
+          syncReasoningEffortOptions(elements.agentManageReasoningEffort, agent.api)
+          elements.agentManageReasoningEffort.value =
+            agent.reasoningEffort ?? agentConfig.reasoningEffortDefaults[agent.api]
         }
         if (elements.agentManageEchoBackReasoning) {
           elements.agentManageEchoBackReasoning.checked = agent.echoBackReasoning ?? false
@@ -717,6 +788,7 @@ export function createAgentMode(
           !elements.agentConfigCredentialRequired ||
           !elements.agentConfigExtraHeadersRows ||
           !elements.agentConfigExtraHeadersAdd ||
+          !elements.agentConfigReasoningEffort ||
           !elements.agentConfigEchoBackReasoning ||
           !elements.agentConfigEchoBackReasoningLabel ||
           !elements.agentConfigEnabled ||
@@ -738,6 +810,11 @@ export function createAgentMode(
           const api: AgentApiProvider = isAgentApiProvider(selectedApi) ? selectedApi : "ollama"
           const credential = elements.agentConfigCredential?.value.trim() ?? ""
           const extraHeaders = collectExtraHeaders()
+          const selectedReasoningEffort = elements.agentConfigReasoningEffort?.value
+          const reasoningEffort: AgentReasoningEffort = isAgentReasoningEffort(selectedReasoningEffort) &&
+            agentConfig.reasoningEffortOptions[api].includes(selectedReasoningEffort)
+              ? selectedReasoningEffort
+              : agentConfig.reasoningEffortDefaults[api]
           const echoBackReasoning = elements.agentConfigEchoBackReasoning?.checked ?? false
           const enabled = elements.agentConfigEnabled?.checked ?? false
           clearAgentConfigStatus()
@@ -754,6 +831,7 @@ export function createAgentMode(
             model,
             playerName,
             api,
+            reasoningEffort,
             credential,
             extraHeaders,
           })
@@ -780,6 +858,7 @@ export function createAgentMode(
             model,
             endpoint: normalizedEndpoint,
             api,
+            reasoningEffort,
             ...(credential ? { credential } : {}),
             ...(extraHeaders ? { extraHeaders } : {}),
             ...(echoBackReasoning ? { echoBackReasoning } : {}),
@@ -799,6 +878,17 @@ export function createAgentMode(
 
         agentConfigApiChangeHandler = syncAgentConfigProviderFields
         elements.agentConfigApi.addEventListener("change", agentConfigApiChangeHandler)
+
+        agentConfigReasoningEffortChangeHandler = () => {
+          syncToggleState(
+            elements.agentConfigEchoBackReasoning,
+            elements.agentConfigEchoBackReasoningLabel,
+            agentConfig.echoBackReasoningOnLabel,
+            agentConfig.echoBackReasoningOffLabel,
+            elements.agentConfigReasoningEffort?.value === "none",
+          )
+        }
+        elements.agentConfigReasoningEffort.addEventListener("change", agentConfigReasoningEffortChangeHandler)
 
         agentConfigExtraHeadersAddHandler = () => {
           const selectedApi = elements.agentConfigApi?.value
@@ -829,6 +919,7 @@ export function createAgentMode(
           !elements.agentManageClose ||
           !elements.agentManageEnabled ||
           !elements.agentManageEnabledLabel ||
+          !elements.agentManageReasoningEffort ||
           !elements.agentManageEchoBackReasoning ||
           !elements.agentManageEchoBackReasoningLabel ||
           !elements.agentManageApply ||
@@ -841,6 +932,7 @@ export function createAgentMode(
         agentDeleteConfirmChangeHandler = syncAgentManageOptions
         agentManageEnabledChangeHandler = syncAgentManageOptions
         agentManageEchoBackReasoningChangeHandler = syncAgentManageOptions
+        agentManageReasoningEffortChangeHandler = syncAgentManageOptions
         agentManageApplyHandler = (): void => {
           // Delete wins over enable/disable/echo-back-reasoning edits because the seat becomes empty.
           if (!manageSeatId) {
@@ -858,9 +950,18 @@ export function createAgentMode(
                   return agent
                 }
 
+                const selectedReasoningEffort = elements.agentManageReasoningEffort?.value
+                const reasoningEffort: AgentReasoningEffort =
+                  isAgentReasoningEffort(selectedReasoningEffort) &&
+                  agentConfig.reasoningEffortOptions[agent.api].includes(selectedReasoningEffort)
+                    ? selectedReasoningEffort
+                    : agentConfig.reasoningEffortDefaults[agent.api]
+
                 // Omit the key entirely rather than storing false, matching how the add form only
                 // ever persists this field when it is true (see agentFormSubmitHandler above).
-                const nextAgent: AgentApiConfig = { ...agent, enabled }
+                // reasoningEffort is unconditionally set instead — unlike echo-back, there is always
+                // a meaningful, provider-valid level in effect, never a meaningful "absent".
+                const nextAgent: AgentApiConfig = { ...agent, enabled, reasoningEffort }
                 delete nextAgent.echoBackReasoning
                 if (echoBackReasoning) {
                   nextAgent.echoBackReasoning = echoBackReasoning
@@ -877,6 +978,7 @@ export function createAgentMode(
         elements.agentDeleteConfirm.addEventListener("change", agentDeleteConfirmChangeHandler)
         elements.agentManageEnabled.addEventListener("change", agentManageEnabledChangeHandler)
         elements.agentManageEchoBackReasoning.addEventListener("change", agentManageEchoBackReasoningChangeHandler)
+        elements.agentManageReasoningEffort.addEventListener("change", agentManageReasoningEffortChangeHandler)
         elements.agentManageApply.addEventListener("click", agentManageApplyHandler)
       }
 

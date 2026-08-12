@@ -1,5 +1,5 @@
 import { CONFIG } from "../config"
-import type { AgentApiConfig, AgentApiProvider } from "../types"
+import type { AgentApiConfig, AgentApiProvider, AgentReasoningEffort } from "../types"
 
 const { agentConfig } = CONFIG
 
@@ -9,6 +9,7 @@ type AgentConfigValidationInput = {
   model: string
   playerName: string
   api: AgentApiProvider
+  reasoningEffort: AgentReasoningEffort
   credential: string
   extraHeaders: string
 }
@@ -42,6 +43,17 @@ export const AGENT_API_PROVIDERS = Object.keys(agentConfig.providerLabels) as Ag
 // isAgentApiProvider validates a provider restored from storage or read from the form.
 export function isAgentApiProvider(value: unknown): value is AgentApiProvider {
   return typeof value === "string" && AGENT_API_PROVIDERS.includes(value as AgentApiProvider)
+}
+
+// AGENT_REASONING_EFFORTS lists the full shared vocabulary across all three providers — see
+// AGENT_API_PROVIDERS above for why this is derived rather than hand-listed.
+export const AGENT_REASONING_EFFORTS = Object.keys(agentConfig.reasoningEffortLabels) as AgentReasoningEffort[]
+
+// isAgentReasoningEffort validates a value restored from storage or read from the form against the
+// full shared vocabulary — not yet against any one provider's narrower subset. Callers that need
+// the provider-scoped check should also test membership in agentConfig.reasoningEffortOptions[api].
+export function isAgentReasoningEffort(value: unknown): value is AgentReasoningEffort {
+  return typeof value === "string" && AGENT_REASONING_EFFORTS.includes(value as AgentReasoningEffort)
 }
 
 // normalizeAgentEndpoint makes host:port shorthand usable by browser fetch while keeping HTTP(S) explicit.
@@ -79,6 +91,7 @@ export function agentConfigValidationError({
   model,
   playerName,
   api,
+  reasoningEffort,
   credential,
   extraHeaders,
 }: AgentConfigValidationInput): string | null {
@@ -93,6 +106,13 @@ export function agentConfigValidationError({
   // this is what catches the mismatch, rather than letting it flow into a persisted agent record
   // nothing downstream recognizes.
   if (!isAgentApiProvider(api)) {
+    return agentConfig.invalidApiMessage
+  }
+
+  // Same defensive rationale as the isAgentApiProvider check above: the reasoning-effort dropdown's
+  // <option>s are filtered per provider client-side, but nothing else enforces that a submitted
+  // value is actually one this provider supports.
+  if (!isAgentReasoningEffort(reasoningEffort) || !agentConfig.reasoningEffortOptions[api].includes(reasoningEffort)) {
     return agentConfig.invalidApiMessage
   }
 

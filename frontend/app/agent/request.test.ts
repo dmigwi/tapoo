@@ -87,6 +87,7 @@ const agent: AgentApiConfig = {
   model,
   endpoint: new URL(endpoint),
   api: "ollama",
+  reasoningEffort: "max",
   enabled: true,
 }
 
@@ -357,6 +358,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 1,
       agentMode: "tools",
+      reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), true),
       messages: [
         { role: "system", content: developerMessage },
@@ -375,6 +377,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 2,
       agentMode: "tools",
+      reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
@@ -460,6 +463,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 1,
       agentMode: "tools",
+      reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), false),
       messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
@@ -475,6 +479,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 2,
       agentMode: "tools",
+      reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },

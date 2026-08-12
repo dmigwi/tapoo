@@ -28,6 +28,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
       model: "llama3.2",
       endpoint: new URL("https://agents.example/blue/move"),
       api: "ollama",
+      reasoningEffort: "max",
       enabled: true,
     },
   ]
@@ -105,6 +106,7 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigExtraHeadersAdd,
   )
   agentConfigExtraHeadersRows.append(agentConfigExtraHeadersRow)
+  const agentConfigReasoningEffort = document.createElement("select")
   const agentConfigEchoBackReasoningLabel = document.createElement("label")
   const agentConfigEchoBackReasoning = document.createElement("input")
   const agentConfigEchoBackReasoningText = document.createElement("span")
@@ -119,6 +121,7 @@ function createAgentFormElements(): AgentFormElements {
   const agentManageEnabledLabel = document.createElement("label")
   const agentManageEnabled = document.createElement("input")
   const agentManageEnabledText = document.createElement("span")
+  const agentManageReasoningEffort = document.createElement("select")
   const agentManageEchoBackReasoningLabel = document.createElement("label")
   const agentManageEchoBackReasoning = document.createElement("input")
   const agentManageEchoBackReasoningText = document.createElement("span")
@@ -151,6 +154,16 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigApi.append(option)
   })
   agentConfigApi.value = "ollama"
+  ;["none", "low", "medium", "high", "max"].forEach((value) => {
+    const configOption = document.createElement("option")
+    configOption.value = value
+    agentConfigReasoningEffort.append(configOption)
+    const manageOption = document.createElement("option")
+    manageOption.value = value
+    agentManageReasoningEffort.append(manageOption)
+  })
+  agentConfigReasoningEffort.value = "max"
+  agentManageReasoningEffort.value = "max"
   agentConfigCredentialRequired.hidden = true
   agentConfigForm.append(
     agentConfigTitle,
@@ -162,6 +175,7 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigCredentialLabel,
     agentConfigCredentialRequired,
     agentConfigExtraHeadersRows,
+    agentConfigReasoningEffort,
     agentConfigEchoBackReasoningLabel,
     agentConfigEnabledLabel,
     agentConfigClose,
@@ -176,6 +190,7 @@ function createAgentFormElements(): AgentFormElements {
     agentManageTitle,
     agentDeleteTarget,
     agentManageEnabledLabel,
+    agentManageReasoningEffort,
     agentManageEchoBackReasoningLabel,
     agentManageApply,
     agentDeleteConfirm,
@@ -207,6 +222,7 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigCredentialRequired,
     agentConfigExtraHeadersRows,
     agentConfigExtraHeadersAdd,
+    agentConfigReasoningEffort,
     agentConfigEchoBackReasoning,
     agentConfigEchoBackReasoningLabel: agentConfigEchoBackReasoningText,
     agentConfigEnabled,
@@ -218,6 +234,7 @@ function createAgentFormElements(): AgentFormElements {
     agentDeleteTarget,
     agentManageEnabled,
     agentManageEnabledLabel: agentManageEnabledText,
+    agentManageReasoningEffort,
     agentManageEchoBackReasoning,
     agentManageEchoBackReasoningLabel: agentManageEchoBackReasoningText,
     agentManageApply,
@@ -1087,7 +1104,7 @@ describe("agent control mode", () => {
     ).toBe(true)
   })
 
-  it("opens delete confirmation for an inactive occupied seat", () => {
+  it("opens delete confirmation for an inactive occupied seat, forcing disabled toggles off", () => {
     savePersistedAgentApiConfigs([
       {
         id: 1,
@@ -1103,6 +1120,8 @@ describe("agent control mode", () => {
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
         api: "ollama",
+        reasoningEffort: "max",
+        echoBackReasoning: true,
         enabled: true,
       },
     ])
@@ -1129,12 +1148,24 @@ describe("agent control mode", () => {
     )
     expect(elements.agentDeleteTarget?.textContent).toBe("Delete now?")
     expect(elements.agentDeleteConfirm?.checked).toBe(false)
+    expect(elements.agentManageEchoBackReasoning?.checked).toBe(true)
 
     elements.agentDeleteConfirm.checked = true
     elements.agentDeleteConfirm.dispatchEvent(new Event("change"))
+    // A disabled toggle is always forced off, not left showing its prior value — a control the user
+    // can no longer interact with should never silently claim to be on. Covers both toggles the
+    // delete checkbox locks: enabled/disabled and echo-back-reasoning.
     expect(elements.agentManageEnabled?.disabled).toBe(true)
+    expect(elements.agentManageEnabled?.checked).toBe(false)
     expect(
       elements.agentManageEnabled
+        ?.closest(".agent-config-form__toggle")
+        ?.classList.contains("agent-config-form__toggle--disabled"),
+    ).toBe(true)
+    expect(elements.agentManageEchoBackReasoning?.disabled).toBe(true)
+    expect(elements.agentManageEchoBackReasoning?.checked).toBe(false)
+    expect(
+      elements.agentManageEchoBackReasoning
         ?.closest(".agent-config-form__toggle")
         ?.classList.contains("agent-config-form__toggle--disabled"),
     ).toBe(true)
@@ -1142,6 +1173,51 @@ describe("agent control mode", () => {
     elements.agentDeleteConfirm.checked = false
     elements.agentDeleteConfirm.dispatchEvent(new Event("change"))
     expect(elements.agentManageEnabled?.disabled).toBe(false)
+    expect(elements.agentManageEchoBackReasoning?.disabled).toBe(false)
+  })
+
+  it("locks echo-back-reasoning off in the manage dialog when reasoning effort is none", () => {
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
+        reasoningEffort: "max",
+        echoBackReasoning: true,
+        enabled: true,
+      },
+    ])
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickDeleteSeat(elements, "1")
+    expect(elements.agentManageEchoBackReasoning?.checked).toBe(true)
+    expect(elements.agentManageEchoBackReasoning?.disabled).toBe(false)
+
+    elements.agentManageReasoningEffort.value = "none"
+    elements.agentManageReasoningEffort.dispatchEvent(new Event("change"))
+    expect(elements.agentManageEchoBackReasoning?.checked).toBe(false)
+    expect(elements.agentManageEchoBackReasoning?.disabled).toBe(true)
+    expect(
+      elements.agentManageEchoBackReasoning
+        ?.closest(".agent-config-form__toggle")
+        ?.classList.contains("agent-config-form__toggle--disabled"),
+    ).toBe(true)
+
+    elements.agentManageApply?.click()
+    expect(loadPersistedAgentApiConfigs()).toEqual([
+      expect.objectContaining({ id: 1, reasoningEffort: "none" }),
+    ])
+    expect(loadPersistedAgentApiConfigs()[0]).not.toHaveProperty("echoBackReasoning")
   })
 
   it("deletes only the selected non-current agent after confirmation", () => {
@@ -1599,6 +1675,42 @@ describe("agent control mode", () => {
       elements.agentSeatRoster?.querySelector('[data-agent-seat-id="1"]')
         ?.getAttribute("title"),
     ).toBe("Scout the Trailblazer")
+  })
+
+  it("locks echo-back-reasoning off when reasoning effort is set to none, and unlocks it again", () => {
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "2")
+    elements.agentConfigEchoBackReasoning.checked = true
+    elements.agentConfigEchoBackReasoning.dispatchEvent(new Event("change"))
+    expect(elements.agentConfigEchoBackReasoning.checked).toBe(true)
+
+    elements.agentConfigReasoningEffort.value = "none"
+    elements.agentConfigReasoningEffort.dispatchEvent(new Event("change"))
+    expect(elements.agentConfigEchoBackReasoning.disabled).toBe(true)
+    expect(elements.agentConfigEchoBackReasoning.checked).toBe(false)
+    expect(
+      elements.agentConfigEchoBackReasoning
+        .closest(".agent-config-form__toggle")
+        ?.classList.contains("agent-config-form__toggle--disabled"),
+    ).toBe(true)
+
+    elements.agentConfigReasoningEffort.value = "max"
+    elements.agentConfigReasoningEffort.dispatchEvent(new Event("change"))
+    expect(elements.agentConfigEchoBackReasoning.disabled).toBe(false)
+    expect(
+      elements.agentConfigEchoBackReasoning
+        .closest(".agent-config-form__toggle")
+        ?.classList.contains("agent-config-form__toggle--disabled"),
+    ).toBe(false)
   })
 
   it("clicking + Add Header appends a row hinted for the currently selected provider", () => {

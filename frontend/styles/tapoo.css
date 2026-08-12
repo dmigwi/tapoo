@@ -1081,6 +1081,20 @@ body {
   gap: 6px;
 }
 
+/* Pairs the reasoning-effort dropdown with the echo-back-reasoning toggle horizontally, 1:2 —
+   the dropdown's few short words need far less room than the toggle's wrapping on/off label text.
+   Each .agent-config-form__field child keeps its own internal grid layout, just placed side by
+   side instead of stacked with the rest of the form's fields. */
+.agent-config-form__row {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 16px;
+}
+
+.agent-config-form__row > .agent-config-form__field {
+  min-width: 0;
+}
+
 .agent-config-form__required {
   margin-left: 4px;
   color: var(--text);

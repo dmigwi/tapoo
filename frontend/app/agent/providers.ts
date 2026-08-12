@@ -10,6 +10,7 @@ import { EXPECTED_RESPONSE_SCHEMA } from "./context"
 import type {
   AgentApiProvider,
   AgentChatMessage,
+  AgentReasoningEffort,
   AgentToolCall,
   AgentToolDefinition,
 } from "../types"
@@ -26,6 +27,7 @@ export type ProviderRequestInput = {
   messages: AgentChatMessage[]
   tools: AgentToolDefinition[]
   wantsPredictionFormat: boolean
+  reasoningEffort: AgentReasoningEffort
 }
 
 export type ProviderAdapter = {
@@ -116,7 +118,10 @@ function ollamaBuildBody(input: ProviderRequestInput): Record<string, unknown> {
     },
     ...(input.wantsPredictionFormat ? OLLAMA_PREDICTION_FORMAT : {}),
     ...BASE_BODY,
-    think: true,
+    // Ollama's think is a plain boolean — the finest-grained control it exposes — so "none" is the
+    // only reasoningEffort level that disables it; every other configured level (just "max", per
+    // agentConfig.reasoningEffortOptions.ollama) enables it.
+    think: input.reasoningEffort !== "none",
   }
 }
 
@@ -170,11 +175,7 @@ function openaiMessage(
 // Unlike Ollama's think, there is no single OpenAI-compatible field that reliably disables
 // reasoning across servers. reasoning_effort ("low"/"medium"/"high"/"max") is the one sent here, since it
 // is documented by multiple reasoning models (OpenAI's o-series, Kimi K3) rather than being a
-// server-specific convention.
-const OPENAI_REASONING_EFFORT_HINT = {
-  reasoning_effort: "max",
-}
-
+// server-specific convention — omitted entirely for "none", the closest equivalent to disabling it.
 function openaiBuildBody(input: ProviderRequestInput): Record<string, unknown> {
   return {
     model: input.model,
@@ -187,7 +188,7 @@ function openaiBuildBody(input: ProviderRequestInput): Record<string, unknown> {
     // indistinguishable from a respected one in a short reply, but surfaced directly once a
     // verbose reasoning model ran long enough to actually hit — and blow past — an uncapped limit.
     max_tokens: CONFIG.runtime.modelConfig.numPredict,
-    ...OPENAI_REASONING_EFFORT_HINT,
+    ...(input.reasoningEffort !== "none" ? { reasoning_effort: input.reasoningEffort } : {}),
     ...(input.wantsPredictionFormat ? OPENAI_PREDICTION_FORMAT : {}),
     ...BASE_BODY,
   }
@@ -231,6 +232,27 @@ type AnthropicContentBlock =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_use_id: string; content: string }
+  | { type: "thinking"; thinking: string; signature?: string }
+
+// ANTHROPIC_THINKING_RESERVE_FRACTION is the share of numPredict (Anthropic's max_tokens) reserved
+// for the model's actual reply, never spent on thinking — Anthropic rejects a request where
+// budget_tokens is not strictly less than max_tokens, and a "max" allocation that ate the whole
+// budget would leave no room for a reply at all.
+const ANTHROPIC_THINKING_RESERVE_FRACTION = 0.2
+
+// anthropicThinkingBudget subdivides the reasoning-usable share of numPredict evenly across
+// Anthropic's own ordered option list (agentConfig.reasoningEffortOptions.anthropic — read from
+// there rather than a second hardcoded list, so the two can't drift apart), so the scale stays
+// correct if numPredict itself is ever retuned rather than hardcoding numbers that would silently
+// drift out of sync with it. At the current numPredict of 10_000 this yields low=2000, medium=4000,
+// high=6000, max=8000.
+function anthropicThinkingBudget(effort: AgentReasoningEffort): number {
+  const levels = CONFIG.agentConfig.reasoningEffortOptions.anthropic
+  const usableBudget = CONFIG.runtime.modelConfig.numPredict * (1 - ANTHROPIC_THINKING_RESERVE_FRACTION)
+  const step = usableBudget / levels.length
+  const levelIndex = Math.max(0, levels.indexOf(effort))
+  return Math.round(step * (levelIndex + 1))
+}
 
 function anthropicToolDefinitions(tools: AgentToolDefinition[]) {
   return tools.map((tool) => ({
@@ -241,7 +263,12 @@ function anthropicToolDefinitions(tools: AgentToolDefinition[]) {
 }
 
 // anthropicAssistantContent folds an assistant turn's text and tool_calls into typed blocks,
-// omitting an empty text block entirely rather than sending one Anthropic would reject.
+// omitting an empty text block entirely rather than sending one Anthropic would reject. Deliberately
+// never replays a thinking block: Anthropic requires that block's original signature verbatim to
+// accept it back on a later turn, and AgentChatMessage.reasoning is a plain string with no
+// signature — replaying content without one would make Anthropic reject the request outright, so
+// echoBackReasoning currently has no effect for Anthropic agents (only Ollama/OpenAI-compatible
+// reasoning is actually echoed back).
 function anthropicAssistantContent(message: AgentChatMessage): AnthropicContentBlock[] {
   const blocks: AnthropicContentBlock[] = []
   if (message.content) {
@@ -310,6 +337,11 @@ function anthropicBuildBody(input: ProviderRequestInput): Record<string, unknown
     messages: anthropicMessages,
     tools: anthropicToolDefinitions(input.tools),
     max_tokens: CONFIG.runtime.modelConfig.numPredict,
+    // Anthropic has no "none" reasoning-effort option (agentConfig.reasoningEffortOptions.anthropic),
+    // so thinking is always enabled here — every configured level maps to a budget_tokens share of
+    // numPredict (see anthropicThinkingBudget). temperature is intentionally left unset elsewhere in
+    // this body: Anthropic requires it stay at its default of 1 while thinking is enabled.
+    thinking: { type: "enabled", budget_tokens: anthropicThinkingBudget(input.reasoningEffort) },
     ...(input.wantsPredictionFormat ? ANTHROPIC_PREDICTION_FORMAT : {}),
     ...BASE_BODY,
   }
@@ -327,6 +359,7 @@ function anthropicReadMessage(body: unknown): AgentChatMessage | undefined {
   }
 
   let content = ""
+  let reasoning = ""
   const toolCalls: AgentToolCall[] = []
 
   for (const block of responseBody.content) {
@@ -338,12 +371,18 @@ function anthropicReadMessage(body: unknown): AgentChatMessage | undefined {
         type: "function",
         function: { name: block.name, arguments: block.input },
       })
+    } else if (block.type === "thinking") {
+      // Mapped onto the same shared internal reasoning field Ollama's thinking and the
+      // openai-compatible adapter's reasoning_content map onto — see anthropicAssistantContent for
+      // why this is never echoed back on a later turn despite being read here.
+      reasoning += block.thinking
     }
   }
 
   return {
     role: responseBody.role ?? "assistant",
     content,
+    ...(reasoning ? { reasoning } : {}),
     ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
   }
 }

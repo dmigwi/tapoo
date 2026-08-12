@@ -73,6 +73,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
       model: "llama3.2",
       endpoint: new URL("https://agents.example/move"),
       api: "ollama",
+      reasoningEffort: "max",
       enabled: true,
     },
   ]
@@ -419,6 +420,7 @@ describe("agent api turn loop", () => {
         model: "llama3.2",
         endpoint: new URL("https://agents.example/api/agents/a/move"),
         api: "ollama",
+        reasoningEffort: "max",
         enabled: true,
       },
       {
@@ -427,6 +429,7 @@ describe("agent api turn loop", () => {
         model: "gemma4",
         endpoint: new URL("https://agents.example/api/agents/b/move"),
         api: "ollama",
+        reasoningEffort: "max",
         enabled: true,
       },
       {
@@ -443,6 +446,7 @@ describe("agent api turn loop", () => {
         model: "qwen3",
         endpoint: new URL("https://agents.example/api/agents/c/move"),
         api: "ollama",
+        reasoningEffort: "max",
         enabled: true,
       },
     ]
