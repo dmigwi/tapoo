@@ -282,7 +282,7 @@ export function handleAgentTurnLoop({
 
   // scheduleNextAgentTurn starts/resumes immediately, then delays internal loop continuations.
   const scheduleNextAgentTurn = (
-    delayMs = timing.agentApiPollIntervalMs,
+    delayMs = timing.agentApiTurnPollIntervalMs,
     isDelay = false,
   ): void => {
     clearScheduledTurn()
@@ -314,6 +314,7 @@ export function handleAgentTurnLoop({
       lastActionResult: activeActionResult(),
       state: __readState(),
       timeoutMs: timing.agentApiResponseTimeoutMs,
+      requestIntervalMs: timing.agentApiRequestPollIntervalMs,
     })
     activeRequest = predictionRequest
     return predictionRequest.promise
@@ -364,7 +365,7 @@ export function handleAgentTurnLoop({
 
   // requestNextAgentTurn asks the next enabled agent for moves, then replays only successful predictions here.
   const requestNextAgentTurn = async (
-    nextDelayMs = timing.agentApiPollIntervalMs,
+    nextDelayMs = timing.agentApiTurnPollIntervalMs,
   ): Promise<void> => {
     if (!shouldPollAgent()) {
       return

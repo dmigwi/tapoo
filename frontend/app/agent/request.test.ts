@@ -141,6 +141,7 @@ function requestInput(
     lastActionResult,
     state: { ...state, ...stateOverrides },
     timeoutMs: 180_000,
+    requestIntervalMs: 0,
   }
 }
 
@@ -706,6 +707,35 @@ describe("agent request service", () => {
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       },
     ])
+  })
+
+  it("paces requests after the first within a turn by requestIntervalMs, but never before the first", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        toolCallResponse([
+          { function: { name: "get_maze_structure", arguments: {} } },
+          { function: { name: "get_prediction_rules", arguments: {} } },
+          { function: { name: "get_last_prediction_outcome", arguments: {} } },
+        ]),
+      )
+      .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = requestPrediction({ ...requestInput(), requestIntervalMs: 5_000 })
+
+    // The first request fires immediately — no delay applied before it.
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    // The second request (servicing the tool results) is held back until requestIntervalMs elapses.
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    await expect(result).resolves.toEqual({ ok: true, moves: ["MoveRight"] })
   })
 
   it("returns malformed-response when final content is not a valid prediction", async () => {

@@ -740,7 +740,8 @@ export type AppConfig = {
     refreshInterval: number
     scoreDecayRate: number
     interactiveDecayIntervalPerCellMs: number
-    agentApiPollIntervalMs: number
+    agentApiTurnPollIntervalMs: number
+    agentApiRequestPollIntervalMs: number
     agentApiResponseTimeoutMs: number
     agentApiConnectionErrorRetryDelayMs: number
   }

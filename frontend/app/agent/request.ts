@@ -40,8 +40,19 @@ type AgentChatResponse = {
 type RequestAgentPredictionInput = {
   state: State
   timeoutMs: number
+  // Delay applied before each provider request after the first within one turn — a turn issuing
+  // several rounds while servicing tool calls otherwise fires them back to back with no gap at
+  // all, which a provider's own rate limiting can see as a burst even when turns themselves are
+  // well paced. See agentApiTurnPollIntervalMs (config.ts) for the separate, larger delay between
+  // turns — this is deliberately the smaller, request-level sibling of that value.
+  requestIntervalMs: number
   agent: AgentApiConfig
   lastActionResult: MazeActionResult | null
+}
+
+// sleep resolves after delayMs — used only to pace consecutive provider requests within one turn.
+function sleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs))
 }
 
 type AgentChatTurnResult =
@@ -186,6 +197,7 @@ export function requestPredictionWithAbort({
   state,
   agent,
   timeoutMs,
+  requestIntervalMs,
 }: RequestAgentPredictionInput): AgentPredictionRequest {
   // Expected aborts are lifecycle cleanup; timeout aborts remain provider/network failures.
   let activeController: AbortController | null = null
@@ -261,6 +273,18 @@ export function requestPredictionWithAbort({
         }
 
         requestCount += 1
+
+        // Only the first request of a turn is paced by agentApiTurnPollIntervalMs (the caller
+        // schedules that before this function is even invoked) — every request after it within
+        // the same turn otherwise fires immediately back to back, which a provider's rate limiting
+        // can see as a burst even when turns themselves are well spaced.
+        if (requestCount > 1) {
+          await sleep(requestIntervalMs)
+          if (wasExpectedAbort) {
+            // Exit 1: caller aborted while this request was waiting to go out.
+            return { ok: false, reason: "caller-abort" }
+          }
+        }
 
         // Offer only uncalled tools. Once every tool has been serviced, switch to prediction mode.
         const toolsToSend = AGENT_CONTEXT_TOOLS.filter(

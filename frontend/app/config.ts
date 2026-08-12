@@ -240,7 +240,7 @@ export const CONFIG: AppConfig = {
     playerNameLengthMessage: "Player Name must be 3-8 characters.",
     editTitle: "Edit Agent",
     addSeatLabelTemplate: "Add agent to seat {seat}",
-    manageSeatLabelTemplate: "Manage {agent} ({model}) in seat {seat}",
+    manageSeatLabelTemplate: "{agent} ({model}) in seat {seat}",
     activeSeatLabelTemplate: "Player {agent} is playing in seat {seat}",
     deleteMessageTemplate: "Delete now?",
     updateConfirmLabel: "Apply Changes",
@@ -307,10 +307,15 @@ export const CONFIG: AppConfig = {
     // animation (see restoreClock's comment in game.ts) — agent-api score decay comes from
     // scoreDecayUnits, not this figure.
     interactiveDecayIntervalPerCellMs: 1_000, // Translates to 1sec
-    // The real wall-clock delay between agent turns, throttling how often provider requests go
-    // out. Set well above the old 30s decay-budget figure this replaced, to pace-throttle request
-    // volume (e.g. Hugging Face rate limits) independently of the scoring math.
-    agentApiPollIntervalMs: 60_000,           // Translates to 1min
+    // The real wall-clock delay between agent turns, throttling how often a new turn's first
+    // request goes out. Set well above the old 30s decay-budget figure this replaced, to
+    // pace-throttle turn volume (e.g. Hugging Face rate limits) independently of the scoring math.
+    agentApiTurnPollIntervalMs: 60_000,           // Translates to 1min
+    // A turn issues several provider requests in a row while servicing tool calls (see the
+    // request-count derivation in agent/request.ts), with no gap between them otherwise — this is
+    // the delay applied before each request after the first within one turn, so a provider's rate
+    // limit sees paced traffic even from a single busy turn, not just paced turn starts.
+    agentApiRequestPollIntervalMs: 5_000,           // Translates to 5sec
     // Per provider request, not per turn: a turn issues several rounds, so a whole turn can take a
     // multiple of this (see the request-count derivation in agent/request.ts). Per-request by
     // design — a provider that stops responding is caught on the first round regardless.

@@ -41,6 +41,8 @@ async function flushImmediateAgentTurn(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0)
 }
 
+const originalAgentApiRequestPollIntervalMs = CONFIG.timing.agentApiRequestPollIntervalMs
+
 function visit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Blue", row, col, openMoves: [] }
 }
@@ -321,6 +323,7 @@ describe("agent control mode", () => {
     vi.stubGlobal("localStorage", createMemoryStorage())
     window.localStorage.clear()
     vi.useFakeTimers()
+    CONFIG.timing.agentApiRequestPollIntervalMs = 0
   })
 
   afterEach(() => {
@@ -329,6 +332,7 @@ describe("agent control mode", () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
+    CONFIG.timing.agentApiRequestPollIntervalMs = originalAgentApiRequestPollIntervalMs
   })
 
   it("polls the agent endpoint for traversal moves and dispatches them with feedback enabled", async () => {
@@ -1121,7 +1125,7 @@ describe("agent control mode", () => {
     )
     expect(elements.agentManageDialog?.hidden).toBe(false)
     expect(elements.agentManageTitle?.textContent).toBe(
-      "Manage Red the Trailblazer (gemma4) in seat 02",
+      "Red the Trailblazer (gemma4) in seat 02",
     )
     expect(elements.agentDeleteTarget?.textContent).toBe("Delete now?")
     expect(elements.agentDeleteConfirm?.checked).toBe(false)
@@ -1332,7 +1336,7 @@ describe("agent control mode", () => {
 
     expect(elements.agentManageDialog?.hidden).toBe(false)
     expect(elements.agentManageTitle?.textContent).toBe(
-      "Manage Blue the Backtracker (llama3.2) in seat 01",
+      "Blue the Backtracker (llama3.2) in seat 01",
     )
   })
 

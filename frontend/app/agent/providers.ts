@@ -44,7 +44,6 @@ const BASE_HEADERS = {
 // the body, not the headers, of the fetch call each adapter's buildBody feeds into.
 const BASE_BODY = {
   stream: false,
-  think: true,
 }
 
 // PREDICTION_FORMAT is the JSON Schema constraint every provider's structured-output request
@@ -117,6 +116,7 @@ function ollamaBuildBody(input: ProviderRequestInput): Record<string, unknown> {
     },
     ...(input.wantsPredictionFormat ? OLLAMA_PREDICTION_FORMAT : {}),
     ...BASE_BODY,
+    think: true,
   }
 }
 
