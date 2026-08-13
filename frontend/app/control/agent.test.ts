@@ -453,6 +453,67 @@ describe("agent control mode", () => {
     )
   })
 
+  it("returns null from readCurrentPlayer before any agent has been bound", () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [],
+      touchControls: document.createElement("div"),
+    }
+
+    const mode = createTestAgentMode(elements)
+
+    expect(mode.readCurrentPlayer?.()).toBeNull()
+  })
+
+  it("exposes the currently active agent's traversal-speed status via readCurrentPlayer", async () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [createButton({ action: "pause" })],
+      touchControls: document.createElement("div"),
+    }
+    elements.app.focus = vi.fn()
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const dispatch = vi.fn().mockReturnValueOnce(createControlFixture({
+      currentCell: { row: 0, col: 1 },
+      traversalHistory: [selfVisit(0, 0), visit(0, 1)],
+      lastMoveStatus: "applied",
+      lastSubmittedMoves: ["0:MoveRight"],
+      lastAppliedMoveIndex: 0,
+      visitedBefore: false,
+    }))
+
+    const readState = vi.fn().mockReturnValue(
+      createControlFixture({ traversalHistory: [selfVisit(0, 0), visit(0, 1)] }),
+    )
+    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
+      createControlFixture({ score: 800 - chargedMovesCount * 100 }),
+    )
+
+    const agentWithDecay = { ...enabledAgentConfigs()[0], decayUnitsCharged: 2 }
+    const mode = createAgentMode(elements, () => [agentWithDecay])
+
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    await flushImmediateAgentTurn()
+
+    expect(mode.readCurrentPlayer?.()).toBe("Blue the Backtracker(0.50)")
+  })
+
   it("keeps a single successful prediction as applied", async () => {
     const elements = {
       app: document.createElement("div"),

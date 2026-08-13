@@ -7,6 +7,7 @@ import type {
   MazeActionControl,
   MazeActionDispatch,
   MazeActionResult,
+  State,
 } from "../types"
 import {
   agentConfigValidationError,
@@ -14,6 +15,7 @@ import {
   isAgentReasoningEffort,
   normalizeAgentEndpoint,
 } from "../agent/config"
+import { formatPlayerStatusLabel, getBatchEfficiencyMetrics } from "../agent/efficiency"
 import {
   handleAgentTurnLoop,
 } from "./agent-api"
@@ -114,6 +116,7 @@ export function createAgentMode(
   let releaseLogSubscription: (() => void) | null = null
   let lastActionResult: MazeActionResult | null = null
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null
+  let boundReadState: (() => State) | null = null
   const buttonBindings: AgentButtonBinding[] = []
 
   // Open overlays temporarily own focus, so normal app refocus should pause until they close.
@@ -230,6 +233,7 @@ export function createAgentMode(
     ) {
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
+      boundReadState = readState
 
       // recordLastActionResult captures the move outcome so agents and replays share one source of truth.
       const recordLastActionResult = (actionResult: MazeActionResult): void => {
@@ -1081,6 +1085,29 @@ export function createAgentMode(
     clearActionResult() {
       lastActionResult = null
       agentMovePoller?.__setLastActionResult(null)
+    },
+    // readCurrentPlayer exposes the currently playing agent's traversal-speed status label for the
+    // running-status line, mirroring the same "no active agent while paused/idle" rule
+    // currentPlayingAgentId enforces internally.
+    readCurrentPlayer(): string | null {
+      if (!boundReadState || !isRunningStatus(boundReadState().status) || activeAgentId === null) {
+        return null
+      }
+
+      const agent = readAgentConfigs().find((config) => config.id === activeAgentId)
+      if (!agent) {
+        return null
+      }
+
+      const { playerUniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(
+        boundReadState().traversalHistory,
+        agent,
+      )
+      return formatPlayerStatusLabel({
+        playerName: agent.playerName,
+        uniqueCellsVisited: playerUniqueCellsVisited,
+        decayUnitsCharged,
+      })
     },
   }
 }

@@ -35,6 +35,12 @@ export function calculateMaxScore(totalCells: number): number {
   return totalCells * scoring.budgetMultiplier
 }
 
+// calculateElapsedDecayUnits converts elapsed wall-clock time into the decay units charged so far
+// for an interactive round — the same raw figure calculateElapsedScore subtracts from the max score.
+export function calculateElapsedDecayUnits(elapsedMs: number, decayIntervalPerCellMs: number): number {
+  return Math.floor((elapsedMs * timing.scoreDecayRate) / decayIntervalPerCellMs)
+}
+
 // calculateElapsedScore converts elapsed time into the remaining score for an interactive round.
 export function calculateElapsedScore(
   totalCells: number,
@@ -42,9 +48,7 @@ export function calculateElapsedScore(
   decayIntervalPerCellMs: number,
 ): number {
   const maxScore = calculateMaxScore(totalCells)
-  const elapsedDecayUnits = Math.floor(
-    (elapsedMs * timing.scoreDecayRate) / decayIntervalPerCellMs,
-  )
+  const elapsedDecayUnits = calculateElapsedDecayUnits(elapsedMs, decayIntervalPerCellMs)
 
   return Math.max(0, maxScore - elapsedDecayUnits)
 }

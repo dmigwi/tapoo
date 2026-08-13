@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { GameClock } from "./clock"
 import { CONFIG } from "./config"
-import { render } from "./render"
+import { formatPlayerStatusLabel } from "./agent/efficiency"
+import { fitPlayerSegmentToWidth, render } from "./render"
 import type { AgentElements, Elements, State, TraversalHistoryEntry } from "./types"
 
 const { messages } = CONFIG
@@ -14,6 +15,15 @@ function selfVisit(row: number, col: number): TraversalHistoryEntry {
 // normalizeScreenText keeps DOM assertions readable by collapsing non-breaking spaces.
 function normalizeScreenText(value: string | null): string {
   return (value ?? "").replaceAll("\u00a0", " ")
+}
+
+// statusLineText isolates just the running-status row's exact text for precise assertions,
+// rather than matching a substring against the whole screen (which also contains the maze and
+// navigation hint). Both the navigation hint and the status line share the same
+// "screen-text centered" class, but buildScreenLines always appends the status row last.
+function statusLineText(elements: { screen: HTMLElement }): string {
+  const rows = elements.screen.querySelectorAll<HTMLElement>(".screen-text.centered")
+  return normalizeScreenText(rows[rows.length - 1]?.textContent ?? null)
 }
 
 // createButton reproduces the control-button dataset contract expected by the renderer.
@@ -228,6 +238,293 @@ describe("render", () => {
       "MoveDown",
       "pause",
     ])
+  })
+
+  it("shows the active agent's name and speed class on the running status line", () => {
+    const elements = createElements()
+    const currentPlayerLabel = formatPlayerStatusLabel({
+      playerName: "Kora",
+      uniqueCellsVisited: 12,
+      decayUnitsCharged: 10,
+    })
+
+    render(
+      elements,
+      createState({ controlMode: CONFIG.runtime.controlModes.agentApi }),
+      currentPlayerLabel,
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain("Player: Kora the Trailblazer(1.20)")
+  })
+
+  it("shows (Default) instead of a computed rate for a player with no decay units charged yet", () => {
+    const elements = createElements()
+    const currentPlayerLabel = formatPlayerStatusLabel({
+      playerName: "Kora",
+      uniqueCellsVisited: 0,
+      decayUnitsCharged: 0,
+    })
+
+    render(
+      elements,
+      createState({ controlMode: CONFIG.runtime.controlModes.agentApi }),
+      currentPlayerLabel,
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain("(Default)")
+  })
+
+  it("omits the player segment entirely when no agent is currently active", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({ controlMode: CONFIG.runtime.controlModes.agentApi }),
+      null,
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).not.toContain("Player:")
+    expect(text).toContain("Level: 1   Scores: 900")
+  })
+
+  it("ellipsis-trims an overlong player label to fit the compact status line's character budget", () => {
+    const elements = createElements()
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 620,
+      height: 896,
+      top: 0,
+      right: 620,
+      bottom: 896,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "width", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "availWidth", {
+      configurable: true,
+      value: 412,
+    })
+    const currentPlayerLabel = formatPlayerStatusLabel({
+      playerName: "Kora",
+      uniqueCellsVisited: 12,
+      decayUnitsCharged: 10,
+    })
+
+    render(
+      elements,
+      createState({ controlMode: CONFIG.runtime.controlModes.agentApi }),
+      currentPlayerLabel,
+    )
+
+    // Roughly half the available width is kept from the front, half from the back, with the
+    // middle dropped — the same middle-truncation compactAgentModelLabel (agent/seats.ts) uses.
+    expect(statusLineText(elements)).toBe("Player: Kora the T…lazer(1.20)   Level: 1   Scores: 900")
+  })
+
+  it("leaves the wide-viewport label untouched even when it would exceed the compact budget", () => {
+    const elements = createElements()
+    // 8 characters — CONFIG.agentConfig.playerNameMaxLength, the real cap enforced on agent names,
+    // so this exercises the longest name the running app can ever actually produce.
+    const currentPlayerLabel = formatPlayerStatusLabel({
+      playerName: "AgentOne",
+      uniqueCellsVisited: 12,
+      decayUnitsCharged: 10,
+    })
+
+    render(
+      elements,
+      createState({ controlMode: CONFIG.runtime.controlModes.agentApi }),
+      currentPlayerLabel,
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain("Player: AgentOne the Trailblazer(1.20)")
+  })
+
+  it("trims a long player label to fit the compact status line too, dropping its middle", () => {
+    const elements = createElements()
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 620,
+      height: 896,
+      top: 0,
+      right: 620,
+      bottom: 896,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "width", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "availWidth", {
+      configurable: true,
+      value: 412,
+    })
+    // 8 characters — CONFIG.agentConfig.playerNameMaxLength, the real cap enforced on agent names.
+    // Even at that maximum, the full "{name} the {Class}({rate})" label still overflows the
+    // compact budget once "the Trailblazer" is added, so trimming still has real work to do.
+    const currentPlayerLabel = formatPlayerStatusLabel({
+      playerName: "AgentOne",
+      uniqueCellsVisited: 12,
+      decayUnitsCharged: 10,
+    })
+
+    render(
+      elements,
+      createState({ controlMode: CONFIG.runtime.controlModes.agentApi }),
+      currentPlayerLabel,
+    )
+
+    expect(statusLineText(elements)).toBe("Player: AgentOne t…lazer(1.20)   Level: 1   Scores: 900")
+  })
+
+  it("keeps a compact label untouched right at the character-budget boundary", () => {
+    const elements = createElements()
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 620,
+      height: 896,
+      top: 0,
+      right: 620,
+      bottom: 896,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "width", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "availWidth", {
+      configurable: true,
+      value: 412,
+    })
+    // At the default level (1) and score (900), the compact budget leaves exactly 22 characters
+    // for the label — a label of exactly that length must render untouched, with no ellipsis.
+    const currentPlayerLabel = "A".repeat(22)
+
+    render(
+      elements,
+      createState({ controlMode: CONFIG.runtime.controlModes.agentApi }),
+      currentPlayerLabel,
+    )
+
+    expect(statusLineText(elements)).toBe(`Player: ${currentPlayerLabel}   Level: 1   Scores: 900`)
+  })
+
+  it("trims a compact label by exactly one character once it's one over the boundary", () => {
+    const elements = createElements()
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 620,
+      height: 896,
+      top: 0,
+      right: 620,
+      bottom: 896,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "width", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "availWidth", {
+      configurable: true,
+      value: 412,
+    })
+    // One character past the 22-character budget: the middle character is dropped in favor of a
+    // single "…" (10 kept from the front, 11 from the back), so the rendered label is still
+    // exactly 22 characters wide.
+    const currentPlayerLabel = "A".repeat(23)
+
+    render(
+      elements,
+      createState({ controlMode: CONFIG.runtime.controlModes.agentApi }),
+      currentPlayerLabel,
+    )
+
+    expect(statusLineText(elements)).toBe(
+      `Player: ${"A".repeat(10)}…${"A".repeat(11)}   Level: 1   Scores: 900`,
+    )
+  })
+
+  it("drops the entire player segment when the compact budget leaves no room for it at all", () => {
+    const elements = createElements()
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 620,
+      height: 896,
+      top: 0,
+      right: 620,
+      bottom: 896,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "width", {
+      configurable: true,
+      value: 412,
+    })
+    Object.defineProperty(window.screen, "availWidth", {
+      configurable: true,
+      value: 412,
+    })
+    const currentPlayerLabel = formatPlayerStatusLabel({
+      playerName: "Kora",
+      uniqueCellsVisited: 12,
+      decayUnitsCharged: 10,
+    })
+
+    render(
+      elements,
+      // An oversized level/score leaves negative room for any label at all — the whole
+      // "Player: {player}   " lead-in should disappear rather than leave a bare "Player:".
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        level: Number.MAX_SAFE_INTEGER,
+        score: Number.MAX_SAFE_INTEGER,
+      }),
+      currentPlayerLabel,
+    )
+
+    expect(statusLineText(elements)).toBe(
+      "Level: 9007199254740991   Scores: 9007199254740991",
+    )
+    expect(statusLineText(elements)).not.toContain("Player:")
   })
 
   it("renders a visited-cell trail for history entries other than the current position", () => {
@@ -764,5 +1061,46 @@ describe("render", () => {
 
     expect(text).toContain(messages.navigation.interactive.wide)
     expect(text).not.toContain(messages.navigation.interactive.compact)
+  })
+})
+
+// These tests exercise fitPlayerSegmentToWidth directly, so each trimmed result is asserted as an
+// isolated, standalone string rather than embedded inside a full running-status line.
+describe("fitPlayerSegmentToWidth", () => {
+  it("returns the label unchanged when it already fits the available width", () => {
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer(1.20)", 20)).toBe(
+      "Kora the Trailblazer(1.20)",
+    )
+  })
+
+  it("keeps roughly half the available width from the front, half from the back, dropping the middle", () => {
+    // "Kora the Trailblazer(1.20)" is 26 characters; a remainder of 33 leaves 22 characters of
+    // room (COMPACT_STATUS_MAX_LENGTH 55 minus 33), so 21 characters go to the label once the "…"
+    // marker is accounted for — 10 kept from the front, 11 from the back.
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer(1.20)", 33)).toBe(
+      "Kora the T…lazer(1.20)",
+    )
+  })
+
+  it("trims a longer label the same way, using the same front/back split", () => {
+    // "AgentOne" is 8 characters — CONFIG.agentConfig.playerNameMaxLength, the real cap on agent
+    // names — so this is the longest label the running app can ever actually need to trim.
+    expect(
+      fitPlayerSegmentToWidth("AgentOne the Trailblazer(1.20)", 33),
+    ).toBe("AgentOne t…lazer(1.20)")
+  })
+
+  it("applies the same middle-truncation to a label with no parenthesized rate at all", () => {
+    expect(fitPlayerSegmentToWidth("A".repeat(25), 33)).toBe(
+      `${"A".repeat(10)}…${"A".repeat(11)}`,
+    )
+  })
+
+  it("keeps only the marker plus a single trailing character when almost nothing fits", () => {
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer(1.20)", 53)).toBe("…)")
+  })
+
+  it("returns an empty string when there is no room for the label at all", () => {
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer(1.20)", 55)).toBe("")
   })
 })

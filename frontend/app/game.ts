@@ -272,7 +272,7 @@ function renderState(): void {
 
   reportStateInvariant()
   lastBlinkVisible = currentBlinkVisible()
-  render(runtimeElements, state)
+  render(runtimeElements, state, activeControlMode?.readCurrentPlayer?.() ?? null)
 }
 
 // applyWinSummary delegates post-win scoring details and stores the resolved result.

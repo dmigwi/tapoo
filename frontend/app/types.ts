@@ -429,6 +429,13 @@ export type MazeActionDispatch = (
   options: MazeActionDispatchOptions,
 ) => MazeActionResult | null
 
+// AgentPlayerStatus describes who is currently playing and how fast they're traversing, for display.
+export type AgentPlayerStatus = {
+  playerName: string
+  uniqueCellsVisited: number
+  decayUnitsCharged: number
+}
+
 // MazeActionControl defines the production contract that each browser action-control mode implements.
 export interface MazeActionControl {
   name: MazeControlModeName
@@ -440,6 +447,7 @@ export interface MazeActionControl {
   readLastActionResult: () => MazeActionResult | null
   recordActionResult: (actionResult: MazeActionResult) => void
   clearActionResult: () => void
+  readCurrentPlayer?: () => string | null
 }
 
 // State is the browser runtime's single source of truth for one session.

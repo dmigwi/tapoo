@@ -1,4 +1,5 @@
-import type { AgentApiConfig, TraversalHistoryEntry } from "../types"
+import { calculateTraversalSpeedUnits, traversalSpeedUnitsToDisplay } from "../scoring"
+import type { AgentApiConfig, AgentPlayerStatus, TraversalHistoryEntry } from "../types"
 
 // BATCH_EFFICIENCY_BASELINE_RATE is the break-even traversal speed: one new cell reached for every
 // decay unit spent. It is compared against traversalSpeed = playerUniqueCellsVisited /
@@ -59,26 +60,28 @@ export function getBatchEfficiencyMetrics(
   }
 }
 
+// resolveStatusSpeedClass is the single source of truth for classifying any playerUniqueCellsVisited
+// / decayUnitsCharged pair — whether it comes from a persisted AgentApiConfig (resolveBatchEfficiencyClass)
+// or a live AgentPlayerStatus (formatPlayerStatusLabel). Nothing charged yet defaults to trailblazer —
+// not the neutral baseline — so play starts already primed to predict multi-move sequences, matching
+// the classification stated in an agent's very first prompt. That same guard keeps the rate below from
+// dividing by zero. traversalHistory only records the first visit to each cell, so oscillation between
+// known cells spends decay without growing the distinct-cell count, pulling the rate down.
+function resolveStatusSpeedClass(uniqueCellsVisited: number, decayUnitsCharged: number): BatchEfficiencyClass {
+  if (!decayUnitsCharged) {
+    return "trailblazer"
+  }
+  return resolveTraversalSpeedClass(uniqueCellsVisited / decayUnitsCharged)
+}
+
 // resolveBatchEfficiencyClass is the single source of truth for an agent's current speed
-// classification, everywhere one is shown or sent. An agent that has not been charged anything yet
-// defaults to trailblazer — not the neutral baseline — so it starts already primed to predict
-// multi-move sequences, matching the classification stated in its very first prompt. That same
-// guard is what keeps the rate below from dividing by zero. traversalHistory only records the
-// first visit to each cell, so oscillation between known cells spends decay without growing the
-// distinct-cell count, pulling the rate down.
+// classification, everywhere one is shown or sent.
 export function resolveBatchEfficiencyClass(
   traversalHistory: TraversalHistoryEntry[],
   agent: AgentApiConfig,
 ): BatchEfficiencyClass {
-  // Fresh agent, nothing charged yet — grant trailblazer rather than the neutral baseline.
-  if (!agent.decayUnitsCharged) {
-    return "trailblazer"
-  }
-
-  // traversalSpeed, per BATCH_EFFICIENCY_BASELINE_RATE's formula; decayUnitsCharged is guaranteed
-  // > 0 here since the fresh-agent case above already returned for a falsy count.
   const { playerUniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(traversalHistory, agent)
-  return resolveTraversalSpeedClass(playerUniqueCellsVisited / decayUnitsCharged)
+  return resolveStatusSpeedClass(playerUniqueCellsVisited, decayUnitsCharged)
 }
 
 // resolveTraversalSpeedClass is the single place the rate thresholds live. The win summary scores a
@@ -98,4 +101,37 @@ export function resolveTraversalSpeedClass(traversalSpeed: number): BatchEfficie
 
   // Exactly at baseline: one new cell per decay unit, break-even with nothing to spare.
   return "navigator"
+}
+
+// capitalize renders lowercase speed-classification identifiers (kept lowercase for model-facing
+// JSON/prose) as UI-facing title case.
+export function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+// nameWithSpeedClass renders "{name} the {Class}" — shared by every UI surface that names a player
+// after their current speed classification: seat roster/dialog labels (agentDisplayName) and the
+// running-status line (formatPlayerStatusLabel).
+export function nameWithSpeedClass(playerName: string, speedClass: BatchEfficiencyClass): string {
+  return `${playerName} the ${capitalize(speedClass)}`
+}
+
+// agentDisplayName names the agent after its current speed classification everywhere the UI shows
+// it — tooltips, dialog titles — so the classification the model is working from stays visible to
+// a human observer too, e.g. "Kora the Trailblazer".
+export function agentDisplayName(agent: AgentApiConfig, traversalHistory: TraversalHistoryEntry[]): string {
+  return nameWithSpeedClass(agent.playerName, resolveBatchEfficiencyClass(traversalHistory, agent))
+}
+
+// formatPlayerStatusLabel renders the "{name} the {Class}({rate})" segment shown on the
+// running-status line for whoever is currently playing — interactive or agent-api. A player who
+// hasn't been charged any decay units yet shows "(Default)" rather than a computed rate. No
+// leading/trailing whitespace: CONFIG.messages.runningStatus owns the spacing around {player}.
+export function formatPlayerStatusLabel(status: AgentPlayerStatus): string {
+  const speedClass = resolveStatusSpeedClass(status.uniqueCellsVisited, status.decayUnitsCharged)
+  const rateDisplay = status.decayUnitsCharged > 0
+    ? traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(status.uniqueCellsVisited, status.decayUnitsCharged))
+    : "Default"
+
+  return `${nameWithSpeedClass(status.playerName, speedClass)}(${rateDisplay})`
 }

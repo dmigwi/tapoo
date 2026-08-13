@@ -4,6 +4,7 @@ import type {
   MazeActionDispatch,
   MazeActionResult,
   MoveAction,
+  State,
 } from "../types"
 import {
   isFormControlTarget,
@@ -30,6 +31,7 @@ export function createInteractiveMode(
 ): MazeActionControl {
   let attached = false
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null
+  let boundReadState: (() => State) | null = null
   const buttonBindings: Array<{
     __button: HTMLButtonElement
     __onClick: () => void
@@ -130,8 +132,8 @@ export function createInteractiveMode(
     name: runtime.controlModes.interactive,
     // bindActionDispatch connects browser keyboard and button events to the shared action dispatcher.
     bindActionDispatch(dispatch, readState, commitAgentTurn) {
-      void readState
       void commitAgentTurn
+      boundReadState = readState
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
 
@@ -157,5 +159,13 @@ export function createInteractiveMode(
     },
     // clearActionResult is a no-op because interactive mode never stores replay results.
     clearActionResult() {},
+    // readCurrentPlayer returns a static interactive player name.
+    readCurrentPlayer(): string | null {
+      const state = boundReadState?.()
+      if (!state?.clock) {
+        return null
+      }
+      return runtime.interactivePlayerName
+    },
   }
 }
