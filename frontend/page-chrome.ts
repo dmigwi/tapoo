@@ -37,7 +37,7 @@ function configText(key: string): string {
 // applyConfigAttribute copies CONFIG-backed text into matching DOM attributes.
 function applyConfigAttribute(
   selector: string,
-  attributeName: "content" | "textContent",
+  attributeName: "content" | "textContent" | "aria-label" | "data-tooltip",
 ): void {
   const nodes = document.querySelectorAll<HTMLElement>(selector)
 
@@ -87,6 +87,11 @@ function applyPageText(): void {
   applyDocumentTitle()
   applyConfigAttribute("[data-config-text]", "textContent")
   applyConfigAttribute("meta[data-config-key]", "content")
+  // data-tooltip feeds the themed CSS-only tooltip (content: attr(data-tooltip)); aria-label
+  // carries the same text to assistive tech, since the tooltip itself is decorative CSS content
+  // a screen reader won't otherwise see.
+  applyConfigAttribute("[data-config-title]", "data-tooltip")
+  applyConfigAttribute("[data-config-title]", "aria-label")
   document
     .querySelectorAll<HTMLInputElement>("[data-config-placeholder]")
     .forEach((input) => {

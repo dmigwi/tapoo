@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { EXPECTED_RESPONSE_SCHEMA, PREDICTION_FORMAT, buildDuplicateToolCallMessage } from "./context"
+import {
+  EXPECTED_RESPONSE_SCHEMA,
+  buildDuplicateToolCallMessage,
+  buildTokenLimitExhaustionPrompt,
+} from "./context"
+import { OLLAMA_PREDICTION_FORMAT } from "./providers"
 import { requestPredictionWithAbort } from "./request"
 import { CONFIG } from "../config"
 import { tapooResetLogs } from "../logs"
-import { getNavigationProfile } from "../maze"
 import { loadTapooLog } from "../storage"
 import type {
   AgentApiConfig,
@@ -16,16 +20,29 @@ import type {
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt =
-  `You are Blue and currently hold the most coveted rank of trailblazer. Work smarter to maintain it. playerName Self always appears first in traversalHistory and marks the start cell. currentCell is your current position; destinationCell is the target. The maze is randomly generated at each level with exactly one path to the destination. traversalHistory entries matching your playerName record your past moves in chronological order. Each entry's openMoves maps every open exit from that cell directly to the neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries recorded by other players are just as trustworthy as your own. openMoves key count reveals the physical maze structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction. traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected. Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed. get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is. lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units. get_prediction_rules provides the required response format and move count guidance. Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more new cells for the same decay — that ratio is your traversal speed, and it is the rank you carry: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
+  `You are Blue and your traversal speed classifies as trailblazer. You are in the genius zone and might set a new record if you keep it up. Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, and the previous prediction outcome. The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated. When present in filteredTraversalHistory, playerName Self marks the start cell. Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own. Your objective is to reach destinationCell. Each turn, prioritize an openMoves neighbor from currentCell whose alreadyExplored is false before weighing distance to destinationCell, unless currentCell's cellType is dead-end. Revisiting a cell already in filteredTraversalHistory during deliberate backtracking is not a mistake, although it adds no new-cell progress. cellType is the only reliable way to know it is a dead-end — never assume a cell you have not yet visited is one, since an unexplored cell's own exits are unknown until you land there and the absence of a connection from cells you already know proves nothing. Begin backtracking only when your current cell's cellType is dead-end, and retreat toward a specific visited cell with an openMoves neighbor whose alreadyExplored is false; that visited cell is an actual branch target, not a guess. Once a dead-end is confirmed, filteredTraversalHistory's visit order tells you how far to search: an unexplored branch point still exists among cells visited earlier, maybe within or beyond historyWindowRadius, so keep retreating through known cells until a later turn's filteredTraversalHistory brings it into view. At higher levels, more junctions mean more short dead-end branches along the solution path, so expect to rule out several before finding the right one — a single clean backtrack is the exception, not the rule. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined row and col differences for each candidate, not just one axis — a cell closer on one axis can be equally far or farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome. A turn with any valid moves costs a constant 1-unit decay charge regardless of how many moves it applied. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all. One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions. currentCell's openMoves are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to sustain that classification. get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Because the charge above is per turn rather than per move, a longer prediction whose moves all land can cover more new cells for the same decay. get_prediction_rules explains the live traversal-speed metrics and classification. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
 const developerMessage = prompt
 const userMessage = `It is Blue's turn to predict next moves. Use the available tools to see the maze state.`
 const agentContextTools = [
   {
     type: "function" as const,
     function: {
+      name: "get_maze_structure",
+      description:
+        "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. filteredTraversalHistory includes only first-visit records within historyWindowRadius of currentCell, ordered oldest-visited to most-recently-visited — currentCell's own position in this list depends on when it was first visited, not on it being current, so it will not always be last. Entries before currentCell in this list were visited earlier; entries after it were visited more recently. If currentCell is not last, every listed entry after it is a cell first reached after currentCell but before now, so the entry itself is charted ground. However, any neighbor under that entry's openMoves whose alreadyExplored is false is still an unexplored cell and remains a valid branch target. currentCell is always included because its distance is 0. historyWindowRadius is a fixed configured radius — the maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell — unrelated to how far destinationCell is; compute that yourself from currentCell and destinationCell's row/col if you need it. Each included entry's openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether that neighbor's own alreadyExplored is true — meaning it has been explored and exists in the full maze traversal history — even when that neighbor itself is outside the filtered result. cellType is precomputed from that same exit count, so you never need to count it yourself: dead-end (one exit), corridor (two exits), or junction (three or more). cellType only ever exists for a cell already in filteredTraversalHistory — an unvisited cell, including one that only appears as a neighbor inside another cell's openMoves, has no known cellType and must never be assumed to be of a specific cellType before visiting. The only way to learn an unvisited cell's own structure is to move there and read its own entry on a later turn. Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null, \"historyWindowRadius\":number, \"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"cellType\":string, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"alreadyExplored\":boolean}, ...}}]}.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "get_prediction_rules",
       description:
-        "Get move response rules. suggestedMovesPerTurn is the suggested moves count to include in your predictions response per turn. uniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyRank. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyRank is set to backtracker rank when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator rank at 1.0 (one new cell move per decay unit), or trailblazer rank above 1.0 (valid multi-move guesses are paying off — the only rank that can set a new score retention record). turnsTaken is reported for context and does not affect your speed, rank or scores Each turn's decay units are subtracted immediately; the resulting score retention is visible via get_game_status. Before anything is charged on this level, batchEfficiencyRank defaults to trailblazer regardless of these counts, so you start already primed to predict multi-move sequences. Returns JSON: {\"suggestedMovesPerTurn\":number, \"uniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"turnsTaken\":number, \"batchEfficiencyRank\":string,\"expectedResponseSchema\":object}.",
+        "Get move response rules. suggestedMovesPerTurn is a min/max range for how many moves to include in your prediction response per turn: submit min moves when you are only confident about the immediate next cell or two, and go up to max only when the local map supports a longer high-confidence run. Batching accuracy drops sharply the further out a prediction reaches, so lean toward min rather than max whenever you are unsure. When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. When decayUnitsCharged is 0, do not divide; batchEfficiencyClass defaults to trailblazer. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator at 1.0 (one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the only classification that can set a new best-score record). allUniqueCellsVisited is every cell any player has reached this level, not just your own — compare it against mazeDimensions.totalMazeCells to know how much of the maze the team has collectively explored so far. At the initial game levels the single solution path covers nearly all of totalMazeCells, so expect to explore most of the maze before reaching the destination; the path's length relative to totalMazeCells drops only slightly as the level number grows, so at higher levels the destination can be reachable well before allUniqueCellsVisited approaches totalMazeCells. It does not affect your traversal speed, which is scored on playerUniqueCellsVisited against decayUnitsCharged. totalTurnCount is the total number of completed prediction turns in this game level. playerTurnsTaken is the number completed by the player and is reported for context; neither count affects your speed, classification, or scores. The resulting score is visible via get_last_prediction_outcome. mazeDimensions.totalMazeCells is the full level size. Returns JSON: {\"suggestedMovesPerTurn\":{\"min\":number,\"max\":number}, \"allUniqueCellsVisited\":number, \"playerUniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"batchEfficiencyClass\":string, \"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null, \"expectedResponseSchema\":object}.",
       parameters: {
         type: "object",
         properties: {},
@@ -36,48 +53,9 @@ const agentContextTools = [
   {
     type: "function" as const,
     function: {
-      name: "get_game_status",
+      name: "get_last_prediction_outcome",
       description:
-        "Get current Tapoo level, status, score, and maze dimensions. status is one of: running (prediction active), won (destination reached, stop predicting), lost, await-agent, or paused. Returns JSON: {\"level\":number, \"status\":string, \"score\":number, \"mazeDimensions\":{\"numCols\":number, \"numRows\":number, \"area\":number}}. numCols is the number of columns, numRows is the number of rows, area is the total cell count.",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: [],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "get_maze_positions",
-      description:
-        "Get current cell and destination cell. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. Use get_traversal_history to find which moves are open from the current cell. Returns JSON: {\"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null}.",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: [],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "get_traversal_history",
-      description:
-        "Get all players' visit records in chronological order, structured as an adjacency list. cell is that entry's position. openMoves maps each open exit directly to the neighboring cell it leads to and whether that neighbor has already been visited — the exits from a cell are fixed since creation, so this lets you reconstruct the physical maze structure you have already explored without computing adjacency from row/col yourself. Use the full, unfiltered list for maze-structure reconstruction — every player's openMoves data is equally trustworthy; filter by playerName only when you specifically want one player's own chronological move sequence. Returns JSON: {\"traversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visited\":boolean}, ...}}]}.",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: [],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "get_last_replay_result",
-      description:
-        "Get the previous turn replay result. lastMoveStatus values: null=first turn, no history yet; applied=move executed and added to traversal history; reached-target=destination reached, stop predicting; invalid-move=move hit a wall or boundary, replay stopped; malformed-response=previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged. lastSubmittedMoves lists the moves from that turn as zero-based <index>:<move> entries; lastReplayStartIndex is their zero-based offset in the overall submitted move sequence. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last valid move was already in traversal history. chargedMovesCount is the total decay units charged toward score that turn. Returns JSON: {\"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
+        "Get the outcome of the previous submitted moves: whether they fully applied, partially failed, reached the target, or were rejected. status is the current game status, score is the current score after that outcome. lastMoveStatus is the outcome of only the single last move actually dispatched that turn: null=first turn, no history yet; applied=the move executed successfully; visitedBefore indicates whether it revisited a cell; invalid-move=that move hit a wall or boundary, execution stopped there; reached-target=destination reached, stop predicting; malformed-response=previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — no moves were replayed and a fixed score penalty was charged; token-limit-exhaustion=the previous empty prediction reached the configured token threshold and its corrective warning opportunity also returned no prediction — no moves were replayed and the same fixed score penalty was charged; network-error=HTTP failure, no score charged. predictionStatus instead summarizes the entire submitted prediction as one story: all-applied=all submitted moves applied and at least one entered a previously unvisited cell, or the target was reached; partially-applied=one or more moves applied, at least one entered a previously unvisited cell, and replay then stopped at the first invalid move; repeat-cell-visits=one or more moves applied, but none entered a new cell — replay may have completed or stopped at an invalid move; invalid-prediction=a real prediction was replayed but the very first submitted move was already invalid, no progress made; empty-prediction=a malformed-response, token-limit-exhaustion, or network-error meant there was no usable prediction to replay at all. lastSubmittedMoves lists every submitted move from that turn as a zero-based <index>:<move> entry, including moves after the first invalid move that were not executed. lastReplayStartIndex is 0 when moves were submitted and marks the first entry. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last successfully applied move was already in traversal history; it is null when no move applied. On an empty-prediction turn these four fields are always reset to null/empty, matching that no moves were replayed — they never carry over stale data from an earlier turn. chargedMovesCount is the total decay units charged toward score that turn. Returns JSON: {\"status\":string, \"score\":number, \"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"predictionStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
       parameters: {
         type: "object",
         properties: {},
@@ -111,6 +89,8 @@ const agent: AgentApiConfig = {
   playerName: "Blue",
   model,
   endpoint: new URL(endpoint),
+  api: "ollama",
+  reasoningEffort: "max",
   enabled: true,
 }
 
@@ -146,7 +126,7 @@ type SerializedRequestBody = {
   messages: unknown[]
   model: string
   stream: false
-  think: false
+  think: true
   tools: unknown[]
   format?: unknown
   options?: unknown
@@ -165,6 +145,7 @@ function requestInput(
     lastActionResult,
     state: { ...state, ...stateOverrides },
     timeoutMs: 180_000,
+    requestIntervalMs: 0,
   }
 }
 
@@ -181,10 +162,14 @@ function successfulResponse(content: string) {
   }
 }
 
-function toolCallResponse(toolCalls: unknown[]) {
+function toolCallResponse(
+  toolCalls: unknown[],
+  usage: { prompt_eval_count?: number; eval_count?: number } = {},
+) {
   return {
     ok: true,
     json: vi.fn().mockResolvedValue({
+      ...usage,
       message: {
         role: "assistant",
         content: "",
@@ -208,22 +193,52 @@ function thinkingToolCallResponse(toolCalls: unknown[]) {
   }
 }
 
-// positionsContent mirrors the exact JSON string sent by the positions tool.
-function positionsContent(overrides: Partial<State> = {}): string {
+// mazeStructureContent mirrors the exact JSON string sent by the maze-structure tool.
+function mazeStructureContent(overrides: Partial<State> = {}): string {
   const nextState = { ...state, ...overrides }
+  const currentCell = nextState.playerPosition
+    ? {
+        row: Math.floor((nextState.playerPosition.y - 1) / 2),
+        col: Math.floor((nextState.playerPosition.x - 1) / 2),
+      }
+    : null
+  const destinationCell = nextState.finalPosition
+    ? {
+        row: Math.floor((nextState.finalPosition.y - 1) / 2),
+        col: Math.floor((nextState.finalPosition.x - 1) / 2),
+      }
+    : null
+  const { manhattanDistance: historyWindowRadius } = CONFIG.runtime.modelConfig
+  const visitedCells = new Set(
+    nextState.traversalHistory.map(({ row, col }) => `${row},${col}`),
+  )
+  const filteredTraversalHistory = currentCell
+    ? nextState.traversalHistory
+        .filter(({ row, col }) => Math.abs(row - currentCell.row) + Math.abs(col - currentCell.col) <= historyWindowRadius)
+        .map(({ playerName, row, col, openMoves }) => ({
+          playerName,
+          cell: { row, col },
+          cellType: openMoves.length <= 1 ? "dead-end" : openMoves.length === 2 ? "corridor" : "junction",
+          openMoves: Object.fromEntries(
+            openMoves.map((move) => {
+              const [rowDelta, colDelta] = {
+                MoveLeft: [0, -1],
+                MoveRight: [0, 1],
+                MoveUp: [-1, 0],
+                MoveDown: [1, 0],
+              }[move]
+              const neighbor = { row: row + rowDelta, col: col + colDelta }
+              return [move, { ...neighbor, alreadyExplored: visitedCells.has(`${neighbor.row},${neighbor.col}`) }]
+            }),
+          ),
+        }))
+    : []
   return JSON.stringify({
-    currentCell: nextState.playerPosition
-      ? {
-          row: Math.floor((nextState.playerPosition.y - 1) / 2),
-          col: Math.floor((nextState.playerPosition.x - 1) / 2),
-        }
-      : null,
-    destinationCell: nextState.finalPosition
-      ? {
-          row: Math.floor((nextState.finalPosition.y - 1) / 2),
-          col: Math.floor((nextState.finalPosition.x - 1) / 2),
-        }
-      : null,
+    level: nextState.level,
+    currentCell,
+    destinationCell,
+    historyWindowRadius,
+    filteredTraversalHistory,
   })
 }
 
@@ -256,10 +271,10 @@ describe("agent request service", () => {
           content: "",
           tool_calls: [
             {
-              id: "call_positions",
+              id: "call_structure",
               function: {
                 index: 0,
-                name: "get_maze_positions",
+                name: "get_maze_structure",
                 arguments: {},
               },
             },
@@ -267,15 +282,15 @@ describe("agent request service", () => {
         },
         {
           role: "tool",
-          tool_call_id: "call_positions",
-          tool_name: "get_maze_positions",
+          tool_call_id: "call_structure",
+          tool_name: "get_maze_structure",
           content:
-            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7}}",
+            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"dead-end\",\"openMoves\":{}}]}",
         },
       ],
-      tools: uncalledTools(["get_maze_positions"]),
+      tools: uncalledTools(["get_maze_structure"]),
       options: { num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict },
-      think: false,
+      think: true,
       stream: false,
     }
     const expectedJsonOutput = {
@@ -287,14 +302,14 @@ describe("agent request service", () => {
       .mockResolvedValueOnce(
         toolCallResponse([
           {
-              id: "call_positions",
+              id: "call_structure",
               function: {
                 index: 0,
-                name: "get_maze_positions",
+                name: "get_maze_structure",
                 arguments: {},
               },
             },
-        ]),
+        ], { prompt_eval_count: 21, eval_count: 13 }),
       )
       .mockResolvedValueOnce(
         successfulResponse(JSON.stringify({ moves: expectedJsonOutput.moves })),
@@ -317,10 +332,10 @@ describe("agent request service", () => {
       .mockResolvedValueOnce(
         toolCallResponse([
           {
-            id: "call_positions",
-            function: { index: 0, name: "get_maze_positions", arguments: {} },
+            id: "call_structure",
+            function: { index: 0, name: "get_maze_structure", arguments: {} },
           },
-        ]),
+        ], { prompt_eval_count: 21, eval_count: 13 }),
       )
       .mockResolvedValueOnce(
         successfulResponse(JSON.stringify({ moves: ["MoveRight", "MoveDown"] })),
@@ -347,8 +362,10 @@ describe("agent request service", () => {
     // in full, including the system/user prompt and tool descriptions.
     expect(requestEntries[0].details).toEqual({
       endpoint,
+      api: agent.api,
       requestCount: 1,
       agentMode: "tools",
+      reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), true),
       messages: [
         { role: "system", content: developerMessage },
@@ -364,9 +381,11 @@ describe("agent request service", () => {
     // level's first turn — further limiting duplication across a single turn's tool-call rounds.
     expect(requestEntries[1].details).toEqual({
       endpoint,
+      api: agent.api,
       requestCount: 2,
       agentMode: "tools",
-      tools: expectedLoggedTools(uncalledTools(["get_maze_positions"]), false),
+      reasoning: agent.reasoningEffort,
+      tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
         { role: "user", content: `${userMessage.slice(0, 25)}...` },
@@ -375,20 +394,38 @@ describe("agent request service", () => {
           content: "",
           tool_calls: [
             {
-              id: "call_positions",
-              function: { index: 0, name: "get_maze_positions", arguments: {} },
+              id: "call_structure",
+              function: { index: 0, name: "get_maze_structure", arguments: {} },
             },
           ],
         },
         {
           role: "tool",
-          tool_call_id: "call_positions",
-          tool_name: "get_maze_positions",
+          tool_call_id: "call_structure",
+          tool_name: "get_maze_structure",
           content:
-            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7}}",
+            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"dead-end\",\"openMoves\":{}}]}",
         },
       ],
     })
+  })
+
+  it("stamps every request/response entry with the maze level being played", async () => {
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(successfulResponse(JSON.stringify({ moves: ["MoveRight"] })))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await requestPrediction(requestInput({ level: 6 }))
+
+    const entries = loadTapooLog<{ payload: string; level: number }>(
+      CONFIG.runtime.controlModes.agentApi,
+    ).filter((entry) => entry.payload === "Agent request." || entry.payload === "Agent response.")
+
+    expect(entries.length).toBeGreaterThan(0)
+    expect(entries.every((entry) => entry.level === 6)).toBe(true)
   })
 
   it("previews the repeated system/user prompt and tool descriptions in a later turn, every round", async () => {
@@ -399,8 +436,8 @@ describe("agent request service", () => {
       .mockResolvedValueOnce(
         toolCallResponse([
           {
-            id: "call_positions",
-            function: { index: 0, name: "get_maze_positions", arguments: {} },
+            id: "call_structure",
+            function: { index: 0, name: "get_maze_structure", arguments: {} },
           },
         ]),
       )
@@ -430,8 +467,10 @@ describe("agent request service", () => {
     // and tool descriptions are previewed too, since both repeat verbatim every turn.
     expect(requestEntries[0].details).toEqual({
       endpoint,
+      api: agent.api,
       requestCount: 1,
       agentMode: "tools",
+      reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), false),
       messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
@@ -444,9 +483,11 @@ describe("agent request service", () => {
     // assistant/tool-call messages are turn-unique and always log in full.
     expect(requestEntries[1].details).toEqual({
       endpoint,
+      api: agent.api,
       requestCount: 2,
       agentMode: "tools",
-      tools: expectedLoggedTools(uncalledTools(["get_maze_positions"]), false),
+      reasoning: agent.reasoningEffort,
+      tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
         { role: "system", content: `${developerMessage.slice(0, 25)}...` },
         { role: "user", content: `${userMessage.slice(0, 25)}...` },
@@ -455,17 +496,17 @@ describe("agent request service", () => {
           content: "",
           tool_calls: [
             {
-              id: "call_positions",
-              function: { index: 0, name: "get_maze_positions", arguments: {} },
+              id: "call_structure",
+              function: { index: 0, name: "get_maze_structure", arguments: {} },
             },
           ],
         },
         {
           role: "tool",
-          tool_call_id: "call_positions",
-          tool_name: "get_maze_positions",
+          tool_call_id: "call_structure",
+          tool_name: "get_maze_structure",
           content:
-            "{\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7}}",
+            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"dead-end\",\"openMoves\":{}}]}",
         },
       ],
     })
@@ -503,7 +544,7 @@ describe("agent request service", () => {
       ],
       tools: agentContextTools,
       options: { num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict },
-      think: false,
+      think: true,
       stream: false,
     })
   })
@@ -515,7 +556,7 @@ describe("agent request service", () => {
         toolCallResponse([
           {
             id: "call_1",
-            function: { index: 0, name: "get_maze_positions", arguments: {} },
+            function: { index: 0, name: "get_maze_structure", arguments: {} },
           },
         ]),
       )
@@ -545,7 +586,7 @@ describe("agent request service", () => {
             id: "call_1",
             function: {
               index: 0,
-              name: "get_maze_positions",
+              name: "get_maze_structure",
               arguments: {},
             },
           },
@@ -554,8 +595,8 @@ describe("agent request service", () => {
       {
         role: "tool",
         tool_call_id: "call_1",
-        tool_name: "get_maze_positions",
-        content: positionsContent({
+        tool_name: "get_maze_structure",
+        content: mazeStructureContent({
           finalPosition: { x: 3, y: 1 },
           playerPosition: { x: 1, y: 1 },
         }),
@@ -568,8 +609,8 @@ describe("agent request service", () => {
       .fn()
       .mockResolvedValueOnce(
         toolCallResponse([
-          { function: { name: "get_maze_positions", arguments: {} } },
-          { function: { name: "get_traversal_history", arguments: "{}" } },
+          { function: { name: "get_last_prediction_outcome", arguments: {} } },
+          { function: { name: "get_maze_structure", arguments: "{}" } },
         ]),
       )
       .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveDown\"]}"))
@@ -582,19 +623,24 @@ describe("agent request service", () => {
     expect(secondRequestBody.messages.slice(-2)).toEqual([
       {
         role: "tool",
-        tool_name: "get_maze_positions",
-        content: positionsContent(),
+        tool_name: "get_last_prediction_outcome",
+        content: JSON.stringify({
+          status: state.status,
+          score: state.score,
+          lastPlayerName: null,
+          lastMoveStatus: null,
+          predictionStatus: null,
+          lastReplayStartIndex: null,
+          lastSubmittedMoves: [],
+          lastAppliedMoveIndex: null,
+          visitedBefore: null,
+          chargedMovesCount: 0,
+        }),
       },
       {
         role: "tool",
-        tool_name: "get_traversal_history",
-        content: JSON.stringify({
-          traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
-            playerName,
-            cell: { row, col },
-            openMoves: {},
-          })),
-        }),
+        tool_name: "get_maze_structure",
+        content: mazeStructureContent(),
       },
     ])
   })
@@ -602,24 +648,16 @@ describe("agent request service", () => {
   it("detects Ollama thinking responses that include native tool calls", async () => {
     const firstResponse = thinkingToolCallResponse([
       {
-        id: "call_status",
-        function: { index: 0, name: "get_game_status", arguments: {} },
+        id: "call_structure",
+        function: { index: 0, name: "get_maze_structure", arguments: {} },
       },
       {
-        id: "call_positions",
-        function: { index: 1, name: "get_maze_positions", arguments: {} },
-      },
-      {
-        id: "call_history",
-        function: { index: 2, name: "get_traversal_history", arguments: {} },
-      },
-      {
-        id: "call_replay",
-        function: { index: 3, name: "get_last_replay_result", arguments: {} },
+        id: "call_outcome",
+        function: { index: 1, name: "get_last_prediction_outcome", arguments: {} },
       },
       {
         id: "call_rules",
-        function: { index: 4, name: "get_prediction_rules", arguments: {} },
+        function: { index: 2, name: "get_prediction_rules", arguments: {} },
       },
     ])
     const fetchMock = vi
@@ -637,37 +675,25 @@ describe("agent request service", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
     const secondRequestBody = JSON.parse(secondRequest.body as string) as SerializedRequestBody
-    const toolMessages = secondRequestBody.messages.slice(-5) as Array<{
+    const toolMessages = secondRequestBody.messages.slice(-3) as Array<{
       role: string
       tool_call_id: string
       tool_name: string
       content: string
     }>
     expect(toolMessages.map(({ role, tool_call_id, tool_name }) => ({ role, tool_call_id, tool_name }))).toEqual([
-      { role: "tool", tool_call_id: "call_status",    tool_name: "get_game_status" },
-      { role: "tool", tool_call_id: "call_positions", tool_name: "get_maze_positions" },
-      { role: "tool", tool_call_id: "call_history",   tool_name: "get_traversal_history" },
-      { role: "tool", tool_call_id: "call_replay",    tool_name: "get_last_replay_result" },
+      { role: "tool", tool_call_id: "call_structure", tool_name: "get_maze_structure" },
+      { role: "tool", tool_call_id: "call_outcome",   tool_name: "get_last_prediction_outcome" },
       { role: "tool", tool_call_id: "call_rules",     tool_name: "get_prediction_rules" },
     ])
     expect(toolMessages.map(({ content }) => JSON.parse(content) as unknown)).toEqual([
+      JSON.parse(mazeStructureContent()) as unknown,
       {
-        level: state.level,
         status: state.status,
         score: state.score,
-        mazeDimensions: state.mazeDimensions,
-      },
-      JSON.parse(positionsContent()) as unknown,
-      {
-        traversalHistory: state.traversalHistory.map(({ playerName, row, col }) => ({
-          playerName,
-          cell: { row, col },
-          openMoves: {},
-        })),
-      },
-      {
         lastPlayerName: null,
         lastMoveStatus: null,
+        predictionStatus: null,
         lastReplayStartIndex: null,
         lastSubmittedMoves: [],
         lastAppliedMoveIndex: null,
@@ -675,14 +701,50 @@ describe("agent request service", () => {
         chargedMovesCount: 0,
       },
       {
-        suggestedMovesPerTurn: Math.min(getNavigationProfile(mazeDimensions).__maxCorridorLength, 4),
-        uniqueCellsVisited: 0,
+        suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,
+        playerUniqueCellsVisited: 0,
+        allUniqueCellsVisited: 1,
         decayUnitsCharged: 0,
-        turnsTaken: 0,
-        batchEfficiencyRank: "trailblazer",
+        totalTurnCount: 0,
+        playerTurnsTaken: 0,
+        batchEfficiencyClass: "trailblazer",
+        mazeDimensions: {
+          numCols: state.mazeDimensions?.numCols,
+          numRows: state.mazeDimensions?.numRows,
+          totalMazeCells: state.mazeDimensions?.area,
+        },
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       },
     ])
+  })
+
+  it("paces requests after the first within a turn by requestIntervalMs, but never before the first", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        toolCallResponse([
+          { function: { name: "get_maze_structure", arguments: {} } },
+          { function: { name: "get_prediction_rules", arguments: {} } },
+          { function: { name: "get_last_prediction_outcome", arguments: {} } },
+        ]),
+      )
+      .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = requestPrediction({ ...requestInput(), requestIntervalMs: 5_000 })
+
+    // The first request fires immediately — no delay applied before it.
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    // The second request (servicing the tool results) is held back until requestIntervalMs elapses.
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    await expect(result).resolves.toEqual({ ok: true, moves: ["MoveRight"] })
   })
 
   it("returns malformed-response when final content is not a valid prediction", async () => {
@@ -698,46 +760,163 @@ describe("agent request service", () => {
     })
   })
 
-  it.each([
-    [
-      "non-ok response",
-      vi.fn().mockResolvedValue({ ok: false, status: 503, statusText: "Unavailable" }),
-      "Provider HTTP response failed.",
-      { endpoint, status: 503, statusText: "Unavailable" },
-    ],
-    [
-      "fetch failure",
-      vi.fn().mockRejectedValue(new TypeError("failed")),
-      "Request failed before a valid response.",
-      { endpoint },
-    ],
-  ])("returns network-error for %s", async (_caseName, fetchMock, expectedMessage, expectedDetails) => {
+  it("returns token-limit-exhaustion when capped token usage produces an empty prediction", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        // A large prompt_eval_count on its own must never trigger this — only eval_count (the
+        // completion side alone) is compared against numPredict. See providers.test.ts's
+        // "ignoring the prompt side" coverage for that in isolation.
+        prompt_eval_count: 1,
+        eval_count: CONFIG.runtime.modelConfig.numPredict,
+        message: { role: "assistant", content: "" },
+      }),
+    })
     vi.stubGlobal("fetch", fetchMock)
 
     await expect(requestPrediction(requestInput())).resolves.toMatchObject({
       ok: false,
-      reason: "network-error",
+      reason: "token-limit-exhaustion",
       diagnostic: {
-        message: expectedMessage,
-        details: expectedDetails,
+        message: "Agent exhausted the token cap without returning a prediction.",
+        details: {
+          endpoint,
+          requestCount: 2,
+          tokensUsed: CONFIG.runtime.modelConfig.numPredict,
+        },
       },
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    const firstRequest = fetchMock.mock.calls[0]?.[1] as RequestInit
+    const retryRequest = fetchMock.mock.calls[1]?.[1] as RequestInit
+    if (typeof firstRequest.body !== "string" || typeof retryRequest.body !== "string") {
+      throw new Error("expected token-limit retry request bodies to be serialized json")
+    }
+    const firstBody = JSON.parse(firstRequest.body) as { messages: unknown[]; tools: unknown[] }
+    const retryBody = JSON.parse(retryRequest.body) as {
+      messages: Array<{ role: string; content?: string }>
+      tools: unknown[]
+    }
+    expect(retryBody.messages.slice(0, -1)).toEqual(firstBody.messages)
+    expect(retryBody.tools).toEqual(firstBody.tools)
+    expect(retryBody.messages.at(-1)).toEqual(buildTokenLimitExhaustionPrompt(
+      CONFIG.runtime.modelConfig.numPredict,
+    ))
+  })
+
+  it("keeps nonempty invalid capped output classified as malformed-response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        prompt_eval_count: CONFIG.runtime.modelConfig.numPredict,
+        eval_count: 0,
+        message: { role: "assistant", content: "not-json" },
+      }),
+    }))
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "malformed-response",
     })
   })
 
-  it("returns provider request failures with actionable diagnostic context", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("failed")))
+  it("returns network-error for non-ok response, including the provider's raw error body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        statusText: "Unavailable",
+        text: vi.fn().mockResolvedValue("{\"error\":\"model overloaded\"}"),
+      }),
+    )
 
     await expect(requestPrediction(requestInput())).resolves.toMatchObject({
       ok: false,
       reason: "network-error",
       diagnostic: {
-        message: "Request failed before a valid response.",
-        details: { endpoint },
+        message: "Provider HTTP response failed.",
+        details: {
+          endpoint,
+          status: 503,
+          statusText: "Unavailable",
+          responseBody: "{\"error\":\"model overloaded\"}",
+        },
       },
     })
   })
 
-  it("returns network-error when the request times out", async () => {
+  it("still reports a non-ok response when reading its body fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        text: vi.fn().mockRejectedValue(new Error("stream already used")),
+      }),
+    )
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "network-error",
+      diagnostic: {
+        message: "Provider HTTP response failed.",
+        details: {
+          endpoint,
+          status: 500,
+          statusText: "Internal Server Error",
+          responseBody: undefined,
+        },
+      },
+    })
+  })
+
+  it("returns connection-error for fetch failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("failed")))
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "connection-error",
+      diagnostic: {
+        message: "Request failed before a valid response.",
+        details: { endpoint, error: "TypeError: failed" },
+      },
+    })
+  })
+
+  it("returns connection-error request failures with actionable diagnostic context", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("failed")))
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "connection-error",
+      diagnostic: {
+        message: "Request failed before a valid response.",
+        // The actual thrown error is captured as a string here rather than discarded: Error and
+        // DOMException instances serialize to "{}" via JSON.stringify (name/message are
+        // non-enumerable own properties), so a raw caught error logged as-is would silently vanish
+        // from a downloaded log, leaving no way to tell a timeout from a DNS failure after the fact.
+        details: { endpoint, error: "TypeError: failed" },
+      },
+    })
+  })
+
+  it("captures a non-Error thrown value as a string instead of discarding it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue("plain string rejection"))
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "connection-error",
+      diagnostic: {
+        message: "Request failed before a valid response.",
+        details: { endpoint, error: "plain string rejection" },
+      },
+    })
+  })
+
+  it("returns connection-error when the request times out", async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn((_endpoint: string, init?: RequestInit) => {
       return new Promise((_resolve, reject) => {
@@ -753,10 +932,10 @@ describe("agent request service", () => {
 
     await expect(result).resolves.toMatchObject({
       ok: false,
-      reason: "network-error",
+      reason: "connection-error",
       diagnostic: {
         message: "Request failed before a valid response.",
-        details: { endpoint },
+        details: { endpoint, error: "AbortError: aborted" },
       },
     })
   })
@@ -769,7 +948,7 @@ describe("agent request service", () => {
       .fn()
       .mockResolvedValueOnce(
         toolCallResponse([
-          { function: { name: "get_maze_positions", arguments: {} } },
+          { function: { name: "get_maze_structure", arguments: {} } },
         ]),
       )
       .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
@@ -834,7 +1013,7 @@ describe("agent request service", () => {
   })
 
   it("proactively removes tools when all available tools were called in the previous round", async () => {
-    // When r0 calls all 5 tools, calledToolNames covers every available tool before r1 is sent.
+    // When r0 calls every tool, calledToolNames covers every available tool before r1 is sent.
     // The proactive check fires first, setting availableTools=[] so r1 goes straight to the
     // format-constrained prediction without sending tools or making another tool-call round.
     const allToolCalls = agentContextTools.map(({ function: { name } }, i) => ({
@@ -853,26 +1032,26 @@ describe("agent request service", () => {
     const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
     const secondBody = JSON.parse(secondRequest.body as string) as SerializedRequestBody
     expect(secondBody.tools).toEqual([])
-    expect(secondBody.format).toEqual(PREDICTION_FORMAT)
+    expect(secondBody.format).toEqual(OLLAMA_PREDICTION_FORMAT.format)
     expect(secondBody.options).toEqual({ num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict })
   })
 
   it("reminds about a duplicate call while still offering the tools genuinely left uncalled", async () => {
-    // Round 1: model calls get_game_status (new tool, processed normally).
-    // Round 2: model calls get_game_status again (all-duplicate round → reminder naming that
-    // specific call is appended; the other 4 tools remain genuinely uncalled, so round 3 still
+    // Round 1: model calls get_last_prediction_outcome (new tool, processed normally).
+    // Round 2: model calls get_last_prediction_outcome again (all-duplicate round → reminder naming that
+    // specific call is appended; the other tools remain genuinely uncalled, so round 3 still
     // offers them rather than being forced into prediction mode).
     // Round 3: model answers directly anyway.
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
         toolCallResponse([
-          { id: "call_1", function: { index: 0, name: "get_game_status", arguments: {} } },
+          { id: "call_1", function: { index: 0, name: "get_last_prediction_outcome", arguments: {} } },
         ]),
       )
       .mockResolvedValueOnce(
         toolCallResponse([
-          { id: "call_2", function: { index: 0, name: "get_game_status", arguments: {} } },
+          { id: "call_2", function: { index: 0, name: "get_last_prediction_outcome", arguments: {} } },
         ]),
       )
       .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
@@ -885,37 +1064,37 @@ describe("agent request service", () => {
     const thirdRequest = fetchMock.mock.calls[2][1] as RequestInit
     const thirdBody = JSON.parse(thirdRequest.body as string) as SerializedRequestBody
 
-    // Round 3 still offers the 4 tools genuinely never called, at full definition, with
-    // get_game_status dropped entirely — no early forcing into prediction mode.
-    expect(thirdBody.tools).toEqual(uncalledTools(["get_game_status"]))
+    // Round 3 still offers the tools genuinely never called, at full definition, with
+    // get_last_prediction_outcome dropped entirely — no early forcing into prediction mode.
+    expect(thirdBody.tools).toEqual(uncalledTools(["get_last_prediction_outcome"]))
     expect(thirdBody.format).toBeUndefined()
 
     // The duplicate reminder names the specific repeated call, not a blanket "no tools left" claim.
     // Exact wording is covered by context.test.ts's buildDuplicateToolCallMessage suite.
     expect(thirdBody.messages.at(-1)).toEqual(
       buildDuplicateToolCallMessage([
-        { id: "call_2", function: { index: 0, name: "get_game_status", arguments: {} } },
+        { id: "call_2", function: { index: 0, name: "get_last_prediction_outcome", arguments: {} } },
       ]),
     )
   })
 
   it("services the new call in a mixed round and only reminds about the duplicate", async () => {
-    // Round 1: model calls get_game_status (new).
-    // Round 2: model calls get_game_status again (duplicate) AND get_maze_positions (new) in the
-    // same response — only get_maze_positions should be serviced; get_game_status should get a
+    // Round 1: model calls get_last_prediction_outcome (new).
+    // Round 2: model calls get_last_prediction_outcome again (duplicate) AND get_maze_structure (new) in the
+    // same response — only get_maze_structure should be serviced; get_last_prediction_outcome should get a
     // reminder instead of a re-served payload.
     // Round 3: model predicts.
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
         toolCallResponse([
-          { id: "call_1", function: { index: 0, name: "get_game_status", arguments: {} } },
+          { id: "call_1", function: { index: 0, name: "get_last_prediction_outcome", arguments: {} } },
         ]),
       )
       .mockResolvedValueOnce(
         toolCallResponse([
-          { id: "call_2", function: { index: 0, name: "get_game_status", arguments: {} } },
-          { id: "call_3", function: { index: 1, name: "get_maze_positions", arguments: {} } },
+          { id: "call_2", function: { index: 0, name: "get_last_prediction_outcome", arguments: {} } },
+          { id: "call_3", function: { index: 1, name: "get_maze_structure", arguments: {} } },
         ]),
       )
       .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
@@ -934,11 +1113,11 @@ describe("agent request service", () => {
       {
         role: "tool",
         tool_call_id: "call_3",
-        tool_name: "get_maze_positions",
-        content: positionsContent(),
+        tool_name: "get_maze_structure",
+        content: mazeStructureContent(),
       },
       buildDuplicateToolCallMessage([
-        { id: "call_2", function: { index: 0, name: "get_game_status", arguments: {} } },
+        { id: "call_2", function: { index: 0, name: "get_last_prediction_outcome", arguments: {} } },
       ]),
     ])
 
@@ -953,7 +1132,7 @@ describe("agent request service", () => {
   })
 
   it("gives one reminder before failing on a second all-duplicate round", async () => {
-    // Round 1 (agentMode: tools): model calls all 5 tools — natural exhaustion, predict mode next.
+    // Round 1 (agentMode: tools): model calls every tool — natural exhaustion, predict mode next.
     // Round 2 (agentMode: predict): model re-requests an already-called tool — first violation:
     // no payload is re-served, just a reminder naming that specific call.
     // Round 3 (agentMode: warned): model re-requests it again despite the reminder — second
@@ -969,12 +1148,12 @@ describe("agent request service", () => {
       .mockResolvedValueOnce(toolCallResponse(allToolCalls))
       .mockResolvedValueOnce(
         toolCallResponse([
-          { id: "call_extra_1", function: { index: 0, name: "get_game_status", arguments: {} } },
+          { id: "call_extra_1", function: { index: 0, name: "get_last_prediction_outcome", arguments: {} } },
         ]),
       )
       .mockResolvedValueOnce(
         toolCallResponse([
-          { id: "call_extra_2", function: { index: 0, name: "get_game_status", arguments: {} } },
+          { id: "call_extra_2", function: { index: 0, name: "get_last_prediction_outcome", arguments: {} } },
         ]),
       )
     vi.stubGlobal("fetch", fetchMock)
@@ -996,7 +1175,7 @@ describe("agent request service", () => {
     const thirdBody = JSON.parse(thirdRequest.body as string) as SerializedRequestBody
     expect(thirdBody.messages.at(-1)).toEqual(
       buildDuplicateToolCallMessage([
-        { id: "call_extra_1", function: { index: 0, name: "get_game_status", arguments: {} } },
+        { id: "call_extra_1", function: { index: 0, name: "get_last_prediction_outcome", arguments: {} } },
       ]),
     )
 
@@ -1008,5 +1187,145 @@ describe("agent request service", () => {
       .filter((entry) => entry.payload === "Agent request.")
       .map((entry) => entry.details?.agentMode)
     expect(agentModes).toEqual(["tools", "predict", "warned"])
+  })
+
+  it("never logs a configured agent's credential or extraHeaders", async () => {
+    // Logs land in sessionStorage and are user-downloadable, so a credential reaching one of them
+    // would be a real leak, not an ephemeral one. Both sentinels are deliberately distinctive
+    // strings unlikely to appear anywhere else in a request/response payload.
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+
+    const credentialSentinel = "sk-redaction-sentinel-credential-000111"
+    const extraHeadersSentinel = "redaction-sentinel-extra-header-222333"
+    const anthropicAgent: AgentApiConfig = {
+      ...agent,
+      api: "anthropic",
+      credential: credentialSentinel,
+      extraHeaders: `anthropic-version: ${extraHeadersSentinel}`,
+    }
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          role: "assistant",
+          content: [{ type: "text", text: "{\"moves\":[\"MoveRight\"]}" }],
+        }),
+      }),
+    )
+
+    await requestPrediction({ ...requestInput(), agent: anthropicAgent })
+
+    const loggedEntries = loadTapooLog<unknown>(CONFIG.runtime.controlModes.agentApi)
+    const serializedLog = JSON.stringify(loggedEntries)
+
+    expect(serializedLog).not.toContain(credentialSentinel)
+    expect(serializedLog).not.toContain(extraHeadersSentinel)
+  })
+
+  it("echoes an assistant's reasoning back on the next round when echoBackReasoning is on, for reasoning models that require it preserved (e.g. Kimi K3)", async () => {
+    const openaiAgent: AgentApiConfig = { ...agent, api: "openai", echoBackReasoning: true }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "",
+                reasoning_content: "Let me check the maze structure first.",
+                tool_calls: [
+                  { id: "call_structure", function: { index: 0, name: "get_maze_structure", arguments: "{}" } },
+                ],
+              },
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          choices: [
+            { message: { role: "assistant", content: JSON.stringify({ moves: ["MoveRight"] }) } },
+          ],
+        }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      requestPrediction({ ...requestInput(), agent: openaiAgent }),
+    ).resolves.toEqual({ ok: true, moves: ["MoveRight"] })
+
+    const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
+    const secondBody = JSON.parse(secondRequest.body as string) as { messages: { role: string; reasoning_content?: string }[] }
+    const assistantMessage = secondBody.messages.find((msg) => msg.role === "assistant")
+    expect(assistantMessage?.reasoning_content).toBe("Let me check the maze structure first.")
+  })
+
+  it("withholds reasoning_content by default, for models that require it not be sent back (e.g. Gemma)", async () => {
+    const openaiAgent: AgentApiConfig = { ...agent, api: "openai" }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "",
+                reasoning_content: "Let me check the maze structure first.",
+                tool_calls: [
+                  { id: "call_structure", function: { index: 0, name: "get_maze_structure", arguments: "{}" } },
+                ],
+              },
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          choices: [
+            { message: { role: "assistant", content: JSON.stringify({ moves: ["MoveRight"] }) } },
+          ],
+        }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      requestPrediction({ ...requestInput(), agent: openaiAgent }),
+    ).resolves.toEqual({ ok: true, moves: ["MoveRight"] })
+
+    const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
+    const secondBody = JSON.parse(secondRequest.body as string) as { messages: { role: string; reasoning_content?: string }[] }
+    const assistantMessage = secondBody.messages.find((msg) => msg.role === "assistant")
+    expect(assistantMessage?.reasoning_content).toBeUndefined()
+    expect(assistantMessage && "reasoning_content" in assistantMessage).toBe(false)
+  })
+
+  it("fails a turn cleanly for an agent whose api has no matching adapter, instead of throwing", async () => {
+    // agent.api is typed as AgentApiProvider, but that only binds at compile time — this exercises
+    // the runtime guard for a provider that reached this far without a PROVIDER_ADAPTERS entry
+    // (e.g. added to the type but not yet wired in, or a corrupted persisted record).
+    const unsupportedAgent = { ...agent, api: "unsupported-provider" as never }
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      requestPrediction({ ...requestInput(), agent: unsupportedAgent }),
+    ).resolves.toEqual({
+      ok: false,
+      reason: "network-error",
+      diagnostic: {
+        message: "Unsupported agent API provider.",
+        details: { endpoint, api: "unsupported-provider" },
+      },
+    })
+    // No request should have gone out — there is no wire format to build a body or headers with.
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

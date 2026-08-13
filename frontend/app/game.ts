@@ -116,13 +116,6 @@ let lastBlinkVisible: boolean | null = null
 let activeControlMode: MazeActionControl | null = null
 let runtimeElements: Elements | null = null
 
-// activeCoreDecayIntervalPerCellMs resolves the current mode's per-cell timing budget.
-function activeCoreDecayIntervalPerCellMs(): number {
-  return isAgentApiMode(state.controlMode)
-    ? timing.agentApiCoreDecayIntervalPerCellMs
-    : timing.interactiveCoreDecayIntervalPerCellMs
-}
-
 // loadPersistedSnapshotWithFallbacks prefers stored state and only applies fallbacks when storage is missing or invalid.
 function loadPersistedSnapshotWithFallbacks(
   mode: MazeControlModeName,
@@ -141,7 +134,7 @@ function calculateRoundScore(totalCells: number): number {
     return calculateElapsedScore(
       totalCells,
       state.clock.elapsed(),
-      timing.interactiveCoreDecayIntervalPerCellMs,
+      timing.interactiveDecayIntervalPerCellMs,
     )
   }
 
@@ -155,9 +148,12 @@ function positionsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean 
 
 // restoreClock reconstructs a live clock from persisted remaining time.
 function restoreClock(totalCells: number, remainingMs: number): GameClock {
-  // Round timing is derived from the shared per-cell cadence so score decay, persisted remaining
-  // time, and any agent polling policy all reconstruct the same allowance after a reload.
-  const totalDurationMs = totalCells * activeCoreDecayIntervalPerCellMs()
+  // interactiveDecayIntervalPerCellMs sizes score decay for interactive mode; for agent-api mode
+  // the clock only exists to drive the destination blink animation (see clock.blink()), which
+  // depends solely on elapsed() and never reads levelDurationMs, so reusing the same figure here
+  // is inert bookkeeping — it just keeps this reload round-trip self-consistent with the value
+  // used when the round started (see restartGame below).
+  const totalDurationMs = totalCells * timing.interactiveDecayIntervalPerCellMs
   const clampedRemainingMs = Math.max(0, Math.min(totalDurationMs, remainingMs))
   const clock = new GameClock(totalDurationMs)
   clock.startedAt = performance.now() - (totalDurationMs - clampedRemainingMs)
@@ -276,7 +272,7 @@ function renderState(): void {
 
   reportStateInvariant()
   lastBlinkVisible = currentBlinkVisible()
-  render(runtimeElements, state)
+  render(runtimeElements, state, activeControlMode?.readCurrentPlayer?.() ?? null)
 }
 
 // applyWinSummary delegates post-win scoring details and stores the resolved result.
@@ -454,9 +450,9 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
   state.winSummary = ""
 
   const totalCells = dimensions.area
-  // The round clock uses the shared per-cell cadence to set both the starting score window and the
-  // maximum amount of playable time for this maze size.
-  state.clock = new GameClock(totalCells * activeCoreDecayIntervalPerCellMs())
+  // interactiveDecayIntervalPerCellMs sizes the clock for both modes — see restoreClock's comment
+  // for why agent-api mode's clock only needs a self-consistent duration, not a mode-specific one.
+  state.clock = new GameClock(totalCells * timing.interactiveDecayIntervalPerCellMs)
   state.score = calculateMaxScore(totalCells)
   if (persist) {
     persistNow("state")

@@ -22,7 +22,13 @@
         Tapoo Logs. Each configured AI Agent's stored configuration also includes its own
         turn count and decay units charged for the current level and round; the
         traversal-speed classification described below is computed from those counts on
-        demand, not stored separately. Tapoo Logs capture
+        demand, not stored separately. If you supply a bearer token or API key, or any
+        extra request headers, when configuring an agent, those values are stored
+        alongside the rest of the agent's configuration under the same light obfuscation
+        described below — they are recoverable by anyone with access to your browser
+        profile, so only enter a credential or header value you would accept being read
+        that way.
+        Tapoo Logs capture
         requests and responses exchanged during play, stay only on your device (never
         sent over the network), and can be downloaded or cleared from the game controls.
         Tapoo also uses <code>sessionStorage</code> for the active round snapshot so a
@@ -32,6 +38,11 @@
         All of this remains on your device unless you clear it through browser settings
         or use Tapoo controls such as Reset Progress. Stored values are lightly obfuscated
         to reduce casual tampering, but this is not strong encryption for gameplay data.
+        Every stored entry is also tagged with Tapoo's storage schema version, separate
+        from the app version shown at the bottom of this page. Upgrading Tapoo
+        automatically discards any entries left over from an older schema version rather
+        than migrating them, so an upgrade can silently reset previously stored
+        preferences and AI Agent configuration.
       </p>
 
       <h2>Third-Party Sharing (AI Agent Mode)</h2>
@@ -45,11 +56,13 @@
         traversal-speed classification — unique cells visited and decay units charged
         this level (turns taken is included too, for context only) — and the
         classification itself: a rate (unique cells visited divided by decay units
-        charged) below 1 is <code>Backtracker</code>, exactly 1 is <code>Navigator</code>,
-        and above 1 is <code>Trailblazer</code>. An agent starts out as a Trailblazer and
+        charged) below 1.0 is <code>Backtracker</code>, exactly 1.0 is <code>Navigator</code>,
+        and above 1.0 is <code>Trailblazer</code>. An agent starts out as a Trailblazer and
         is expected to maintain that rank throughout the game. The rank is shown in the
         agent seat roster in your browser and included in the prompt sent to the
-        configured agent endpoint.
+        configured agent endpoint. If Echo Back Reasoning is enabled for an agent, its own
+        previously returned reasoning content is also included in later requests within
+        the same turn, sent back to that same endpoint.
       </p>
       <p>
         Only configure endpoints you trust. External endpoints may receive network

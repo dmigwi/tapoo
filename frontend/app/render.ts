@@ -22,6 +22,43 @@ import { fittingTouchActionColumnCount, isCompactViewport } from "./viewport"
 
 const { maze, messages } = CONFIG
 
+// COMPACT_STATUS_MAX_LENGTH is a character ceiling kept under the ~57-character budget documented
+// above CONFIG.messages in config.ts (the longest compact-viewport string already in use there),
+// leaving a small margin. A player label that would push the running-status line past it gets
+// ellipsis-trimmed to whatever room is left.
+const COMPACT_STATUS_MAX_LENGTH = 55
+
+// PLAYER_LABEL_TRIM_MARKER marks the dropped middle section of an over-length player label —
+// mirrors compactAgentModelLabel's middleTrimMarker (agent/seats.ts), the same technique this
+// function reuses for a different fixed-width field (a long model name there, a long player label
+// here).
+const PLAYER_LABEL_TRIM_MARKER = "…"
+
+// fitPlayerSegmentToWidth trims a ready-made player label down to whatever room remains after the
+// rest of the compact status line (everything from CONFIG.messages.runningStatus other than the
+// label itself), so a long agent/player name can never overflow the character budget every other
+// compact string in CONFIG.messages already stays within. Uses the same middle-truncation
+// compactAgentModelLabel (agent/seats.ts) applies to long model names — roughly half the
+// available width kept from the front, half from the back, with the middle dropped behind a
+// single marker — rather than a rule that has to know the label's internal shape.
+export function fitPlayerSegmentToWidth(playerLabel: string, remainderLength: number): string {
+  const available = COMPACT_STATUS_MAX_LENGTH - remainderLength
+
+  if (playerLabel.length <= available) {
+    return playerLabel
+  }
+
+  const availableCharacters = available - PLAYER_LABEL_TRIM_MARKER.length
+  if (availableCharacters <= 0) {
+    return ""
+  }
+
+  const leadingCharacters = Math.floor(availableCharacters / 2)
+  const trailingCharacters = availableCharacters - leadingCharacters
+
+  return `${playerLabel.slice(0, leadingCharacters)}${PLAYER_LABEL_TRIM_MARKER}${playerLabel.slice(-trailingCharacters)}`
+}
+
 // escapeHtml protects text rows before they are written as HTML.
 function escapeHtml(value: string): string {
   return value
@@ -53,13 +90,33 @@ function replaceAt(line: string, index: number, char: string): string {
   return `${line.slice(0, index)}${char}${line.slice(index + 1)}`
 }
 
-// statusText selects the running-status footer copy for the current display size.
-function statusText(state: State): string {
+// statusText selects the running-status footer copy for the current display size. currentPlayerLabel
+// is a ready-made "{name} the {Class}({rate})" string supplied by whichever control mode is active
+// (see MazeActionControl.readCurrentPlayer) — this function only decides whether it fits, and drops
+// the entire "Player: {player}   " lead-in (whatever literal text/spacing surrounds {player} in
+// CONFIG.messages.runningStatus) when there's no player to show, rather than leaving a bare "Player:".
+function statusText(state: State, currentPlayerLabel: string | null): string {
   const template = displayText(messages.runningStatus)
-
-  return template
+  const [beforePlayer, afterPlayerRaw] = template.split("{player}")
+  const afterPlayer = afterPlayerRaw
     .replace("{level}", String(state.level))
     .replace("{score}", String(state.score))
+
+  if (!currentPlayerLabel) {
+    return afterPlayer.trimStart()
+  }
+
+  const label = isCompactViewport()
+    ? fitPlayerSegmentToWidth(currentPlayerLabel, beforePlayer.length + afterPlayer.length)
+    : currentPlayerLabel
+
+  // Trimming can shrink the label to nothing when there's no room at all — drop the whole
+  // "Player: {player}   " lead-in in that case too, rather than leaving a bare "Player:".
+  if (!label) {
+    return afterPlayer.trimStart()
+  }
+
+  return `${beforePlayer}${label}${afterPlayer}`
 }
 
 // displayText picks the wide or compact copy variant for the currently available display room.
@@ -287,7 +344,11 @@ function applyOverlayToMaze(
 }
 
 // buildScreenLines assembles the final screen model for the current state.
-function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
+function buildScreenLines(
+  elements: Elements,
+  state: State,
+  currentPlayerLabel: string | null,
+): ScreenLine[] {
   const mazeLines = buildMazeLines(state)
   const mazeWidth = mazeLines.reduce(
     (width, line) => Math.max(width, line.length),
@@ -307,7 +368,7 @@ function buildScreenLines(elements: Elements, state: State): ScreenLine[] {
   lines.push(...applyOverlayToMaze(elements, state, mazeLines, mazeWidth))
 
   if (isRunningStatus(state.status)) {
-    lines.push(emptyTextRow(), centeredTextRow(statusText(state)))
+    lines.push(emptyTextRow(), centeredTextRow(statusText(state, currentPlayerLabel)))
   }
 
   return lines
@@ -374,7 +435,7 @@ function updateTopMenuControls(elements: Elements, state: State): void {
 
 // updateAgentConfigForm keeps the agent setup overlay available only outside active agent play.
 function updateAgentConfigForm(elements: Elements, state: State): void {
-  if (!elements.agentConfigForm && !elements.agentDeleteDialog) {
+  if (!elements.agentConfigForm && !elements.agentManageDialog) {
     return
   }
 
@@ -385,15 +446,19 @@ function updateAgentConfigForm(elements: Elements, state: State): void {
   if (elements.agentConfigForm) {
     elements.agentConfigForm.hidden = true
   }
-  if (elements.agentDeleteDialog) {
-    elements.agentDeleteDialog.hidden = true
+  if (elements.agentManageDialog) {
+    elements.agentManageDialog.hidden = true
   }
   elements.body.classList.remove("terminal-body--agent-form-active")
 }
 
 // render turns the current state into HTML and syncs the floating controls.
-export function render(elements: Elements, state: State): void {
-  const screenLines = buildScreenLines(elements, state)
+export function render(
+  elements: Elements,
+  state: State,
+  currentPlayerLabel: string | null = null,
+): void {
+  const screenLines = buildScreenLines(elements, state, currentPlayerLabel)
   elements.screen.innerHTML = screenLines
     .map((line) => {
       const content =

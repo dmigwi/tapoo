@@ -141,9 +141,9 @@ function buildContext(path) {
           continue
         }
 
-        if ("traversalHistory" in payload) {
-          noteTool("get_traversal_history")
-          for (const record of payload.traversalHistory) {
+        if ("filteredTraversalHistory" in payload) {
+          noteTool("get_maze_structure")
+          for (const record of payload.filteredTraversalHistory) {
             context.exits.set(
               cellKey(record.cell.row, record.cell.col),
               new Set(Object.keys(record.openMoves ?? {})),
@@ -152,7 +152,7 @@ function buildContext(path) {
         }
 
         if ("currentCell" in payload) {
-          noteTool("get_maze_positions")
+          noteTool("get_maze_structure")
           if (payload.currentCell) {
             const cell = cellKey(payload.currentCell.row, payload.currentCell.col)
             // Consecutive identical readings are one arrival, not several.
@@ -177,7 +177,7 @@ function buildContext(path) {
         }
 
         if ("lastMoveStatus" in payload) {
-          noteTool("get_last_replay_result")
+          noteTool("get_last_prediction_outcome")
           if (payload.lastMoveStatus !== null) {
             const key = JSON.stringify([
               payload.lastMoveStatus,
@@ -264,7 +264,7 @@ function buildContext(path) {
 
 // annotateApplied resolves how many of each submission's moves landed, combining every channel that
 // can prove it. Neither alone is enough: replay results are absent for a model that never calls
-// get_last_replay_result, and position triangulation is blind whenever a turn is not bracketed by two
+// get_last_prediction_outcome, and position triangulation is blind whenever a turn is not bracketed by two
 // readings.
 function annotateApplied(context) {
   const byMoves = new Map()
@@ -410,21 +410,18 @@ function planningDepth(context) {
 
 // C7. STATE GATHERING - each question asks whether one payload was extracted on
 // EVERY turn. Index order below is the question order in the rubric.
-// Q1. the previous turn's outcome (which moves applied, and whether the cell
-//     entered was already visited)
-// Q2. the traversal history (visited cells, their open exits, and which
-//     neighbours those exits lead to)
-// Q3. its current cell and the destination cell
-// Q4. the game status (level, score, maze dimensions)
-// Q5. the prediction rules (suggested move count, traversal speed, efficiency rank)
+// Q1. the nearby maze structure (current/destination cells, filtered visits,
+//     open exits, and which neighbours those exits lead to)
+// Q2. the game status (level, score, maze dimensions)
+// Q3. the prediction rules (suggested move count, traversal speed, efficiency rank)
+// Q4. the previous turn's outcome after the first turn
 function stateGathering(context) {
   const turns = [...context.turnsWithPrediction]
   const needed = [
-    "get_last_replay_result",
-    "get_traversal_history",
-    "get_maze_positions",
+    "get_maze_structure",
     "get_game_status",
     "get_prediction_rules",
+    "get_last_prediction_outcome",
   ]
 
   return Object.fromEntries(

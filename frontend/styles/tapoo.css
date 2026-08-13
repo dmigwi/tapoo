@@ -1070,12 +1070,102 @@ body {
   color: var(--text-faint);
 }
 
+.agent-config-form__required-note {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 0.85em;
+}
+
 .agent-config-form__field {
   display: grid;
   gap: 6px;
 }
 
-.agent-config-form__field input {
+/* Pairs the reasoning-effort dropdown with the echo-back-reasoning toggle horizontally, 1:2 —
+   the dropdown's few short words need far less room than the toggle's wrapping on/off label text.
+   Each .agent-config-form__field child keeps its own internal grid layout, just placed side by
+   side instead of stacked with the rest of the form's fields. */
+.agent-config-form__row {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 16px;
+}
+
+.agent-config-form__row > .agent-config-form__field {
+  min-width: 0;
+}
+
+.agent-config-form__required {
+  margin-left: 4px;
+  color: var(--text);
+}
+
+.agent-config-form__info-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  margin-left: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--text-faint);
+  background: var(--glow);
+  color: var(--text-dim);
+  font-size: 0.6em;
+  font-weight: bold;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+  outline: none;
+}
+
+.agent-config-form__info-badge:focus-visible {
+  border-color: var(--text-dim);
+  box-shadow: 0 0 0 2px rgba(72, 198, 62, 0.2);
+}
+
+/* Themed CSS-only tooltip, matching the agent-config-form card's own dark gradient + green border
+   look, instead of the browser's unstyled native title tooltip. content is set from the resolved
+   CONFIG string via the data-tooltip attribute (page-chrome.ts); aria-label carries the same text
+   to assistive tech, since this pseudo-element content is invisible to screen readers. */
+.agent-config-form__info-badge::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 5;
+  width: max-content;
+  max-width: 300px;
+  padding: 8px 10px;
+  border: 1px solid rgba(72, 198, 62, 0.18);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(13, 19, 13, 0.96) 0%, rgba(5, 8, 5, 0.98) 100%);
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.34),
+    inset 0 0 16px rgba(72, 198, 62, 0.035);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: normal;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.agent-config-form__info-badge:hover::after,
+.agent-config-form__info-badge:focus-visible::after {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.agent-config-form__field input,
+.agent-config-form__field select {
   min-height: 46px;
   border: 1px solid var(--top-bar-edge);
   border-radius: var(--button-radius);
@@ -1086,9 +1176,102 @@ body {
   outline: none;
 }
 
-.agent-config-form__field input:focus {
+.agent-config-form__field input:focus,
+.agent-config-form__field select:focus {
   border-color: rgba(72, 198, 62, 0.52);
   box-shadow: 0 0 0 2px rgba(72, 198, 62, 0.12);
+}
+
+.agent-config-form__header-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-config-form__header-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.agent-config-form__header-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-config-form__header-add,
+.agent-config-form__header-remove {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: var(--button-radius);
+  background: rgba(0, 0, 0, 0.54);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.agent-config-form__header-add {
+  border: 1px solid var(--top-bar-edge);
+  color: var(--text-dim);
+}
+
+.agent-config-form__header-add:hover,
+.agent-config-form__header-add:focus-visible {
+  color: var(--text);
+  border-color: rgba(72, 198, 62, 0.52);
+}
+
+.agent-config-form__header-remove {
+  border: 1px solid rgba(208, 94, 79, 0.38);
+  color: rgba(255, 107, 95, 0.72);
+}
+
+.agent-config-form__header-remove:hover,
+.agent-config-form__header-remove:focus-visible {
+  color: var(--target);
+  border-color: var(--target);
+}
+
+/* Reuses the info-badge's themed tooltip mechanic (see its comment above) for these two buttons —
+   same data-tooltip-driven content, just anchored to a 32px square button instead of a round badge. */
+.agent-config-form__header-add::after,
+.agent-config-form__header-remove::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 5;
+  width: max-content;
+  max-width: 300px;
+  padding: 8px 10px;
+  border: 1px solid rgba(72, 198, 62, 0.18);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(13, 19, 13, 0.96) 0%, rgba(5, 8, 5, 0.98) 100%);
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.34),
+    inset 0 0 16px rgba(72, 198, 62, 0.035);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: normal;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.agent-config-form__header-add:hover::after,
+.agent-config-form__header-add:focus-visible::after,
+.agent-config-form__header-remove:hover::after,
+.agent-config-form__header-remove:focus-visible::after {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .agent-config-form__actions {
@@ -1230,7 +1413,7 @@ body {
   color: var(--target);
 }
 
-.agent-delete-dialog .agent-config-form__actions {
+.agent-manage-dialog .agent-config-form__actions {
   justify-content: flex-end;
 }
 

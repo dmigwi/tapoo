@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { GameClock } from "../clock"
 import { CONFIG } from "../config"
 import { createInteractiveMode } from "./interactive"
-import type { MazeActionResult, State } from "../types"
+import type { MazeActionResult, State, TraversalHistoryEntry } from "../types"
 
 // createButton reproduces the data attributes used by keyboard and touch controls.
 function createButton({
@@ -34,7 +35,7 @@ function createActionResult(
   }
 }
 
-function createState(): State {
+function createState(overrides: Partial<State> = {}): State {
   return {
     turnCount: 0,
     cumulativeRoundCount: 0,
@@ -57,7 +58,12 @@ function createState(): State {
     traversalHistory: [],
     wallWeight: 1,
     winSummary: "",
+    ...overrides,
   }
+}
+
+function selfVisit(row: number, col: number): TraversalHistoryEntry {
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
 }
 
 // These tests guard the interactive-mode translation layer and contract shape.
@@ -237,5 +243,52 @@ describe("interactive control mode", () => {
 
     expect(firstDispatch).not.toHaveBeenCalled()
     expect(secondDispatch).toHaveBeenCalledWith({ type: "restart" }, { playerName: "Self" })
+  })
+
+  it("returns null from readCurrentPlayer before any round has a live clock", () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [],
+      touchControls: document.createElement("div"),
+    }
+
+    const mode = createInteractiveMode(elements)
+
+    expect(mode.readCurrentPlayer?.()).toBeNull()
+
+    mode.bindActionDispatch(vi.fn(), vi.fn(() => createState({ clock: null })), vi.fn())
+
+    expect(mode.readCurrentPlayer?.()).toBeNull()
+  })
+
+  it("exposes a static player-name label via readCurrentPlayer once a round has a live clock", () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [],
+      touchControls: document.createElement("div"),
+    }
+
+    const clock = new GameClock(10_000)
+    const readState = vi.fn(() =>
+      createState({
+        clock,
+        traversalHistory: [selfVisit(0, 0), selfVisit(0, 1)],
+      }),
+    )
+
+    const mode = createInteractiveMode(elements)
+    mode.bindActionDispatch(vi.fn(), readState, vi.fn())
+
+    // Batch traversal-speed classification (Trailblazer/Navigator/Backtracker) does not apply to a
+    // human moving one cell at a time, so this label carries no rate or class — just the name.
+    expect(mode.readCurrentPlayer?.()).toBe("Self")
   })
 })

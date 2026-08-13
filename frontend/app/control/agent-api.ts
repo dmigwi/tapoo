@@ -8,14 +8,36 @@ import type {
   AgentApiConfig,
   AgentPredictionFailure,
   AgentPredictionRequest,
+  AgentPredictionResult,
   MazeAction,
   MazeActionDispatch,
   MazeActionResult,
+  PredictionOutcomeStatus,
   State,
 } from "../types"
 
 const { runtime, scoring, timing } = CONFIG
-const { agentBaseDecayUnits, agentPenaltyDecayUnits } = scoring
+const {
+  agentBaseDecayUnits,
+  agentPartialInvalidPenaltyDecayUnits,
+  agentZeroProgressPenaltyDecayUnits,
+  agentMalformedPenaltyDecayUnits,
+} = scoring
+
+type RejectedAgentResponseReason = "malformed-response" | "token-limit-exhaustion"
+
+// isRejectedAgentResponseReason groups failures that keep their distinct status but share the
+// fixed unusable-response penalty and warning-level diagnostics.
+function isRejectedAgentResponseReason(
+  reason: AgentPredictionFailure["reason"],
+): reason is RejectedAgentResponseReason {
+  return reason === "malformed-response" || reason === "token-limit-exhaustion"
+}
+
+// sleep resolves after delayMs — used only for the connection-error retry backoff below.
+function sleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs))
+}
 
 // mergeReplayResult reapplies replay metadata without duplicating live game state.
 function mergeReplayResult(
@@ -107,6 +129,27 @@ export function handleAgentTurnLoop({
     return true
   }
 
+  // agentTurnCountMismatch catches configs that claim to belong to this exact round but disagree
+  // with the round's completed turn count; old configs from other rounds are allowed to reset lazily.
+  const agentTurnCountMismatch = (agent: AgentApiConfig, currentState: State): boolean =>
+    agent.gameLevel === currentState.level &&
+    agent.cumulativeRoundCount === currentState.cumulativeRoundCount &&
+    (agent.levelTurnCount ?? 0) !== currentState.turnCount
+
+  // resetAfterAgentStateMismatch protects the model from receiving contradictory turn context.
+  const resetAfterAgentStateMismatch = (agent: AgentApiConfig, currentState: State): void => {
+    logTapooDiagnostic(runtime.controlModes.agentApi, "error", "Agent turn count mismatch; resetting game state.", {
+      agentId: agent.id,
+      playerName: agent.playerName,
+      stateTurnCount: currentState.turnCount,
+      agentLevelTurnCount: agent.levelTurnCount ?? 0,
+      level: currentState.level,
+      cumulativeRoundCount: currentState.cumulativeRoundCount,
+    })
+    __onActiveAgentChange?.(null)
+    __dispatch({ type: "restart" }, { playerName: runtime.interactivePlayerName })
+  }
+
   // clearScheduledTurn stops any queued request cycle.
   const clearScheduledTurn = (): void => {
     if (scheduledTurn === null) {
@@ -144,6 +187,19 @@ export function handleAgentTurnLoop({
     }
   }
 
+  // noReplayThisTurn clears the previous turn's replay details rather than letting mergeMazeActionResult
+  // carry them forward. Neither malformed-response nor network-error replays anything, so
+  // lastSubmittedMoves/lastAppliedMoveIndex/lastReplayStartIndex/visitedBefore must say so — leaving
+  // them at whatever a prior successful turn set contradicts the "no moves were replayed" this tool
+  // already documents, and reads as this failure's own data when it is really leftover from turns ago.
+  const noReplayThisTurn = {
+    lastSubmittedMoves: [],
+    lastAppliedMoveIndex: null,
+    lastReplayStartIndex: undefined,
+    visitedBefore: undefined,
+    predictionStatus: "empty-prediction" as const,
+  }
+
   // recordAgentNetworkError disables failed agents and records the no-score-decay network state.
   const recordAgentNetworkError = (agent: AgentApiConfig | null): void => {
     if (!agent) {
@@ -156,6 +212,7 @@ export function handleAgentTurnLoop({
       lastPlayerName: agent.playerName,
       lastMoveStatus: "network-error",
       chargedMovesCount: 0,
+      ...noReplayThisTurn,
     })
 
     lastActionResult = nextResult
@@ -163,16 +220,23 @@ export function handleAgentTurnLoop({
     awaitAgent()
   }
 
-  // recordMalformedAgentResponse spends the fixed mistake decay without replaying any move.
-  const recordMalformedAgentResponse = (agent: AgentApiConfig): void => {
-    const chargedMovesCount = agentPenaltyDecayUnits
+  // recordRejectedAgentResponse spends the fixed mistake decay without replaying any move. The
+  // status keeps malformed output distinct from a token-limit exhaustion, while both retain the
+  // same scoring consequence because neither produced a usable prediction.
+  const recordRejectedAgentResponse = (
+    agent: AgentApiConfig,
+    lastMoveStatus: RejectedAgentResponseReason,
+  ): void => {
+    const chargedMovesCount = agentMalformedPenaltyDecayUnits
     __commitAgentTurn(chargedMovesCount)
-    recordAgentTurnStats(agent, __readState().level, __readState().cumulativeRoundCount, chargedMovesCount)
+    const {level,cumulativeRoundCount, turnCount } = __readState()
+    recordAgentTurnStats(agent, level, cumulativeRoundCount, chargedMovesCount, turnCount)
 
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
-      lastMoveStatus: "malformed-response",
+      lastMoveStatus,
       chargedMovesCount,
+      ...noReplayThisTurn,
     })
     lastActionResult = nextResult
 
@@ -180,8 +244,11 @@ export function handleAgentTurnLoop({
     notifyRoundCompletion(agent, nextResult)
   }
 
-  // recordPredictionFailure is the single bridge from provider/request failures to game effects.
-  const recordPredictionFailure = (
+  // applyPredictionFailureConsequence dispatches a failure's game effect. caller-abort means
+  // polling already stopped, so it gets none. Kept separate from recordPredictionFailure below
+  // because the connection-error retry needs to apply this consequence on its own, once the retry
+  // is abandoned — by which point the diagnostic was already logged and must not be logged again.
+  const applyPredictionFailureConsequence = (
     agent: AgentApiConfig,
     failure: AgentPredictionFailure,
   ): void => {
@@ -189,26 +256,45 @@ export function handleAgentTurnLoop({
       return
     }
 
-    if (failure.diagnostic) {
-      logTapooDiagnostic(
-        runtime.controlModes.agentApi,
-        "warn",
-        failure.diagnostic.message,
-        failure.diagnostic.details,
-      )
-    }
-
-    if (failure.reason === "malformed-response") {
-      recordMalformedAgentResponse(agent)
+    if (isRejectedAgentResponseReason(failure.reason)) {
+      recordRejectedAgentResponse(agent, failure.reason)
       return
     }
 
     recordAgentNetworkError(agent)
   }
 
+  // recordPredictionFailure is the single place a failure's diagnostic gets logged. It also applies
+  // the matching game consequence immediately, unless deferConsequence is set — used by the
+  // connection-error retry to log the failure up front while the consequence waits on the retry's
+  // outcome; that consequence is then applied later via applyPredictionFailureConsequence directly.
+  const recordPredictionFailure = (
+    agent: AgentApiConfig,
+    failure: AgentPredictionFailure,
+    deferConsequence = false,
+  ): void => {
+    if (failure.diagnostic) {
+      // network-error and connection-error both mean the provider/infrastructure actually broke —
+      // a genuine error — just split apart by retry eligibility (see AgentPredictionFailureReason's
+      // comment). malformed-response means the model returned something Tapoo couldn't use (bad
+      // JSON, a hallucinated tool call); that's an anticipated, handled deviation charged its own
+      // decay penalty below, not a system failure, so it stays a warning.
+      logTapooDiagnostic(
+        runtime.controlModes.agentApi,
+        isRejectedAgentResponseReason(failure.reason) ? "warn" : "error",
+        failure.diagnostic.message,
+        failure.diagnostic.details,
+      )
+    }
+
+    if (!deferConsequence) {
+      applyPredictionFailureConsequence(agent, failure)
+    }
+  }
+
   // scheduleNextAgentTurn starts/resumes immediately, then delays internal loop continuations.
   const scheduleNextAgentTurn = (
-    delayMs = timing.agentApiCoreDecayIntervalPerCellMs,
+    delayMs = timing.agentApiTurnPollIntervalMs,
     isDelay = false,
   ): void => {
     clearScheduledTurn()
@@ -231,9 +317,67 @@ export function handleAgentTurnLoop({
     }, delayMs)
   }
 
+  // requestAgentPrediction builds and awaits one provider request for the given agent, tracking it
+  // as the currently active request so stopPolling can still abort it mid-flight.
+  const requestAgentPrediction = (agent: AgentApiConfig): Promise<AgentPredictionResult> => {
+    // The request service owns HTTP, timeout, tool calls, and classified failure handling.
+    const predictionRequest = requestPredictionWithAbort({
+      agent,
+      lastActionResult: activeActionResult(),
+      state: __readState(),
+      timeoutMs: timing.agentApiResponseTimeoutMs,
+      requestIntervalMs: timing.agentApiRequestPollIntervalMs,
+    })
+    activeRequest = predictionRequest
+    return predictionRequest.promise
+  }
+
+  // requestAgentPredictionWithRetry gives a connection-error exactly one retry, after a short
+  // backoff, before the caller treats it as final. connection-error is deliberately narrow (see
+  // AgentPredictionFailureReason's comment): it means the connection itself failed — a reset, a
+  // dropped socket, a DNS hiccup, a timeout abort — before any HTTP response arrived at all, the
+  // one shape a retry is actually likely to fix (see the "TypeError: Failed to fetch" investigation
+  // this exists for). Nothing else is retried here: a plain network-error (a non-OK HTTP status, a
+  // missing message body, a Tapoo-side tool-handler bug, an unrecognized provider) means the
+  // provider already answered or the problem is on our own side, neither of which a blind retry
+  // fixes — a non-OK status in particular (e.g. a 429) can get worse from an immediate retry.
+  // malformed-response and caller-abort are never retried either: a malformed response is the
+  // model's own mistake, and a caller-abort means polling already stopped.
+  const requestAgentPredictionWithRetry = async (
+    agent: AgentApiConfig,
+  ): Promise<AgentPredictionResult> => {
+    const firstAttempt = await requestAgentPrediction(agent)
+    if (firstAttempt.ok) {
+      return firstAttempt
+    }
+
+    // Logged now either way; the consequence is deferred only when a retry is actually about to
+    // happen, so it isn't applied ahead of an outcome that hasn't occurred yet.
+    const willRetry = firstAttempt.reason === "connection-error" && shouldPollAgent()
+    recordPredictionFailure(agent, firstAttempt, willRetry)
+    if (!willRetry) {
+      return firstAttempt
+    }
+
+    await sleep(timing.agentApiConnectionErrorRetryDelayMs)
+    if (!shouldPollAgent()) {
+      applyPredictionFailureConsequence(agent, firstAttempt)
+      return firstAttempt
+    }
+
+    const retryAttempt = await requestAgentPrediction(agent)
+    if (retryAttempt.ok) {
+      logTapooDiagnostic(runtime.controlModes.agentApi, "warn", "Recovered after a connection-error retry.")
+      return retryAttempt
+    }
+
+    recordPredictionFailure(agent, retryAttempt)
+    return retryAttempt
+  }
+
   // requestNextAgentTurn asks the next enabled agent for moves, then replays only successful predictions here.
   const requestNextAgentTurn = async (
-    nextDelayMs = timing.agentApiCoreDecayIntervalPerCellMs,
+    nextDelayMs = timing.agentApiTurnPollIntervalMs,
   ): Promise<void> => {
     if (!shouldPollAgent()) {
       return
@@ -251,28 +395,26 @@ export function handleAgentTurnLoop({
         return
       }
 
+      const currentState = __readState()
+      if (agentTurnCountMismatch(selectedAgent, currentState)) {
+        resetAfterAgentStateMismatch(selectedAgent, currentState)
+        return
+      }
+
       __onActiveAgentChange?.(selectedAgent)
 
-      // The request service owns HTTP, timeout, tool calls, and classified failure handling.
-      const predictionRequest = requestPredictionWithAbort({
-        agent: selectedAgent,
-        lastActionResult: activeActionResult(),
-        state: __readState(),
-        timeoutMs: timing.agentApiResponseTimeoutMs,
-      })
-
-      activeRequest = predictionRequest
-      const prediction = await predictionRequest.promise
-      // Request service returns structured failures; game consequences stay centralized here.
+      const prediction = await requestAgentPredictionWithRetry(selectedAgent)
+      // Failure logging and game consequences are handled inside requestAgentPredictionWithRetry.
       if (prediction.ok === false) {
-        recordPredictionFailure(selectedAgent, prediction)
         return
       }
 
       const { moves: submittedMoves } = prediction
       let lastReplayResult: MazeActionResult | null = null
       let appliedMoveCount = 0
-      let hasInvalidMove = false
+      let allAppliedMovesRevisitedCells = true
+      let lastAppliedMoveVisitedBefore: boolean | undefined
+      let invalidMovesPenalty = 0
 
       for (const move of submittedMoves) {
         const replayState = __dispatchAgentAction({ type: move }, __dispatch, selectedAgent)
@@ -281,17 +423,26 @@ export function handleAgentTurnLoop({
 
         if (status === "reached-target") {
           appliedMoveCount += 1
+          // Folding this into allAppliedMovesRevisitedCells is safe even though it could in
+          // principle mark a winning turn as repeat-cell-visits: isWonStatus ends the round on the
+          // very first arrival at the destination cell (see executeActionWithFeedback), so
+          // visitedBefore is guaranteed false here — no cell can already be in traversalHistory as
+          // the destination before someone reaches it and wins.
+          allAppliedMovesRevisitedCells &&= replayState.visitedBefore === true
+          lastAppliedMoveVisitedBefore = replayState.visitedBefore
           // Reaching the destination ends the turn; later submitted moves no longer matter.
           break
         }
 
         if (status === "applied") {
           appliedMoveCount += 1
+          allAppliedMovesRevisitedCells &&= replayState.visitedBefore === true
+          lastAppliedMoveVisitedBefore = replayState.visitedBefore
           continue
         }
 
         // Invalid moves stop replay; moves queued behind it were never executed and aren't charged.
-        hasInvalidMove = true
+        invalidMovesPenalty = agentPartialInvalidPenaltyDecayUnits
         break
       }
 
@@ -303,25 +454,44 @@ export function handleAgentTurnLoop({
       }
 
       // A turn with any valid moves costs a flat decay charge regardless of how many moves it
-      // applied, and a wrong guess costs a flat mistake penalty regardless of how many speculative
-      // moves were queued behind it. Together these make single-move-per-turn play the costliest
-      // way to solve the maze — batching more moves per turn is strictly cheaper per move, so
-      // agents are pushed toward longer, more carefully reasoned predictions rather than
-      // conservative single-stepping. The most a single turn can ever be charged is
-      // agentBaseDecayUnits + agentPenaltyDecayUnits, when a turn applies at least one valid move
-      // before hitting an invalid one.
-      const chargedMovesCount =
-        (appliedMoveCount > 0 ? agentBaseDecayUnits : 0) + (hasInvalidMove ? agentPenaltyDecayUnits : 0)
+      // applied, and a wrong guess adds a flat mistake penalty on top regardless of how many
+      // speculative moves were queued behind it. Together these make single-move-per-turn play the
+      // costliest way to solve the maze — batching more moves per turn is strictly cheaper per
+      // move, so agents are pushed toward longer, more carefully reasoned predictions rather than
+      // conservative single-stepping.
+      //
+      // Three distinct outcomes, deliberately kept in this order (cheapest to costliest):
+      //   - Fully valid (appliedMoveCount > 0, no invalid move): agentBaseDecayUnits alone.
+      //   - Partial success (appliedMoveCount > 0, then an invalid move): base +
+      //     agentPartialInvalidPenaltyDecayUnits — strictly more than a clean turn (so tacking on
+      //     an unconfident guess is never free), but strictly less than making zero progress.
+      //   - Zero progress (the very first move was already invalid): agentZeroProgressPenaltyDecayUnits
+      //     flat, no base — standing in place is exactly as costly as a partial attempt, never
+      //     cheaper. recordMalformedAgentResponse's agentMalformedPenaltyDecayUnits stays the
+      //     costliest outcome of all, since a protocol violation is worse than any gameplay mistake.
+      const chargedMovesCount = appliedMoveCount > 0
+        ? (agentBaseDecayUnits + invalidMovesPenalty)
+        : agentZeroProgressPenaltyDecayUnits
+
+      // predictionStatus summarizes the whole submitted batch as one story. Repeat-cell-visits takes
+      // precedence over the applied variants when every move that executed revisited a known cell,
+      // while lastMoveStatus below keeps the final move's granular outcome unchanged.
+      const predictionStatus: PredictionOutcomeStatus =
+        appliedMoveCount > 0
+          ? (allAppliedMovesRevisitedCells
+              ? "repeat-cell-visits"
+              : (invalidMovesPenalty > 0 ? "partially-applied" : "all-applied"))
+          : "invalid-prediction"
 
       __commitAgentTurn(chargedMovesCount)
-      recordAgentTurnStats(
-        selectedAgent, __readState().level, __readState().cumulativeRoundCount, chargedMovesCount,
-      )
+      const {level, cumulativeRoundCount, turnCount } = __readState()
+      recordAgentTurnStats(selectedAgent, level, cumulativeRoundCount, chargedMovesCount, turnCount)
 
       const nextResult = mergeReplayResult(lastReplayResult, {
         lastPlayerName: selectedAgent.playerName,
         lastMoveStatus: lastReplayResult.lastMoveStatus,
-        visitedBefore: lastReplayResult.visitedBefore,
+        predictionStatus,
+        visitedBefore: lastAppliedMoveVisitedBefore,
         lastSubmittedMoves: submittedMoves.map((move, index) => `${index}:${move}`),
         lastAppliedMoveIndex: appliedMoveCount > 0 ? appliedMoveCount - 1 : null,
         chargedMovesCount,

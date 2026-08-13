@@ -1,5 +1,5 @@
 import { CONFIG } from "./config"
-import { resolveTraversalSpeedRank } from "./agent/efficiency"
+import { resolveTraversalSpeedClass } from "./agent/efficiency"
 import type {
   AgentSpeedBestComparison,
   AgentSpeedPreviousComparison,
@@ -35,6 +35,12 @@ export function calculateMaxScore(totalCells: number): number {
   return totalCells * scoring.budgetMultiplier
 }
 
+// calculateElapsedDecayUnits converts elapsed wall-clock time into the decay units charged so far
+// for an interactive round — the same raw figure calculateElapsedScore subtracts from the max score.
+export function calculateElapsedDecayUnits(elapsedMs: number, decayIntervalPerCellMs: number): number {
+  return Math.floor((elapsedMs * timing.scoreDecayRate) / decayIntervalPerCellMs)
+}
+
 // calculateElapsedScore converts elapsed time into the remaining score for an interactive round.
 export function calculateElapsedScore(
   totalCells: number,
@@ -42,9 +48,7 @@ export function calculateElapsedScore(
   decayIntervalPerCellMs: number,
 ): number {
   const maxScore = calculateMaxScore(totalCells)
-  const elapsedDecayUnits = Math.floor(
-    (elapsedMs * timing.scoreDecayRate) / decayIntervalPerCellMs,
-  )
+  const elapsedDecayUnits = calculateElapsedDecayUnits(elapsedMs, decayIntervalPerCellMs)
 
   return Math.max(0, maxScore - elapsedDecayUnits)
 }
@@ -102,15 +106,16 @@ export function traversalSpeedUnitsToDisplay(traversalSpeedUnits: number): strin
   )
 }
 
-// formatTraversalSpeedLabel renders the speed a round actually achieved together with the rank it
-// earned, e.g. "3.123 (Trailblazer)". Only an achieved speed carries a rank — a delta between two
-// rounds is a difference, not a pace, so deltas stay bare numbers.
+// formatTraversalSpeedLabel renders the speed a round actually achieved together with the
+// classification it earned, e.g. "3.123 (Trailblazer)". Only an achieved speed carries a
+// classification — a delta between two rounds is a difference, not a pace, so deltas stay bare
+// numbers.
 function formatTraversalSpeedLabel(traversalSpeedUnits: number): string {
-  const rank = resolveTraversalSpeedRank(traversalSpeedUnits / scoring.traversalSpeedScaleUnits)
+  const speedClass = resolveTraversalSpeedClass(traversalSpeedUnits / scoring.traversalSpeedScaleUnits)
 
   return [
     traversalSpeedUnitsToDisplay(traversalSpeedUnits),
-    `(${rank.charAt(0).toUpperCase()}${rank.slice(1)})`,
+    `(${speedClass.charAt(0).toUpperCase()}${speedClass.slice(1)})`,
   ].join(" ")
 }
 
@@ -182,7 +187,7 @@ export function resolveWinScore(input: WinScoreInput): WinScoreResult {
         currentRetentionUnits,
         input.lastAttemptRetentionUnits,
         input.bestWinRetentionUnits,
-        input.totalCells * timing.interactiveCoreDecayIntervalPerCellMs,
+        input.totalCells * timing.interactiveDecayIntervalPerCellMs,
       ),
     }
   }

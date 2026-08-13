@@ -6,7 +6,8 @@ import {
   buildAgentMessages,
   buildAgentToolHandlers,
   buildDuplicateToolCallMessage,
-  describeAgentRankIdentity,
+  buildTokenLimitExhaustionPrompt,
+  describeAgentSpeedClassification,
 } from "./context"
 import {
   buildMazeActionResult,
@@ -32,6 +33,7 @@ function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
     playerName: "Blue",
     model: "qwen3.6:27b",
     endpoint: new URL("https://agents.example/chat"),
+    api: "ollama",
     enabled: true,
     gameLevel: 4,
     turnCount: 2,
@@ -41,22 +43,19 @@ function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
 }
 
 const expectedAgentPrompt = [
-  "You are Blue and currently hold the rank of navigator. Work smarter to climb to the most coveted rank of trailblazer.",
-  `playerName ${CONFIG.runtime.interactivePlayerName} always appears first in traversalHistory and marks the start cell.`,
-  "currentCell is your current position; destinationCell is the target.",
-  "The maze is randomly generated at each level with exactly one path to the destination.",
-  "traversalHistory entries matching your playerName record your past moves in chronological order.",
-  "Each entry's openMoves maps every open exit from that cell directly to the neighboring cell it leads to and whether that neighbor is already visited — exits from a cell are fixed since creation, so this helps you reconstruct the maze's path flow without computing adjacency yourself; entries recorded by other players are just as trustworthy as your own.",
-  "openMoves key count reveals the physical maze structure at that cell: one open exit is a dead end (unless that is your start or destination cell); two is a corridor; three or more is a junction.",
-  "traversalHistory only records the first visit to each cell; cells revisited during backtracking are not duplicated, so apparent gaps are expected.",
-  "Revisiting a cell already in traversalHistory is not a mistake — once the current path is confirmed as leading to a dead end, backtracking through those cells is usually the only way to reach unexplored territory or the destination.",
-  "By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
-  "Tool results reflect the maze state at the time of each call — a repeat call may return updated or identical data depending on what has changed.",
-  "get_last_replay_result reflects the most recent replay across all agents; lastPlayerName identifies whose outcome it is.",
-  "lastMoveStatus being null means no moves have been made yet; invalid-move means the last prediction hit a wall; malformed-response means the previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — in all cases a penalty of 2 decay units was charged; applied means it succeeded. A turn with any valid moves costs a constant 1 decay units regardless of how many moves it applied; invalid moves (any moves after the last valid applied move) add a further penalty of 2 decay units on top — the maximum possible in a turn is 3 decay units.",
-  "get_prediction_rules provides the required response format and move count guidance.",
-  "Moves replay in submitted order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
-  "Because the charge above is per turn rather than per move, a longer prediction whose moves all land, covers more new cells for the same decay — that ratio is your traversal speed, and it is the rank you carry: a trailblazer can set a new scores retention record, a navigator's odds of finishing drop sharply, and a backtracker is almost certain to fail unless it corrects course.",
+  "You are Blue and your traversal speed has dropped to a classification of navigator. You've got an uphill task and need to work smarter to climb into the genius zone of trailblazer classification.",
+  "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, and the previous prediction outcome.",
+  "The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated.",
+  `When present in filteredTraversalHistory, playerName ${CONFIG.runtime.interactivePlayerName} marks the start cell.`,
+  "Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own.",
+  "Your objective is to reach destinationCell. Each turn, prioritize an openMoves neighbor from currentCell whose alreadyExplored is false before weighing distance to destinationCell, unless currentCell's cellType is dead-end.",
+  "Revisiting a cell already in filteredTraversalHistory during deliberate backtracking is not a mistake, although it adds no new-cell progress. cellType is the only reliable way to know it is a dead-end — never assume a cell you have not yet visited is one, since an unexplored cell's own exits are unknown until you land there and the absence of a connection from cells you already know proves nothing. Begin backtracking only when your current cell's cellType is dead-end, and retreat toward a specific visited cell with an openMoves neighbor whose alreadyExplored is false; that visited cell is an actual branch target, not a guess. Once a dead-end is confirmed, filteredTraversalHistory's visit order tells you how far to search: an unexplored branch point still exists among cells visited earlier, maybe within or beyond historyWindowRadius, so keep retreating through known cells until a later turn's filteredTraversalHistory brings it into view. At higher levels, more junctions mean more short dead-end branches along the solution path, so expect to rule out several before finding the right one — a single clean backtrack is the exception, not the rule. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined row and col differences for each candidate, not just one axis — a cell closer on one axis can be equally far or farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
+  "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome.",
+  "A turn with any valid moves costs a constant 1-unit decay charge regardless of how many moves it applied. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all.",
+  "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
+  "currentCell's openMoves are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to sustain that classification.",
+  "get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
+  "Because the charge above is per turn rather than per move, a longer prediction whose moves all land can cover more new cells for the same decay. get_prediction_rules explains the live traversal-speed metrics and classification.",
   "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
 ].join(" ")
 
@@ -125,47 +124,47 @@ describe("agent context", () => {
     const toolHandlers = buildAgentToolHandlers(createState(), actionResult, createAgent())
 
     expect(AGENT_CONTEXT_TOOLS.map((tool) => tool.function.name)).toEqual([
+      "get_maze_structure",
       "get_prediction_rules",
-      "get_game_status",
-      "get_maze_positions",
-      "get_traversal_history",
-      "get_last_replay_result",
+      "get_last_prediction_outcome",
     ])
-    expect(toolHandlers.get_game_status({})).toEqual({
+    expect(toolHandlers.get_maze_structure({})).toEqual({
       level: 4,
-      status: "running",
-      score: 700,
-      mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
-    })
-    expect(toolHandlers.get_maze_positions({})).toEqual({
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 1 },
-    })
-    expect(toolHandlers.get_traversal_history({})).toEqual({
-      traversalHistory: [
+      historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
+      filteredTraversalHistory: [
         {
           playerName: "Self",
           cell: { row: 0, col: 0 },
-          openMoves: { MoveRight: { row: 0, col: 1, visited: true } },
+          cellType: "dead-end",
+          openMoves: { MoveRight: { row: 0, col: 1, alreadyExplored: true } },
         },
         {
           playerName: "Blue",
           cell: { row: 0, col: 1 },
-          openMoves: { MoveRight: { row: 0, col: 2, visited: false } },
+          cellType: "dead-end",
+          openMoves: { MoveRight: { row: 0, col: 2, alreadyExplored: false } },
         },
       ],
     })
     expect(toolHandlers.get_prediction_rules({})).toEqual({
-      suggestedMovesPerTurn: 4,
-      uniqueCellsVisited: 1,
+      suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,
+      playerUniqueCellsVisited: 1,
+      allUniqueCellsVisited: 2,
       decayUnitsCharged: 2,
-      turnsTaken: 2,
-      batchEfficiencyRank: "backtracker",
+      totalTurnCount: 0,
+      playerTurnsTaken: 2,
+      batchEfficiencyClass: "backtracker",
+      mazeDimensions: { numCols: 2, numRows: 1, totalMazeCells: 2 },
       expectedResponseSchema,
     })
-    expect(toolHandlers.get_last_replay_result({})).toEqual({
+    expect(toolHandlers.get_last_prediction_outcome({})).toEqual({
+      status: "running",
+      score: 700,
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
+      predictionStatus: null,
       lastReplayStartIndex: 0,
       lastSubmittedMoves: ["0:MoveRight"],
       lastAppliedMoveIndex: 0,
@@ -174,19 +173,18 @@ describe("agent context", () => {
     })
   })
 
-  // A zero suggestion would read as "batch nothing" - a followable instruction no level intends -
-  // so the count stays positive even in the unreachable case where dimensions are missing.
-  it("never suggests zero moves per turn, even without maze dimensions", () => {
+  // suggestedMovesPerTurn is a static configured range, not derived from maze dimensions — it stays
+  // the same even in the unreachable case where dimensions are missing.
+  it("suggests the same static moves-per-turn range regardless of maze dimensions", () => {
     const toolHandlers = buildAgentToolHandlers(
       createState({ mazeDimensions: null }),
       null,
       createAgent({}),
     )
 
-    const { suggestedMovesPerTurn } = toolHandlers.get_prediction_rules({}) as {
-      suggestedMovesPerTurn: number
-    }
-    expect(suggestedMovesPerTurn).toBeGreaterThan(0)
+    expect(toolHandlers.get_prediction_rules({})).toMatchObject({
+      suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,
+    })
   })
 
   it("defaults a fresh agent's prediction rules to a trailblazer level regardless of raw counts", () => {
@@ -194,12 +192,96 @@ describe("agent context", () => {
     const toolHandlers = buildAgentToolHandlers(createState(), null, freshAgent)
 
     expect(toolHandlers.get_prediction_rules({})).toEqual({
-      suggestedMovesPerTurn: 4,
-      uniqueCellsVisited: 1,
+      suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,
+      playerUniqueCellsVisited: 1,
+      allUniqueCellsVisited: 2,
       decayUnitsCharged: 0,
-      turnsTaken: 0,
-      batchEfficiencyRank: "trailblazer",
+      totalTurnCount: 0,
+      playerTurnsTaken: 0,
+      batchEfficiencyClass: "trailblazer",
+      mazeDimensions: { numCols: 2, numRows: 1, totalMazeCells: 2 },
       expectedResponseSchema,
+    })
+  })
+
+  it("filters maze structure by Manhattan distance without trimming internal history", () => {
+    const fullTraversalHistory = [
+      selfVisit(0, 0, ["MoveRight"]),
+      agentVisit(4, 4, "Blue", ["MoveRight", "MoveUp"]),
+      agentVisit(4, 8, "Blue", ["MoveRight"]),
+      agentVisit(4, 9, "Blue"),
+      agentVisit(9, 9, "Blue"),
+      agentVisit(1, 4, "Blue"),
+      agentVisit(0, 4, "Blue"),
+    ]
+    const state = createState({
+      mazeDimensions: { numCols: 10, numRows: 10, area: 100 },
+      playerPosition: { x: 9, y: 9 },
+      finalPosition: { x: 15, y: 9 },
+      traversalHistory: fullTraversalHistory,
+    })
+    const toolHandlers = buildAgentToolHandlers(state, null, createAgent())
+
+    expect(toolHandlers.get_maze_structure({})).toEqual({
+      level: 4,
+      currentCell: { row: 4, col: 4 },
+      destinationCell: { row: 4, col: 7 },
+      historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
+      filteredTraversalHistory: [
+        {
+          playerName: "Blue",
+          cell: { row: 4, col: 4 },
+          cellType: "corridor",
+          openMoves: {
+            MoveRight: { row: 4, col: 5, alreadyExplored: false },
+            MoveUp: { row: 3, col: 4, alreadyExplored: false },
+          },
+        },
+        {
+          playerName: "Blue",
+          cell: { row: 4, col: 8 },
+          cellType: "dead-end",
+          openMoves: { MoveRight: { row: 4, col: 9, alreadyExplored: true } },
+        },
+        {
+          playerName: "Blue",
+          cell: { row: 1, col: 4 },
+          cellType: "dead-end",
+          openMoves: {},
+        },
+        {
+          playerName: "Blue",
+          cell: { row: 0, col: 4 },
+          cellType: "dead-end",
+          openMoves: {},
+        },
+      ],
+    })
+    expect(state.traversalHistory).toEqual(fullTraversalHistory)
+  })
+
+  it("keeps both the moves-per-turn range and the maze-structure distance unaffected by a larger maze area", () => {
+    const state = createState({
+      mazeDimensions: { numCols: 40, numRows: 40, area: 1600 },
+      playerPosition: { x: 9, y: 9 },
+      traversalHistory: [
+        selfVisit(0, 0),
+        agentVisit(4, 4, "Blue"),
+        agentVisit(4, 8, "Blue"),
+      ],
+    })
+    const toolHandlers = buildAgentToolHandlers(state, null, createAgent())
+
+    expect(toolHandlers.get_prediction_rules({})).toMatchObject({
+      suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,
+    })
+    expect(toolHandlers.get_maze_structure({})).toMatchObject({
+      level: 4,
+      historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
+      filteredTraversalHistory: [
+        { playerName: "Blue", cell: { row: 4, col: 4 }, openMoves: {} },
+        { playerName: "Blue", cell: { row: 4, col: 8 }, openMoves: {} },
+      ],
     })
   })
 
@@ -221,13 +303,13 @@ describe("agent context", () => {
 describe("buildDuplicateToolCallMessage", () => {
   it("names a single duplicate call as an explicit warning tied to malformed-response", () => {
     const message = buildDuplicateToolCallMessage([
-      { id: "call_2", function: { name: "get_game_status", arguments: {} } },
+      { id: "call_2", function: { name: "get_last_prediction_outcome", arguments: {} } },
     ])
 
     expect(message).toEqual({
       role: "user",
       content:
-        "Warning: get_game_status (call_2) won't yield any new information. " +
+        "Warning: get_last_prediction_outcome (call_2) won't yield any new information. " +
         "You may still call any tools you haven't used yet, or respond now with only the moves JSON. " +
         "Requesting these tool call(s) once again will be treated as a malformed-response.",
     })
@@ -235,12 +317,12 @@ describe("buildDuplicateToolCallMessage", () => {
 
   it("lists multiple duplicate calls together, in order", () => {
     const message = buildDuplicateToolCallMessage([
-      { id: "call_2", function: { name: "get_game_status", arguments: {} } },
-      { id: "call_3", function: { name: "get_maze_positions", arguments: {} } },
+      { id: "call_2", function: { name: "get_last_prediction_outcome", arguments: {} } },
+      { id: "call_3", function: { name: "get_maze_structure", arguments: {} } },
     ])
 
     expect(message.content).toContain(
-      "get_game_status (call_2), get_maze_positions (call_3) won't yield any new information.",
+      "get_last_prediction_outcome (call_2), get_maze_structure (call_3) won't yield any new information.",
     )
   })
 
@@ -251,28 +333,44 @@ describe("buildDuplicateToolCallMessage", () => {
   })
 })
 
-describe("describeAgentRankIdentity", () => {
-  it("tells a trailblazer to maintain the rank rather than climb toward it", () => {
-    const description = describeAgentRankIdentity("Blue", "trailblazer")
+describe("buildTokenLimitExhaustionPrompt", () => {
+  it("gives the model one free corrective prediction opportunity and names the repeat-failure cost", () => {
+    expect(buildTokenLimitExhaustionPrompt(10_000)).toEqual({
+      role: "user",
+      content:
+        "Warning: Your previous response had a token-limit-exhaustion error and used 10000 tokens without returning a " +
+        "prediction. Try once more to return the correct prediction format output without overthinking. This retry is " +
+        "free, but on reaching the token limit again without a prediction you will be charged the same fixed penalty " +
+        "as a malformed response.",
+    })
+  })
+})
+
+describe("describeAgentSpeedClassification", () => {
+  it("tells a trailblazer it's in the genius zone rather than needing to climb toward it", () => {
+    const description = describeAgentSpeedClassification("Blue", "trailblazer")
 
     expect(description).toContain("You are Blue")
-    expect(description).toContain("most coveted rank of trailblazer")
-    expect(description).toContain("Work smarter to maintain it")
+    expect(description).toContain("classifies as trailblazer")
+    expect(description).toContain("genius zone")
+    expect(description).toContain("might set a new record")
   })
 
-  it("tells a backtracker to climb toward trailblazer", () => {
-    const description = describeAgentRankIdentity("Blue", "backtracker")
+  it("tells a backtracker it has dropped from trailblazer and should climb back", () => {
+    const description = describeAgentSpeedClassification("Blue", "backtracker")
 
     expect(description).toContain("You are Blue")
-    expect(description).toContain("rank of backtracker")
-    expect(description).toContain("Work smarter to climb to the most coveted rank of trailblazer")
+    expect(description).toContain("dropped to a classification of backtracker")
+    expect(description).toContain("work smarter to climb into")
+    expect(description).toContain("climb into the genius zone")
   })
 
-  it("tells a navigator to climb toward trailblazer", () => {
-    const description = describeAgentRankIdentity("Blue", "navigator")
+  it("tells a navigator it has dropped from trailblazer and should climb back", () => {
+    const description = describeAgentSpeedClassification("Blue", "navigator")
 
     expect(description).toContain("You are Blue")
-    expect(description).toContain("rank of navigator")
-    expect(description).toContain("Work smarter to climb to the most coveted rank of trailblazer")
+    expect(description).toContain("dropped to a classification of navigator")
+    expect(description).toContain("work smarter to climb into")
+    expect(description).toContain("climb into the genius zone")
   })
 })

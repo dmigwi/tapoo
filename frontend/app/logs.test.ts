@@ -8,7 +8,7 @@ import {
   subscribeTapooLogs,
   tapooDownloadLogs,
   tapooLogCount,
-  setTapooLogTurn,
+  setTapooLogContext,
   tapooResetLogs,
   trimLoggedDescription,
 } from "./logs"
@@ -72,7 +72,7 @@ describe("tapoo logs", () => {
     expect(downloadedPayload.mode).toBe("interactive")
     expect(downloadedPayload.entries).toHaveLength(1)
     expect(downloadedText).toContain("before reset")
-    expect(downloadedText).toMatch(/"timestamp": \d+(\.\d+)?/)
+    expect(downloadedText).toMatch(/"epochMs": \d+(\.\d+)?/)
     expect(downloadedText).toMatch(
       /"time": "\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}[+-]\d{2}-\d{2}"/,
     )
@@ -135,36 +135,50 @@ describe("tapoo logs", () => {
   })
 })
 
-describe("turn stamping", () => {
+describe("log context stamping", () => {
   afterEach(() => {
-    setTapooLogTurn(0)
+    setTapooLogContext({ turnCount: 0, level: 0, cumulativeRoundCount: 0 })
     tapooResetLogs("interactive")
   })
 
-  it("stamps every entry with the turn set when it was written", () => {
+  it("stamps every entry with the turn, level, and game set when it was written", () => {
     initTapooLogs("interactive")
 
-    setTapooLogTurn(4)
+    setTapooLogContext({ turnCount: 4, level: 2, cumulativeRoundCount: 9 })
     logTapooDiagnostic("interactive", "info", "Agent request.")
     logTapooDiagnostic("interactive", "info", "Agent response.")
-    setTapooLogTurn(5)
+    setTapooLogContext({ turnCount: 5, level: 2, cumulativeRoundCount: 9 })
     logTapooDiagnostic("interactive", "info", "Agent request.")
 
-    const entries = loadTapooLog<{ turn: number; payload: string }>("interactive")
-    // One turn issues several requests, so entries group by turn rather than mapping 1:1 to it.
-    expect(entries.map((entry) => entry.turn)).toEqual([4, 4, 5])
+    // One turn issues several requests, and a level issues several turns, so entries group by
+    // all three rather than mapping 1:1 to any one — without level and game, a downloaded log
+    // can't tell which level/playthrough a given request belongs to, since turn alone resets every
+    // level and level alone can't distinguish a retry from continuing the same level.
+    const entries = loadTapooLog<{
+      turn: number
+      level: number
+      game: number
+      payload: string
+    }>("interactive")
+    expect(entries.map((entry) => [entry.turn, entry.level, entry.game])).toEqual([
+      [4, 2, 9],
+      [4, 2, 9],
+      [5, 2, 9],
+    ])
   })
 
-  it("resets the turn when logs are cleared", () => {
+  it("resets the turn, level, and game when logs are cleared", () => {
     initTapooLogs("interactive")
 
-    setTapooLogTurn(7)
+    setTapooLogContext({ turnCount: 7, level: 3, cumulativeRoundCount: 12 })
     tapooResetLogs("interactive")
     logTapooDiagnostic("interactive", "info", "after reset")
 
-    const entries = loadTapooLog<{ turn: number }>("interactive")
+    const entries = loadTapooLog<{ turn: number; level: number; game: number }>("interactive")
     expect(entries).toHaveLength(1)
     expect(entries[0].turn).toBe(0)
+    expect(entries[0].level).toBe(0)
+    expect(entries[0].game).toBe(0)
   })
 })
 

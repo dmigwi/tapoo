@@ -134,7 +134,8 @@
             </button>
           </div>
           <label class="agent-config-form__field">
-            <span data-config-text data-config-key="agentConfig.playerNameLabel"></span>
+            <span class="agent-config-form__field-label"><span data-config-text data-config-key="agentConfig.playerNameLabel"></span>
+            <span class="agent-config-form__required" aria-hidden="true">*</span></span>
             <input
               id="agent-config-player-name"
               name="playerName"
@@ -145,7 +146,8 @@
             />
           </label>
           <label class="agent-config-form__field">
-            <span data-config-text data-config-key="agentConfig.modelLabel"></span>
+            <span class="agent-config-form__field-label"><span data-config-text data-config-key="agentConfig.modelLabel"></span>
+            <span class="agent-config-form__required" aria-hidden="true">*</span></span>
             <input
               id="agent-config-model"
               name="model"
@@ -156,17 +158,98 @@
             />
           </label>
           <label class="agent-config-form__field">
-            <span data-config-text data-config-key="agentConfig.endpointLabel"></span>
+            <span data-config-text data-config-key="agentConfig.apiLabel"></span>
+            <select id="agent-config-api" name="api">
+              <option value="ollama" selected data-config-text data-config-key="agentConfig.providerLabels.ollama"></option>
+              <option value="openai" data-config-text data-config-key="agentConfig.providerLabels.openai"></option>
+              <option value="anthropic" data-config-text data-config-key="agentConfig.providerLabels.anthropic"></option>
+            </select>
+          </label>
+          <label class="agent-config-form__field">
+            <span class="agent-config-form__field-label"><span data-config-text data-config-key="agentConfig.endpointLabel"></span>
+            <span class="agent-config-form__required" aria-hidden="true">*</span></span>
             <input
               id="agent-config-endpoint"
-              name="Ollama API Endpoint"
+              name="endpoint"
               type="url"
               autocomplete="off"
               required
-              data-config-placeholder="agentConfig.endpointPlaceholder"
-              data-config-value="agentConfig.endpointPlaceholder"
+              data-config-placeholder="agentConfig.endpointPlaceholders.ollama"
+              data-config-value="agentConfig.endpointPlaceholders.ollama"
             />
           </label>
+          <label class="agent-config-form__field">
+            <span class="agent-config-form__field-label">
+              <span id="agent-config-credential-label" data-config-text data-config-key="agentConfig.credentialLabels.ollama"></span>
+              <span id="agent-config-credential-required" class="agent-config-form__required" aria-hidden="true" hidden>*</span>
+              <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.credentialRotationTooltip">!</span>
+            </span>
+            <input
+              id="agent-config-credential"
+              name="credential"
+              type="password"
+              autocomplete="off"
+            />
+          </label>
+          <div class="agent-config-form__field">
+            <span class="agent-config-form__field-label">
+              <span data-config-text data-config-key="agentConfig.extraHeadersLabel"></span>
+              <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.extraHeadersTooltip">!</span>
+            </span>
+            <div id="agent-config-extra-headers-rows" class="agent-config-form__header-rows">
+              <div class="agent-config-form__header-row">
+                <input
+                  type="text"
+                  class="agent-config-form__header-key"
+                  autocomplete="off"
+                  data-config-placeholder="agentConfig.extraHeadersKeyPlaceholders.ollama"
+                />
+                <input
+                  type="text"
+                  class="agent-config-form__header-value"
+                  autocomplete="off"
+                  data-config-placeholder="agentConfig.extraHeadersValuePlaceholders.ollama"
+                />
+                <button
+                  id="agent-config-extra-headers-add"
+                  type="button"
+                  class="agent-config-form__header-add"
+                  data-config-title
+                  data-config-key="agentConfig.addHeaderLabel"
+                >+</button>
+              </div>
+            </div>
+          </div>
+          <div class="agent-config-form__row">
+            <div class="agent-config-form__field">
+              <span class="agent-config-form__field-label">
+                <span data-config-text data-config-key="agentConfig.reasoningEffortLabel"></span>
+                <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.reasoningEffortTooltip">!</span>
+              </span>
+              <select id="agent-config-reasoning-effort" name="reasoningEffort">
+                <option value="none" selected data-config-text data-config-key="agentConfig.reasoningEffortLabels.none"></option>
+                <option value="low" data-config-text data-config-key="agentConfig.reasoningEffortLabels.low"></option>
+                <option value="medium" data-config-text data-config-key="agentConfig.reasoningEffortLabels.medium"></option>
+                <option value="high" data-config-text data-config-key="agentConfig.reasoningEffortLabels.high"></option>
+                <option value="max" data-config-text data-config-key="agentConfig.reasoningEffortLabels.max"></option>
+              </select>
+            </div>
+            <div class="agent-config-form__field">
+              <span class="agent-config-form__field-label">
+                <span data-config-text data-config-key="agentConfig.echoBackReasoningLabel"></span>
+                <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.echoBackReasoningTooltip">!</span>
+              </span>
+              <label class="agent-config-form__toggle">
+                <input
+                  id="agent-config-echo-back-reasoning"
+                  name="echoBackReasoning"
+                  type="checkbox"
+                />
+                <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
+                <span id="agent-config-echo-back-reasoning-label"></span>
+              </label>
+            </div>
+          </div>
           <div class="agent-config-form__actions">
             <label class="agent-config-form__toggle">
               <input
@@ -186,6 +269,7 @@
             >
             </button>
           </div>
+          <p class="agent-config-form__required-note" data-config-text data-config-key="agentConfig.requiredFieldNote"></p>
           <span
             id="agent-config-status"
             class="agent-config-form__status"
@@ -194,15 +278,15 @@
           ></span>
         </form>
         <section
-          id="agent-delete-dialog"
-          class="agent-config-form agent-delete-dialog"
+          id="agent-manage-dialog"
+          class="agent-config-form agent-manage-dialog"
           hidden
           aria-label="Manage agent"
         >
           <div class="agent-config-form__header">
-            <strong id="agent-delete-title" data-config-text data-config-key="agentConfig.editTitle"></strong>
+            <strong id="agent-manage-title" data-config-text data-config-key="agentConfig.editTitle"></strong>
             <button
-              id="agent-delete-close"
+              id="agent-manage-close"
               class="agent-config-form__close"
               type="button"
               aria-label="Close agent management"
@@ -220,16 +304,46 @@
           </label>
           <label class="agent-config-form__toggle">
             <input
-              id="agent-delete-enabled"
+              id="agent-manage-enabled"
               name="deleteEnabled"
               type="checkbox"
             />
             <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
-            <span id="agent-delete-enabled-label"></span>
+            <span id="agent-manage-enabled-label"></span>
           </label>
+          <div class="agent-config-form__row">
+            <div class="agent-config-form__field">
+              <span class="agent-config-form__field-label">
+                <span data-config-text data-config-key="agentConfig.reasoningEffortLabel"></span>
+                <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.reasoningEffortTooltip">!</span>
+              </span>
+              <select id="agent-manage-reasoning-effort" name="reasoningEffort">
+                <option value="none" selected data-config-text data-config-key="agentConfig.reasoningEffortLabels.none"></option>
+                <option value="low" data-config-text data-config-key="agentConfig.reasoningEffortLabels.low"></option>
+                <option value="medium" data-config-text data-config-key="agentConfig.reasoningEffortLabels.medium"></option>
+                <option value="high" data-config-text data-config-key="agentConfig.reasoningEffortLabels.high"></option>
+                <option value="max" data-config-text data-config-key="agentConfig.reasoningEffortLabels.max"></option>
+              </select>
+            </div>
+            <div class="agent-config-form__field">
+              <span class="agent-config-form__field-label">
+                <span data-config-text data-config-key="agentConfig.echoBackReasoningLabel"></span>
+                <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="agentConfig.echoBackReasoningTooltip">!</span>
+              </span>
+              <label class="agent-config-form__toggle">
+                <input
+                  id="agent-manage-echo-back-reasoning"
+                  name="deleteEchoBackReasoning"
+                  type="checkbox"
+                />
+                <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
+                <span id="agent-manage-echo-back-reasoning-label"></span>
+              </label>
+            </div>
+          </div>
           <div class="agent-config-form__actions">
             <button
-              id="agent-delete-apply"
+              id="agent-manage-apply"
               class="agent-config-form__submit"
               type="button"
               data-config-text

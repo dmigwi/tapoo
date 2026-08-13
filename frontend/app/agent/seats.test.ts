@@ -22,6 +22,7 @@ function agent(id: number, playerName: string, model = "llama3.2"): AgentApiConf
     playerName,
     model,
     endpoint: new URL("https://example.test/move"),
+    api: "ollama",
     enabled: true,
   }
 }
@@ -66,7 +67,7 @@ describe("agent seats", () => {
   it("uses behavior-specific accessible labels for roster seats", () => {
     expect(agentSeatAddLabel(1)).toBe("Add agent to seat 01")
     expect(agentSeatManageLabel(agent(2, "Kora"))).toBe(
-      "Manage Kora the Trailblazer (llama3.2) in seat 02",
+      "Kora the Trailblazer (llama3.2) in seat 02",
     )
     expect(activeAgentSeatLabel(agent(3, "Mika"))).toBe(
       "Player Mika the Trailblazer is playing in seat 03",
@@ -75,7 +76,7 @@ describe("agent seats", () => {
 
   it("trims long model names in the middle for compact dialog titles", () => {
     expect(agentSeatManageLabel(agent(2, "Kora", "qwen3.6-coder-ultra:32b"))).toBe(
-      "Manage Kora the Trailblazer (qwen3.6...ltra:32b) in seat 02",
+      "Kora the Trailblazer (qwen3.6...ltra:32b) in seat 02",
     )
   })
 
@@ -156,7 +157,7 @@ describe("agent seats", () => {
       visit("Katara", 0, 3),
     ])
 
-    expect(label).toBe("Manage Katara the Trailblazer (llama3.2) in seat 02")
+    expect(label).toBe("Katara the Trailblazer (llama3.2) in seat 02")
   })
 
   it("includes the capitalized efficiency rank in the active-player label once stats are tracked", () => {

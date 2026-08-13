@@ -27,6 +27,8 @@ function enabledAgentConfigs(): AgentApiConfig[] {
       playerName: "Blue",
       model: "llama3.2",
       endpoint: new URL("https://agents.example/blue/move"),
+      api: "ollama",
+      reasoningEffort: "max",
       enabled: true,
     },
   ]
@@ -39,6 +41,8 @@ function createTestAgentMode(elements: Parameters<typeof createAgentMode>[0]) {
 async function flushImmediateAgentTurn(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0)
 }
+
+const originalAgentApiRequestPollIntervalMs = CONFIG.timing.agentApiRequestPollIntervalMs
 
 function visit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Blue", row, col, openMoves: [] }
@@ -83,56 +87,116 @@ function createAgentFormElements(): AgentFormElements {
   const agentConfigTitle = document.createElement("strong")
   const agentConfigPlayerName = document.createElement("input")
   const agentConfigModel = document.createElement("input")
+  const agentConfigApi = document.createElement("select")
   const agentConfigEndpoint = document.createElement("input")
+  const agentConfigCredential = document.createElement("input")
+  const agentConfigCredentialLabel = document.createElement("span")
+  const agentConfigCredentialRequired = document.createElement("span")
+  const agentConfigExtraHeadersRows = document.createElement("div")
+  const agentConfigExtraHeadersAdd = document.createElement("button")
+  const agentConfigExtraHeadersRow = document.createElement("div")
+  agentConfigExtraHeadersRow.className = "agent-config-form__header-row"
+  const agentConfigExtraHeadersKey = document.createElement("input")
+  agentConfigExtraHeadersKey.className = "agent-config-form__header-key"
+  const agentConfigExtraHeadersValue = document.createElement("input")
+  agentConfigExtraHeadersValue.className = "agent-config-form__header-value"
+  agentConfigExtraHeadersRow.append(
+    agentConfigExtraHeadersKey,
+    agentConfigExtraHeadersValue,
+    agentConfigExtraHeadersAdd,
+  )
+  agentConfigExtraHeadersRows.append(agentConfigExtraHeadersRow)
+  const agentConfigReasoningEffort = document.createElement("select")
+  const agentConfigEchoBackReasoningLabel = document.createElement("label")
+  const agentConfigEchoBackReasoning = document.createElement("input")
+  const agentConfigEchoBackReasoningText = document.createElement("span")
   const agentConfigEnabledLabel = document.createElement("label")
   const agentConfigEnabled = document.createElement("input")
   const agentConfigEnabledText = document.createElement("span")
   const agentConfigClose = document.createElement("button")
   const agentConfigStatus = document.createElement("p")
-  const agentDeleteDialog = document.createElement("section")
-  const agentDeleteTitle = document.createElement("strong")
+  const agentManageDialog = document.createElement("section")
+  const agentManageTitle = document.createElement("strong")
   const agentDeleteTarget = document.createElement("p")
-  const agentDeleteEnabledLabel = document.createElement("label")
-  const agentDeleteEnabled = document.createElement("input")
-  const agentDeleteEnabledText = document.createElement("span")
-  const agentDeleteApply = document.createElement("button")
+  const agentManageEnabledLabel = document.createElement("label")
+  const agentManageEnabled = document.createElement("input")
+  const agentManageEnabledText = document.createElement("span")
+  const agentManageReasoningEffort = document.createElement("select")
+  const agentManageEchoBackReasoningLabel = document.createElement("label")
+  const agentManageEchoBackReasoning = document.createElement("input")
+  const agentManageEchoBackReasoningText = document.createElement("span")
+  const agentManageApply = document.createElement("button")
   const agentDeleteConfirm = document.createElement("input")
-  const agentDeleteClose = document.createElement("button")
+  const agentManageClose = document.createElement("button")
 
   agentSeatRoster.hidden = true
   agentSeatsBody.hidden = true
   agentConfigForm.hidden = true
   agentConfigForm.noValidate = true
-  agentDeleteDialog.hidden = true
+  agentManageDialog.hidden = true
   agentConfigEnabledLabel.className = "agent-config-form__toggle"
-  agentDeleteEnabledLabel.className = "agent-config-form__toggle"
-  agentDeleteEnabled.type = "checkbox"
+  agentManageEnabledLabel.className = "agent-config-form__toggle"
+  agentManageEnabled.type = "checkbox"
+  agentManageEchoBackReasoningLabel.className = "agent-config-form__toggle"
+  agentManageEchoBackReasoning.type = "checkbox"
   agentDeleteConfirm.type = "checkbox"
   agentConfigEnabled.type = "checkbox"
   agentConfigEnabled.checked = true
   agentConfigEnabledText.id = "agent-config-enabled-label"
   agentConfigEnabledLabel.append(agentConfigEnabled, agentConfigEnabledText)
+  agentConfigEchoBackReasoningLabel.className = "agent-config-form__toggle"
+  agentConfigEchoBackReasoning.type = "checkbox"
+  agentConfigEchoBackReasoningText.id = "agent-config-echo-back-reasoning-label"
+  agentConfigEchoBackReasoningLabel.append(agentConfigEchoBackReasoning, agentConfigEchoBackReasoningText)
+  ;["ollama", "openai", "anthropic"].forEach((value) => {
+    const option = document.createElement("option")
+    option.value = value
+    agentConfigApi.append(option)
+  })
+  agentConfigApi.value = "ollama"
+  ;["none", "low", "medium", "high", "max"].forEach((value) => {
+    const configOption = document.createElement("option")
+    configOption.value = value
+    agentConfigReasoningEffort.append(configOption)
+    const manageOption = document.createElement("option")
+    manageOption.value = value
+    agentManageReasoningEffort.append(manageOption)
+  })
+  agentConfigReasoningEffort.value = "max"
+  agentManageReasoningEffort.value = "max"
+  agentConfigCredentialRequired.hidden = true
   agentConfigForm.append(
     agentConfigTitle,
     agentConfigPlayerName,
     agentConfigModel,
+    agentConfigApi,
     agentConfigEndpoint,
+    agentConfigCredential,
+    agentConfigCredentialLabel,
+    agentConfigCredentialRequired,
+    agentConfigExtraHeadersRows,
+    agentConfigReasoningEffort,
+    agentConfigEchoBackReasoningLabel,
     agentConfigEnabledLabel,
     agentConfigClose,
     agentConfigStatus,
   )
   const app = document.createElement("div")
-  agentDeleteEnabledText.id = "agent-delete-enabled-label"
-  agentDeleteEnabledLabel.append(agentDeleteEnabled, agentDeleteEnabledText)
-  agentDeleteDialog.append(
-    agentDeleteTitle,
+  agentManageEnabledText.id = "agent-manage-enabled-label"
+  agentManageEnabledLabel.append(agentManageEnabled, agentManageEnabledText)
+  agentManageEchoBackReasoningText.id = "agent-manage-echo-back-reasoning-label"
+  agentManageEchoBackReasoningLabel.append(agentManageEchoBackReasoning, agentManageEchoBackReasoningText)
+  agentManageDialog.append(
+    agentManageTitle,
     agentDeleteTarget,
-    agentDeleteEnabledLabel,
-    agentDeleteApply,
+    agentManageEnabledLabel,
+    agentManageReasoningEffort,
+    agentManageEchoBackReasoningLabel,
+    agentManageApply,
     agentDeleteConfirm,
-    agentDeleteClose,
+    agentManageClose,
   )
-  app.append(agentSeatsBody, agentConfigForm, agentDeleteDialog)
+  app.append(agentSeatsBody, agentConfigForm, agentManageDialog)
   agentSeatsBody.append(tapooLogsReset, tapooLogsDownload, agentSeatRoster)
 
   return {
@@ -151,19 +215,31 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigTitle,
     agentConfigPlayerName,
     agentConfigModel,
+    agentConfigApi,
     agentConfigEndpoint,
+    agentConfigCredential,
+    agentConfigCredentialLabel,
+    agentConfigCredentialRequired,
+    agentConfigExtraHeadersRows,
+    agentConfigExtraHeadersAdd,
+    agentConfigReasoningEffort,
+    agentConfigEchoBackReasoning,
+    agentConfigEchoBackReasoningLabel: agentConfigEchoBackReasoningText,
     agentConfigEnabled,
     agentConfigEnabledLabel: agentConfigEnabledText,
     agentConfigClose,
     agentConfigStatus,
-    agentDeleteDialog,
-    agentDeleteTitle,
+    agentManageDialog,
+    agentManageTitle,
     agentDeleteTarget,
-    agentDeleteEnabled,
-    agentDeleteEnabledLabel: agentDeleteEnabledText,
-    agentDeleteApply,
+    agentManageEnabled,
+    agentManageEnabledLabel: agentManageEnabledText,
+    agentManageReasoningEffort,
+    agentManageEchoBackReasoning,
+    agentManageEchoBackReasoningLabel: agentManageEchoBackReasoningText,
+    agentManageApply,
     agentDeleteConfirm,
-    agentDeleteClose,
+    agentManageClose,
   }
 }
 
@@ -217,8 +293,6 @@ type AgentRoundLogDetails = {
     model: string
     playerName: string
   }
-  lastActionResult: Pick<MazeActionResult, "lastMoveStatus">
-  lastRoundScore: number
   level: number
   outcome: "won" | "lost"
   score: number
@@ -229,7 +303,7 @@ type AgentRoundLogDetails = {
 type AgentRoundLogEntry = {
   details: AgentRoundLogDetails
   payload: string
-  type: string
+  log: string
 }
 
 function createControlFixture(
@@ -266,6 +340,7 @@ describe("agent control mode", () => {
     vi.stubGlobal("localStorage", createMemoryStorage())
     window.localStorage.clear()
     vi.useFakeTimers()
+    CONFIG.timing.agentApiRequestPollIntervalMs = 0
   })
 
   afterEach(() => {
@@ -274,6 +349,7 @@ describe("agent control mode", () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
+    CONFIG.timing.agentApiRequestPollIntervalMs = originalAgentApiRequestPollIntervalMs
   })
 
   it("polls the agent endpoint for traversal moves and dispatches them with feedback enabled", async () => {
@@ -351,7 +427,7 @@ describe("agent control mode", () => {
     expect(JSON.parse(request.body)).toEqual(expect.objectContaining({
       model: "llama3.2",
       stream: false,
-      think: false,
+      think: true,
     }))
     expect(dispatch).toHaveBeenNthCalledWith(
       1,
@@ -375,6 +451,67 @@ describe("agent control mode", () => {
         lastAppliedMoveIndex: 1,
       }),
     )
+  })
+
+  it("returns null from readCurrentPlayer before any agent has been bound", () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [],
+      touchControls: document.createElement("div"),
+    }
+
+    const mode = createTestAgentMode(elements)
+
+    expect(mode.readCurrentPlayer?.()).toBeNull()
+  })
+
+  it("exposes the currently active agent's traversal-speed status via readCurrentPlayer", async () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [createButton({ action: "pause" })],
+      touchControls: document.createElement("div"),
+    }
+    elements.app.focus = vi.fn()
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const dispatch = vi.fn().mockReturnValueOnce(createControlFixture({
+      currentCell: { row: 0, col: 1 },
+      traversalHistory: [selfVisit(0, 0), visit(0, 1)],
+      lastMoveStatus: "applied",
+      lastSubmittedMoves: ["0:MoveRight"],
+      lastAppliedMoveIndex: 0,
+      visitedBefore: false,
+    }))
+
+    const readState = vi.fn().mockReturnValue(
+      createControlFixture({ traversalHistory: [selfVisit(0, 0), visit(0, 1)] }),
+    )
+    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
+      createControlFixture({ score: 800 - chargedMovesCount * 100 }),
+    )
+
+    const agentWithDecay = { ...enabledAgentConfigs()[0], decayUnitsCharged: 2 }
+    const mode = createAgentMode(elements, () => [agentWithDecay])
+
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    await flushImmediateAgentTurn()
+
+    expect(mode.readCurrentPlayer?.()).toBe("Blue the Backtracker(0.50)")
   })
 
   it("keeps a single successful prediction as applied", async () => {
@@ -470,15 +607,17 @@ describe("agent control mode", () => {
     const logEntries = loadTapooLog<AgentRoundLogEntry>(CONFIG.runtime.controlModes.agentApi)
     const lastEntry = logEntries[logEntries.length - 1]
     expect(lastEntry.payload).toBe("Agent level won.")
-    expect(lastEntry.type).toBe("info")
+    expect(lastEntry.log).toBe("info")
     expect(lastEntry.details.outcome).toBe("won")
     expect(lastEntry.details.level).toBe(4)
     expect(lastEntry.details.score).toBe(700)
-    expect(lastEntry.details.lastRoundScore).toBe(700)
     expect(lastEntry.details.winSummary).toBe("New record")
     expect(lastEntry.details.agent.playerName).toBe("Blue")
     expect(lastEntry.details.agent.model).toBe("llama3.2")
-    expect(lastEntry.details.lastActionResult.lastMoveStatus).toBe("reached-target")
+    // lastActionResult is dropped entirely: it describes one move replay (lastMoveStatus,
+    // chargedMovesCount, etc.), not the round as a whole, and everything that mattered about the
+    // round outcome is already covered by the fields above.
+    expect(lastEntry.details).not.toHaveProperty("lastActionResult")
     // Summarised rather than embedded: the entry carries the visited-cell count, not the trail.
     // The fixture records only the start cell, so the count is 1.
     expect(lastEntry.details.uniqueCellsVisited).toBe(1)
@@ -541,15 +680,16 @@ describe("agent control mode", () => {
 
     expect(dispatch).toHaveBeenCalledTimes(2)
     expect(commitAgentTurn).toHaveBeenCalledWith(
-      3,
+      2,
     )
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
         lastMoveStatus: "invalid-move",
+        predictionStatus: "partially-applied",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastAppliedMoveIndex: 0,
-        chargedMovesCount: 3,
+        chargedMovesCount: 2,
       }),
     )
   })
@@ -714,7 +854,7 @@ describe("agent control mode", () => {
             tool_calls: [
               {
                 function: {
-	                  name: "get_maze_positions",
+	                  name: "get_maze_structure",
                   arguments: {},
                 },
               },
@@ -802,7 +942,7 @@ describe("agent control mode", () => {
             tool_calls: [
               {
                 function: {
-	                  name: "get_maze_positions",
+	                  name: "get_maze_structure",
                   arguments: {},
                 },
               },
@@ -847,13 +987,26 @@ describe("agent control mode", () => {
 
     const requestBody = JSON.parse(request.body) as { messages: { content?: string }[] }
     const toolResult = JSON.parse(requestBody.messages.at(-1)?.content ?? "") as {
+      level: number
       currentCell: { row: number; col: number }
       destinationCell: { row: number; col: number }
+      filteredTraversalHistory: unknown[]
+      historyWindowRadius: number
     }
 
     expect(toolResult).toEqual({
+      level: 1,
       currentCell: { row: 0, col: 0 },
       destinationCell: { row: 0, col: 2 },
+      historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
+      filteredTraversalHistory: [
+        {
+          playerName: "Self",
+          cell: { row: 0, col: 0 },
+          cellType: "dead-end",
+          openMoves: {},
+        },
+      ],
     })
   })
 
@@ -884,6 +1037,9 @@ describe("agent control mode", () => {
       vi.fn(() => createControlFixture()),
     )
     await flushImmediateAgentTurn()
+    // The one-shot connection-error retry fires after its own backoff; the stubbed fetch keeps
+    // rejecting, so the retry fails the same way before the agent is finally disabled.
+    await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiConnectionErrorRetryDelayMs)
 
     expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(
       enabledAgentConfigs()[0],
@@ -903,6 +1059,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -910,6 +1067,7 @@ describe("agent control mode", () => {
         playerName: "Grey",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/grey/move"),
+        api: "ollama",
         enabled: false,
       },
     ])
@@ -1007,13 +1165,14 @@ describe("agent control mode", () => {
     ).toBe(true)
   })
 
-  it("opens delete confirmation for an inactive occupied seat", () => {
+  it("opens delete confirmation for an inactive occupied seat, forcing disabled toggles off", () => {
     savePersistedAgentApiConfigs([
       {
         id: 1,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -1021,6 +1180,9 @@ describe("agent control mode", () => {
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
+        api: "ollama",
+        reasoningEffort: "max",
+        echoBackReasoning: true,
         enabled: true,
       },
     ])
@@ -1041,25 +1203,82 @@ describe("agent control mode", () => {
       { type: "pause" },
       { playerName: "Self" },
     )
-    expect(elements.agentDeleteDialog?.hidden).toBe(false)
-    expect(elements.agentDeleteTitle?.textContent).toBe(
-      "Manage Red the Trailblazer (gemma4) in seat 02",
+    expect(elements.agentManageDialog?.hidden).toBe(false)
+    expect(elements.agentManageTitle?.textContent).toBe(
+      "Red the Trailblazer (gemma4) in seat 02",
     )
     expect(elements.agentDeleteTarget?.textContent).toBe("Delete now?")
     expect(elements.agentDeleteConfirm?.checked).toBe(false)
+    expect(elements.agentManageEchoBackReasoning?.checked).toBe(true)
 
     elements.agentDeleteConfirm.checked = true
     elements.agentDeleteConfirm.dispatchEvent(new Event("change"))
-    expect(elements.agentDeleteEnabled?.disabled).toBe(true)
+    // A disabled toggle is always forced off, not left showing its prior value — a control the user
+    // can no longer interact with should never silently claim to be on. Covers both toggles the
+    // delete checkbox locks: enabled/disabled and echo-back-reasoning.
+    expect(elements.agentManageEnabled?.disabled).toBe(true)
+    expect(elements.agentManageEnabled?.checked).toBe(false)
     expect(
-      elements.agentDeleteEnabled
+      elements.agentManageEnabled
+        ?.closest(".agent-config-form__toggle")
+        ?.classList.contains("agent-config-form__toggle--disabled"),
+    ).toBe(true)
+    expect(elements.agentManageEchoBackReasoning?.disabled).toBe(true)
+    expect(elements.agentManageEchoBackReasoning?.checked).toBe(false)
+    expect(
+      elements.agentManageEchoBackReasoning
         ?.closest(".agent-config-form__toggle")
         ?.classList.contains("agent-config-form__toggle--disabled"),
     ).toBe(true)
 
     elements.agentDeleteConfirm.checked = false
     elements.agentDeleteConfirm.dispatchEvent(new Event("change"))
-    expect(elements.agentDeleteEnabled?.disabled).toBe(false)
+    expect(elements.agentManageEnabled?.disabled).toBe(false)
+    expect(elements.agentManageEchoBackReasoning?.disabled).toBe(false)
+  })
+
+  it("locks echo-back-reasoning off in the manage dialog when reasoning effort is none", () => {
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
+        reasoningEffort: "max",
+        echoBackReasoning: true,
+        enabled: true,
+      },
+    ])
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickDeleteSeat(elements, "1")
+    expect(elements.agentManageEchoBackReasoning?.checked).toBe(true)
+    expect(elements.agentManageEchoBackReasoning?.disabled).toBe(false)
+
+    elements.agentManageReasoningEffort.value = "none"
+    elements.agentManageReasoningEffort.dispatchEvent(new Event("change"))
+    expect(elements.agentManageEchoBackReasoning?.checked).toBe(false)
+    expect(elements.agentManageEchoBackReasoning?.disabled).toBe(true)
+    expect(
+      elements.agentManageEchoBackReasoning
+        ?.closest(".agent-config-form__toggle")
+        ?.classList.contains("agent-config-form__toggle--disabled"),
+    ).toBe(true)
+
+    elements.agentManageApply?.click()
+    expect(loadPersistedAgentApiConfigs()).toEqual([
+      expect.objectContaining({ id: 1, reasoningEffort: "none" }),
+    ])
+    expect(loadPersistedAgentApiConfigs()[0]).not.toHaveProperty("echoBackReasoning")
   })
 
   it("deletes only the selected non-current agent after confirmation", () => {
@@ -1069,6 +1288,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -1076,6 +1296,7 @@ describe("agent control mode", () => {
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
+        api: "ollama",
         enabled: true,
       },
     ])
@@ -1091,7 +1312,7 @@ describe("agent control mode", () => {
 
     clickDeleteSeat(elements, "2")
     elements.agentDeleteConfirm.checked = true
-    elements.agentDeleteApply?.click()
+    elements.agentManageApply?.click()
 
     expect(loadPersistedAgentApiConfigs()).toEqual([
       expect.objectContaining({ id: 1, playerName: "Blue" }),
@@ -1106,6 +1327,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: false,
       },
     ])
@@ -1120,22 +1342,22 @@ describe("agent control mode", () => {
     )
 
     clickDeleteSeat(elements, "1")
-    expect(elements.agentDeleteEnabled?.checked).toBe(false)
-    expect(elements.agentDeleteEnabledLabel?.textContent).toBe(
+    expect(elements.agentManageEnabled?.checked).toBe(false)
+    expect(elements.agentManageEnabledLabel?.textContent).toBe(
       CONFIG.agentConfig.agentDisabledLabel,
     )
 
-    elements.agentDeleteEnabled.checked = true
-    elements.agentDeleteEnabled.dispatchEvent(new Event("change"))
-    expect(elements.agentDeleteEnabledLabel?.textContent).toBe(
+    elements.agentManageEnabled.checked = true
+    elements.agentManageEnabled.dispatchEvent(new Event("change"))
+    expect(elements.agentManageEnabledLabel?.textContent).toBe(
       CONFIG.agentConfig.agentEnabledLabel,
     )
-    elements.agentDeleteApply?.click()
+    elements.agentManageApply?.click()
 
     expect(loadPersistedAgentApiConfigs()).toEqual([
       expect.objectContaining({ id: 1, enabled: true }),
     ])
-    expect(elements.agentDeleteDialog?.hidden).toBe(true)
+    expect(elements.agentManageDialog?.hidden).toBe(true)
     expect(
       elements.agentSeatRoster
         ?.querySelector('[data-agent-seat-id="1"]')
@@ -1150,6 +1372,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
       {
@@ -1157,6 +1380,7 @@ describe("agent control mode", () => {
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
+        api: "ollama",
         enabled: true,
       },
     ])
@@ -1199,6 +1423,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
     ])
@@ -1246,9 +1471,9 @@ describe("agent control mode", () => {
 
     clickDeleteSeat(elements, "1")
 
-    expect(elements.agentDeleteDialog?.hidden).toBe(false)
-    expect(elements.agentDeleteTitle?.textContent).toBe(
-      "Manage Blue the Backtracker (llama3.2) in seat 01",
+    expect(elements.agentManageDialog?.hidden).toBe(false)
+    expect(elements.agentManageTitle?.textContent).toBe(
+      "Blue the Backtracker (llama3.2) in seat 01",
     )
   })
 
@@ -1365,7 +1590,7 @@ describe("agent control mode", () => {
   })
 
   it("closes the manage/delete dialog with Escape without dispatching pause", () => {
-    // The delete dialog focuses a <button> (agentDeleteApply), unlike the add/edit form which
+    // The delete dialog focuses a <button> (agentManageApply), unlike the add/edit form which
     // focuses an <input>. Escape must still close it rather than falling through to the global
     // session shortcut, regardless of which element type currently holds focus.
     savePersistedAgentApiConfigs([
@@ -1374,6 +1599,7 @@ describe("agent control mode", () => {
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
         enabled: true,
       },
     ])
@@ -1391,12 +1617,12 @@ describe("agent control mode", () => {
 
     clickDeleteSeat(elements, "1")
     dispatch.mockClear()
-    elements.agentDeleteApply?.dispatchEvent(
+    elements.agentManageApply?.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
     )
 
     expect(dispatch).not.toHaveBeenCalled()
-    expect(elements.agentDeleteDialog?.hidden).toBe(true)
+    expect(elements.agentManageDialog?.hidden).toBe(true)
     expect(
       elements.body.classList.contains("terminal-body--agent-form-active"),
     ).toBe(false)
@@ -1479,7 +1705,7 @@ describe("agent control mode", () => {
     const readAgentConfigs = vi.fn(loadPersistedAgentApiConfigs)
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
-    elements.agentConfigEndpoint.value = "localhost:5000"
+    elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
     vi.stubGlobal("fetch", vi.fn())
 
     const mode = createAgentMode(elements, readAgentConfigs)
@@ -1499,7 +1725,8 @@ describe("agent control mode", () => {
         id: 1,
         playerName: "Scout",
         model: "gemma4",
-        endpoint: new URL("http://localhost:5000/"),
+        endpoint: new URL("http://localhost:5000/api/chat"),
+        api: "ollama",
         enabled: true,
       }),
     ])
@@ -1509,6 +1736,222 @@ describe("agent control mode", () => {
       elements.agentSeatRoster?.querySelector('[data-agent-seat-id="1"]')
         ?.getAttribute("title"),
     ).toBe("Scout the Trailblazer")
+  })
+
+  it("locks echo-back-reasoning off when reasoning effort is set to none, and unlocks it again", () => {
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "2")
+    elements.agentConfigEchoBackReasoning.checked = true
+    elements.agentConfigEchoBackReasoning.dispatchEvent(new Event("change"))
+    expect(elements.agentConfigEchoBackReasoning.checked).toBe(true)
+
+    elements.agentConfigReasoningEffort.value = "none"
+    elements.agentConfigReasoningEffort.dispatchEvent(new Event("change"))
+    expect(elements.agentConfigEchoBackReasoning.disabled).toBe(true)
+    expect(elements.agentConfigEchoBackReasoning.checked).toBe(false)
+    expect(
+      elements.agentConfigEchoBackReasoning
+        .closest(".agent-config-form__toggle")
+        ?.classList.contains("agent-config-form__toggle--disabled"),
+    ).toBe(true)
+
+    elements.agentConfigReasoningEffort.value = "max"
+    elements.agentConfigReasoningEffort.dispatchEvent(new Event("change"))
+    expect(elements.agentConfigEchoBackReasoning.disabled).toBe(false)
+    expect(
+      elements.agentConfigEchoBackReasoning
+        .closest(".agent-config-form__toggle")
+        ?.classList.contains("agent-config-form__toggle--disabled"),
+    ).toBe(false)
+  })
+
+  it("clicking + Add Header appends a row hinted for the currently selected provider", () => {
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "2")
+    elements.agentConfigApi.value = "anthropic"
+    elements.agentConfigApi.dispatchEvent(new Event("change"))
+    elements.agentConfigExtraHeadersAdd.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+
+    const rows = elements.agentConfigExtraHeadersRows.querySelectorAll(
+      ".agent-config-form__header-row",
+    )
+    expect(rows).toHaveLength(2)
+    const secondRowKey = rows[1].querySelector<HTMLInputElement>(".agent-config-form__header-key")
+    expect(secondRowKey?.placeholder).toBe("anthropic-version")
+  })
+
+  it("keeps the + Add Header button working after the form resets for another seat", () => {
+    // The + button lives on the static first row and is wired to a click listener once, at bind
+    // time — resetExtraHeaderRows must not recreate that row, or the fresh node it swaps in would
+    // carry no listener at all and this button would silently stop working after any reopen.
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "2")
+    elements.agentConfigExtraHeadersAdd.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+    expect(
+      elements.agentConfigExtraHeadersRows.querySelectorAll(".agent-config-form__header-row"),
+    ).toHaveLength(2)
+
+    // Closing (which resets the form) and reopening for a different seat drops the extra row
+    // added above — resetAgentConfigForm runs on close, not merely on switching seats while open.
+    elements.agentConfigClose.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+    clickAddSeat(elements, "3")
+    expect(
+      elements.agentConfigExtraHeadersRows.querySelectorAll(".agent-config-form__header-row"),
+    ).toHaveLength(1)
+
+    elements.agentConfigExtraHeadersAdd.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+    expect(
+      elements.agentConfigExtraHeadersRows.querySelectorAll(".agent-config-form__header-row"),
+    ).toHaveLength(2)
+  })
+
+  it("collects multiple header rows into one Key: Value per line string, skipping blank keys", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn(loadPersistedAgentApiConfigs)
+    elements.agentConfigPlayerName.value = "Scout"
+    elements.agentConfigModel.value = "gemma4"
+    elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "1")
+
+    const firstRow = elements.agentConfigExtraHeadersRows.querySelector(
+      ".agent-config-form__header-row",
+    ) as HTMLElement
+    firstRow.querySelector<HTMLInputElement>(".agent-config-form__header-key")!.value = "X-Wait-For-Model"
+    firstRow.querySelector<HTMLInputElement>(".agent-config-form__header-value")!.value = "true"
+
+    elements.agentConfigExtraHeadersAdd.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+    // A row with no key typed in must be skipped rather than submitted as a broken header.
+    const blankRow = elements.agentConfigExtraHeadersRows.querySelectorAll(
+      ".agent-config-form__header-row",
+    )[1] as HTMLElement
+    blankRow.querySelector<HTMLInputElement>(".agent-config-form__header-value")!.value = "ignored"
+
+    elements.agentConfigExtraHeadersAdd.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    )
+    const thirdRow = elements.agentConfigExtraHeadersRows.querySelectorAll(
+      ".agent-config-form__header-row",
+    )[2] as HTMLElement
+    thirdRow.querySelector<HTMLInputElement>(".agent-config-form__header-key")!.value = "X-Custom"
+    thirdRow.querySelector<HTMLInputElement>(".agent-config-form__header-value")!.value = "abc"
+
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(loadPersistedAgentApiConfigs()).toEqual([
+      expect.objectContaining({
+        playerName: "Scout",
+        extraHeaders: "X-Wait-For-Model: true\nX-Custom: abc",
+      }),
+    ])
+  })
+
+  it("rejects a bare host:port endpoint that carries no request path", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    elements.agentConfigPlayerName.value = "Scout"
+    elements.agentConfigModel.value = "gemma4"
+    // No path at all — this must not be silently defaulted to a provider's conventional route;
+    // the user has to type the actual path themselves.
+    elements.agentConfigEndpoint.value = "localhost:5000"
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "1")
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(elements.agentConfigStatus.textContent).toBe(CONFIG.agentConfig.invalidEndpointMessage)
+    expect(elements.agentConfigForm.hidden).toBe(false)
+    expect(readAgentConfigs()).toEqual([])
+  })
+
+  it("rejects submission when a typed extra header key isn't a valid HTTP header name", () => {
+    const elements = createAgentFormElements()
+    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    elements.agentConfigPlayerName.value = "Scout"
+    elements.agentConfigModel.value = "gemma4"
+    elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements, readAgentConfigs)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+    )
+
+    clickAddSeat(elements, "1")
+
+    // A space in the key is a typo an easy mistake to make (e.g. "X Custom Header" instead of
+    // "X-Custom-Header") but is not a valid HTTP header token.
+    const firstRow = elements.agentConfigExtraHeadersRows.querySelector(
+      ".agent-config-form__header-row",
+    ) as HTMLElement
+    firstRow.querySelector<HTMLInputElement>(".agent-config-form__header-key")!.value = "X Custom Header"
+    firstRow.querySelector<HTMLInputElement>(".agent-config-form__header-value")!.value = "value"
+
+    elements.agentConfigForm?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    )
+
+    expect(elements.agentConfigStatus.textContent).toBe(CONFIG.agentConfig.invalidExtraHeadersMessage)
+    expect(elements.agentConfigForm.hidden).toBe(false)
+    expect(readAgentConfigs()).toEqual([])
   })
 
   it("shows required-field errors at the bottom of the agent form", () => {
@@ -1640,6 +2083,7 @@ describe("agent control mode", () => {
         playerName: "Scout",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/scout/move"),
+        api: "ollama",
         enabled: true,
       },
     ])

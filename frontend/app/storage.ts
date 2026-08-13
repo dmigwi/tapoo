@@ -3,9 +3,9 @@ import {
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
 } from "./config"
-import { normalizeAgentEndpoint } from "./agent/config"
+import { isAgentApiProvider, isAgentReasoningEffort, normalizeAgentEndpoint } from "./agent/config"
 import { isAgentSeatId } from "./agent/seats"
-import { canPersistRoundStatus, hasActiveRoundState, isAgentApiMode } from "./status"
+import { canPersistRoundStatus, hasActiveRoundState } from "./status"
 import {
   cloneMazeDimensions,
   cloneMazeRows,
@@ -165,8 +165,27 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
   const gameLevel = "gameLevel" in value ? value.gameLevel : undefined
   const turnCount = "turnCount" in value ? value.turnCount : undefined
+  const levelTurnCount = "levelTurnCount" in value ? value.levelTurnCount : undefined
   const decayUnitsCharged = "decayUnitsCharged" in value ? value.decayUnitsCharged : undefined
   const cumulativeRoundCount = "cumulativeRoundCount" in value ? value.cumulativeRoundCount : undefined
+  // api is deliberately not part of the required-key gate above: a record persisted before this
+  // field existed must still load, not be dropped. An absent or unrecognized value coerces to
+  // "ollama" (validAgentApiProvider), the same self-healing shape validWallWeightPreference uses —
+  // the very next savePersistedAgentApiConfigs call then backfills it into storage for free.
+  const apiValue = "api" in value ? value.api : undefined
+  const api = isAgentApiProvider(apiValue) ? apiValue : "ollama"
+  // reasoningEffort follows the same self-healing coercion as api just above, rather than
+  // echoBackReasoning's optional-passthrough below: every agent always reasons at some concrete,
+  // provider-valid level, so an absent, stale, or now-invalid-for-this-provider value (e.g. a
+  // record saved under Anthropic's set, then the provider changed) coerces to that provider's
+  // default instead of being dropped or left unvalidated.
+  const reasoningEffortValue = "reasoningEffort" in value ? value.reasoningEffort : undefined
+  const reasoningEffort = isAgentReasoningEffort(reasoningEffortValue) && agentConfig.reasoningEffortOptions[api].includes(reasoningEffortValue)
+      ? reasoningEffortValue
+      : agentConfig.reasoningEffortDefaults[api]
+  const credentialValue = "credential" in value ? value.credential : undefined
+  const extraHeadersValue = "extraHeaders" in value ? value.extraHeaders : undefined
+  const echoBackReasoningValue = "echoBackReasoning" in value ? value.echoBackReasoning : undefined
   const endpointValue = value.endpoint
   const endpoint =
     endpointValue instanceof URL
@@ -187,20 +206,32 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
     (gameLevel === undefined || (typeof gameLevel === "number" && Number.isInteger(gameLevel) && gameLevel >= 0)) &&
     (cumulativeRoundCount === undefined || (typeof cumulativeRoundCount === "number" && Number.isInteger(cumulativeRoundCount) && cumulativeRoundCount >= 0)) &&
     (turnCount === undefined || (typeof turnCount === "number" && Number.isInteger(turnCount) && turnCount >= 0)) &&
-    (decayUnitsCharged === undefined || (typeof decayUnitsCharged === "number" && Number.isInteger(decayUnitsCharged) && decayUnitsCharged >= 0))
+    (levelTurnCount === undefined || (typeof levelTurnCount === "number" && Number.isInteger(levelTurnCount) && levelTurnCount >= 0)) &&
+    (decayUnitsCharged === undefined || (typeof decayUnitsCharged === "number" && Number.isInteger(decayUnitsCharged) && decayUnitsCharged >= 0)) &&
+    (credentialValue === undefined || typeof credentialValue === "string") &&
+    (extraHeadersValue === undefined || typeof extraHeadersValue === "string") &&
+    (echoBackReasoningValue === undefined || typeof echoBackReasoningValue === "boolean")
   ) {
     const disabledReason = disabledReasonValue === "network-error" ? disabledReasonValue : undefined
+    const credential = typeof credentialValue === "string" && credentialValue.length > 0 ? credentialValue : undefined
+    const extraHeaders = typeof extraHeadersValue === "string" && extraHeadersValue.length > 0 ? extraHeadersValue : undefined
 
     return {
       id: value.id,
       playerName: value.playerName.trim(),
       model: value.model,
       endpoint,
+      api,
+      reasoningEffort,
       enabled: value.enabled,
       ...(disabledReason ? { disabledReason } : {}),
+      ...(credential ? { credential } : {}),
+      ...(extraHeaders ? { extraHeaders } : {}),
+      ...(echoBackReasoningValue === true ? { echoBackReasoning: true } : {}),
       ...(typeof gameLevel === "number" ? { gameLevel } : {}),
       ...(typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
       ...(typeof turnCount === "number" ? { turnCount } : {}),
+      ...(typeof levelTurnCount === "number" ? { levelTurnCount } : {}),
       ...(typeof decayUnitsCharged === "number" ? { decayUnitsCharged } : {}),
       ...(typeof cumulativeRoundCount === "number" ? { cumulativeRoundCount } : {}),
     }
@@ -301,11 +332,12 @@ export function disableAgentApiConfigForNetworkError(
   return nextConfigs
 }
 
-// recordAgentTurnStats persists one agent's post-turn counters — requests made and decay units
-// charged — resetting both when the current level or round no longer matches what they were last
-// tracked against. decayUnitsCharged is accumulated per agent because state.scoreDecayUnits is
-// shared across every seat and so cannot say which agent spent what; the agent's traversal speed
-// (progress per decay unit) is measured against its own share.
+// recordAgentTurnStats persists one agent's post-turn counters. levelTurnCount is synchronized to
+// the round's completed turn count for every agent in the current attempt — a staleness signal only,
+// not a per-agent count — while turnCount and decayUnitsCharged are each accumulated only for the
+// agent that actually played, because neither State.turnCount nor state.scoreDecayUnits is split by
+// seat: the former counts every agent's turns together, the latter is shared spend with no
+// attribution to any individual agent.
 //
 // Both gameLevel and cumulativeRoundCount are required in the isSameAttempt check below — do
 // not simplify this to cumulativeRoundCount alone. Reasoning:
@@ -320,33 +352,36 @@ export function disableAgentApiConfigForNetworkError(
 //     cumulativeRoundCount value an old, unrelated agent record already holds. gameLevel is
 //     what catches that collision, since the new round's level will almost never match the
 //     stale record's level. Dropping gameLevel would let a post-reset session silently inherit
-//     a stale turnCount from a prior session, corrupting the batchEfficiencyLevel an agent
+//     stale decayUnitsCharged from a prior session, corrupting the batchEfficiencyLevel an agent
 //     is scored against.
 export function recordAgentTurnStats(
   turnAgent: AgentApiConfig,
   level: number,
   cumulativeRoundCount: number,
   chargedDecayUnits: number,
+  levelTurnCount: number,
 ): AgentApiConfig {
   let updatedAgent: AgentApiConfig = turnAgent
 
   const nextConfigs = loadPersistedAgentApiConfigs().map((agent) => {
-    if (agent.id !== turnAgent.id) {
-      return agent
-    }
-
     const isSameAttempt = agent.gameLevel === level && agent.cumulativeRoundCount === cumulativeRoundCount
-    const priorTurnCount = isSameAttempt ? (agent.turnCount ?? 0) : 0
     const priorDecayUnitsCharged = isSameAttempt ? (agent.decayUnitsCharged ?? 0) : 0
-    updatedAgent = {
+    const priorTurnCount = isSameAttempt ? (agent.turnCount ?? 0) : 0
+    const isTurnAgent = agent.id === turnAgent.id
+    const nextAgent = {
       ...agent,
       gameLevel: level,
       cumulativeRoundCount,
-      turnCount: priorTurnCount + 1,
-      decayUnitsCharged: priorDecayUnitsCharged + chargedDecayUnits,
+      levelTurnCount,
+      turnCount: priorTurnCount + (isTurnAgent ? 1 : 0),
+      decayUnitsCharged: priorDecayUnitsCharged + (isTurnAgent ? chargedDecayUnits : 0),
     }
 
-    return updatedAgent
+    if (isTurnAgent) {
+      updatedAgent = nextAgent
+    }
+
+    return nextAgent
   })
 
   savePersistedAgentApiConfigs(nextConfigs)
@@ -523,13 +558,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
   }
 
   const totalCells = state.mazeDimensions.area
-  const decayIntervalPerCellMs = isAgentApiMode(state.controlMode)
-    ? timing.agentApiCoreDecayIntervalPerCellMs
-    : timing.interactiveCoreDecayIntervalPerCellMs
-  const remainingMs = state.clock
-    ? state.clock.remaining()
-    : totalCells * decayIntervalPerCellMs
-
+  const remainingMs = state.clock ? state.clock.remaining() : totalCells * timing.interactiveDecayIntervalPerCellMs
   const startCell = startCellFromTraversalHistory(state.traversalHistory)
   if (!startCell) {
     return null

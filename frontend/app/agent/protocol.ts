@@ -1,7 +1,6 @@
 // Protocol helpers for the agent-api wire format: request sizing, response parsing, tool-call
 // argument/result marshalling, and the log previews applied to outbound payloads. Kept apart from
 // config.ts, which validates the agent records a human configures rather than anything on the wire.
-import { CONFIG } from "../config"
 import { trimLoggedDescription } from "../logs"
 import { isMoveAction } from "../traversal"
 import type {
@@ -18,10 +17,30 @@ export function endpointLabel(endpoint: URL): string {
   return `${endpoint.origin}${endpoint.pathname}`
 }
 
-// contextWindowForArea scales context room as mazes and traversal histories grow.
-export function contextWindowForArea(area: number): number {
-  const { contextWindowFloor, contextWindowAreaMultiplier } = CONFIG.runtime.modelConfig
-  return Math.max(contextWindowFloor, area * contextWindowAreaMultiplier)
+// parseExtraHeaders turns an agent's raw "Key: Value" textarea input into a headers object. Each
+// line is one header; a line with no ":" or an empty key is skipped rather than throwing, since
+// this runs on every request and a stray blank line or typo shouldn't fail the whole turn. Only
+// the first ":" splits key from value, so a value that itself contains one (e.g. a URL) survives.
+export function parseExtraHeaders(raw: string | undefined): Record<string, string> {
+  if (!raw) {
+    return {}
+  }
+
+  const headers: Record<string, string> = {}
+  for (const line of raw.split("\n")) {
+    const separatorIndex = line.indexOf(":")
+    if (separatorIndex === -1) {
+      continue
+    }
+
+    const key = line.slice(0, separatorIndex).trim()
+    const value = line.slice(separatorIndex + 1).trim()
+    if (key) {
+      headers[key] = value
+    }
+  }
+
+  return headers
 }
 
 // stripMarkdownFence removes optional ```json or ``` wrappers that models add despite instructions.
