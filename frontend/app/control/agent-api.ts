@@ -400,6 +400,8 @@ export function handleAgentTurnLoop({
       const { moves: submittedMoves } = prediction
       let lastReplayResult: MazeActionResult | null = null
       let appliedMoveCount = 0
+      let allAppliedMovesRevisitedCells = true
+      let lastAppliedMoveVisitedBefore: boolean | undefined
       let invalidMovesPenalty = 0
 
       for (const move of submittedMoves) {
@@ -409,12 +411,21 @@ export function handleAgentTurnLoop({
 
         if (status === "reached-target") {
           appliedMoveCount += 1
+          // Folding this into allAppliedMovesRevisitedCells is safe even though it could in
+          // principle mark a winning turn as repeat-cell-visits: isWonStatus ends the round on the
+          // very first arrival at the destination cell (see executeActionWithFeedback), so
+          // visitedBefore is guaranteed false here — no cell can already be in traversalHistory as
+          // the destination before someone reaches it and wins.
+          allAppliedMovesRevisitedCells &&= replayState.visitedBefore === true
+          lastAppliedMoveVisitedBefore = replayState.visitedBefore
           // Reaching the destination ends the turn; later submitted moves no longer matter.
           break
         }
 
         if (status === "applied") {
           appliedMoveCount += 1
+          allAppliedMovesRevisitedCells &&= replayState.visitedBefore === true
+          lastAppliedMoveVisitedBefore = replayState.visitedBefore
           continue
         }
 
@@ -450,12 +461,14 @@ export function handleAgentTurnLoop({
         ? (agentBaseDecayUnits + invalidMovesPenalty)
         : agentZeroProgressPenaltyDecayUnits
 
-      // predictionStatus summarizes the whole submitted batch as one story, mirroring the three
-      // chargedMovesCount tiers above exactly — distinct from lastMoveStatus below, which stays the
-      // single last move's own granular outcome (reached-target included) and is left untouched.
+      // predictionStatus summarizes the whole submitted batch as one story. Repeat-cell-visits takes
+      // precedence over the applied variants when every move that executed revisited a known cell,
+      // while lastMoveStatus below keeps the final move's granular outcome unchanged.
       const predictionStatus: PredictionOutcomeStatus =
         appliedMoveCount > 0
-          ? (invalidMovesPenalty > 0 ? "partially-applied" : "all-applied")
+          ? (allAppliedMovesRevisitedCells
+              ? "repeat-cell-visits"
+              : (invalidMovesPenalty > 0 ? "partially-applied" : "all-applied"))
           : "invalid-prediction"
 
       __commitAgentTurn(chargedMovesCount)
@@ -466,7 +479,7 @@ export function handleAgentTurnLoop({
         lastPlayerName: selectedAgent.playerName,
         lastMoveStatus: lastReplayResult.lastMoveStatus,
         predictionStatus,
-        visitedBefore: lastReplayResult.visitedBefore,
+        visitedBefore: lastAppliedMoveVisitedBefore,
         lastSubmittedMoves: submittedMoves.map((move, index) => `${index}:${move}`),
         lastAppliedMoveIndex: appliedMoveCount > 0 ? appliedMoveCount - 1 : null,
         chargedMovesCount,

@@ -85,14 +85,15 @@ export type MoveStatus =
   | "malformed-response"
 
 // PredictionOutcomeStatus summarizes an entire submitted prediction as one story, distinct from
-// MoveStatus's single-move granularity: all-applied (every submitted move applied cleanly, or the
-// target was reached), partially-applied (some moves applied before one failed), invalid-prediction
-// (a real prediction was replayed, but the very first submitted move was already invalid — nothing
-// was gained), or empty-prediction (a malformed-response or network-error meant there was no usable
-// prediction to replay at all).
+// MoveStatus's single-move granularity: all-applied (all submitted moves applied and at least one
+// entered a new cell, or the target was reached), partially-applied (at least one move entered a new
+// cell before an invalid move), repeat-cell-visits (the applied portion only revisited cells),
+// invalid-prediction (the first submitted move was invalid), or empty-prediction (there was no usable
+// prediction to replay).
 export type PredictionOutcomeStatus =
-  | "all-applied"        // every submitted move applied cleanly, or the target was reached
-  | "partially-applied"  // some moves applied before one failed
+  | "all-applied"        // all moves applied with new-cell progress, or the target was reached
+  | "partially-applied"  // moves made new-cell progress before replay stopped at an invalid move
+  | "repeat-cell-visits" // all or partially applied moves revisited cells, so traversal history did not grow
   | "invalid-prediction" // a real prediction replayed, but the first submitted move was already invalid
   | "empty-prediction"   // malformed-response or network-error meant nothing was replayed at all
 
@@ -226,7 +227,7 @@ export type AgentExpectedResponseSchema = {
   }
 }
 
-// AgentSubmittedMovesSchema documents the replay records Tapoo returns after processing moves.
+// AgentSubmittedMovesSchema documents all submitted-move entries Tapoo returns after a turn.
 export type AgentSubmittedMovesSchema = {
   type: "array"
   description: string

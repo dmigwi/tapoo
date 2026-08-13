@@ -310,7 +310,117 @@ describe("agent api turn loop", () => {
         predictionStatus: "partially-applied",
         lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
         lastAppliedMoveIndex: 1,
+        visitedBefore: false,
         chargedMovesCount: 2,
+      }),
+    )
+  })
+
+  it.each([
+    {
+      name: "fully applied",
+      replayResults: [
+        createActionResult({ lastMoveStatus: "applied", visitedBefore: true }),
+        createActionResult({ lastMoveStatus: "applied", visitedBefore: true }),
+      ],
+      lastMoveStatus: "applied",
+      lastAppliedMoveIndex: 1,
+      visitedBefore: true,
+      chargedMovesCount: CONFIG.scoring.agentBaseDecayUnits,
+    },
+    {
+      name: "partially applied",
+      replayResults: [
+        createActionResult({ lastMoveStatus: "applied", visitedBefore: true }),
+        createActionResult({ lastMoveStatus: "invalid-move" }),
+      ],
+      lastMoveStatus: "invalid-move",
+      lastAppliedMoveIndex: 0,
+      visitedBefore: true,
+      chargedMovesCount:
+        CONFIG.scoring.agentBaseDecayUnits + CONFIG.scoring.agentPartialInvalidPenaltyDecayUnits,
+    },
+  ])("reports repeat-cell-visits when a $name batch adds no visited cells", async ({
+    replayResults,
+    lastMoveStatus,
+    lastAppliedMoveIndex,
+    visitedBefore,
+    chargedMovesCount,
+  }) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        message: {
+          role: "assistant",
+          content: "{\"moves\":[\"MoveRight\",\"MoveLeft\"]}",
+        },
+      }),
+    }))
+
+    const dispatchAgentAction = vi.fn<(action: MazeAction) => MazeActionResult>()
+    for (const replayResult of replayResults) {
+      dispatchAgentAction.mockReturnValueOnce(replayResult)
+    }
+    const onActionResult = vi.fn()
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: vi.fn(),
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState(),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    expect(onActionResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastMoveStatus,
+        predictionStatus: "repeat-cell-visits",
+        lastAppliedMoveIndex,
+        visitedBefore,
+        chargedMovesCount,
+      }),
+    )
+  })
+
+  it("leaves visitedBefore empty when the first submitted move is invalid", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+      }),
+    }))
+
+    const onActionResult = vi.fn()
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: vi.fn(),
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi.fn(() => createActionResult({ lastMoveStatus: "invalid-move" })),
+      __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState(),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    expect(onActionResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastMoveStatus: "invalid-move",
+        predictionStatus: "invalid-prediction",
+        lastAppliedMoveIndex: null,
+        visitedBefore: undefined,
       }),
     )
   })
