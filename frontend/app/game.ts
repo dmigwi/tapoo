@@ -11,11 +11,11 @@ import {
   getMazeDimensions,
 } from "./maze"
 import { render } from "./render"
+import { calculateTraversalSpeedUnits } from "./agent/efficiency"
 import {
   calculateElapsedScore,
   calculateMaxScore,
   calculateScoreAfterDecay,
-  calculateTraversalSpeedUnits,
   resolveWinScore,
 } from "./scoring"
 import {

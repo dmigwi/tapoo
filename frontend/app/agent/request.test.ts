@@ -349,6 +349,7 @@ describe("agent request service", () => {
       details?: {
         requestCount: number
         agentMode: "predict" | "tools"
+        player: string
         tools: { name: string; description?: string }[]
         messages: unknown[]
       }
@@ -365,6 +366,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 1,
       agentMode: "tools",
+      player: "Blue the Trailblazer(Default)",
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), true),
       messages: [
@@ -384,6 +386,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 2,
       agentMode: "tools",
+      player: "Blue the Trailblazer(Default)",
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
@@ -454,6 +457,7 @@ describe("agent request service", () => {
       details?: {
         requestCount: number
         agentMode: "predict" | "tools"
+        player: string
         tools: { name: string; description?: string }[]
         messages: unknown[]
       }
@@ -470,6 +474,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 1,
       agentMode: "tools",
+      player: "Blue the Trailblazer(Default)",
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), false),
       messages: [
@@ -486,6 +491,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 2,
       agentMode: "tools",
+      player: "Blue the Trailblazer(Default)",
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [

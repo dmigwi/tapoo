@@ -25,7 +25,7 @@ const VERSION_MAJOR = 2
 const VERSION_MINOR = 3
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 5
+const VERSION_PATCH = 6
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -348,12 +348,12 @@ export const CONFIG: AppConfig = {
     // The real wall-clock delay between agent turns, throttling how often a new turn's first
     // request goes out. Set well above the old 30s decay-budget figure this replaced, to
     // pace-throttle turn volume (e.g. Hugging Face rate limits) independently of the scoring math.
-    agentApiTurnPollIntervalMs: 60_000,           // Translates to 1min
+    agentApiTurnPollIntervalMs: 45_000,           // Translates to 45secs
     // A turn issues several provider requests in a row while servicing tool calls (see the
     // request-count derivation in agent/request.ts), with no gap between them otherwise — this is
     // the delay applied before each request after the first within one turn, so a provider's rate
     // limit sees paced traffic even from a single busy turn, not just paced turn starts.
-    agentApiRequestPollIntervalMs: 5_000,           // Translates to 5sec
+    agentApiRequestPollIntervalMs: 40_000,           // Translates to 40secs
     // Per provider request, not per turn: a turn issues several rounds, so a whole turn can take a
     // multiple of this (see the request-count derivation in agent/request.ts). Per-request by
     // design — a provider that stops responding is caught on the first round regardless.
