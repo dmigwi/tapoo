@@ -97,6 +97,14 @@ describe("ollama adapter", () => {
     expect(body.format).toEqual(OLLAMA_PREDICTION_FORMAT.format)
   })
 
+  it("strips internal tokens_used metadata from accumulated messages", () => {
+    const body = PROVIDER_ADAPTERS.ollama.buildBody(requestInput({
+      messages: [{ role: "assistant", content: "hello", tokens_used: 34 }],
+    })) as { messages: AgentChatMessage[] }
+
+    expect(body.messages).toEqual([{ role: "assistant", content: "hello" }])
+  })
+
   it("disables think only for the none reasoning effort", () => {
     expect(PROVIDER_ADAPTERS.ollama.buildBody(requestInput({ reasoningEffort: "none" })).think).toBe(false)
     expect(PROVIDER_ADAPTERS.ollama.buildBody(requestInput({ reasoningEffort: "max" })).think).toBe(true)
@@ -118,6 +126,16 @@ describe("ollama adapter", () => {
       message: { role: "assistant", content: "hello", thinking: "pondering..." },
     })
     expect(message?.reasoning).toBe("pondering...")
+  })
+
+  it("normalizes Ollama's generated token count into tokens_used, ignoring the prompt side", () => {
+    const message = PROVIDER_ADAPTERS.ollama.readMessage({
+      message: { role: "assistant", content: "hello" },
+      prompt_eval_count: 21,
+      eval_count: 13,
+    })
+
+    expect(message?.tokens_used).toBe(13)
   })
 })
 
@@ -164,6 +182,7 @@ describe("openai adapter", () => {
       role: "assistant",
       content: "moving on",
       reasoning: "thinking...",
+      tokens_used: 34,
       tool_calls: [{ id: "call_1", function: { name: "get_game_status", arguments: {} } }],
     }
 
@@ -173,6 +192,7 @@ describe("openai adapter", () => {
 
     expect(body.messages[0].reasoning_content).toBe("thinking...")
     expect(body.messages[0].reasoning).toBeUndefined()
+    expect(body.messages[0].tokens_used).toBeUndefined()
   })
 
   it("wraps the shared prediction format in a strict json_schema response_format when requested", () => {
@@ -192,6 +212,15 @@ describe("openai adapter", () => {
       choices: [{ message: { role: "assistant", content: "hello", reasoning_content: "thinking..." } }],
     })
     expect(message?.reasoning).toBe("thinking...")
+  })
+
+  it("normalizes OpenAI's completion token count into tokens_used, ignoring the prompt side", () => {
+    const message = PROVIDER_ADAPTERS.openai.readMessage({
+      choices: [{ message: { role: "assistant", content: "hello" } }],
+      usage: { prompt_tokens: 21, completion_tokens: 13, total_tokens: 34 },
+    })
+
+    expect(message?.tokens_used).toBe(13)
   })
 
   it("treats a null content (tool-call-only reply) as no content rather than the literal null", () => {
@@ -289,6 +318,14 @@ describe("anthropic adapter", () => {
       { type: "text", text: "Checking status first." },
       { type: "tool_use", id: "call_1", name: "get_game_status", input: {} },
     ])
+  })
+
+  it("does not send internal tokens_used metadata in Anthropic assistant content", () => {
+    const body = PROVIDER_ADAPTERS.anthropic.buildBody(requestInput({
+      messages: [{ role: "assistant", content: "hello", tokens_used: 34 }],
+    })) as { messages: unknown[] }
+
+    expect(JSON.stringify(body.messages)).not.toContain("tokens_used")
   })
 
   it("coalesces consecutive tool-result messages into a single user turn", () => {
@@ -398,6 +435,21 @@ describe("anthropic adapter", () => {
 
     expect(message?.reasoning).toBe("pondering...")
     expect(message?.content).toBe("Checking status first.")
+  })
+
+  it("normalizes Anthropic's output token count into tokens_used, ignoring input and cache tokens", () => {
+    const message = PROVIDER_ADAPTERS.anthropic.readMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "hello" }],
+      usage: {
+        input_tokens: 21,
+        cache_creation_input_tokens: 5,
+        cache_read_input_tokens: 3,
+        output_tokens: 13,
+      },
+    })
+
+    expect(message?.tokens_used).toBe(13)
   })
 
   it("returns undefined when the response has no content block array", () => {

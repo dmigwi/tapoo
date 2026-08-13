@@ -5,6 +5,7 @@ import {
   buildAgentMessages,
   buildAgentToolHandlers,
   buildDuplicateToolCallMessage,
+  buildTokenLimitExhaustionPrompt,
 } from "./context"
 import {
   endpointLabel,
@@ -265,12 +266,9 @@ export function requestPredictionWithAbort({
       // discarding the whole response when only some of its calls are duplicates.
       const calledToolNames = new Set<string>()
 
-      // Set to true after a response contains only duplicate tool calls and receives a reminder.
-      // A second all-duplicate response ends the turn instead of reminding indefinitely.
-      //
-      // This and the finite tool inventory bound requests per turn: every serviced tool is removed
-      // from the next request, and only one duplicate-only reminder is allowed before failure.
-      let duplicateWarningIssued = false
+      // Only one corrective warning can be active at a time. Genuine tool progress clears it;
+      // otherwise a second warning-worthy response ends the turn instead of stacking warnings.
+      let hasWarningBeenIssued = false
 
       while (true) {
         // Honor aborts that land between provider requests, when no active controller exists yet.
@@ -298,7 +296,7 @@ export function requestPredictionWithAbort({
           (tool) => !calledToolNames.has(tool.function.name),
         )
         const wantsPredictionFormat = toolsToSend.length === 0
-        const agentMode = duplicateWarningIssued ? "warned" : (wantsPredictionFormat ? "predict" : "tools")
+        const agentMode = hasWarningBeenIssued ? "warned" : (wantsPredictionFormat ? "predict" : "tools")
 
         const chatTurn = await requestChatTurnWithTimeout(
           messages, toolsToSend, wantsPredictionFormat, requestCount, agentMode,
@@ -321,23 +319,59 @@ export function requestPredictionWithAbort({
           }
         }
 
+        const tokensUsed = response.message.tokens_used
         const toolCalls = response.message.tool_calls ?? []
         if (toolCalls.length === 0) {
           // Without tool calls, the assistant content must be the final move prediction payload.
           const moves = parseAgentPrediction(response.message.content)
           if (!moves) {
-            // Exit 4: final assistant content is not a valid moves payload.
-            // The full response is already in the preceding "Agent response." info log.
+            // A parse failure is broader than an empty prediction: nonempty invalid JSON must stay
+            // malformed-response even when its token usage reaches the configured threshold.
+            const isEmptyPrediction = (response.message.content ?? "").trim().length === 0
+            const reachedTokenCap = tokensUsed !== undefined && tokensUsed >= CONFIG.runtime.modelConfig.numPredict
+
+            // Token-limit exhaustion requires both signals. Empty content alone may be an ordinary
+            // malformed response, while high token usage alone may still accompany usable output.
+            if (isEmptyPrediction && reachedTokenCap) {
+              // The shared warning guard permits only one corrective warning at a time. If this
+              // response already followed a warning, surface the distinct final failure instead.
+              if (hasWarningBeenIssued) {
+                // Exit 4: the model exhausted the token cap without returning a prediction.
+                return {
+                  ok: false,
+                  reason: "token-limit-exhaustion",
+                  diagnostic: {
+                    message: "Agent exhausted the token cap without returning a prediction.",
+                    details: { endpoint: endpointDisplay, requestCount, tokensUsed },
+                  },
+                }
+              }
+
+              // Resend the same accumulated conversation that produced the empty response, adding
+              // only the corrective warning; the empty assistant response itself is not echoed back.
+              messages = [
+                ...messages,
+                buildTokenLimitExhaustionPrompt(tokensUsed),
+              ]
+
+              hasWarningBeenIssued = true
+              continue
+            }
+
+            // Every remaining parse failure either contained nonempty invalid output or did not
+            // reach the token threshold, so it follows the ordinary malformed-response path.
+            // Exit 5: final assistant content is not a valid moves payload. The full response is
+            // already in the preceding "Agent response." info log.
             return {
               ok: false,
               reason: "malformed-response",
               diagnostic: {
                 message: "Malformed agent prediction response.",
-                details: { endpoint: endpointDisplay, requestCount },
+                details: { endpoint: endpointDisplay, requestCount, tokensUsed },
               },
             }
           }
-          // Exit 5: valid moves prediction.
+          // Exit 6: valid moves prediction.
           return { ok: true, moves }
         }
 
@@ -355,8 +389,8 @@ export function requestPredictionWithAbort({
 
         if (newToolCalls.length === 0) {
           // Every requested tool was already called; warn once, then fail on repeat.
-          if (duplicateWarningIssued) {
-            // Exit 6: second duplicate-only tool response after a reminder.
+          if (hasWarningBeenIssued) {
+            // Exit 7: second duplicate-only tool response after a reminder.
             return {
               ok: false,
               reason: "malformed-response",
@@ -380,7 +414,7 @@ export function requestPredictionWithAbort({
             },
             buildDuplicateToolCallMessage(duplicateToolCalls),
           ]
-          duplicateWarningIssued = true
+          hasWarningBeenIssued = true
           continue
         }
 
@@ -397,7 +431,7 @@ export function requestPredictionWithAbort({
             .filter((name): name is string => name !== undefined)
 
           if (toolResult.reason === "unknown-tool") {
-            // Exit 7: unknown tools are malformed model output, not infrastructure failure.
+            // Exit 8: unknown tools are malformed model output, not infrastructure failure.
             return {
               ok: false,
               reason: "malformed-response",
@@ -408,7 +442,7 @@ export function requestPredictionWithAbort({
             }
           }
 
-          // Exit 8: a recognized tool handler failed inside Tapoo's context provider.
+          // Exit 9: a recognized tool handler failed inside Tapoo's context provider.
           return {
             ok: false,
             reason: "network-error",
@@ -435,7 +469,7 @@ export function requestPredictionWithAbort({
           ...toolResult.messages,
           ...(duplicateToolCalls.length > 0 ? [buildDuplicateToolCallMessage(duplicateToolCalls)] : []),
         ]
-        duplicateWarningIssued = false
+        hasWarningBeenIssued = false
       }
     } catch (error) {
       // Caller aborts are expected lifecycle cleanup, so this catch does not log them as failures

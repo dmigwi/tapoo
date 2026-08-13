@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { EXPECTED_RESPONSE_SCHEMA, buildDuplicateToolCallMessage } from "./context"
+import {
+  EXPECTED_RESPONSE_SCHEMA,
+  buildDuplicateToolCallMessage,
+  buildTokenLimitExhaustionPrompt,
+} from "./context"
 import { OLLAMA_PREDICTION_FORMAT } from "./providers"
 import { requestPredictionWithAbort } from "./request"
 import { CONFIG } from "../config"
@@ -51,7 +55,7 @@ const agentContextTools = [
     function: {
       name: "get_last_prediction_outcome",
       description:
-        "Get the outcome of the previous submitted moves: whether they fully applied, partially failed, reached the target, or were rejected. status is the current game status, score is the current score after that outcome. lastMoveStatus is the outcome of only the single last move actually dispatched that turn: null=first turn, no history yet; applied=the move executed successfully; visitedBefore indicates whether it revisited a cell; invalid-move=that move hit a wall or boundary, execution stopped there; reached-target=destination reached, stop predicting; malformed-response=previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — no moves were replayed and a fixed score penalty was charged; network-error=HTTP failure, no score charged. predictionStatus instead summarizes the entire submitted prediction as one story: all-applied=all submitted moves applied and at least one entered a previously unvisited cell, or the target was reached; partially-applied=one or more moves applied, at least one entered a previously unvisited cell, and replay then stopped at the first invalid move; repeat-cell-visits=one or more moves applied, but none entered a new cell — replay may have completed or stopped at an invalid move; invalid-prediction=a real prediction was replayed but the very first submitted move was already invalid, no progress made; empty-prediction=a malformed-response or network-error meant there was no usable prediction to replay at all. lastSubmittedMoves lists every submitted move from that turn as a zero-based <index>:<move> entry, including moves after the first invalid move that were not executed. lastReplayStartIndex is 0 when moves were submitted and marks the first entry. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last successfully applied move was already in traversal history; it is null when no move applied. On an empty-prediction turn these four fields are always reset to null/empty, matching that no moves were replayed — they never carry over stale data from an earlier turn. chargedMovesCount is the total decay units charged toward score that turn. Returns JSON: {\"status\":string, \"score\":number, \"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"predictionStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
+        "Get the outcome of the previous submitted moves: whether they fully applied, partially failed, reached the target, or were rejected. status is the current game status, score is the current score after that outcome. lastMoveStatus is the outcome of only the single last move actually dispatched that turn: null=first turn, no history yet; applied=the move executed successfully; visitedBefore indicates whether it revisited a cell; invalid-move=that move hit a wall or boundary, execution stopped there; reached-target=destination reached, stop predicting; malformed-response=previous response was not valid JSON, requested a tool that does not exist, or ignored a duplicate tool call warning — no moves were replayed and a fixed score penalty was charged; token-limit-exhaustion=the previous empty prediction reached the configured token threshold and its corrective warning opportunity also returned no prediction — no moves were replayed and the same fixed score penalty was charged; network-error=HTTP failure, no score charged. predictionStatus instead summarizes the entire submitted prediction as one story: all-applied=all submitted moves applied and at least one entered a previously unvisited cell, or the target was reached; partially-applied=one or more moves applied, at least one entered a previously unvisited cell, and replay then stopped at the first invalid move; repeat-cell-visits=one or more moves applied, but none entered a new cell — replay may have completed or stopped at an invalid move; invalid-prediction=a real prediction was replayed but the very first submitted move was already invalid, no progress made; empty-prediction=a malformed-response, token-limit-exhaustion, or network-error meant there was no usable prediction to replay at all. lastSubmittedMoves lists every submitted move from that turn as a zero-based <index>:<move> entry, including moves after the first invalid move that were not executed. lastReplayStartIndex is 0 when moves were submitted and marks the first entry. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last successfully applied move was already in traversal history; it is null when no move applied. On an empty-prediction turn these four fields are always reset to null/empty, matching that no moves were replayed — they never carry over stale data from an earlier turn. chargedMovesCount is the total decay units charged toward score that turn. Returns JSON: {\"status\":string, \"score\":number, \"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"predictionStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
       parameters: {
         type: "object",
         properties: {},
@@ -158,10 +162,14 @@ function successfulResponse(content: string) {
   }
 }
 
-function toolCallResponse(toolCalls: unknown[]) {
+function toolCallResponse(
+  toolCalls: unknown[],
+  usage: { prompt_eval_count?: number; eval_count?: number } = {},
+) {
   return {
     ok: true,
     json: vi.fn().mockResolvedValue({
+      ...usage,
       message: {
         role: "assistant",
         content: "",
@@ -301,7 +309,7 @@ describe("agent request service", () => {
                 arguments: {},
               },
             },
-        ]),
+        ], { prompt_eval_count: 21, eval_count: 13 }),
       )
       .mockResolvedValueOnce(
         successfulResponse(JSON.stringify({ moves: expectedJsonOutput.moves })),
@@ -327,7 +335,7 @@ describe("agent request service", () => {
             id: "call_structure",
             function: { index: 0, name: "get_maze_structure", arguments: {} },
           },
-        ]),
+        ], { prompt_eval_count: 21, eval_count: 13 }),
       )
       .mockResolvedValueOnce(
         successfulResponse(JSON.stringify({ moves: ["MoveRight", "MoveDown"] })),
@@ -749,6 +757,67 @@ describe("agent request service", () => {
         message: "Malformed agent prediction response.",
         details: { endpoint, requestCount: 1 },
       },
+    })
+  })
+
+  it("returns token-limit-exhaustion when capped token usage produces an empty prediction", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        // A large prompt_eval_count on its own must never trigger this — only eval_count (the
+        // completion side alone) is compared against numPredict. See providers.test.ts's
+        // "ignoring the prompt side" coverage for that in isolation.
+        prompt_eval_count: 1,
+        eval_count: CONFIG.runtime.modelConfig.numPredict,
+        message: { role: "assistant", content: "" },
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "token-limit-exhaustion",
+      diagnostic: {
+        message: "Agent exhausted the token cap without returning a prediction.",
+        details: {
+          endpoint,
+          requestCount: 2,
+          tokensUsed: CONFIG.runtime.modelConfig.numPredict,
+        },
+      },
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    const firstRequest = fetchMock.mock.calls[0]?.[1] as RequestInit
+    const retryRequest = fetchMock.mock.calls[1]?.[1] as RequestInit
+    if (typeof firstRequest.body !== "string" || typeof retryRequest.body !== "string") {
+      throw new Error("expected token-limit retry request bodies to be serialized json")
+    }
+    const firstBody = JSON.parse(firstRequest.body) as { messages: unknown[]; tools: unknown[] }
+    const retryBody = JSON.parse(retryRequest.body) as {
+      messages: Array<{ role: string; content?: string }>
+      tools: unknown[]
+    }
+    expect(retryBody.messages.slice(0, -1)).toEqual(firstBody.messages)
+    expect(retryBody.tools).toEqual(firstBody.tools)
+    expect(retryBody.messages.at(-1)).toEqual(buildTokenLimitExhaustionPrompt(
+      CONFIG.runtime.modelConfig.numPredict,
+    ))
+  })
+
+  it("keeps nonempty invalid capped output classified as malformed-response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        prompt_eval_count: CONFIG.runtime.modelConfig.numPredict,
+        eval_count: 0,
+        message: { role: "assistant", content: "not-json" },
+      }),
+    }))
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "malformed-response",
     })
   })
 

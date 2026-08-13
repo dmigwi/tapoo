@@ -6,6 +6,7 @@ import {
   buildAgentMessages,
   buildAgentToolHandlers,
   buildDuplicateToolCallMessage,
+  buildTokenLimitExhaustionPrompt,
   describeAgentSpeedClassification,
 } from "./context"
 import {
@@ -329,6 +330,19 @@ describe("buildDuplicateToolCallMessage", () => {
     const message = buildDuplicateToolCallMessage([{ function: { arguments: {} } }])
 
     expect(message.content).toContain("unknown (no id)")
+  })
+})
+
+describe("buildTokenLimitExhaustionPrompt", () => {
+  it("gives the model one free corrective prediction opportunity and names the repeat-failure cost", () => {
+    expect(buildTokenLimitExhaustionPrompt(10_000)).toEqual({
+      role: "user",
+      content:
+        "Warning: Your previous response had a token-limit-exhaustion error and used 10000 tokens without returning a " +
+        "prediction. Try once more to return the correct prediction format output without overthinking. This retry is " +
+        "free, but on reaching the token limit again without a prediction you will be charged the same fixed penalty " +
+        "as a malformed response.",
+    })
   })
 })
 

@@ -24,6 +24,16 @@ const {
   agentMalformedPenaltyDecayUnits,
 } = scoring
 
+type RejectedAgentResponseReason = "malformed-response" | "token-limit-exhaustion"
+
+// isRejectedAgentResponseReason groups failures that keep their distinct status but share the
+// fixed unusable-response penalty and warning-level diagnostics.
+function isRejectedAgentResponseReason(
+  reason: AgentPredictionFailure["reason"],
+): reason is RejectedAgentResponseReason {
+  return reason === "malformed-response" || reason === "token-limit-exhaustion"
+}
+
 // sleep resolves after delayMs — used only for the connection-error retry backoff below.
 function sleep(delayMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, delayMs))
@@ -210,11 +220,13 @@ export function handleAgentTurnLoop({
     awaitAgent()
   }
 
-  // recordMalformedAgentResponse spends the fixed mistake decay without replaying any move. This
-  // is the costliest single-turn outcome — a protocol violation (bad JSON, a hallucinated tool, or
-  // ignoring a duplicate-call warning) is worse than any gameplay misjudgment, so it must never be
-  // cheaper than an honest attempt that partially or wholly fails (see the invalid-move branch below).
-  const recordMalformedAgentResponse = (agent: AgentApiConfig): void => {
+  // recordRejectedAgentResponse spends the fixed mistake decay without replaying any move. The
+  // status keeps malformed output distinct from a token-limit exhaustion, while both retain the
+  // same scoring consequence because neither produced a usable prediction.
+  const recordRejectedAgentResponse = (
+    agent: AgentApiConfig,
+    lastMoveStatus: RejectedAgentResponseReason,
+  ): void => {
     const chargedMovesCount = agentMalformedPenaltyDecayUnits
     __commitAgentTurn(chargedMovesCount)
     const {level,cumulativeRoundCount, turnCount } = __readState()
@@ -222,7 +234,7 @@ export function handleAgentTurnLoop({
 
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
-      lastMoveStatus: "malformed-response",
+      lastMoveStatus,
       chargedMovesCount,
       ...noReplayThisTurn,
     })
@@ -244,8 +256,8 @@ export function handleAgentTurnLoop({
       return
     }
 
-    if (failure.reason === "malformed-response") {
-      recordMalformedAgentResponse(agent)
+    if (isRejectedAgentResponseReason(failure.reason)) {
+      recordRejectedAgentResponse(agent, failure.reason)
       return
     }
 
@@ -269,7 +281,7 @@ export function handleAgentTurnLoop({
       // decay penalty below, not a system failure, so it stays a warning.
       logTapooDiagnostic(
         runtime.controlModes.agentApi,
-        failure.reason === "malformed-response" ? "warn" : "error",
+        isRejectedAgentResponseReason(failure.reason) ? "warn" : "error",
         failure.diagnostic.message,
         failure.diagnostic.details,
       )

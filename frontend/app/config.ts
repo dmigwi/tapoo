@@ -285,13 +285,17 @@ export const CONFIG: AppConfig = {
     title: "Agent Request Prompts",
     intro:
       "Every agent request carries the messages and tool definitions below, rendered from the same builders the game itself"+
-      " calls so they cannot drift apart. Tool results are omitted because they change with the live maze.",
+      " calls so they cannot drift apart. Tool results are omitted because they change with the live maze. The two warning" +
+      " messages only appear mid-turn, in response to a specific model mistake, so they are shown here with sample values" +
+      " standing in for that live context.",
     playerNoteTemplate:
       "Shown for placeholder player '{player}'; each configured agent sees its own name in place of it.",
     systemHeading: "System message",
     userHeading: "User message",
     toolsHeading: "Tool definitions",
     schemaHeading: "Required response format",
+    duplicateToolCallHeading: "Duplicate tool call warning! (sample: a repeated get_maze_structure {} call)",
+    tokenLimitExhaustionHeading: "Token limit exhaustion warning! (sample: the configured token cap reached)",
   },
   // Maze glyphs and geometry shared by generation, traversal, and rendering.
   maze: {

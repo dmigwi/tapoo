@@ -36,6 +36,19 @@ export type ProviderAdapter = {
   readMessage: (body: unknown) => AgentChatMessage | undefined
 }
 
+// tokenCount accepts only finite non-negative provider counters. A missing or malformed usage
+// value stays undefined instead of becoming a misleading zero in internal message metadata.
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
+// ollamaMessage removes Tapoo-only metadata before using the otherwise-compatible internal shape.
+function ollamaMessage(message: AgentChatMessage): Omit<AgentChatMessage, "tokens_used"> {
+  const rest = { ...message }
+  delete rest.tokens_used
+  return rest
+}
+
 const BASE_HEADERS = {
   "Accept": "application/json",
   "Content-Type": "application/json",
@@ -109,7 +122,7 @@ function bearerHeaders(
 function ollamaBuildBody(input: ProviderRequestInput): Record<string, unknown> {
   return {
     model: input.model,
-    messages: input.messages,
+    messages: input.messages.map(ollamaMessage),
     tools: input.tools,
     options: {
       num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor,
@@ -126,6 +139,7 @@ function ollamaBuildBody(input: ProviderRequestInput): Record<string, unknown> {
 }
 
 type OllamaResponseBody = {
+  eval_count?: number
   message?: {
     role?: AgentChatMessage["role"]
     content?: string
@@ -135,10 +149,14 @@ type OllamaResponseBody = {
 }
 
 function ollamaReadMessage(body: unknown): AgentChatMessage | undefined {
-  const message = (body as OllamaResponseBody).message
+  const responseBody = body as OllamaResponseBody
+  const message = responseBody.message
   if (!message) {
     return undefined
   }
+  // eval_count is the completion side alone (excludes prompt_eval_count) — see AgentChatMessage's
+  // tokens_used comment for why only the completion side is tracked.
+  const tokensUsed = tokenCount(responseBody.eval_count)
 
   return {
     role: message.role ?? "assistant",
@@ -147,6 +165,7 @@ function ollamaReadMessage(body: unknown): AgentChatMessage | undefined {
     // calls reasoning — mapped onto that shared internal field so request.ts's echoBackReasoning
     // handling (and every other reasoning consumer) works identically across providers.
     reasoning: message.thinking,
+    ...(tokensUsed !== undefined ? { tokens_used: tokensUsed } : {}),
     tool_calls: message.tool_calls,
   }
 }
@@ -161,9 +180,10 @@ function ollamaReadMessage(body: unknown): AgentChatMessage | undefined {
 // internal reasoning field; this is the one place that name changes for the wire.
 function openaiMessage(
   message: AgentChatMessage,
-): Omit<AgentChatMessage, "tool_name" | "reasoning"> & { reasoning_content?: string } {
+): Omit<AgentChatMessage, "tool_name" | "reasoning" | "tokens_used"> & { reasoning_content?: string } {
   const rest: AgentChatMessage & { reasoning_content?: string } = { ...message }
   delete rest.tool_name
+  delete rest.tokens_used
   const reasoning = rest.reasoning
   delete rest.reasoning
   if (reasoning !== undefined) {
@@ -195,6 +215,9 @@ function openaiBuildBody(input: ProviderRequestInput): Record<string, unknown> {
 }
 
 type OpenAiResponseBody = {
+  usage?: {
+    completion_tokens?: number
+  }
   choices?: {
     message?: {
       role?: AgentChatMessage["role"]
@@ -206,10 +229,15 @@ type OpenAiResponseBody = {
 }
 
 function openaiReadMessage(body: unknown): AgentChatMessage | undefined {
-  const message = (body as OpenAiResponseBody).choices?.[0]?.message
+  const responseBody = body as OpenAiResponseBody
+  const message = responseBody.choices?.[0]?.message
   if (!message) {
     return undefined
   }
+
+  // completion_tokens is the completion side alone (excludes prompt_tokens) — see
+  // AgentChatMessage's tokens_used comment for why only the completion side is tracked.
+  const tokensUsed = tokenCount(responseBody.usage?.completion_tokens)
 
   return {
     role: message.role ?? "assistant",
@@ -218,6 +246,7 @@ function openaiReadMessage(body: unknown): AgentChatMessage | undefined {
     // thinking — mapped onto the shared internal reasoning field so request.ts's echoBackReasoning
     // handling works identically regardless of which provider is active.
     reasoning: message.reasoning_content,
+    ...(tokensUsed !== undefined ? { tokens_used: tokensUsed } : {}),
     tool_calls: message.tool_calls,
   }
 }
@@ -350,6 +379,9 @@ function anthropicBuildBody(input: ProviderRequestInput): Record<string, unknown
 type AnthropicResponseBody = {
   role?: AgentChatMessage["role"]
   content?: AnthropicContentBlock[]
+  usage?: {
+    output_tokens?: number
+  }
 }
 
 function anthropicReadMessage(body: unknown): AgentChatMessage | undefined {
@@ -379,10 +411,16 @@ function anthropicReadMessage(body: unknown): AgentChatMessage | undefined {
     }
   }
 
+  // output_tokens alone is the completion side billed against max_tokens — it already includes
+  // extended-thinking tokens. See AgentChatMessage's tokens_used comment for why only the
+  // completion side is tracked (input_tokens and the cache-token fields are never read).
+  const tokensUsed = tokenCount(responseBody.usage?.output_tokens)
+
   return {
     role: responseBody.role ?? "assistant",
     content,
     ...(reasoning ? { reasoning } : {}),
+    ...(tokensUsed !== undefined ? { tokens_used: tokensUsed } : {}),
     ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
   }
 }

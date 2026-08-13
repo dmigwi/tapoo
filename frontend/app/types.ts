@@ -83,6 +83,7 @@ export type MoveStatus =
   | "network-error"
   | "reached-target"
   | "malformed-response"
+  | "token-limit-exhaustion"
 
 // PredictionOutcomeStatus summarizes an entire submitted prediction as one story, distinct from
 // MoveStatus's single-move granularity: all-applied (all submitted moves applied and at least one
@@ -95,7 +96,7 @@ export type PredictionOutcomeStatus =
   | "partially-applied"  // moves made new-cell progress before replay stopped at an invalid move
   | "repeat-cell-visits" // all or partially applied moves revisited cells, so traversal history did not grow
   | "invalid-prediction" // a real prediction replayed, but the first submitted move was already invalid
-  | "empty-prediction"   // malformed-response or network-error meant nothing was replayed at all
+  | "empty-prediction"   // malformed-response, token-limit-exhaustion, or network-error meant no replay
 
 // WinSummaryPreviousComparison describes how the current win compares to the last completed attempt.
 export type WinSummaryPreviousComparison = "none" | "faster" | "slower" | "matched"
@@ -287,10 +288,19 @@ export type AgentToolCall = {
 // AgentApiConfig.echoBackReasoning flag's call, not automatic — model guidance conflicts: some
 // reasoning models (e.g. Kimi K3) require it echoed back across a turn's tool-calling rounds or
 // they lose context of analysis they already did, while others (e.g. Gemma) require it withheld.
+// tokens_used is internal response metadata normalized by provider adapters — completion tokens
+// only (Ollama's eval_count, OpenAI's usage.completion_tokens, Anthropic's usage.output_tokens),
+// not prompt tokens. Deliberately scoped that way: it's the only figure comparable against
+// CONFIG.runtime.modelConfig.numPredict (a completion-only cap sent as Ollama's num_predict /
+// OpenAI's max_tokens / Anthropic's max_tokens) — a large accumulated prompt would push a
+// prompt-inclusive total past numPredict on its own, so that total could never be used for the
+// token-limit-exhaustion threshold check. Request serializers must remove it before sending an
+// accumulated assistant message back to a model.
 export type AgentChatMessage = {
   role: AgentMessageRole
   content?: string
   reasoning?: string
+  tokens_used?: number
   tool_call_id?: string
   tool_name?: string
   tool_calls?: AgentToolCall[]
@@ -302,6 +312,8 @@ export type AgentChatMessage = {
 // eligibility. connection-error is narrow and deliberate: it is the one case request.ts's bare
 // catch{} produces, meaning the connection itself failed (a reset, a dropped socket, a DNS hiccup)
 // before any HTTP response arrived at all — exactly the transient case a one-shot retry can fix.
+// token-limit-exhaustion identifies a model response that reached the configured token threshold
+// without producing any prediction; request.ts gives it one corrective warning opportunity.
 // network-error covers everything else in the bucket: a non-OK HTTP status (the provider did
 // respond, just with an error — retrying a 429 immediately can make rate-limiting worse), a 200 OK
 // response missing the expected message shape, a Tapoo-side tool-handler bug, or an unrecognized
@@ -309,6 +321,7 @@ export type AgentChatMessage = {
 export type AgentPredictionFailureReason =
   | "caller-abort"
   | "malformed-response"
+  | "token-limit-exhaustion"
   | "network-error"
   | "connection-error"
 
@@ -563,9 +576,10 @@ export type SummaryComparisonTemplates = {
 //           "Agent request.", "Agent response.", and a round's final "Agent level won/lost." entry
 //           — the batch of moves it carried may still include invalid ones (a wall hit stops
 //           replay), since that is a maze-navigation outcome, not a wire-format problem.
-//   warn  — reason: "malformed-response". The model's own recoverable mistake (unparseable JSON, a
-//           hallucinated tool call, ignoring a duplicate-call warning) — Tapoo charges the fixed
-//           mistake penalty and keeps the agent enabled, so play continues.
+//   warn  — reason: "malformed-response" or "token-limit-exhaustion". The model's own recoverable
+//           mistake (unparseable JSON, a hallucinated tool call, ignoring a duplicate-call warning,
+//           or exhausting the token cap without a prediction) — Tapoo charges the fixed mistake
+//           penalty after any eligible retry is exhausted and keeps the agent enabled.
 //   error — reason: "network-error". The provider/infrastructure itself failed (HTTP failure,
 //           timeout, fetch exception) rather than the model producing bad output. No penalty is
 //           charged for this — see recordAgentNetworkError — and the agent is disabled instead.
@@ -681,6 +695,8 @@ export type AppConfig = {
     userHeading: string
     toolsHeading: string
     schemaHeading: string
+    duplicateToolCallHeading: string
+    tokenLimitExhaustionHeading: string
   }
   agentConfig: {
     title: string

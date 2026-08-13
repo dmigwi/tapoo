@@ -1085,4 +1085,111 @@ describe("agent api turn loop", () => {
       ]),
     )
   })
+
+  it("warns the model and recovers after one token-limit-exhaustion retry", async () => {
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          prompt_eval_count: 1,
+          eval_count: CONFIG.runtime.modelConfig.numPredict,
+          message: { role: "assistant", content: "" },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const dispatch = vi.fn() as MazeActionDispatch
+    const dispatchAgentAction = vi
+      .fn<(action: MazeAction) => MazeActionResult>()
+      .mockReturnValue(createActionResult({ lastMoveStatus: "applied", visitedBefore: false }))
+    const commitAgentTurn = vi.fn()
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: dispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionResult: vi.fn(),
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState(),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiRequestPollIntervalMs)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const retryRequest = fetchMock.mock.calls[1]?.[1] as RequestInit
+    if (typeof retryRequest.body !== "string") {
+      throw new Error("expected retry request body to be serialized json")
+    }
+    const retryBody = JSON.parse(retryRequest.body) as {
+      messages: Array<{ role: string; content?: string }>
+    }
+    const retryWarning = retryBody.messages.at(-1)
+    expect(retryWarning?.role).toBe("user")
+    expect(retryWarning?.content).toContain(
+      "Try once more to return the correct prediction format output without overthinking.",
+    )
+    expect(dispatchAgentAction).toHaveBeenCalledWith(
+      { type: "MoveRight" },
+      dispatch,
+      expect.objectContaining({ playerName: "Blue" }),
+    )
+    expect(commitAgentTurn).toHaveBeenCalledWith(CONFIG.scoring.agentBaseDecayUnits)
+
+  })
+
+  it("retries a repeated token-limit-exhaustion only once", async () => {
+    const cappedEmptyResponse = () => ({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        prompt_eval_count: 1,
+        eval_count: CONFIG.runtime.modelConfig.numPredict,
+        message: { role: "assistant", content: "" },
+      }),
+    })
+    const fetchMock = vi.fn().mockResolvedValue(cappedEmptyResponse())
+    vi.stubGlobal("fetch", fetchMock)
+
+    const commitAgentTurn = vi.fn()
+    const onActionResult = vi.fn()
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi.fn(),
+      __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState(),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+    await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiRequestPollIntervalMs)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(commitAgentTurn).toHaveBeenCalledTimes(1)
+    expect(commitAgentTurn).toHaveBeenCalledWith(
+      CONFIG.scoring.agentMalformedPenaltyDecayUnits,
+    )
+    expect(onActionResult).toHaveBeenCalledWith(expect.objectContaining({
+      lastMoveStatus: "token-limit-exhaustion",
+      predictionStatus: "empty-prediction",
+    }))
+  })
 })

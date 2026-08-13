@@ -176,6 +176,23 @@ export function buildDuplicateToolCallMessage(duplicateToolCalls: AgentToolCall[
   }
 }
 
+// buildTokenLimitExhaustionPrompt gives a capped-empty response one free corrective retry — only a
+// repeat failure after this warning charges a penalty, matching lastPredictionOutcomeTool's
+// "the same fixed score penalty was charged" description of that outcome. Named explicitly, the
+// same way buildDuplicateToolCallMessage names its own consequence, rather than leaving the model to
+// discover the cost only after incurring it. Keeping the complete user message here alongside the
+// other model-facing context prevents controller policy code from owning prompt wording.
+export function buildTokenLimitExhaustionPrompt(tokensUsage: number): AgentChatMessage {
+  return {
+    role: "user",
+    content:
+      `Warning: Your previous response had a token-limit-exhaustion error and used ${tokensUsage} tokens without returning a ` +
+      "prediction. Try once more to return the correct prediction format output without overthinking. This retry is " +
+      "free, but on reaching the token limit again without a prediction you will be charged the same fixed penalty "+
+      "as a malformed response.",
+  }
+}
+
 // --- 2. Tool definitions ---
 // Tool definitions are sent alongside messages so the model knows what it can call.
 // Tool return formats are documented in descriptions because `parameters` only describes inputs.
@@ -277,14 +294,17 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
       "null=first turn, no history yet; applied=the move executed successfully; visitedBefore indicates whether it",
       "revisited a cell; invalid-move=that move hit a wall or boundary, execution stopped there; reached-target=destination reached,",
       "stop predicting; malformed-response=previous response was not valid JSON, requested a tool that does not exist, or ignored a",
-      "duplicate tool call warning — no moves were replayed and a fixed score penalty was charged; network-error=HTTP",
+      "duplicate tool call warning — no moves were replayed and a fixed score penalty was charged;",
+      "token-limit-exhaustion=the previous empty prediction reached the configured token threshold and its corrective warning opportunity",
+      "also returned no prediction — no moves were replayed and the same fixed score penalty was charged; network-error=HTTP",
       "failure, no score charged. predictionStatus instead summarizes the entire submitted prediction as one story:",
       "all-applied=all submitted moves applied and at least one entered a previously unvisited cell, or the target was",
       "reached; partially-applied=one or more moves applied, at least one entered a previously unvisited cell, and replay",
       "then stopped at the first invalid move; repeat-cell-visits=one or more moves applied, but none entered a new cell — replay",
       "may have completed or stopped at an invalid move; invalid-prediction=a real",
       "prediction was replayed but the very first submitted move was already invalid, no progress made;",
-      "empty-prediction=a malformed-response or network-error meant there was no usable prediction to replay at all.",
+      "empty-prediction=a malformed-response, token-limit-exhaustion, or network-error meant there was no usable",
+      "prediction to replay at all.",
       "lastSubmittedMoves lists every submitted move from that turn as a zero-based <index>:<move> entry, including moves",
       "after the first invalid move that were not executed. lastReplayStartIndex is 0 when moves were submitted and marks",
       "the first entry. lastAppliedMoveIndex is the index within",

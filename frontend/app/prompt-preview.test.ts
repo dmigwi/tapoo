@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import { AGENT_CONTEXT_TOOLS, buildAgentMessages } from "./agent/context"
+import {
+  AGENT_CONTEXT_TOOLS,
+  buildAgentMessages,
+  buildDuplicateToolCallMessage,
+  buildTokenLimitExhaustionPrompt,
+} from "./agent/context"
 import { CONFIG } from "./config"
 import { buildPreviewSections, previewPlayerNote } from "./prompt-preview"
 
@@ -49,11 +54,31 @@ describe("prompt preview content", () => {
   it("gives every section a heading and a body", () => {
     const sections = buildPreviewSections()
 
-    expect(sections).toHaveLength(4)
+    expect(sections).toHaveLength(6)
     for (const section of sections) {
       expect(section.heading.length).toBeGreaterThan(0)
       expect(section.body.length).toBeGreaterThan(0)
     }
+  })
+
+  it("publishes the duplicate tool call warning rendered from a sample repeated call", () => {
+    const warning = bodyOf(promptPreview.duplicateToolCallHeading)
+
+    // Comparing against the builder's own output (not a transcribed copy) is what guarantees this
+    // can't drift from the real mid-turn warning — same as the system-prompt test above.
+    expect(warning).toBe(
+      buildDuplicateToolCallMessage([
+        { id: "call_1", function: { name: AGENT_CONTEXT_TOOLS[0].function.name } },
+      ]).content,
+    )
+    expect(warning).toContain(AGENT_CONTEXT_TOOLS[0].function.name)
+  })
+
+  it("publishes the token limit exhaustion warning rendered at the real configured token cap", () => {
+    const warning = bodyOf(promptPreview.tokenLimitExhaustionHeading)
+
+    expect(warning).toBe(buildTokenLimitExhaustionPrompt(runtime.modelConfig.numPredict).content)
+    expect(warning).toContain(String(runtime.modelConfig.numPredict))
   })
 
   it("names the agent the prompt was rendered for", () => {
