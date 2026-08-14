@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   agentConfigValidationError,
+  describeProviderHttpFailure,
   isValidAgentEndpoint,
   normalizeAgentEndpoint,
 } from "./config"
@@ -233,5 +234,31 @@ describe("agent config", () => {
         playerName: "Scout",
       }),
     ).toBe(CONFIG.agentConfig.invalidApiMessage)
+  })
+})
+
+describe("describeProviderHttpFailure", () => {
+  it("explains every status this function recognizes", () => {
+    const recognizedStatuses = [400, 401, 403, 404, 429, 500, 502, 503, 504]
+
+    for (const status of recognizedStatuses) {
+      const explanation = describeProviderHttpFailure(status)
+      expect(explanation, `status ${status}`).toBeTruthy()
+      expect(typeof explanation).toBe("string")
+    }
+  })
+
+  it("returns undefined for a status it has no specific explanation for", () => {
+    expect(describeProviderHttpFailure(418)).toBeUndefined()
+  })
+
+  it("gives 401 and 403 distinct explanations, since one is a bad credential and the other a valid one lacking permission", () => {
+    expect(describeProviderHttpFailure(401)).not.toBe(describeProviderHttpFailure(403))
+  })
+
+  it("keeps the 504 explanation broad, with long generations only as a contributing factor", () => {
+    expect(describeProviderHttpFailure(504)).toBe(
+      "Provider gateway timed out waiting on the backend. Long-running requests can contribute.",
+    )
   })
 })

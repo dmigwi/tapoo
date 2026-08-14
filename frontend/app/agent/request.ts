@@ -1,5 +1,6 @@
 import { logTapooDiagnostic, setTapooLogContext } from "../logs"
 import { CONFIG } from "../config"
+import { describeProviderHttpFailure } from "./config"
 import {
   AGENT_CONTEXT_TOOLS,
   buildAgentMessages,
@@ -18,7 +19,11 @@ import {
 } from "./protocol"
 import { PROVIDER_ADAPTERS } from "./providers"
 import type { ProviderAdapter } from "./providers"
-import { resolveBatchEfficiencyClass } from "./efficiency"
+import {
+  formatPlayerStatusLabel,
+  getBatchEfficiencyMetrics,
+  resolveStatusSpeedClass,
+} from "./efficiency"
 import type {
   AgentChatMessage,
   AgentApiConfig,
@@ -43,8 +48,8 @@ type RequestAgentPredictionInput = {
   timeoutMs: number
   // Delay applied before each provider request after the first within one turn — a turn issuing
   // several rounds while servicing tool calls otherwise fires them back to back with no gap at
-  // all, which a provider's own rate limiting can see as a burst even when turns themselves are
-  // well paced. See agentApiTurnPollIntervalMs (config.ts) for the separate, larger delay between
+  // all, which can look like a burst to the upstream provider even when turns themselves are well
+  // paced. See agentApiTurnPollIntervalMs (config.ts) for the separate, larger delay between
   // turns — this is deliberately the smaller, request-level sibling of that value.
   requestIntervalMs: number
   agent: AgentApiConfig
@@ -117,6 +122,7 @@ async function requestChatTurn(
   requestCount: number,
   isFirstRequestOfLevel: boolean,
   agentMode: AgentMode,
+  player: string,
 ): Promise<AgentChatTurnResult> {
   const endpointDisplay = endpointLabel(agent.endpoint)
 
@@ -148,6 +154,7 @@ async function requestChatTurn(
 
   logTapooDiagnostic(agentApiModeName, "info", "Agent request.", {
     endpoint: endpointDisplay,
+    player,
     api: agent.api,
     requestCount,
     agentMode,
@@ -184,6 +191,7 @@ async function requestChatTurn(
         details: {
           endpoint: endpointDisplay,
           status: response.status,
+          statusHint: describeProviderHttpFailure(response.status),
           statusText: response.statusText,
           responseBody: responseBodyText,
         },
@@ -229,6 +237,7 @@ export function requestPredictionWithAbort({
     wantsPredictionFormat: boolean,
     requestCount: number,
     agentMode: AgentMode,
+    player: string,
   ): Promise<AgentChatTurnResult> => {
     const controller = new AbortController()
     activeController = controller
@@ -239,7 +248,7 @@ export function requestPredictionWithAbort({
     try {
       return await requestChatTurn(
         agent, messages, tools, controller.signal,
-        wantsPredictionFormat, requestCount, isFirstRequestOfLevel, agentMode,
+        wantsPredictionFormat, requestCount, isFirstRequestOfLevel, agentMode, player,
       )
     } finally {
       window.clearTimeout(requestTimeout)
@@ -257,7 +266,15 @@ export function requestPredictionWithAbort({
       const toolHandlers = buildAgentToolHandlers(state, lastActionResult, agent)
       // The classification is computed once up front so it appears unconditionally in the system
       // prompt, not only when the model chooses to call get_prediction_rules.
-      const batchEfficiencyClass = resolveBatchEfficiencyClass(state.traversalHistory, agent)
+      const {playerUniqueCellsVisited, decayUnitsCharged} = getBatchEfficiencyMetrics(state.traversalHistory, agent)
+      const batchEfficiencyClass = resolveStatusSpeedClass(playerUniqueCellsVisited,decayUnitsCharged)
+
+      const player = formatPlayerStatusLabel({
+        playerName: agent.playerName,
+        uniqueCellsVisited: playerUniqueCellsVisited,
+        decayUnitsCharged: decayUnitsCharged,
+      }, batchEfficiencyClass)
+
       let messages = buildAgentMessages(agent.playerName, batchEfficiencyClass)
       let requestCount = 0
 
@@ -299,7 +316,7 @@ export function requestPredictionWithAbort({
         const agentMode = hasWarningBeenIssued ? "warned" : (wantsPredictionFormat ? "predict" : "tools")
 
         const chatTurn = await requestChatTurnWithTimeout(
-          messages, toolsToSend, wantsPredictionFormat, requestCount, agentMode,
+          messages, toolsToSend, wantsPredictionFormat, requestCount, agentMode, player
         )
         if (chatTurn.ok === false) {
           // Exit 2: HTTP failure or timeout; the request helper already shaped the failure.

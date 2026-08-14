@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  calculateTraversalSpeedUnits,
   getBatchEfficiencyMetrics,
   resolveBatchEfficiencyClass,
+  resolveTraversalSpeedClass,
 } from "./efficiency"
 import type { AgentApiConfig, TraversalHistoryEntry } from "../types"
 
@@ -118,5 +120,31 @@ describe("getBatchEfficiencyMetrics", () => {
       decayUnitsCharged: 5,
       playerTurnsTaken: 3,
     })
+  })
+})
+
+describe("calculateTraversalSpeedUnits", () => {
+  it("normalizes traversal speed into fixed-point units", () => {
+    // 4 new cells for 2 decay units is a speed of 2.00; a single-stepping round sits at 1.00.
+    expect(calculateTraversalSpeedUnits(4, 2)).toBe(200)
+    expect(calculateTraversalSpeedUnits(5, 5)).toBe(100)
+    expect(calculateTraversalSpeedUnits(3, 4)).toBe(75)
+  })
+
+  it("reports zero traversal speed before any decay is charged", () => {
+    // Guards the divide-by-zero on a round that ends before a single turn is charged.
+    expect(calculateTraversalSpeedUnits(0, 0)).toBe(0)
+    expect(calculateTraversalSpeedUnits(4, 0)).toBe(0)
+  })
+})
+
+describe("resolveTraversalSpeedClass", () => {
+  it("classifies a fixed-point value produced by calculateTraversalSpeedUnits directly, with no un-scaling division", () => {
+    // calculateTraversalSpeedUnits(4, 2) is 200 (a raw ratio of 2.00, above the 1.0 baseline).
+    expect(resolveTraversalSpeedClass(calculateTraversalSpeedUnits(4, 2))).toBe("trailblazer")
+    // calculateTraversalSpeedUnits(5, 5) is 100 (a raw ratio of exactly 1.0, the baseline).
+    expect(resolveTraversalSpeedClass(calculateTraversalSpeedUnits(5, 5))).toBe("navigator")
+    // calculateTraversalSpeedUnits(3, 4) is 75 (a raw ratio of 0.75, below the baseline).
+    expect(resolveTraversalSpeedClass(calculateTraversalSpeedUnits(3, 4))).toBe("backtracker")
   })
 })

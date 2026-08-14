@@ -25,7 +25,7 @@ const VERSION_MAJOR = 2
 const VERSION_MINOR = 3
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 5
+const VERSION_PATCH = 6
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -346,14 +346,16 @@ export const CONFIG: AppConfig = {
     // scoreDecayUnits, not this figure.
     interactiveDecayIntervalPerCellMs: 1_000, // Translates to 1sec
     // The real wall-clock delay between agent turns, throttling how often a new turn's first
-    // request goes out. Set well above the old 30s decay-budget figure this replaced, to
-    // pace-throttle turn volume (e.g. Hugging Face rate limits) independently of the scoring math.
-    agentApiTurnPollIntervalMs: 60_000,           // Translates to 1min
+    // request goes out. This sits above the scoring math so provider-facing pacing can be tuned
+    // independently when bursts of fresh turns would otherwise trigger transient 429/backpressure
+    // responses upstream.
+    agentApiTurnPollIntervalMs: 35_000,           // Translates to 35secs
     // A turn issues several provider requests in a row while servicing tool calls (see the
     // request-count derivation in agent/request.ts), with no gap between them otherwise — this is
-    // the delay applied before each request after the first within one turn, so a provider's rate
-    // limit sees paced traffic even from a single busy turn, not just paced turn starts.
-    agentApiRequestPollIntervalMs: 5_000,           // Translates to 5sec
+    // the delay applied before each request after the first within one turn, so even a single busy
+    // turn does not hit the provider as one immediate burst and provoke transient 429/backpressure
+    // responses.
+    agentApiRequestPollIntervalMs: 30_000,           // Translates to 30secs
     // Per provider request, not per turn: a turn issues several rounds, so a whole turn can take a
     // multiple of this (see the request-count derivation in agent/request.ts). Per-request by
     // design — a provider that stops responding is caught on the first round regardless.

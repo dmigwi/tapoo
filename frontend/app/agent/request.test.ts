@@ -349,6 +349,7 @@ describe("agent request service", () => {
       details?: {
         requestCount: number
         agentMode: "predict" | "tools"
+        player: string
         tools: { name: string; description?: string }[]
         messages: unknown[]
       }
@@ -365,6 +366,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 1,
       agentMode: "tools",
+      player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), true),
       messages: [
@@ -384,6 +386,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 2,
       agentMode: "tools",
+      player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
@@ -454,6 +457,7 @@ describe("agent request service", () => {
       details?: {
         requestCount: number
         agentMode: "predict" | "tools"
+        player: string
         tools: { name: string; description?: string }[]
         messages: unknown[]
       }
@@ -470,6 +474,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 1,
       agentMode: "tools",
+      player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), false),
       messages: [
@@ -486,6 +491,7 @@ describe("agent request service", () => {
       api: agent.api,
       requestCount: 2,
       agentMode: "tools",
+      player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
@@ -847,6 +853,96 @@ describe("agent request service", () => {
     })
   })
 
+  it("adds a dual-meaning explanation for provider 429 responses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        statusText: "",
+        text: vi.fn().mockResolvedValue("{\"error\":\"Rate limit exceeded\"}\n"),
+      }),
+    )
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "network-error",
+      diagnostic: {
+        message: "Provider HTTP response failed.",
+        details: {
+          endpoint,
+          status: 429,
+          statusText: "",
+          statusHint:
+            "429 may mean rate limiting or temporary provider capacity exhaustion.",
+          responseBody: "{\"error\":\"Rate limit exceeded\"}\n",
+        },
+      },
+    })
+  })
+
+  it("adds a broad provider-switch hint for 400 request-payload failures", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: "",
+        text: vi.fn().mockResolvedValue(
+          "{\"error\":{\"message\":\"Invalid JSON data: missing field `json_schema`\",\"type\":\"invalid_request_error\",\"code\":\"json_parse_error\"}}",
+        ),
+      }),
+    )
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "network-error",
+      diagnostic: {
+        message: "Provider HTTP response failed.",
+        details: {
+          endpoint,
+          status: 400,
+          statusText: "",
+          statusHint:
+            "Provider may have misunderstood the request payload. Try another provider if the explanation made no sense.",
+          responseBody:
+            "{\"error\":{\"message\":\"Invalid JSON data: missing field `json_schema`\",\"type\":\"invalid_request_error\",\"code\":\"json_parse_error\"}}",
+        },
+      },
+    })
+  })
+
+  it("applies the same 400 explanation to unsupported payload parameters too", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: "",
+        text: vi.fn().mockResolvedValue(
+          "{\"error\":{\"message\":\"unsupported reasoning_effort value: max\",\"type\":\"invalid_request_error\",\"code\":\"invalid_parameter\"}}",
+        ),
+      }),
+    )
+
+    await expect(requestPrediction(requestInput())).resolves.toMatchObject({
+      ok: false,
+      reason: "network-error",
+      diagnostic: {
+        message: "Provider HTTP response failed.",
+        details: {
+          endpoint,
+          status: 400,
+          statusText: "",
+          statusHint:
+            "Provider may have misunderstood the request payload. Try another provider if the explanation made no sense.",
+          responseBody:
+            "{\"error\":{\"message\":\"unsupported reasoning_effort value: max\",\"type\":\"invalid_request_error\",\"code\":\"invalid_parameter\"}}",
+        },
+      },
+    })
+  })
+
   it("still reports a non-ok response when reading its body fails", async () => {
     vi.stubGlobal(
       "fetch",
@@ -867,6 +963,7 @@ describe("agent request service", () => {
           endpoint,
           status: 500,
           statusText: "Internal Server Error",
+          statusHint: "Provider-side error unrelated to the request payload; usually transient.",
           responseBody: undefined,
         },
       },

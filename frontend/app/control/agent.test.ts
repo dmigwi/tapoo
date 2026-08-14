@@ -511,7 +511,7 @@ describe("agent control mode", () => {
     mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
     await flushImmediateAgentTurn()
 
-    expect(mode.readCurrentPlayer?.()).toBe("Blue the Backtracker(0.50)")
+    expect(mode.readCurrentPlayer?.()).toBe("Blue the Backtracker - 0.50x")
   })
 
   it("keeps a single successful prediction as applied", async () => {

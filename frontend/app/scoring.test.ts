@@ -7,7 +7,6 @@ import {
   calculateMaxScore,
   calculateScoreAfterDecay,
   calculateScoreRetentionUnits,
-  calculateTraversalSpeedUnits,
   resolveWinScore,
   retentionUnitDeltaToDurationMs,
   retentionUnitsToDisplayPercent,
@@ -52,19 +51,6 @@ describe("score helpers", () => {
     expect(buildWinSummary(900_000, 800_000, 1_000_000, 10_000)).toBe(
       "1.00s faster than previous (1.00s behind best)",
     )
-  })
-
-  it("normalizes traversal speed into fixed-point units", () => {
-    // 4 new cells for 2 decay units is a speed of 2.00; a single-stepping round sits at 1.00.
-    expect(calculateTraversalSpeedUnits(4, 2)).toBe(200)
-    expect(calculateTraversalSpeedUnits(5, 5)).toBe(100)
-    expect(calculateTraversalSpeedUnits(3, 4)).toBe(75)
-  })
-
-  it("reports zero traversal speed before any decay is charged", () => {
-    // Guards the divide-by-zero on a round that ends before a single turn is charged.
-    expect(calculateTraversalSpeedUnits(0, 0)).toBe(0)
-    expect(calculateTraversalSpeedUnits(4, 0)).toBe(0)
   })
 
   it("builds agent-api win summaries from traversal speeds", () => {

@@ -56,6 +56,39 @@ export function isAgentReasoningEffort(value: unknown): value is AgentReasoningE
   return typeof value === "string" && AGENT_REASONING_EFFORTS.includes(value as AgentReasoningEffort)
 }
 
+// describeProviderHttpFailure augments a raw HTTP status with the small amount of agent-provider
+// interpretation that repeated logs have proven useful. It stays here so request code does not
+// need to know provider-specific failure patterns or operational quirks. Classified on status
+// alone: response bodies for these failures vary too much by provider to match reliably (e.g. the
+// 429 body Tapoo has actually seen for a capacity-exhaustion case was the same generic
+// "Rate limit exceeded" text as an ordinary rate limit).
+export function describeProviderHttpFailure(status: number): string | undefined {
+  switch (status) {
+    case 400:
+      return "Provider may have misunderstood the request payload. Try another provider if the explanation made no sense."
+    case 401:
+      return "Credential rejected or missing. Check the agent's Bearer Token/API Key."
+    case 403:
+      return "Credential accepted but not authorized for this model or endpoint."
+    case 404:
+      return "Endpoint or model not found. Check the request path and model name for typos."
+    case 429:
+      return "429 may mean rate limiting or temporary provider capacity exhaustion."
+    case 500:
+      return "Provider-side error unrelated to the request payload; usually transient."
+    case 502:
+      return "Provider's gateway couldn't reach the model backend; usually transient."
+    case 503:
+      return "Provider temporarily unavailable or overloaded; usually transient."
+    case 504:
+      // Hugging Face-compatible routes previously hit this timeout class until Tapoo started
+      // sending the provider-supported X-Wait-For-Model header where applicable.
+      return "Provider gateway timed out waiting on the backend. Long-running requests can contribute."
+    default:
+      return undefined
+  }
+}
+
 // normalizeAgentEndpoint makes host:port shorthand usable by browser fetch while keeping HTTP(S) explicit.
 export function normalizeAgentEndpoint(endpoint: string): URL | null {
   const trimmedEndpoint = endpoint.trim()

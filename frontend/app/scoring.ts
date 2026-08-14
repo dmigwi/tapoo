@@ -1,5 +1,5 @@
 import { CONFIG } from "./config"
-import { resolveTraversalSpeedClass } from "./agent/efficiency"
+import { resolveTraversalSpeedClass, traversalSpeedUnitsToDisplay, capitalize } from "./agent/efficiency"
 import type {
   AgentSpeedBestComparison,
   AgentSpeedPreviousComparison,
@@ -80,43 +80,15 @@ export function calculateScoreRetentionUnits(
   return clampRetentionUnits(roundedRetentionUnits)
 }
 
-// calculateTraversalSpeedUnits normalizes one round's progress-per-decay-unit into fixed-point
-// units. This is the round's speed, not one agent's: every seat shares the same maze and the same
-// score, so the completed round is what a stored record can meaningfully compare against.
-export function calculateTraversalSpeedUnits(
-  uniqueCellsVisited: number,
-  scoreDecayUnits: number,
-): number {
-  if (scoreDecayUnits <= 0) {
-    return 0
-  }
-
-  const halfDecayRoundingOffset = Math.floor(scoreDecayUnits / 2)
-  const scaledSpeedUnits = uniqueCellsVisited * scoring.traversalSpeedScaleUnits + halfDecayRoundingOffset
-
-  return Math.max(0, Math.floor(scaledSpeedUnits / scoreDecayUnits))
-}
-
-// traversalSpeedUnitsToDisplay renders fixed-point speed units as the plain ratio players read.
-// The decimal count matches traversalSpeedScaleUnits exactly, so display is lossless: two rounds
-// that stored different speeds can never render as the same number and look like a false match.
-export function traversalSpeedUnitsToDisplay(traversalSpeedUnits: number): string {
-  return (traversalSpeedUnits / scoring.traversalSpeedScaleUnits).toFixed(
-    String(scoring.traversalSpeedScaleUnits).length - 1,
-  )
-}
-
 // formatTraversalSpeedLabel renders the speed a round actually achieved together with the
 // classification it earned, e.g. "3.123 (Trailblazer)". Only an achieved speed carries a
 // classification — a delta between two rounds is a difference, not a pace, so deltas stay bare
 // numbers.
 function formatTraversalSpeedLabel(traversalSpeedUnits: number): string {
-  const speedClass = resolveTraversalSpeedClass(traversalSpeedUnits / scoring.traversalSpeedScaleUnits)
+  const speedClass = resolveTraversalSpeedClass(traversalSpeedUnits)
+  const speedValue = traversalSpeedUnitsToDisplay(traversalSpeedUnits)
 
-  return [
-    traversalSpeedUnitsToDisplay(traversalSpeedUnits),
-    `(${speedClass.charAt(0).toUpperCase()}${speedClass.slice(1)})`,
-  ].join(" ")
+  return `${speedValue} (${capitalize(speedClass)})`
 }
 
 // retentionUnitsToDisplayPercent converts fixed-point retention units into UI percentage text.
