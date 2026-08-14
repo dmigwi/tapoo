@@ -3,6 +3,7 @@
 [![Go CI](https://github.com/dmigwi/tapoo/actions/workflows/go.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/go.yml)
 [![Pages](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml)
 [![Go Version](https://img.shields.io/badge/go-1.25+-00ADD8.svg)](https://go.dev/)
+[![Page Deployment](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml)
 
 Tapoo is a maze runner hide-and-seek game with two interfaces built from the same codebase: a Go terminal game and a browser SPA with the same terminal-inspired feel.
 
@@ -78,7 +79,7 @@ Tapoo increases maze area as levels rise. Progress continues until the current t
 <details>
 <summary><strong>Browser App</strong></summary>
 
-The browser build outputs a bundled file at [public/js/tapoo.min.js](/public/js/tapoo.min.js) and serves the SPA from [public/index.html](/public/index.html).
+The browser build emits versioned JS/CSS bundles under [public/js](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/public/js) and [public/css](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/public/css), then serves the SPA from [public/index.html](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/public/index.html).
 
 This compiles [frontend/tapoo.ts](/frontend/tapoo.ts) with `esbuild` into a minified browser bundle.
 
