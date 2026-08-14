@@ -1,5 +1,6 @@
 import { logTapooDiagnostic, setTapooLogContext } from "../logs"
 import { CONFIG } from "../config"
+import { describeProviderHttpFailure } from "./config"
 import {
   AGENT_CONTEXT_TOOLS,
   buildAgentMessages,
@@ -47,8 +48,8 @@ type RequestAgentPredictionInput = {
   timeoutMs: number
   // Delay applied before each provider request after the first within one turn — a turn issuing
   // several rounds while servicing tool calls otherwise fires them back to back with no gap at
-  // all, which a provider's own rate limiting can see as a burst even when turns themselves are
-  // well paced. See agentApiTurnPollIntervalMs (config.ts) for the separate, larger delay between
+  // all, which can look like a burst to the upstream provider even when turns themselves are well
+  // paced. See agentApiTurnPollIntervalMs (config.ts) for the separate, larger delay between
   // turns — this is deliberately the smaller, request-level sibling of that value.
   requestIntervalMs: number
   agent: AgentApiConfig
@@ -190,6 +191,7 @@ async function requestChatTurn(
         details: {
           endpoint: endpointDisplay,
           status: response.status,
+          statusHint: describeProviderHttpFailure(response.status),
           statusText: response.statusText,
           responseBody: responseBodyText,
         },
