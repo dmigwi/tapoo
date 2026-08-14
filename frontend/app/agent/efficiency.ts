@@ -148,9 +148,9 @@ export function agentDisplayName(agent: AgentApiConfig, traversalHistory: Traver
   return nameWithSpeedClass(agent.playerName, resolveBatchEfficiencyClass(traversalHistory, agent))
 }
 
-// formatPlayerStatusLabel renders the "{name} the {Class}({rate})" segment shown on the
+// formatPlayerStatusLabel renders the "{name} the {Class} - {rate}x" segment shown on the
 // running-status line for whoever is currently playing — interactive or agent-api. A player who
-// hasn't been charged any decay units yet shows "(Default)" rather than a computed rate. No
+// hasn't been charged any decay units yet shows "- Default" instead of a computed rate. No
 // leading/trailing whitespace: CONFIG.messages.runningStatus owns the spacing around {player}.
 // speedClass defaults to resolving it from status, but a caller that already classified the same
 // (uniqueCellsVisited, decayUnitsCharged) pair for its own purposes — e.g. agent/request.ts, which
@@ -161,8 +161,8 @@ export function formatPlayerStatusLabel(
   speedClass: BatchEfficiencyClass = resolveStatusSpeedClass(status.uniqueCellsVisited, status.decayUnitsCharged),
 ): string {
   const rateDisplay = status.decayUnitsCharged > 0
-    ? traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(status.uniqueCellsVisited, status.decayUnitsCharged))
+    ? `${traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(status.uniqueCellsVisited, status.decayUnitsCharged))}x`
     : "Default"
 
-  return `${nameWithSpeedClass(status.playerName, speedClass)}(${rateDisplay})`
+  return `${nameWithSpeedClass(status.playerName, speedClass)} - ${rateDisplay}`
 }
