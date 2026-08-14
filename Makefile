@@ -2,7 +2,7 @@
 
 COVERAGE_FILE := coverage.out
 GOCACHE := $(CURDIR)/.gocache
-GOVULNCHECK_VERSION := v1.5.0
+GOVULNCHECK_VERSION := v1.7.0
 PNPM := pnpm
 
 export GOCACHE

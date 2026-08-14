@@ -7,6 +7,9 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
 const rootDirectory = path.resolve(scriptDirectory, "..")
 const templatesDirectory = path.join(rootDirectory, "frontend", "templates")
 const publicDirectory = path.join(rootDirectory, "public")
+const stylesheetHref = process.env.TAPOO_STYLESHEET_HREF ?? "./css/tapoo.min.css"
+const pageChromeScriptSrc = process.env.TAPOO_PAGE_CHROME_SRC ?? "./js/page-chrome.min.js"
+const tapooScriptSrc = process.env.TAPOO_GAME_SRC ?? "./js/tapoo.min.js"
 
 async function readTemplate(name) {
   return readFile(path.join(templatesDirectory, name), "utf8")
@@ -88,6 +91,7 @@ async function buildPage(layout, sharedPartials, page) {
     ...sharedPartials,
     ...page,
     pageContent,
+    stylesheetHref,
     primaryMenuItem: indentHtml(await readTemplate(page.primaryMenuItem), "            "),
     // Only the agent page has prompts to show, so every other page leaves the slot empty.
     promptsLink: page.promptsLink
@@ -107,13 +111,13 @@ const sharedPartials = {
 }
 const gameScriptTags = indentHtml(
   [
-    '<script defer src="./js/page-chrome.min.js"></script>',
-    '<script defer src="./js/tapoo.min.js"></script>',
+    `<script defer src="${pageChromeScriptSrc}"></script>`,
+    `<script defer src="${tapooScriptSrc}"></script>`,
   ].join("\n"),
   "    ",
 )
 const staticPageScriptTags = indentHtml(
-  '<script defer src="./js/page-chrome.min.js"></script>',
+  `<script defer src="${pageChromeScriptSrc}"></script>`,
   "    ",
 )
 
