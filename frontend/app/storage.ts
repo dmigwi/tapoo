@@ -388,6 +388,27 @@ export function recordAgentTurnStats(
   return updatedAgent
 }
 
+// resetAgentRoundStats rebinds every configured agent to a fresh round with zeroed per-round
+// counters. Agent configs live in a separate storage namespace from game progress, so without this
+// explicit reset a new level can briefly inherit stale turnCount/decayUnitsCharged until the first
+// commit of the round overwrites them.
+export function resetAgentRoundStats(
+  level: number,
+  cumulativeRoundCount: number,
+): AgentApiConfig[] {
+  const nextConfigs = loadPersistedAgentApiConfigs().map((agent) => ({
+    ...agent,
+    gameLevel: level,
+    cumulativeRoundCount,
+    levelTurnCount: 0,
+    turnCount: 0,
+    decayUnitsCharged: 0,
+  }))
+
+  savePersistedAgentApiConfigs(nextConfigs)
+  return nextConfigs
+}
+
 // Game progress preference persistence.
 
 // validLevelPreference keeps invalid or stale setup data from escaping storage.

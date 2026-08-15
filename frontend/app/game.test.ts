@@ -471,6 +471,7 @@ async function bootstrapHarness({
     disableAgentApiConfigForNetworkError: vi.fn(),
     loadPersistedAgentApiConfigs: vi.fn(() => agentConfigs),
     loadPersistedSnapshot,
+    resetAgentRoundStats: vi.fn(),
     saveGameProgress,
     saveActiveRoundSnapshot,
     loadTapooLog: vi.fn(() => []),
@@ -566,6 +567,7 @@ describe("bootstrapGame", () => {
       disableAgentApiConfigForNetworkError: vi.fn(),
       loadPersistedAgentApiConfigs: vi.fn(() => []),
       loadPersistedSnapshot,
+      resetAgentRoundStats: vi.fn(),
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
       loadTapooLog: vi.fn(() => []),
@@ -640,6 +642,7 @@ describe("bootstrapGame", () => {
         preferences: { level: 1, wallWeight: 1 },
         round: null,
       })),
+      resetAgentRoundStats: vi.fn(),
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
       loadTapooLog: vi.fn(() => []),
@@ -693,6 +696,7 @@ describe("bootstrapGame", () => {
       disableAgentApiConfigForNetworkError: vi.fn(),
       loadPersistedAgentApiConfigs: vi.fn(() => []),
       loadPersistedSnapshot,
+      resetAgentRoundStats: vi.fn(),
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
       loadTapooLog: vi.fn(() => []),
@@ -756,6 +760,7 @@ describe("bootstrapGame", () => {
         preferences: { level: 1, wallWeight: 1 },
         round: null,
       })),
+      resetAgentRoundStats: vi.fn(),
       saveGameProgress: vi.fn(),
       saveActiveRoundSnapshot: vi.fn(),
       loadTapooLog: vi.fn(() => []),
@@ -1388,7 +1393,7 @@ describe("bootstrapGame", () => {
     )
 
     state = latestRenderedState(harness.render)
-    expect(state.status).toBe("won")
+    expect(state.status).toBe("running")
     expect(state.playerPosition).toEqual({ x: 3, y: 1 })
     expect(actionResult).toEqual(expect.objectContaining({
       lastMoveStatus: "reached-target",
@@ -1407,9 +1412,9 @@ describe("bootstrapGame", () => {
 
     state = latestRenderedState(harness.render)
     expect(state.status).toBe("running")
-    expect(state.level).toBe(2)
-    expect(state.playerPosition).toEqual({ x: 1, y: 1 })
-    expect(harness.mode.readLastActionResult()).toBeNull()
+    expect(state.level).toBe(1)
+    expect(state.playerPosition).toEqual({ x: 3, y: 1 })
+    expect(harness.mode.readLastActionResult()).toEqual(actionResult)
   })
 
   it("keeps pause, proceed, and wall cycling human-driven in agent-api mode", async () => {

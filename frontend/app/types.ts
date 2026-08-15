@@ -455,7 +455,7 @@ export interface MazeActionControl {
   bindActionDispatch: (
     dispatch: MazeActionDispatch,
     readState: () => State,
-    commitAgentTurn: (chargedMovesCount: number) => void,
+    commitTurn: (chargedMovesCount?: number) => void,
   ) => void
   readLastActionResult: () => MazeActionResult | null
   recordActionResult: (actionResult: MazeActionResult) => void

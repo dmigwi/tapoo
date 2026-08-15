@@ -57,7 +57,7 @@ export type AgentMovePoller = {
 
 type HandleAgentTurnLoopOptions = {
   __elements: { body: HTMLElement }
-  __commitAgentTurn: (chargedMovesCount: number) => void
+  __commitAgentTurn: (chargedMovesCount?: number) => void
   __dispatch: MazeActionDispatch
   __dispatchAgentAction: (
     action: MazeAction,

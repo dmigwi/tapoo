@@ -6,6 +6,7 @@ import type {
   MoveAction,
   State,
 } from "../types"
+import { isSuccessfulMoveStatus } from "../status"
 import {
   isFormControlTarget,
   isMazeControlFocused,
@@ -64,6 +65,7 @@ export function createInteractiveMode(
   const handleButtonClick = (
     button: HTMLButtonElement,
     dispatch: MazeActionDispatch,
+    commitTurn: (chargedMovesCount?: number) => void,
   ): void => {
     if (!isMazeControlFocused(elements)) {
       return
@@ -77,7 +79,17 @@ export function createInteractiveMode(
     }
 
     focusApp()
-    // Interactive controls do not request feedback; the game view already reflects the outcome.
+    if (button.dataset.move) {
+      const actionResult = dispatch(action, {
+        wantFeedback: true,
+        playerName: runtime.interactivePlayerName,
+      })
+      if (isSuccessfulMoveStatus(actionResult?.lastMoveStatus)) {
+        commitTurn()
+      }
+      return
+    }
+
     dispatch(action, { playerName: runtime.interactivePlayerName })
   }
 
@@ -89,6 +101,7 @@ export function createInteractiveMode(
   const handleKeydown = (
     event: KeyboardEvent,
     dispatch: MazeActionDispatch,
+    commitTurn: (chargedMovesCount?: number) => void,
   ): void => {
     if (isFormControlTarget(event.target)) {
       return
@@ -107,7 +120,17 @@ export function createInteractiveMode(
     }
 
     event.preventDefault()
-    // Interactive controls do not request feedback; the game view already reflects the outcome.
+    if (moveAction) {
+      const actionResult = dispatch(action, {
+        wantFeedback: true,
+        playerName: runtime.interactivePlayerName,
+      })
+      if (isSuccessfulMoveStatus(actionResult?.lastMoveStatus)) {
+        commitTurn()
+      }
+      return
+    }
+
     dispatch(action, { playerName: runtime.interactivePlayerName })
   }
 
@@ -115,10 +138,11 @@ export function createInteractiveMode(
   const bindControlButtons = (
     buttons: HTMLButtonElement[],
     dispatch: MazeActionDispatch,
+    commitTurn: (chargedMovesCount?: number) => void,
   ): void => {
     buttons.forEach((button) => {
       const onClick = (): void => {
-        handleButtonClick(button, dispatch)
+        handleButtonClick(button, dispatch, commitTurn)
       }
 
       buttonBindings.push({ __button: button, __onClick: onClick })
@@ -131,17 +155,16 @@ export function createInteractiveMode(
     // name lets the runtime identify which MazeActionControl implementation is active.
     name: runtime.controlModes.interactive,
     // bindActionDispatch connects browser keyboard and button events to the shared action dispatcher.
-    bindActionDispatch(dispatch, readState, commitAgentTurn) {
-      void commitAgentTurn
+    bindActionDispatch(dispatch, readState, commitTurn) {
       boundReadState = readState
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
 
-      bindControlButtons(elements.controls, dispatch)
-      bindControlButtons(elements.touchButtons, dispatch)
+      bindControlButtons(elements.controls, dispatch, commitTurn)
+      bindControlButtons(elements.touchButtons, dispatch, commitTurn)
 
       keydownHandler = (event: KeyboardEvent): void => {
-        handleKeydown(event, dispatch)
+        handleKeydown(event, dispatch, commitTurn)
       }
 
       window.addEventListener("keydown", keydownHandler, { passive: false })

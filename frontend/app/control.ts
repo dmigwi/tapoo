@@ -1,4 +1,5 @@
-import { isWonStatus } from "./status"
+import { hasReachedDestination } from "./control/turn-resolution"
+import { isSuccessfulMoveStatus } from "./status"
 import {
   isMoveAction,
   resolvePlayerMove,
@@ -66,7 +67,7 @@ function buildReplayState(
   status: MoveStatus,
   visitedBefore?: boolean,
 ): MazeActionResult {
-  const lastAppliedMoveIndex = status === "applied" || status === "reached-target" ? 0 : null
+  const lastAppliedMoveIndex = isSuccessfulMoveStatus(status) ? 0 : null
   const visitedBeforeState = visitedBefore === undefined ? {} : { visitedBefore }
 
   return buildMazeActionResult(playerName, {
@@ -100,7 +101,7 @@ export function executeActionWithFeedback(
   }
 
   handlers.movePlayer(move, playerName)
-  const finalStatus: MoveStatus = isWonStatus(handlers.state.status) ? "reached-target" : "applied"
+  const finalStatus: MoveStatus = hasReachedDestination(handlers.state) ? "reached-target" : "applied"
 
   const actionResult = buildReplayState(playerName, move, finalStatus, moveEvaluation.visitedBefore)
   handlers.recordActionResult(actionResult)
