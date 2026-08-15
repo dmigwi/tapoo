@@ -291,13 +291,14 @@ function applyWinSummary(totalCells: number): void {
   state.bestWinTraversalSpeedUnits = winScore.bestWinTraversalSpeedUnits
 }
 
-// scheduleRoundPersistence batches non-terminal round updates behind the refresh cadence.
+// scheduleRoundPersistence debounces in-progress interactive move snapshots so rapid key repeats
+// write the latest round once instead of persisting every valid step immediately.
 function scheduleRoundPersistence(): void {
   cancelScheduledRoundPersist()
   scheduledRoundPersist = window.setTimeout(() => {
     scheduledRoundPersist = null
     saveActiveRoundSnapshot(state.controlMode, state)
-  }, timing.refreshInterval)
+  }, timing.persistenceDebounceMs)
 }
 
 // applyRuntimeRoundState installs the maze data shared by restored and newly generated rounds.
@@ -640,6 +641,7 @@ export function bootstrapGame(
   // when fonts swap in, so re-run the same check once they settle — same pattern as
   // page-chrome.ts's document.fonts?.ready.then(syncMenuMode).
   void document.fonts?.ready.then(handleResize)
+
   // This interval is the browser runtime heartbeat that refreshes score, blink, and loss state.
   window.setInterval(() => {
     refreshRunningRoundFrame({
@@ -648,7 +650,7 @@ export function bootstrapGame(
       renderState,
       calculateRoundScore,
     })
-  }, timing.refreshInterval)
+  }, Math.min(timing.interactiveDecayIntervalPerCellMs, timing.blinkIntervalMs) / 2)
 
   // Stored progress wins here; built-in fallbacks only apply when persisted data is absent or invalid.
   const persistedSnapshot = loadPersistedSnapshotWithFallbacks(controlMode.name)

@@ -1,4 +1,6 @@
-const blinkIntervalMs = 500
+import { CONFIG } from "./config"
+
+const { timing } = CONFIG
 
 // GameClock tracks elapsed play time, pause state, and destination blinking cadence.
 export class GameClock {
@@ -34,10 +36,10 @@ export class GameClock {
     return Math.max(0, this.levelDurationMs - this.elapsed(now))
   }
 
-  // blink toggles the destination marker in half-second phases.
+  // blink toggles the destination marker in configured visibility phases.
   blink(now = performance.now()): boolean {
-    // Alternate the destination visibility in half-second phases while the round is active.
-    return Math.floor(this.elapsed(now) / blinkIntervalMs) % 2 === 0
+    // Alternate the destination visibility while the round is active.
+    return Math.floor(this.elapsed(now) / timing.blinkIntervalMs) % 2 === 0
   }
 
   // pause captures the instant at which active time should stop advancing.

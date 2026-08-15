@@ -782,7 +782,8 @@ export type AppConfig = {
     traversalSpeedScaleUnits: number
   }
   timing: {
-    refreshInterval: number
+    persistenceDebounceMs: number
+    blinkIntervalMs: number
     scoreDecayRate: number
     interactiveDecayIntervalPerCellMs: number
     agentApiTurnPollIntervalMs: number

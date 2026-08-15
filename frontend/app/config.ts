@@ -25,7 +25,7 @@ const VERSION_MAJOR = 2
 const VERSION_MINOR = 3
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 8
+const VERSION_PATCH = 9
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -337,9 +337,10 @@ export const CONFIG: AppConfig = {
     agentMalformedPenaltyDecayUnits: 3,      // Flat charge for a malformed/protocol-violation response — costlier than any gameplay mistake.
     traversalSpeedScaleUnits: 100, // Scales the traversal speed ratio as its display precision.
   },
-  // Timing values drive refresh cadence, score decay, and the slower agent-api pacing.
+  // Timing values drive UI redraws, persistence debounce, score decay, and slower agent-api pacing.
   timing: {
-    refreshInterval: 250,
+    persistenceDebounceMs: 250,
+    blinkIntervalMs: 700,
     scoreDecayRate: 100,
     // Also sizes agent-api mode's clock, which only exists there to drive the destination blink
     // animation (see restoreClock's comment in game.ts) — agent-api score decay comes from
