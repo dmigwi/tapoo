@@ -395,10 +395,10 @@ describe("agent control mode", () => {
       }))
 
     const readState = vi.fn().mockReturnValue(createControlFixture())
-    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
+    const commitAgentTurn = vi.fn((chargedMovesCount?: number) => 
       createControlFixture({
         currentCell: { row: 1, col: 1 },
-        score: 800 - chargedMovesCount * 100,
+        score: 800 - (chargedMovesCount ?? 0) * 100,
       }),
     )
 
@@ -501,8 +501,8 @@ describe("agent control mode", () => {
     const readState = vi.fn().mockReturnValue(
       createControlFixture({ traversalHistory: [selfVisit(0, 0), visit(0, 1)] }),
     )
-    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
-      createControlFixture({ score: 800 - chargedMovesCount * 100 }),
+    const commitAgentTurn = vi.fn((chargedMovesCount?: number) =>
+      createControlFixture({ score: 800 - (chargedMovesCount ?? 0) * 100 }),
     )
 
     const agentWithDecay = { ...enabledAgentConfigs()[0], decayUnitsCharged: 2 }
@@ -544,10 +544,10 @@ describe("agent control mode", () => {
     }))
 
     const readState = vi.fn().mockReturnValue(createControlFixture())
-    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
+    const commitAgentTurn = vi.fn((chargedMovesCount?: number) =>
       createControlFixture({
         currentCell: { row: 0, col: 1 },
-        score: 800 - chargedMovesCount * 100,
+        score: 800 - (chargedMovesCount ?? 0) * 100,
       }),
     )
 
@@ -569,7 +569,7 @@ describe("agent control mode", () => {
     )
   })
 
-  it("logs final round payload when an agent wins the level", async () => {
+  it("logs final round payload from the same finalized score the UI uses", async () => {
     const elements = createAgentFormElements()
     savePersistedAgentApiConfigs(enabledAgentConfigs())
     vi.stubGlobal(
@@ -593,7 +593,7 @@ describe("agent control mode", () => {
       state = createControlFixture({
         turnCount: 1,
         cumulativeRoundCount: 1,
-        lastRoundScore: 700,
+        lastRoundScore: 800,
         score: 700,
         status: "won",
         winSummary: "New record",
@@ -610,7 +610,7 @@ describe("agent control mode", () => {
     expect(lastEntry.log).toBe("info")
     expect(lastEntry.details.outcome).toBe("won")
     expect(lastEntry.details.level).toBe(4)
-    expect(lastEntry.details.score).toBe(700)
+    expect(lastEntry.details.score).toBe(800)
     expect(lastEntry.details.winSummary).toBe("New record")
     expect(lastEntry.details.agent.playerName).toBe("Blue")
     expect(lastEntry.details.agent.model).toBe("llama3.2")
@@ -666,10 +666,10 @@ describe("agent control mode", () => {
       }))
 
     const readState = vi.fn().mockReturnValue(createControlFixture())
-    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
+    const commitAgentTurn = vi.fn((chargedMovesCount?: number) =>
       createControlFixture({
         currentCell: { row: 0, col: 1 },
-        score: 800 - chargedMovesCount * 100,
+        score: 800 - (chargedMovesCount ?? 0) * 100,
       }),
     )
 
@@ -729,11 +729,11 @@ describe("agent control mode", () => {
     }))
 
     const readState = vi.fn().mockReturnValue(createControlFixture())
-    const commitAgentTurn = vi.fn((chargedMovesCount: number) =>
+    const commitAgentTurn = vi.fn((chargedMovesCount?: number) =>
       createControlFixture({
         currentCell: { row: 0, col: 1 },
         destinationCell: { row: 0, col: 1 },
-        score: 800 - chargedMovesCount * 100,
+        score: 800 - (chargedMovesCount ?? 0) * 100,
         status: "won",
       }),
     )

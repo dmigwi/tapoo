@@ -441,7 +441,7 @@ describe("agent api turn loop", () => {
     )
     const onActiveAgentChange = vi.fn()
     // commitAgentTurn stands in for game.ts committing the turn and flipping status to "lost"
-    // (e.g. via handleLoss) once the round's score is depleted mid-turn.
+    // once the round's score is depleted mid-turn.
     let roundStatus: State["status"] = "running"
     const commitAgentTurn = vi.fn(() => {
       roundStatus = "lost"

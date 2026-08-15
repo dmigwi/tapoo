@@ -84,14 +84,19 @@ describe("interactive control mode", () => {
       touchControls: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
-    const dispatch = vi.fn()
+    const dispatch = vi.fn((action: { type: string }) => (
+      action.type === "MoveRight" || action.type === "MoveUp"
+        ? createActionResult({ lastMoveStatus: "applied" })
+        : null
+    ))
+    const commitTurn = vi.fn()
 
     const mode = createInteractiveMode(elements)
 
     expect(mode.name).toBe(CONFIG.runtime.controlModes.interactive)
     expect(mode.readLastActionResult()).toBeNull()
 
-    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn())
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), commitTurn)
     elements.controls[0].click()
     elements.touchButtons[0].click()
     window.dispatchEvent(
@@ -110,11 +115,14 @@ describe("interactive control mode", () => {
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: "restart" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenNthCalledWith(2, {
       type: "MoveRight",
-    }, { playerName: "Self" })
+    }, { wantFeedback: true, playerName: "Self" })
     expect(dispatch).toHaveBeenNthCalledWith(3, { type: "pause" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenNthCalledWith(4, {
       type: "MoveUp",
-    }, { playerName: "Self" })
+    }, { wantFeedback: true, playerName: "Self" })
+    expect(commitTurn).toHaveBeenCalledTimes(2)
+    expect(commitTurn).toHaveBeenNthCalledWith(1)
+    expect(commitTurn).toHaveBeenNthCalledWith(2)
 
     mode.recordActionResult(createActionResult({
       lastMoveStatus: "applied",
@@ -147,6 +155,32 @@ describe("interactive control mode", () => {
     )
 
     expect(dispatch).not.toHaveBeenCalled()
+  })
+
+  it("commits only successful move actions", () => {
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [createButton({ move: "MoveRight" })],
+      touchControls: document.createElement("div"),
+    }
+    elements.app.focus = vi.fn()
+    const dispatch = vi.fn(() => createActionResult({ lastMoveStatus: "invalid-move" }))
+    const commitTurn = vi.fn()
+
+    const mode = createInteractiveMode(elements)
+
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), commitTurn)
+    elements.touchButtons[0].click()
+
+    expect(dispatch).toHaveBeenCalledWith(
+      { type: "MoveRight" },
+      { wantFeedback: true, playerName: "Self" },
+    )
+    expect(commitTurn).not.toHaveBeenCalled()
   })
 
   it("handles human controls only while the terminal app is focused", () => {

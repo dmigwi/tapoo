@@ -69,7 +69,10 @@ function logAgentRoundCompletion({ __state, __agent }: AgentRoundState): void {
       enabled: __agent.enabled,
     },
     level: __state.level,
-    score: __state.score,
+    // Round-end displays and persistence use lastRoundScore, which is finalized only after the
+    // current request's decay has been committed. Reusing it here keeps diagnostics aligned with
+    // the win/loss overlay instead of serializing a transient live score value.
+    score: __state.lastRoundScore,
     winSummary: __state.winSummary,
     turnCount: __state.turnCount,
     cumulativeRoundCount: __state.cumulativeRoundCount,
@@ -229,7 +232,7 @@ export function createAgentMode(
     bindActionDispatch(
       dispatch: MazeActionDispatch,
       readState,
-      commitAgentTurn,
+      commitTurn,
     ) {
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
@@ -260,7 +263,7 @@ export function createAgentMode(
 
       // The poller owns turn timing; this mode supplies UI/storage hooks and move dispatch.
       agentMovePoller = handleAgentTurnLoop({
-        __commitAgentTurn: commitAgentTurn,
+        __commitAgentTurn: commitTurn,
         __disableAgentAfterNetworkError: disableAgentAfterNetworkError,
         __dispatch: dispatch,
         __dispatchAgentAction: dispatchAgentAction,

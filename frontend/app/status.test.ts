@@ -1,16 +1,18 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  canTrackDestinationVisibility,
   canPersistRoundStatus,
   canProceedStatus,
   canShowRestart,
   canShowWallsStatus,
   hasActiveRoundState,
+  isSuccessfulMoveStatus,
   isTooSmallStatus,
   stateInvariantError,
 } from "./status"
 import type { TooSmallStatus, ViewportFitStatus } from "./status"
-import type { GameStatus, PersistedGameStatus, State } from "./types"
+import type { GameStatus, MoveStatus, PersistedGameStatus, State } from "./types"
 
 // valuesOf turns an exhaustive record into the runtime list the tables below iterate. The record is
 // what does the work: annotating a plain array as Status[] only asks that each element belong to the
@@ -169,6 +171,35 @@ describe("isTooSmallStatus", () => {
       expect(TOO_SMALL_STATUSES).toContain(status)
     })
     expect(accepted).toHaveLength(TOO_SMALL_STATUSES.length)
+  })
+})
+
+describe("isSuccessfulMoveStatus", () => {
+  it.each<[MoveStatus | undefined, boolean]>([
+    ["applied", true],
+    ["reached-target", true],
+    ["invalid-move", false],
+    ["malformed-response", false],
+    ["token-limit-exhaustion", false],
+    ["network-error", false],
+    [undefined, false],
+  ])("returns %s for %s", (status, expected) => {
+    expect(isSuccessfulMoveStatus(status)).toBe(expected)
+  })
+})
+
+describe("canTrackDestinationVisibility", () => {
+  const clock = {} as NonNullable<State["clock"]>
+
+  it.each<[State["status"], State["clock"], boolean]>([
+    ["running", clock, true],
+    ["running", null, false],
+    ["paused", clock, false],
+    ["won", clock, false],
+  ])("returns %s for status %s with clock %s", (status, stateClock, expected) => {
+    const state = { status, clock: stateClock } as State
+
+    expect(canTrackDestinationVisibility(state)).toBe(expected)
   })
 })
 

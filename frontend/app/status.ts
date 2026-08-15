@@ -4,6 +4,7 @@ import type {
   GameStatus,
   MazeControlModeName,
   MazeDimensions,
+  MoveStatus,
   PersistedGameStatus,
   RenderGridPoint,
   State,
@@ -94,6 +95,20 @@ export function isWonStatus(status: GameStatus): status is "won" {
 // isLostStatus narrows a status value to the failed end-of-round state.
 export function isLostStatus(status: GameStatus): status is "lost" {
   return status === "lost"
+}
+
+// isSuccessfulMoveStatus identifies replay outcomes where a move actually advanced into a cell.
+export function isSuccessfulMoveStatus(
+  status: MoveStatus | undefined,
+): status is "applied" | "reached-target" {
+  return status === "applied" || status === "reached-target"
+}
+
+// canTrackDestinationVisibility identifies active rounds whose clock can drive target visibility.
+export function canTrackDestinationVisibility(
+  state: State,
+): state is State & { clock: NonNullable<State["clock"]> } {
+  return isRunningStatus(state.status) && state.clock !== null
 }
 
 // isTooSmallStatus identifies both rendered and internal viewport-too-small states.

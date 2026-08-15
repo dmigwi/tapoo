@@ -455,7 +455,7 @@ export interface MazeActionControl {
   bindActionDispatch: (
     dispatch: MazeActionDispatch,
     readState: () => State,
-    commitAgentTurn: (chargedMovesCount: number) => void,
+    commitTurn: (chargedMovesCount?: number) => void,
   ) => void
   readLastActionResult: () => MazeActionResult | null
   recordActionResult: (actionResult: MazeActionResult) => void
@@ -478,7 +478,7 @@ export type State = {
   wallWeight: WallWeight
 
   score: number
-  lastRoundScore: number
+  lastRoundScore: number // Final score of the last completed attempt; losses are completed attempts too.
   lastAttemptRetentionUnits: number | null
   bestWinRetentionUnits: number | null
   lastWinTraversalSpeedUnits: number | null
@@ -782,7 +782,8 @@ export type AppConfig = {
     traversalSpeedScaleUnits: number
   }
   timing: {
-    refreshInterval: number
+    persistenceDebounceMs: number
+    blinkIntervalMs: number
     scoreDecayRate: number
     interactiveDecayIntervalPerCellMs: number
     agentApiTurnPollIntervalMs: number

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { GameClock } from "./clock"
+import { CONFIG } from "./config"
 
 // These tests keep timing, pause, and blink semantics stable across refactors.
 describe("GameClock", () => {
@@ -26,13 +27,14 @@ describe("GameClock", () => {
     expect(clock.remaining(6_100)).toBe(6_500)
   })
 
-  it("toggles the blink phase every half second", () => {
+  it("toggles the blink phase at the configured interval", () => {
     const clock = new GameClock(10_000)
     clock.startedAt = 100
+    const { blinkIntervalMs } = CONFIG.timing
 
     expect(clock.blink(100)).toBe(true)
-    expect(clock.blink(599)).toBe(true)
-    expect(clock.blink(600)).toBe(false)
-    expect(clock.blink(1_100)).toBe(true)
+    expect(clock.blink(100 + blinkIntervalMs - 1)).toBe(true)
+    expect(clock.blink(100 + blinkIntervalMs)).toBe(false)
+    expect(clock.blink(100 + blinkIntervalMs * 2)).toBe(true)
   })
 })

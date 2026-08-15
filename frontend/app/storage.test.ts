@@ -9,6 +9,7 @@ import {
   loadPersistedAgentApiConfigs,
   loadPersistedSnapshot,
   recordAgentTurnStats,
+  resetAgentRoundStats,
   saveActiveRoundSnapshot,
   saveGameProgress,
   savePersistedAgentApiConfigs,
@@ -497,6 +498,59 @@ describe("storage", () => {
     expect(postResetAgent).toMatchObject({
       gameLevel: 1, cumulativeRoundCount: 12, turnCount: 1, decayUnitsCharged: 1,
     })
+  })
+
+  it("clears all agent round counters when a fresh round starts", () => {
+    savePersistedAgentApiConfigs([
+      {
+        id: 1,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: endpoint("/api/agents/blue/move"),
+        api: "ollama",
+        enabled: true,
+        gameLevel: 2,
+        cumulativeRoundCount: 8,
+        levelTurnCount: 4,
+        turnCount: 4,
+        decayUnitsCharged: 9,
+      },
+      {
+        id: 2,
+        playerName: "Red",
+        model: "llama3.2",
+        endpoint: endpoint("/api/agents/red/move"),
+        api: "ollama",
+        enabled: true,
+        gameLevel: 2,
+        cumulativeRoundCount: 8,
+        levelTurnCount: 4,
+        turnCount: 1,
+        decayUnitsCharged: 2,
+      },
+    ])
+
+    const nextConfigs = resetAgentRoundStats(3, 9)
+
+    expect(nextConfigs).toEqual([
+      expect.objectContaining({
+        id: 1,
+        gameLevel: 3,
+        cumulativeRoundCount: 9,
+        levelTurnCount: 0,
+        turnCount: 0,
+        decayUnitsCharged: 0,
+      }),
+      expect.objectContaining({
+        id: 2,
+        gameLevel: 3,
+        cumulativeRoundCount: 9,
+        levelTurnCount: 0,
+        turnCount: 0,
+        decayUnitsCharged: 0,
+      }),
+    ])
+    expect(loadPersistedAgentApiConfigs()).toEqual(nextConfigs)
   })
 
   it("saves and reloads the active round state", () => {
