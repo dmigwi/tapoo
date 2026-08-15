@@ -19,34 +19,32 @@ type SharedResolutionDeps = {
 }
 
 type InteractiveTurnResolutionDeps = SharedResolutionDeps & {
-  handleLoss: () => void
   scheduleRoundPersistence: () => void
 }
 
 type AgentApiTurnResolutionDeps = SharedResolutionDeps & {
-  handleLoss: () => void
+  chargedMovesCount: number
 }
 
-type LossResolutionDeps = Omit<SharedResolutionDeps, "applyWinSummary">
-
-type InProgressTurnResolutionDeps = Omit<SharedResolutionDeps, "persistNow" | "calculateRoundScore"> & {
-  handleLoss: () => void
+type InProgressTurnResolutionDeps = Omit<SharedResolutionDeps, "persistNow" | "calculateRoundScore" | "renderState"> & {
   persistCompletedTurn: () => void
   persistInProgressTurn: () => void
+  totalCells: number
 }
 
-type RunningRoundFrameRefreshDeps = LossResolutionDeps & {
-  lastBlinkVisible: boolean | null
-}
+type RunningRoundFrameRefreshDeps = Omit<SharedResolutionDeps, "applyWinSummary">
+
+const lastBlinkVisibleByState = new WeakMap<State, boolean>()
+let skipNextFrameRender = false
 
 // positionsEqual compares two rendered maze-grid points without allocating helper objects.
 function positionsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean {
   return left.x === right.x && left.y === right.y
 }
 
-// hasReachedDestination reads the live maze position without mutating status, so move replay and
+// hasReachedTarget reads the live maze position without mutating status, so move replay and
 // turn finalization can answer the same question without depending on commit timing.
-export function hasReachedDestination(state: State): boolean {
+export function hasReachedTarget(state: State): boolean {
   if (
     !state.playerPosition ||
     !state.finalPosition ||
@@ -58,70 +56,58 @@ export function hasReachedDestination(state: State): boolean {
   return true
 }
 
-// handleWinCheck updates State once movement has already been applied and the destination may
-// have been reached.
-export function handleWinCheck(state: State): boolean {
-  if (!hasReachedDestination(state)) {
+// handleWin captures the completed-round score and win summary only when the current position has
+// reached the destination.
+function handleWin(state: State, totalCells: number, applyWinSummary: (totalCells: number) => void): boolean {
+  if (!hasReachedTarget(state)) {
     return false
   }
 
+  state.lastRoundScore = state.score
+  applyWinSummary(totalCells)
   state.status = "won"
   return true
 }
 
-// handleLoss finalizes a round once score depletion has already been established by the caller.
-export function handleLoss({
-  state,
-  calculateRoundScore,
-  persistNow,
-  renderState,
-}: LossResolutionDeps): void {
-  const totalCells = state.mazeDimensions?.area ?? 0
-  if (!isRunningStatus(state.status) || totalCells === 0) {
-    return
+// handleLoss captures the completed-round score only when score depletion has already been established.
+function handleLoss(state: State, totalCells: number): boolean {
+  if (!isRunningStatus(state.status) || totalCells === 0 || state.score > 0) {
+    return false
   }
 
-  state.score = calculateRoundScore(totalCells)
   state.status = "lost"
   state.lastRoundScore = state.score
   state.lastAttemptRetentionUnits = 0
   state.winSummary = ""
-  persistNow("state")
-  renderState()
-}
-
-// finalizeWonRound captures the authoritative completed-round score and derives the win summary
-// after the caller has already updated state.score for its own control-model timing.
-function finalizeWonRound(state: State, totalCells: number, applyWinSummary: (totalCells: number) => void): void {
-  state.lastRoundScore = state.score
-  applyWinSummary(totalCells)
-  state.status = "won"
+  return true
 }
 
 // resolveScoredTurnOutcome handles the shared post-score branch once a control mode has already
 // brought state.score up to date for its own timing model.
 function resolveScoredTurnOutcome({
   state,
+  totalCells,
   applyWinSummary,
-  renderState,
-  handleLoss,
   persistCompletedTurn,
   persistInProgressTurn,
-}: InProgressTurnResolutionDeps, totalCells: number): void {
-  if (handleWinCheck(state)) {
-    finalizeWonRound(state, totalCells, applyWinSummary)
-    persistCompletedTurn()
-    renderState()
-    return
-  }
+}: InProgressTurnResolutionDeps): void {
+  const roundCompleted = (
+    handleWin(state, totalCells, applyWinSummary) ||
+    handleLoss(state, totalCells)
+  )
 
-  if (isRunningStatus(state.status) && state.score <= 0) {
-    handleLoss()
+  if (roundCompleted) {
+    persistCompletedTurn()
     return
   }
 
   persistInProgressTurn()
-  renderState()
+}
+
+// suppressNextFrameRender lets an explicit turn commit own the immediate UI update while
+// the next heartbeat still refreshes score/blink bookkeeping without repainting the same state.
+function suppressNextFrameRender(state: State): void {
+  skipNextFrameRender = isRunningStatus(state.status)
 }
 
 // refreshRunningRoundFrame handles one interval-driven refresh of a running round: interactive mode
@@ -129,13 +115,14 @@ function resolveScoredTurnOutcome({
 // the destination blink can still trigger a render even when no gameplay state changed.
 export function refreshRunningRoundFrame({
   state,
-  calculateRoundScore,
   persistNow,
   renderState,
-  lastBlinkVisible,
+  calculateRoundScore,
 }: RunningRoundFrameRefreshDeps): void {
   const totalCells = state.mazeDimensions?.area ?? 0
   if (!isRunningStatus(state.status) || !state.clock || totalCells === 0) {
+    lastBlinkVisibleByState.delete(state)
+    skipNextFrameRender = false
     return
   }
 
@@ -144,22 +131,31 @@ export function refreshRunningRoundFrame({
     state.score = calculateRoundScore(totalCells)
   }
 
-  if (state.score <= 0) {
-    handleLoss({
-      state,
-      calculateRoundScore,
-      persistNow,
-      renderState,
-    })
+  if (handleLoss(state, totalCells)) {
+    skipNextFrameRender = false
+    persistNow("state")
+    renderState()
     return
   }
 
-  const nextBlinkVisible = state.clock.blink()
-  const scoreChanged = state.score !== previousScore
-  const blinkChanged = nextBlinkVisible !== lastBlinkVisible
-  if (scoreChanged || blinkChanged) {
-    renderState()
+  const skipRender = skipNextFrameRender
+  if (skipRender) {
+    skipNextFrameRender = false
   }
+
+  const nextBlinkVisible = state.clock.blink()
+  const lastBlinkVisible = lastBlinkVisibleByState.get(state) ?? null
+  const blinkNotChanged = nextBlinkVisible === lastBlinkVisible
+  if (!blinkNotChanged) {
+    lastBlinkVisibleByState.set(state, nextBlinkVisible)
+  }
+
+  const scoreNotChanged = state.score === previousScore
+  if ((scoreNotChanged && blinkNotChanged) || skipRender) {
+    return
+  }
+
+  renderState()
 }
 
 // commitInteractiveTurn is the interactive mode's single post-move resolution point: by the time
@@ -172,7 +168,6 @@ export function commitInteractiveTurn({
   state,
   applyWinSummary,
   calculateRoundScore,
-  handleLoss,
   persistNow,
   scheduleRoundPersistence,
   renderState,
@@ -188,14 +183,15 @@ export function commitInteractiveTurn({
 
   resolveScoredTurnOutcome({
     state,
+    totalCells,
     applyWinSummary,
-    renderState,
-    handleLoss,
     persistCompletedTurn: () => {
       persistNow("state")
     },
     persistInProgressTurn: scheduleRoundPersistence,
-  }, totalCells)
+  })
+  renderState()
+  suppressNextFrameRender(state)
 }
 
 // commitAgentApiTurn is the agent-api mode's single post-batch resolution point: replay has
@@ -204,17 +200,14 @@ export function commitInteractiveTurn({
 // checks whether replay ended on the destination, optionally finalizes the completed-round win
 // state, delegates depleted-score cases to shared loss handling, and otherwise persists/renders
 // the still-running round once for the whole batch rather than incrementally per move.
-export function commitAgentApiTurn(
-  chargedMovesCount: number,
-  {
-    state,
-    applyWinSummary,
-    calculateRoundScore,
-    persistNow,
-    renderState,
-    handleLoss,
-  }: AgentApiTurnResolutionDeps,
-): void {
+export function commitAgentApiTurn({
+  state,
+  applyWinSummary,
+  calculateRoundScore,
+  persistNow,
+  renderState,
+  chargedMovesCount,
+}: AgentApiTurnResolutionDeps): void {
   const totalCells = state.mazeDimensions?.area ?? 0
   if (!isAgentApiMode(state.controlMode) || totalCells === 0) {
     return
@@ -226,14 +219,15 @@ export function commitAgentApiTurn(
 
   resolveScoredTurnOutcome({
     state,
+    totalCells,
     applyWinSummary,
-    renderState,
-    handleLoss,
     persistCompletedTurn: () => {
       persistNow("state")
     },
     persistInProgressTurn: () => {
       persistNow("round")
     },
-  }, totalCells)
+  })
+  renderState()
+  suppressNextFrameRender(state)
 }

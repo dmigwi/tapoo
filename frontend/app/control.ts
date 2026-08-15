@@ -1,4 +1,4 @@
-import { hasReachedDestination } from "./control/turn-resolution"
+import { hasReachedTarget } from "./control/turn-resolution"
 import { isSuccessfulMoveStatus } from "./status"
 import {
   isMoveAction,
@@ -101,7 +101,7 @@ export function executeActionWithFeedback(
   }
 
   handlers.movePlayer(move, playerName)
-  const finalStatus: MoveStatus = hasReachedDestination(handlers.state) ? "reached-target" : "applied"
+  const finalStatus: MoveStatus = hasReachedTarget(handlers.state) ? "reached-target" : "applied"
 
   const actionResult = buildReplayState(playerName, move, finalStatus, moveEvaluation.visitedBefore)
   handlers.recordActionResult(actionResult)

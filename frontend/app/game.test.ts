@@ -884,6 +884,29 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("running")
   })
 
+  it("renders lifecycle actions once after their state changes join", async () => {
+    const harness = await bootstrapHarness()
+
+    const renderCountBeforePause = harness.render.mock.calls.length
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    )
+    expect(harness.render.mock.calls.length).toBe(renderCountBeforePause + 1)
+    expect(latestRenderedState(harness.render).status).toBe("paused")
+
+    const renderCountBeforeProceed = harness.render.mock.calls.length
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    )
+    expect(harness.render.mock.calls.length).toBe(renderCountBeforeProceed + 1)
+    expect(latestRenderedState(harness.render).status).toBe("running")
+
+    const renderCountBeforeWalls = harness.render.mock.calls.length
+    harness.elements.controls[2].click()
+    expect(harness.render.mock.calls.length).toBe(renderCountBeforeWalls + 1)
+    expect(latestRenderedState(harness.render).wallWeight).toBe(2)
+  })
+
   it("moves the player to the target and persists a win", async () => {
     const harness = await bootstrapHarness({
       dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }],

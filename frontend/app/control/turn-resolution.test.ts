@@ -5,9 +5,7 @@ import type { State, TraversalHistoryEntry } from "../types"
 import {
   commitAgentApiTurn,
   commitInteractiveTurn,
-  handleLoss,
-  hasReachedDestination,
-  handleWinCheck,
+  hasReachedTarget,
   refreshRunningRoundFrame,
 } from "./turn-resolution"
 
@@ -57,74 +55,21 @@ function createState(overrides: Partial<State> = {}): State {
   }
 }
 
-describe("handleWinCheck", () => {
+describe("hasReachedTarget", () => {
   it("detects destination equality without mutating status", () => {
     const state = createState({
       playerPosition: { x: 3, y: 1 },
     })
 
-    expect(hasReachedDestination(state)).toBe(true)
+    expect(hasReachedTarget(state)).toBe(true)
     expect(state.status).toBe("running")
   })
 
-  it("marks the round won when playerPosition reaches finalPosition", () => {
-    const state = createState({
-      playerPosition: { x: 3, y: 1 },
-    })
-
-    expect(handleWinCheck(state)).toBe(true)
-    expect(state.status).toBe("won")
-  })
-
-  it("leaves status unchanged when the destination was not reached", () => {
+  it("returns false when the destination was not reached", () => {
     const state = createState()
 
-    expect(handleWinCheck(state)).toBe(false)
+    expect(hasReachedTarget(state)).toBe(false)
     expect(state.status).toBe("running")
-  })
-})
-
-describe("handleLoss", () => {
-  it("finalizes a depleted running round", () => {
-    const state = createState({
-      score: 50,
-      status: "running",
-      winSummary: "stale",
-    })
-    const calculateRoundScore = vi.fn(() => 0)
-    const persistNow = vi.fn()
-    const renderState = vi.fn()
-
-    handleLoss({
-      state,
-      calculateRoundScore,
-      persistNow,
-      renderState,
-    })
-
-    expect(calculateRoundScore).toHaveBeenCalledWith(2)
-    expect(state.status).toBe("lost")
-    expect(state.score).toBe(0)
-    expect(state.lastRoundScore).toBe(0)
-    expect(state.lastAttemptRetentionUnits).toBe(0)
-    expect(state.winSummary).toBe("")
-    expect(persistNow).toHaveBeenCalledWith("state")
-    expect(renderState).toHaveBeenCalled()
-  })
-
-  it("ignores non-running rounds", () => {
-    const state = createState({ status: "won" })
-    const calculateRoundScore = vi.fn(() => 0)
-
-    handleLoss({
-      state,
-      calculateRoundScore,
-      persistNow: vi.fn(),
-      renderState: vi.fn(),
-    })
-
-    expect(calculateRoundScore).not.toHaveBeenCalled()
-    expect(state.status).toBe("won")
   })
 })
 
@@ -146,7 +91,6 @@ describe("commitInteractiveTurn", () => {
       state,
       applyWinSummary,
       calculateRoundScore,
-      handleLoss: vi.fn(),
       persistNow,
       scheduleRoundPersistence,
       renderState,
@@ -174,7 +118,6 @@ describe("commitInteractiveTurn", () => {
       state,
       applyWinSummary: vi.fn(),
       calculateRoundScore,
-      handleLoss: vi.fn(),
       persistNow: vi.fn(),
       scheduleRoundPersistence,
       renderState: vi.fn(),
@@ -182,6 +125,31 @@ describe("commitInteractiveTurn", () => {
 
     expect(state.score).toBe(140)
     expect(scheduleRoundPersistence).toHaveBeenCalled()
+  })
+
+  it("finalizes a depleted interactive turn as terminal state", () => {
+    const state = createState({
+      status: "running",
+      winSummary: "stale",
+    })
+    const persistNow = vi.fn()
+    const renderState = vi.fn()
+
+    commitInteractiveTurn({
+      state,
+      applyWinSummary: vi.fn(),
+      calculateRoundScore: vi.fn(() => 0),
+      persistNow,
+      scheduleRoundPersistence: vi.fn(),
+      renderState,
+    })
+
+    expect(state.status).toBe("lost")
+    expect(state.lastRoundScore).toBe(0)
+    expect(state.lastAttemptRetentionUnits).toBe(0)
+    expect(state.winSummary).toBe("")
+    expect(persistNow).toHaveBeenCalledWith("state")
+    expect(renderState).toHaveBeenCalled()
   })
 })
 
@@ -196,42 +164,47 @@ describe("commitAgentApiTurn", () => {
     const calculateRoundScore = vi.fn(() => 250)
     const persistNow = vi.fn()
     const renderState = vi.fn()
-    const handleLossMock = vi.fn()
 
-    commitAgentApiTurn(2, {
+    commitAgentApiTurn({
       state,
       applyWinSummary: vi.fn(),
       calculateRoundScore,
       persistNow,
       renderState,
-      handleLoss: handleLossMock,
+      chargedMovesCount: 2,
     })
 
     expect(state.turnCount).toBe(3)
     expect(state.scoreDecayUnits).toBe(3)
     expect(state.score).toBe(250)
     expect(persistNow).toHaveBeenCalledWith("round")
-    expect(handleLossMock).not.toHaveBeenCalled()
     expect(renderState).toHaveBeenCalled()
   })
 
-  it("delegates depleted agent batches to loss handling", () => {
+  it("finalizes depleted agent batches as terminal state", () => {
     const state = createState({
       controlMode: CONFIG.runtime.controlModes.agentApi,
       status: "running",
+      winSummary: "stale",
     })
-    const handleLossMock = vi.fn()
+    const persistNow = vi.fn()
+    const renderState = vi.fn()
 
-    commitAgentApiTurn(1, {
+    commitAgentApiTurn({
       state,
       applyWinSummary: vi.fn(),
       calculateRoundScore: vi.fn(() => 0),
-      persistNow: vi.fn(),
-      renderState: vi.fn(),
-      handleLoss: handleLossMock,
+      persistNow,
+      renderState,
+      chargedMovesCount: 1,
     })
 
-    expect(handleLossMock).toHaveBeenCalled()
+    expect(state.status).toBe("lost")
+    expect(state.lastRoundScore).toBe(0)
+    expect(state.lastAttemptRetentionUnits).toBe(0)
+    expect(state.winSummary).toBe("")
+    expect(persistNow).toHaveBeenCalledWith("state")
+    expect(renderState).toHaveBeenCalled()
   })
 
   it("finalizes a won agent batch before any loss handling", () => {
@@ -244,13 +217,13 @@ describe("commitAgentApiTurn", () => {
     })
     const persistNow = vi.fn()
 
-    commitAgentApiTurn(1, {
+    commitAgentApiTurn({
       state,
       applyWinSummary,
       calculateRoundScore: vi.fn(() => 125),
       persistNow,
       renderState: vi.fn(),
-      handleLoss: vi.fn(),
+      chargedMovesCount: 1,
     })
 
     expect(state.lastRoundScore).toBe(125)
@@ -273,11 +246,159 @@ describe("refreshRunningRoundFrame", () => {
       calculateRoundScore: vi.fn(() => 180),
       persistNow: vi.fn(),
       renderState,
-      lastBlinkVisible: true,
     })
 
     expect(state.score).toBe(180)
     expect(renderState).toHaveBeenCalled()
+  })
+
+  it("tracks blink changes inside the running frame refresh", () => {
+    const state = createState({
+      controlMode: CONFIG.runtime.controlModes.agentApi,
+      score: 200,
+    })
+    const renderState = vi.fn()
+
+    refreshRunningRoundFrame({
+      state,
+      calculateRoundScore: vi.fn(() => 200),
+      persistNow: vi.fn(),
+      renderState,
+    })
+
+    expect(renderState).toHaveBeenCalledTimes(1)
+
+    renderState.mockClear()
+    refreshRunningRoundFrame({
+      state,
+      calculateRoundScore: vi.fn(() => 200),
+      persistNow: vi.fn(),
+      renderState,
+    })
+
+    expect(renderState).not.toHaveBeenCalled()
+  })
+
+  it("skips one running refresh render immediately after an interactive turn commit", () => {
+    const state = createState({
+      controlMode: CONFIG.runtime.controlModes.interactive,
+      score: 200,
+    })
+    const renderState = vi.fn()
+    const calculateRoundScore = vi.fn()
+      .mockReturnValueOnce(190)
+      .mockReturnValueOnce(180)
+      .mockReturnValueOnce(170)
+
+    commitInteractiveTurn({
+      state,
+      applyWinSummary: vi.fn(),
+      calculateRoundScore,
+      persistNow: vi.fn(),
+      scheduleRoundPersistence: vi.fn(),
+      renderState,
+    })
+
+    expect(renderState).toHaveBeenCalledTimes(1)
+
+    refreshRunningRoundFrame({
+      state,
+      calculateRoundScore,
+      persistNow: vi.fn(),
+      renderState,
+    })
+
+    expect(state.score).toBe(180)
+    expect(renderState).toHaveBeenCalledTimes(1)
+
+    refreshRunningRoundFrame({
+      state,
+      calculateRoundScore,
+      persistNow: vi.fn(),
+      renderState,
+    })
+
+    expect(state.score).toBe(170)
+    expect(renderState).toHaveBeenCalledTimes(2)
+  })
+
+  it("consumes the post-commit refresh latch even when that refresh has no render work", () => {
+    const state = createState({
+      controlMode: CONFIG.runtime.controlModes.interactive,
+      score: 200,
+    })
+    const renderState = vi.fn()
+    const calculateRoundScore = vi.fn()
+      .mockReturnValueOnce(190)
+      .mockReturnValueOnce(190)
+      .mockReturnValueOnce(180)
+
+    commitInteractiveTurn({
+      state,
+      applyWinSummary: vi.fn(),
+      calculateRoundScore,
+      persistNow: vi.fn(),
+      scheduleRoundPersistence: vi.fn(),
+      renderState,
+    })
+
+    refreshRunningRoundFrame({
+      state,
+      calculateRoundScore,
+      persistNow: vi.fn(),
+      renderState,
+    })
+
+    expect(renderState).toHaveBeenCalledTimes(1)
+
+    refreshRunningRoundFrame({
+      state,
+      calculateRoundScore,
+      persistNow: vi.fn(),
+      renderState,
+    })
+
+    expect(state.score).toBe(180)
+    expect(renderState).toHaveBeenCalledTimes(2)
+  })
+
+  it("clears the post-commit refresh latch when the next frame is not running", () => {
+    const state = createState({
+      controlMode: CONFIG.runtime.controlModes.interactive,
+      score: 200,
+    })
+    const renderState = vi.fn()
+    const calculateRoundScore = vi.fn()
+      .mockReturnValueOnce(190)
+      .mockReturnValueOnce(180)
+
+    commitInteractiveTurn({
+      state,
+      applyWinSummary: vi.fn(),
+      calculateRoundScore,
+      persistNow: vi.fn(),
+      scheduleRoundPersistence: vi.fn(),
+      renderState,
+    })
+
+    state.status = "paused"
+    refreshRunningRoundFrame({
+      state,
+      calculateRoundScore,
+      persistNow: vi.fn(),
+      renderState,
+    })
+
+    state.status = "running"
+    refreshRunningRoundFrame({
+      state,
+      calculateRoundScore,
+      persistNow: vi.fn(),
+      renderState,
+    })
+
+    expect(state.score).toBe(180)
+    expect(renderState).toHaveBeenCalledTimes(2)
   })
 
   it("delegates depleted running frames to loss handling", () => {
@@ -294,11 +415,42 @@ describe("refreshRunningRoundFrame", () => {
       calculateRoundScore: vi.fn(() => 0),
       persistNow,
       renderState,
-      lastBlinkVisible: true,
     })
 
     expect(state.status).toBe("lost")
     expect(persistNow).toHaveBeenCalledWith("state")
     expect(renderState).toHaveBeenCalled()
+  })
+
+  it("does not suppress a terminal loss render after a turn commit", () => {
+    const state = createState({
+      controlMode: CONFIG.runtime.controlModes.interactive,
+      score: 200,
+    })
+    const persistNow = vi.fn()
+    const renderState = vi.fn()
+    const calculateRoundScore = vi.fn()
+      .mockReturnValueOnce(100)
+      .mockReturnValueOnce(0)
+
+    commitInteractiveTurn({
+      state,
+      applyWinSummary: vi.fn(),
+      calculateRoundScore,
+      persistNow,
+      scheduleRoundPersistence: vi.fn(),
+      renderState,
+    })
+
+    refreshRunningRoundFrame({
+      state,
+      calculateRoundScore,
+      persistNow,
+      renderState,
+    })
+
+    expect(state.status).toBe("lost")
+    expect(persistNow).toHaveBeenCalledWith("state")
+    expect(renderState).toHaveBeenCalledTimes(2)
   })
 })

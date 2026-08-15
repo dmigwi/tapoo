@@ -8,7 +8,6 @@ import { dispatchMazeAction } from "./control"
 import {
   commitAgentApiTurn,
   commitInteractiveTurn,
-  handleLoss,
   refreshRunningRoundFrame,
 } from "./control/turn-resolution"
 import { getTerminalSize } from "./dom"
@@ -118,7 +117,6 @@ const state: State = {
 }
 
 let scheduledRoundPersist: number | null = null
-let lastBlinkVisible: boolean | null = null
 // activeControlMode keeps the currently mounted MazeActionControl so feedback and rebinding stay in sync.
 let activeControlMode: MazeActionControl | null = null
 let runtimeElements: Elements | null = null
@@ -230,15 +228,6 @@ function persistProgressOnly(): void {
   saveGameProgress(state.controlMode, state)
 }
 
-// currentBlinkVisible exposes the current destination blink state for rendering.
-function currentBlinkVisible(): boolean | null {
-  if (!isRunningStatus(state.status) || !state.clock) {
-    return null
-  }
-
-  return state.clock.blink()
-}
-
 // lastReportedInvariant suppresses repeat entries: renderState runs on the blink cadence, so an
 // unfixed violation would otherwise append several entries a second and bury the gameplay history
 // it sits beside.
@@ -273,7 +262,6 @@ function renderState(): void {
   }
 
   reportStateInvariant()
-  lastBlinkVisible = currentBlinkVisible()
   render(runtimeElements, state, activeControlMode?.readCurrentPlayer?.() ?? null)
 }
 
@@ -343,7 +331,6 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
     applyTooSmallState(snapshot.level)
     state.wallWeight = snapshot.wallWeight
     persistProgressOnly()
-    renderState()
     return
   }
 
@@ -357,6 +344,7 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
     traversalHistory: snapshot.traversalHistory,
     finalPosition: snapshot.finalPosition,
   })
+  
   state.score = snapshot.score
   state.lastRoundScore = snapshot.lastRoundScore
   state.scoreDecayUnits = snapshot.scoreDecayUnits ?? 0
@@ -367,7 +355,6 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
   if (isFinishedStatus(snapshot.status)) {
     state.status = snapshot.status
     state.clock = null
-    renderState()
     return
   }
 
@@ -397,11 +384,10 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
   state.status = restoredStatus
   state.winSummary = ""
   // Only a paused round offers a resume; running needs none and await-agent has its own path.
-  renderState()
 }
 
 // startRoundWithDimensions initializes a round after viewport-safe dimensions have been selected.
-function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): void {
+function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): boolean {
   const round = generateMaze(dimensions, state.wallWeight)
   const startCell = cellCoordinateFromGridPoint(round.startPosition)
 
@@ -435,13 +421,13 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
   if (persist) {
     persistNow("state")
   }
-  renderState()
+  return true
 }
 
 // startRound generates and initializes a fresh round for the requested level.
-function startRound(level: number, persist = true): void {
+function startRound(level: number, persist = true): boolean {
   if (!runtimeElements) {
-    return
+    return false
   }
 
   const terminalSize = getTerminalSize(runtimeElements)
@@ -452,11 +438,10 @@ function startRound(level: number, persist = true): void {
     if (persist) {
       persistNow("state")
     }
-    renderState()
-    return
+    return true
   }
 
-  startRoundWithDimensions(dimensions, persist)
+  return startRoundWithDimensions(dimensions, persist)
 }
 
 // redrawRoundForViewport reshapes the current level when its existing dimensions no longer fit.
@@ -470,12 +455,11 @@ function redrawRoundForViewport(level: number): boolean {
     return false
   }
 
-  startRoundWithDimensions(dimensions)
-  return true
+  return startRoundWithDimensions(dimensions)
 }
 
 // restartGame clears persisted progress and restarts from level one.
-function restartGame(): void {
+function restartGame(): boolean {
   cancelScheduledRoundPersist()
   clearPersistedSnapshot(state.controlMode)
   activeControlMode?.clearActionResult()
@@ -486,64 +470,62 @@ function restartGame(): void {
   state.bestWinTraversalSpeedUnits = null
   state.lastRoundScore = 0
   state.winSummary = ""
-  startRound(1, false)
+  return startRound(1, false)
 }
 
 // resumeOrProceed resumes a pause or advances from a finished round.
-function resumeOrProceed(): void {
+function resumeOrProceed(): boolean {
   if (isAwaitAgentStatus(state.status) && isAgentApiMode(state.controlMode)) {
     state.clock?.resume()
     state.status = "running"
     persistNow("state")
-    renderState()
-    return
+    return true
   }
 
   if (isPausedStatus(state.status) && state.clock) {
     state.clock.resume()
     state.status = "running"
     persistNow("round")
-    renderState()
-    return
+    return true
   }
 
   if (isWonStatus(state.status)) {
-    startRound(state.level + 1)
-    return
+    return startRound(state.level + 1)
   }
 
   if (isLostStatus(state.status)) {
-    startRound(state.level)
-    return
+    return startRound(state.level)
   }
+
+  return false
 }
 
 // awaitAgent pauses agent-api play before any HTTP agent has been explicitly enabled.
-function awaitAgent(): void {
+function awaitAgent(): boolean {
   if (!isAgentApiMode(state.controlMode) || !isRunningStatus(state.status)) {
-    return
+    return false
   }
 
   state.clock?.pause()
   state.status = "await-agent"
   persistNow("state")
-  renderState()
+  return true
 }
 
 // pauseGame freezes the current round while preserving it for resume.
-function pauseGame(): void {
+function pauseGame(): boolean {
   if (!isRunningStatus(state.status) || !state.clock) {
-    return
+    return false
   }
 
   state.clock.pause()
   state.status = "paused"
   persistNow("state")
-  renderState()
+  return true
 }
 
 // cycleWallWeight swaps the live maze walls to the next supported weight.
-function cycleWallWeight(): void {
+function cycleWallWeight(): boolean {
   const nextWeight = nextWallWeight(state.wallWeight)
 
   if (state.maze) {
@@ -552,7 +534,7 @@ function cycleWallWeight(): void {
 
   state.wallWeight = nextWeight
   persistNow("state")
-  renderState()
+  return true
 }
 
 // movePlayer applies one validated move step and leaves turn finalization to the active control mode.
@@ -575,19 +557,30 @@ function dispatchControl(
   action: MazeAction,
   options: MazeActionDispatchOptions,
 ): MazeActionResult | null {
-  return dispatchMazeAction(action, options, {
+  let renderAfterDispatch = false
+  const markForRender = (changed: boolean): void => {
+    renderAfterDispatch ||= changed
+  }
+
+  const result = dispatchMazeAction(action, options, {
     state,
-    pauseGame,
-    awaitAgent,
-    restartGame,
-    resumeOrProceed,
-    cycleWallWeight,
+    pauseGame: () => { markForRender(pauseGame()) },
+    awaitAgent: () => { markForRender(awaitAgent()) },
+    restartGame: () => { markForRender(restartGame()) },
+    resumeOrProceed: () => { markForRender(resumeOrProceed()) },
+    cycleWallWeight: () => { markForRender(cycleWallWeight()) },
     movePlayer,
     recordActionResult: (actionResult) => {
       // The active control mode owns how it stores or forwards the latest replay result.
       activeControlMode?.recordActionResult(actionResult)
     },
   })
+
+  if (renderAfterDispatch) {
+    renderState()
+  }
+
+  return result
 }
 
 // handleResize revalidates the active or persisted round against the viewport.
@@ -596,33 +589,30 @@ function handleResize(): void {
     return
   }
 
+  let viewportRoundResolved = false
   const fitStatus = viewportFitStatus(
     state.mazeDimensions,
     getTerminalSize(runtimeElements),
   )
   if (!isTooSmallStatus(state.status) && isTooSmallStatus(fitStatus)) {
     if (fitStatus !== "too-small-all" && redrawRoundForViewport(state.level)) {
-      return
+      viewportRoundResolved = true
+    } else {
+      saveActiveRoundSnapshot(state.controlMode, state)
+      applyTooSmallState(state.level)
+      persistProgressOnly()
     }
-
-    saveActiveRoundSnapshot(state.controlMode, state)
-    applyTooSmallState(state.level)
-    persistProgressOnly()
   }
 
-  if (isTooSmallStatus(state.status)) {
+  if (!viewportRoundResolved && isTooSmallStatus(state.status)) {
     const snapshot = loadPersistedSnapshotWithFallbacks(state.controlMode)
     const validRoundWasRestored = noValidRoundExists(snapshot.round) === false
-    if (validRoundWasRestored) {
-      return
-    }
-
-    // No persisted round to restore, but the viewport may already be big enough for a fresh one —
-    // e.g. a brand-new session that never had a round to lose, or one whose bootstrap measurement
-    // was corrected after fonts finished loading. Self-heal instead of leaving the too-small screen
-    // up until the user manually resets progress.
-    if (redrawRoundForViewport(state.level)) {
-      return
+    if (!validRoundWasRestored) {
+      // No persisted round to restore, but the viewport may already be big enough for a fresh one —
+      // e.g. a brand-new session that never had a round to lose, or one whose bootstrap measurement
+      // was corrected after fonts finished loading. Self-heal instead of leaving the too-small screen
+      // up until the user manually resets progress.
+      redrawRoundForViewport(state.level)
     }
   }
 
@@ -653,10 +643,9 @@ export function bootstrapGame(
   window.setInterval(() => {
     refreshRunningRoundFrame({
       state,
-      calculateRoundScore,
       persistNow,
       renderState,
-      lastBlinkVisible,
+      calculateRoundScore,
     })
   }, timing.refreshInterval)
 
@@ -673,6 +662,7 @@ export function bootstrapGame(
   if (noValidRoundExists(persistedSnapshot.round)) {
     startRound(state.level)
   }
+  renderState()
 
   // readState exposes the live game state so context tools can derive fresh facts on demand.
   const readState = (): State => state
@@ -686,18 +676,14 @@ export function bootstrapGame(
   }
 
   const commitTurn = isAgentApiMode(controlMode.name)
-    ? (chargedMovesCount = 0) => commitAgentApiTurn(chargedMovesCount, {
+    ? (chargedMovesCount = 0) => commitAgentApiTurn({
       ...commitTurnDeps,
-      handleLoss: () => handleLoss(commitTurnDeps),
+      chargedMovesCount,
     })
-    : (chargedMovesCount = 0) => {
-      void chargedMovesCount
-      return commitInteractiveTurn({
+    : () => commitInteractiveTurn({
       ...commitTurnDeps,
-      handleLoss: () => handleLoss(commitTurnDeps),
       scheduleRoundPersistence,
     })
-    }
 
   controlMode.bindActionDispatch(dispatchControl, readState, commitTurn)
   if (isInteractiveMode(controlMode.name)) {

@@ -398,7 +398,7 @@ describe("agent control mode", () => {
     const commitAgentTurn = vi.fn((chargedMovesCount?: number) => 
       createControlFixture({
         currentCell: { row: 1, col: 1 },
-        score: 800 - (chargedMovesCount ? chargedMovesCount : 0) * 100,
+        score: 800 - (chargedMovesCount ?? 0) * 100,
       }),
     )
 
@@ -502,7 +502,7 @@ describe("agent control mode", () => {
       createControlFixture({ traversalHistory: [selfVisit(0, 0), visit(0, 1)] }),
     )
     const commitAgentTurn = vi.fn((chargedMovesCount?: number) =>
-      createControlFixture({ score: 800 - (chargedMovesCount ? chargedMovesCount : 0) * 100 }),
+      createControlFixture({ score: 800 - (chargedMovesCount ?? 0) * 100 }),
     )
 
     const agentWithDecay = { ...enabledAgentConfigs()[0], decayUnitsCharged: 2 }
@@ -547,7 +547,7 @@ describe("agent control mode", () => {
     const commitAgentTurn = vi.fn((chargedMovesCount?: number) =>
       createControlFixture({
         currentCell: { row: 0, col: 1 },
-        score: 800 - (chargedMovesCount ? chargedMovesCount : 0) * 100,
+        score: 800 - (chargedMovesCount ?? 0) * 100,
       }),
     )
 
@@ -669,7 +669,7 @@ describe("agent control mode", () => {
     const commitAgentTurn = vi.fn((chargedMovesCount?: number) =>
       createControlFixture({
         currentCell: { row: 0, col: 1 },
-        score: 800 - (chargedMovesCount ? chargedMovesCount : 0) * 100,
+        score: 800 - (chargedMovesCount ?? 0) * 100,
       }),
     )
 
@@ -733,7 +733,7 @@ describe("agent control mode", () => {
       createControlFixture({
         currentCell: { row: 0, col: 1 },
         destinationCell: { row: 0, col: 1 },
-        score: 800 - (chargedMovesCount ? chargedMovesCount : 0) * 100,
+        score: 800 - (chargedMovesCount ?? 0) * 100,
         status: "won",
       }),
     )
