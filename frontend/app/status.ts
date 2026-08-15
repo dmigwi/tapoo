@@ -104,6 +104,13 @@ export function isSuccessfulMoveStatus(
   return status === "applied" || status === "reached-target"
 }
 
+// canTrackDestinationVisibility identifies active rounds whose clock can drive target visibility.
+export function canTrackDestinationVisibility(
+  state: State,
+): state is State & { clock: NonNullable<State["clock"]> } {
+  return isRunningStatus(state.status) && state.clock !== null
+}
+
 // isTooSmallStatus identifies both rendered and internal viewport-too-small states.
 export function isTooSmallStatus(
   status: GameStatus | ViewportFitStatus,

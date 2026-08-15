@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  canTrackDestinationVisibility,
   canPersistRoundStatus,
   canProceedStatus,
   canShowRestart,
@@ -184,6 +185,21 @@ describe("isSuccessfulMoveStatus", () => {
     [undefined, false],
   ])("returns %s for %s", (status, expected) => {
     expect(isSuccessfulMoveStatus(status)).toBe(expected)
+  })
+})
+
+describe("canTrackDestinationVisibility", () => {
+  const clock = {} as NonNullable<State["clock"]>
+
+  it.each<[State["status"], State["clock"], boolean]>([
+    ["running", clock, true],
+    ["running", null, false],
+    ["paused", clock, false],
+    ["won", clock, false],
+  ])("returns %s for status %s with clock %s", (status, stateClock, expected) => {
+    const state = { status, clock: stateClock } as State
+
+    expect(canTrackDestinationVisibility(state)).toBe(expected)
   })
 })
 

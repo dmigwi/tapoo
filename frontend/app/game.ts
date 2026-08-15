@@ -24,6 +24,7 @@ import {
   resolveWinScore,
 } from "./scoring"
 import {
+  canTrackDestinationVisibility,
   isFinishedStatus,
   isAgentApiMode,
   isAwaitAgentStatus,
@@ -514,7 +515,7 @@ function awaitAgent(): boolean {
 
 // pauseGame freezes the current round while preserving it for resume.
 function pauseGame(): boolean {
-  if (!isRunningStatus(state.status) || !state.clock) {
+  if (!canTrackDestinationVisibility(state)) {
     return false
   }
 

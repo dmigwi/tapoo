@@ -7,6 +7,7 @@ import {
   commitInteractiveTurn,
   hasReachedTarget,
   refreshRunningRoundFrame,
+  shouldDrawDestination,
 } from "./turn-resolution"
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
@@ -269,6 +270,25 @@ describe("refreshRunningRoundFrame", () => {
     expect(renderState).toHaveBeenCalledTimes(1)
 
     renderState.mockClear()
+    refreshRunningRoundFrame({
+      state,
+      calculateRoundScore: vi.fn(() => 200),
+      persistNow: vi.fn(),
+      renderState,
+    })
+
+    expect(renderState).not.toHaveBeenCalled()
+  })
+
+  it("uses rendered destination visibility to seed the next running frame refresh", () => {
+    const state = createState({
+      controlMode: CONFIG.runtime.controlModes.agentApi,
+      score: 200,
+    })
+    const renderState = vi.fn()
+
+    expect(shouldDrawDestination(state)).toBe(true)
+
     refreshRunningRoundFrame({
       state,
       calculateRoundScore: vi.fn(() => 200),

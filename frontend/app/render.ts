@@ -1,4 +1,5 @@
 import { CONFIG } from "./config"
+import { shouldDrawDestination } from "./control/turn-resolution"
 import {
   calculateScoreRetentionUnits,
   retentionUnitsToDisplayPercent,
@@ -165,15 +166,6 @@ function tooSmallRows(state: State): ScreenLine[] {
     ),
     centeredTextRow(messages.tooSmallActionMessage),
   ]
-}
-
-// shouldDrawDestination decides whether the blinking destination is visible this frame.
-function shouldDrawDestination(state: State): boolean {
-  if (!isRunningStatus(state.status) || !state.clock) {
-    return true
-  }
-
-  return state.clock.blink()
 }
 
 // buildMazeLines merges the maze grid with the visited trail, current player, and target markers.

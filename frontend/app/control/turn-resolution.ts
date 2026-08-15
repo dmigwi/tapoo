@@ -1,4 +1,5 @@
 import {
+  canTrackDestinationVisibility,
   isAgentApiMode,
   isInteractiveMode,
   isRunningStatus,
@@ -34,7 +35,7 @@ type InProgressTurnResolutionDeps = Omit<SharedResolutionDeps, "persistNow" | "c
 
 type RunningRoundFrameRefreshDeps = Omit<SharedResolutionDeps, "applyWinSummary">
 
-const lastBlinkVisibleByState = new WeakMap<State, boolean>()
+const lastDestinationVisibleByState = new WeakMap<State, boolean>()
 let skipNextFrameRender = false
 
 // positionsEqual compares two rendered maze-grid points without allocating helper objects.
@@ -110,6 +111,39 @@ function suppressNextFrameRender(state: State): void {
   skipNextFrameRender = isRunningStatus(state.status)
 }
 
+function currentDestinationVisibility(state: State, isDestinationVisible: boolean): boolean {
+  if (!isDestinationVisible || !state.clock) {
+    return true
+  }
+  return state.clock.blink()
+}
+
+// shouldDrawDestination is the single source of truth for the target blink phase. Rendering calls
+// it to decide visibility, and that same sample seeds refresh bookkeeping so the next heartbeat
+// does not repaint just to learn what the already-rendered blink phase was.
+export function shouldDrawDestination(state: State): boolean {
+  const isDestinationVisible = canTrackDestinationVisibility(state)
+  const visible = currentDestinationVisibility(state, isDestinationVisible)
+  if (isDestinationVisible) {
+    lastDestinationVisibleByState.set(state, visible)
+  } else {
+    lastDestinationVisibleByState.delete(state)
+  }
+
+  return visible
+}
+
+function destinationVisibilityNotChanged(state: State, isDestinationVisible: boolean): boolean {
+  const nextDestinationVisible = currentDestinationVisibility(state, isDestinationVisible)
+  const lastDestinationVisible = lastDestinationVisibleByState.get(state) ?? null
+  const destinationVisibilityNotChanged = nextDestinationVisible === lastDestinationVisible
+  if (!destinationVisibilityNotChanged) {
+    lastDestinationVisibleByState.set(state, nextDestinationVisible)
+  }
+
+  return destinationVisibilityNotChanged
+}
+
 // refreshRunningRoundFrame handles one interval-driven refresh of a running round: interactive mode
 // recomputes elapsed-time score here, both modes share the same depleted-score loss handoff, and
 // the destination blink can still trigger a render even when no gameplay state changed.
@@ -120,8 +154,10 @@ export function refreshRunningRoundFrame({
   calculateRoundScore,
 }: RunningRoundFrameRefreshDeps): void {
   const totalCells = state.mazeDimensions?.area ?? 0
-  if (!isRunningStatus(state.status) || !state.clock || totalCells === 0) {
-    lastBlinkVisibleByState.delete(state)
+  const isDestinationVisible = canTrackDestinationVisibility(state)
+
+  if (!isDestinationVisible || totalCells === 0) {
+    lastDestinationVisibleByState.delete(state)
     skipNextFrameRender = false
     return
   }
@@ -143,15 +179,9 @@ export function refreshRunningRoundFrame({
     skipNextFrameRender = false
   }
 
-  const nextBlinkVisible = state.clock.blink()
-  const lastBlinkVisible = lastBlinkVisibleByState.get(state) ?? null
-  const blinkNotChanged = nextBlinkVisible === lastBlinkVisible
-  if (!blinkNotChanged) {
-    lastBlinkVisibleByState.set(state, nextBlinkVisible)
-  }
-
   const scoreNotChanged = state.score === previousScore
-  if ((scoreNotChanged && blinkNotChanged) || skipRender) {
+  const destinationNotChanged = destinationVisibilityNotChanged(state, isDestinationVisible)
+  if ((scoreNotChanged && destinationNotChanged) || skipRender) {
     return
   }
 
