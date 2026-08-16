@@ -8,8 +8,7 @@ const rootDirectory = path.resolve(scriptDirectory, "..")
 const templatesDirectory = path.join(rootDirectory, "frontend", "templates")
 const publicDirectory = path.join(rootDirectory, "public")
 const stylesheetHref = process.env.TAPOO_STYLESHEET_HREF ?? "./css/tapoo.min.css"
-const pageChromeScriptSrc = process.env.TAPOO_PAGE_CHROME_SRC ?? "./js/page-chrome.min.js"
-const tapooScriptSrc = process.env.TAPOO_GAME_SRC ?? "./js/tapoo.min.js"
+const tapooScriptSrc = process.env.TAPOO_SCRIPT_SRC ?? "./js/tapoo.min.js"
 
 async function readTemplate(name) {
   return readFile(path.join(templatesDirectory, name), "utf8")
@@ -109,21 +108,9 @@ const sharedPartials = {
   privacyLink: indentHtml(await readTemplate("nav-privacy-link.html"), "            "),
   topMenuSummary: indentHtml(await readTemplate("top-menu-summary.html"), "          "),
 }
-const gameScriptTags = indentHtml(
-  [
-    `<script defer src="${pageChromeScriptSrc}"></script>`,
-    `<script defer src="${tapooScriptSrc}"></script>`,
-  ].join("\n"),
-  "    ",
-)
-const staticPageScriptTags = indentHtml(
-  `<script defer src="${pageChromeScriptSrc}"></script>`,
-  "    ",
-)
-
+const scriptTags = indentHtml(`<script defer src="${tapooScriptSrc}"></script>`, "    ",)
 
 const promptContent = await renderPromptSections()
-
 await mkdir(publicDirectory, { recursive: true })
 
 await Promise.all([
@@ -138,7 +125,7 @@ await Promise.all([
     pageContent: "terminal-section.html",
     pageLabelConfigKey: "pages.game.pageLabel",
     primaryMenuItem: "nav-agents-link.html",
-    scriptTags: gameScriptTags,
+    scriptTags,
     titleConfigKey: "pages.game.documentTitle",
     titleText: escapeHtml("Tapoo Maze Runner | Game"),
   }),
@@ -154,7 +141,7 @@ await Promise.all([
     pageLabelConfigKey: "pages.agents.pageLabel",
     primaryMenuItem: "nav-game-link.html",
     promptsLink: "nav-prompts-link.html",
-    scriptTags: gameScriptTags,
+    scriptTags,
     titleConfigKey: "pages.agents.documentTitle",
     titleText: escapeHtml("Tapoo Maze Runner | AI Agents"),
   }),
@@ -174,7 +161,7 @@ await Promise.all([
     pageLabelConfigKey: "pages.prompts.pageLabel",
     // The prompts page is reached from the agents page, so its back link returns there.
     primaryMenuItem: "nav-agents-back-link.html",
-    scriptTags: staticPageScriptTags,
+    scriptTags,
     titleConfigKey: "pages.prompts.documentTitle",
     titleText: escapeHtml("Tapoo Maze Runner | Agent Prompts"),
   }),
@@ -192,7 +179,7 @@ await Promise.all([
     pageContent: "privacy-section.html",
     pageLabelConfigKey: "pages.privacy.pageLabel",
     primaryMenuItem: "nav-game-link.html",
-    scriptTags: staticPageScriptTags,
+    scriptTags,
     titleConfigKey: "pages.privacy.documentTitle",
     titleText: escapeHtml("Tapoo Maze Runner | Privacy"),
   }),

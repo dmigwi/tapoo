@@ -1,5 +1,4 @@
 import { CONFIG, PAGE_COPYRIGHT_TEXT } from "./app/config"
-import { showPlaceholderArt } from "./app/fallback-policy"
 import {
   compactChromeClass,
   isCompactViewport,
@@ -88,7 +87,7 @@ function applyDocumentTitle(): void {
 }
 
 // applyPageVersion keeps shared page chrome in sync with the configured copyright text.
-function applyPageVersion(): void {
+export function applyPageVersion(): void {
   const versionCopies = document.querySelectorAll<HTMLElement>("[data-page-version]")
   for (const element of versionCopies) {
     element.textContent = PAGE_COPYRIGHT_TEXT
@@ -96,7 +95,7 @@ function applyPageVersion(): void {
 }
 
 // applyPageText hydrates shared static copy such as labels and meta descriptions.
-function applyPageText(): void {
+export function applyPageText(): void {
   applyDocumentTitle()
   applyConfigAttribute("[data-config-text]", "textContent")
   applyConfigAttribute("meta[data-config-key]", "content")
@@ -129,7 +128,7 @@ function applyPageText(): void {
 }
 
 // initTopMenus keeps shared top-bar menus expanded on wide screens and collapsible on compact ones.
-function initTopMenus(): void {
+export function initTopMenus(): void {
   const menus = Array.from(document.querySelectorAll<HTMLDetailsElement>("details.top-menu"))
   let compactMode = false
 
@@ -194,11 +193,7 @@ function initTopMenus(): void {
   })
 
   document.addEventListener("keydown", (event: KeyboardEvent) => {
-    if (!compactMode) {
-      return
-    }
-
-    if (event.key !== "Escape") {
+    if (!compactMode || event.key !== "Escape") {
       return
     }
 
@@ -211,12 +206,4 @@ function initTopMenus(): void {
   window.addEventListener("resize", syncMenuMode)
   void document.fonts?.ready.then(syncMenuMode)
   syncMenuMode()
-}
-
-try {
-  applyPageText()
-  applyPageVersion()
-  initTopMenus()
-} catch (error) {
-  showPlaceholderArt(CONFIG.runtime.controlModes.interactive, error)
 }

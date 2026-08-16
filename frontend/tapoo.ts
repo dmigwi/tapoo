@@ -5,6 +5,7 @@ import { getGameElements } from "./app/dom"
 import { prepareTerminalAppForBootstrap, showPlaceholderArt } from "./app/fallback-policy"
 import { initTapooLogs, tapooDownloadLogs, tapooResetLogs } from "./app/logs"
 import { bootstrapGame } from "./app/game"
+import { applyPageText, applyPageVersion, initTopMenus } from "./page-chrome"
 import type { Elements, MazeActionControl, MazeControlModeName } from "./app/types"
 
 // pageControlMode chooses the MazeActionControl implementation declared by the page shell.
@@ -32,6 +33,14 @@ window.addEventListener("error", (event) => {
 window.addEventListener("unhandledrejection", (event) => {
   showPlaceholderArt(pageModeName(), event.reason)
 })
+
+try {
+  applyPageText()
+  applyPageVersion()
+  initTopMenus()
+} catch (error) {
+  showPlaceholderArt(pageModeName(), error)
+}
 
 try {
   const elements = getGameElements()
