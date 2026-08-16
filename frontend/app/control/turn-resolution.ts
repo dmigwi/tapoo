@@ -1,13 +1,11 @@
 import {
   canTrackDestinationVisibility,
+  hasReachedTarget,
   isAgentApiMode,
   isInteractiveMode,
   isRunningStatus,
 } from "../status"
-import type {
-  RenderGridPoint,
-  State,
-} from "../types"
+import type { State } from "../types"
 
 type PersistenceScope = "round" | "state"
 
@@ -37,25 +35,6 @@ type RunningRoundFrameRefreshDeps = Omit<SharedResolutionDeps, "applyWinSummary"
 
 const lastDestinationVisibleByState = new WeakMap<State, boolean>()
 let skipNextFrameRender = false
-
-// positionsEqual compares two rendered maze-grid points without allocating helper objects.
-function positionsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean {
-  return left.x === right.x && left.y === right.y
-}
-
-// hasReachedTarget reads the live maze position without mutating status, so move replay and
-// turn finalization can answer the same question without depending on commit timing.
-export function hasReachedTarget(state: State): boolean {
-  if (
-    !state.playerPosition ||
-    !state.finalPosition ||
-    !positionsEqual(state.playerPosition, state.finalPosition)
-  ) {
-    return false
-  }
-
-  return true
-}
 
 // handleWin captures the completed-round score and win summary only when the current position has
 // reached the destination.

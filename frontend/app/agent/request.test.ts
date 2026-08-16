@@ -13,6 +13,7 @@ import { loadTapooLog } from "../storage"
 import type {
   AgentApiConfig,
   MazeActionResult,
+  MazeCellType,
   MazeDimensions,
   State,
 } from "../types"
@@ -20,7 +21,7 @@ import type {
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt =
-  `You are Blue and your traversal speed classifies as trailblazer. You are in the genius zone and might set a new record if you keep it up. Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, and the previous prediction outcome. The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated. When present in filteredTraversalHistory, playerName Self marks the start cell. Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own. Your objective is to reach destinationCell. Each turn, prioritize an openMoves neighbor from currentCell whose alreadyExplored is false before weighing distance to destinationCell, unless currentCell's cellType is dead-end. Revisiting a cell already in filteredTraversalHistory during deliberate backtracking is not a mistake, although it adds no new-cell progress. cellType is the only reliable way to know it is a dead-end — never assume a cell you have not yet visited is one, since an unexplored cell's own exits are unknown until you land there and the absence of a connection from cells you already know proves nothing. Begin backtracking only when your current cell's cellType is dead-end, and retreat toward a specific visited cell with an openMoves neighbor whose alreadyExplored is false; that visited cell is an actual branch target, not a guess. Once a dead-end is confirmed, filteredTraversalHistory's visit order tells you how far to search: an unexplored branch point still exists among cells visited earlier, maybe within or beyond historyWindowRadius, so keep retreating through known cells until a later turn's filteredTraversalHistory brings it into view. At higher levels, more junctions mean more short dead-end branches along the solution path, so expect to rule out several before finding the right one — a single clean backtrack is the exception, not the rule. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined row and col differences for each candidate, not just one axis — a cell closer on one axis can be equally far or farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome. A turn with any valid moves costs a constant 1-unit decay charge regardless of how many moves it applied. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all. One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions. currentCell's openMoves are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to sustain that classification. get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Because the charge above is per turn rather than per move, a longer prediction whose moves all land can cover more new cells for the same decay. get_prediction_rules explains the live traversal-speed metrics and classification. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
+  `You are Blue and your traversal speed classifies as trailblazer. You are in the genius zone and might set a new record if you keep it up. Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, and the previous prediction outcome. The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated. When present in filteredTraversalHistory, playerName Self marks the start cell. Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own. Your objective is to reach destinationCell. cellType start-cell and target-cell label the start and destination cells respectively. Each turn, prioritize an openMoves neighbor from currentCell whose alreadyExplored is false before weighing distance to destinationCell, unless currentCell's cellType is dead-end. Only dead-end should trigger backtracking. Revisiting a cell already in filteredTraversalHistory during deliberate backtracking is not a mistake, although it adds no new-cell progress. cellType is the only reliable way to know it is a dead-end — never assume a cell you have not yet visited is one, since an unexplored cell's own exits are unknown until you land there and the absence of a connection from cells you already know proves nothing. Begin backtracking only when your current cell's cellType is dead-end, and retreat toward a specific visited cell with an openMoves neighbor whose alreadyExplored is false; that visited cell is an actual branch target, not a guess. Once a dead-end is confirmed, filteredTraversalHistory's visit order tells you how far to search: an unexplored branch point still exists among cells visited earlier, maybe within or beyond historyWindowRadius, so keep retreating through known cells until a later turn's filteredTraversalHistory brings it into view. At higher levels, more junctions mean more short dead-end branches along the solution path, so expect to rule out several before finding the right one — a single clean backtrack is the exception, not the rule. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined row and col differences for each candidate, not just one axis — a cell closer on one axis can be equally far or farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome. A turn with any valid moves costs a constant 1-unit decay charge regardless of how many moves it applied. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all. One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions. currentCell's openMoves are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to sustain that classification. get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Because the charge above is per turn rather than per move, a longer prediction whose moves all land can cover more new cells for the same decay. get_prediction_rules explains the live traversal-speed metrics and classification. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
 const developerMessage = prompt
 const userMessage = `It is Blue's turn to predict next moves. Use the available tools to see the maze state.`
 const agentContextTools = [
@@ -29,7 +30,7 @@ const agentContextTools = [
     function: {
       name: "get_maze_structure",
       description:
-        "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. filteredTraversalHistory includes only first-visit records within historyWindowRadius of currentCell, ordered oldest-visited to most-recently-visited — currentCell's own position in this list depends on when it was first visited, not on it being current, so it will not always be last. Entries before currentCell in this list were visited earlier; entries after it were visited more recently. If currentCell is not last, every listed entry after it is a cell first reached after currentCell but before now, so the entry itself is charted ground. However, any neighbor under that entry's openMoves whose alreadyExplored is false is still an unexplored cell and remains a valid branch target. currentCell is always included because its distance is 0. historyWindowRadius is a fixed configured radius — the maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell — unrelated to how far destinationCell is; compute that yourself from currentCell and destinationCell's row/col if you need it. Each included entry's openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether that neighbor's own alreadyExplored is true — meaning it has been explored and exists in the full maze traversal history — even when that neighbor itself is outside the filtered result. cellType is precomputed from that same exit count, so you never need to count it yourself: dead-end (one exit), corridor (two exits), or junction (three or more). cellType only ever exists for a cell already in filteredTraversalHistory — an unvisited cell, including one that only appears as a neighbor inside another cell's openMoves, has no known cellType and must never be assumed to be of a specific cellType before visiting. The only way to learn an unvisited cell's own structure is to move there and read its own entry on a later turn. Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null, \"historyWindowRadius\":number, \"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"cellType\":string, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"alreadyExplored\":boolean}, ...}}]}.",
+        "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. filteredTraversalHistory includes only first-visit records within historyWindowRadius of currentCell, ordered oldest-visited to most-recently-visited — currentCell's own position in this list depends on when it was first visited, not on it being current, so it will not always be last. Entries before currentCell in this list were visited earlier; entries after it were visited more recently. If currentCell is not last, every listed entry after it is a cell first reached after currentCell but before now, so the entry itself is charted ground. However, any neighbor under that entry's openMoves whose alreadyExplored is false is still an unexplored cell and remains a valid branch target. currentCell is always included because its distance is 0. historyWindowRadius is a fixed configured radius — the maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell — unrelated to how far destinationCell is; compute that yourself from currentCell and destinationCell's row/col if you need it. Each included entry's openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether that neighbor's own alreadyExplored is true — meaning it has been explored and exists in the full maze traversal history — even when that neighbor itself is outside the filtered result. cellType is precomputed so you never need to count exits yourself: start-cell (the traversal start), target-cell (the destination), dead-end (one exit), corridor (two exits), or junction (three or more). Only dead-end should trigger backtracking; start-cell and target-cell are special cells, not ordinary dead ends. cellType only ever exists for a cell already in filteredTraversalHistory — an unvisited cell, including one that only appears as a neighbor inside another cell's openMoves, has no known cellType and must never be assumed to be of a specific cellType before visiting. The only way to learn an unvisited cell's own structure is to move there and read its own entry on a later turn. Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null, \"historyWindowRadius\":number, \"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"cellType\":string, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"alreadyExplored\":boolean}, ...}}]}.",
       parameters: {
         type: "object",
         properties: {},
@@ -215,23 +216,41 @@ function mazeStructureContent(overrides: Partial<State> = {}): string {
   const filteredTraversalHistory = currentCell
     ? nextState.traversalHistory
         .filter(({ row, col }) => Math.abs(row - currentCell.row) + Math.abs(col - currentCell.col) <= historyWindowRadius)
-        .map(({ playerName, row, col, openMoves }) => ({
-          playerName,
-          cell: { row, col },
-          cellType: openMoves.length <= 1 ? "dead-end" : openMoves.length === 2 ? "corridor" : "junction",
-          openMoves: Object.fromEntries(
-            openMoves.map((move) => {
-              const [rowDelta, colDelta] = {
-                MoveLeft: [0, -1],
-                MoveRight: [0, 1],
-                MoveUp: [-1, 0],
-                MoveDown: [1, 0],
-              }[move]
-              const neighbor = { row: row + rowDelta, col: col + colDelta }
-              return [move, { ...neighbor, alreadyExplored: visitedCells.has(`${neighbor.row},${neighbor.col}`) }]
-            }),
-          ),
-        }))
+        .map(({ playerName, row, col, openMoves }) => {
+          const cellType: MazeCellType = (() => {
+            if (nextState.startPosition) {
+              const start = {
+                row: Math.floor((nextState.startPosition.y - 1) / 2),
+                col: Math.floor((nextState.startPosition.x - 1) / 2),
+              }
+              if (row === start.row && col === start.col) {
+                return "start-cell"
+              }
+            }
+            if (destinationCell && row === destinationCell.row && col === destinationCell.col) {
+              return "target-cell"
+            }
+            return openMoves.length <= 1 ? "dead-end" : openMoves.length === 2 ? "corridor" : "junction"
+          })()
+
+          return {
+            playerName,
+            cell: { row, col },
+            cellType,
+            openMoves: Object.fromEntries(
+              openMoves.map((move) => {
+                const [rowDelta, colDelta] = {
+                  MoveLeft: [0, -1],
+                  MoveRight: [0, 1],
+                  MoveUp: [-1, 0],
+                  MoveDown: [1, 0],
+                }[move]
+                const neighbor = { row: row + rowDelta, col: col + colDelta }
+                return [move, { ...neighbor, alreadyExplored: visitedCells.has(`${neighbor.row},${neighbor.col}`) }]
+              }),
+            ),
+          }
+        })
     : []
   return JSON.stringify({
     level: nextState.level,
@@ -285,7 +304,7 @@ describe("agent request service", () => {
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
           content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"dead-end\",\"openMoves\":{}}]}",
+            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}",
         },
       ],
       tools: uncalledTools(["get_maze_structure"]),
@@ -407,7 +426,7 @@ describe("agent request service", () => {
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
           content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"dead-end\",\"openMoves\":{}}]}",
+            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}",
         },
       ],
     })
@@ -512,7 +531,7 @@ describe("agent request service", () => {
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
           content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"dead-end\",\"openMoves\":{}}]}",
+            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}",
         },
       ],
     })

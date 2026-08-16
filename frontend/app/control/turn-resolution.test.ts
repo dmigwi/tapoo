@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { CONFIG } from "../config"
+import { hasReachedTarget } from "../status"
 import type { State, TraversalHistoryEntry } from "../types"
 import {
   commitAgentApiTurn,
   commitInteractiveTurn,
-  hasReachedTarget,
   refreshRunningRoundFrame,
   shouldDrawDestination,
 } from "./turn-resolution"
@@ -68,6 +68,17 @@ describe("hasReachedTarget", () => {
 
   it("returns false when the destination was not reached", () => {
     const state = createState()
+
+    expect(hasReachedTarget(state)).toBe(false)
+    expect(state.status).toBe("running")
+  })
+
+  it.each([
+    { playerPosition: null, finalPosition: { x: 3, y: 1 } },
+    { playerPosition: { x: 3, y: 1 }, finalPosition: null },
+    { playerPosition: null, finalPosition: null },
+  ])("returns false when either position is missing", (overrides) => {
+    const state = createState(overrides)
 
     expect(hasReachedTarget(state)).toBe(false)
     expect(state.status).toBe("running")

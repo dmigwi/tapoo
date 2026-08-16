@@ -21,6 +21,7 @@ import type {
   AgentToolHandlers,
   CellCoordinate,
   MazeActionResult,
+  MazeCellType,
   State,
   TraversalHistoryEntry,
 } from "../types"
@@ -105,8 +106,9 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
     "level, maze dimensions and wall/open-exit structure are fixed once generated. When present in filteredTraversalHistory,",
     `playerName ${runtime.interactivePlayerName} marks the start cell. Use openMoves from filteredTraversalHistory`,
     "entries to build a local map; entries recorded by other players are just as trustworthy as your own.",
-    "Your objective is to reach destinationCell. Each turn, prioritize an openMoves neighbor from currentCell whose",
-    "alreadyExplored is false before weighing distance to destinationCell, unless currentCell's cellType is dead-end.",
+    "Your objective is to reach destinationCell. cellType start-cell and target-cell label the start and destination cells",
+    "respectively. Each turn, prioritize an openMoves neighbor from currentCell whose alreadyExplored is false before",
+    "weighing distance to destinationCell, unless currentCell's cellType is dead-end. Only dead-end should trigger backtracking.",
     "Revisiting a cell already in filteredTraversalHistory during deliberate backtracking is not a mistake, although",
     "it adds no new-cell progress. cellType is the only reliable way to know it is a dead-end — never assume a cell you",
     "have not yet visited is one, since an unexplored cell's own exits are unknown until you land there and the absence",
@@ -225,8 +227,10 @@ const mazeStructureTool: AgentToolDefinition = {
       "openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether",
       "that neighbor's own alreadyExplored is true — meaning it has been explored and exists in the full maze traversal history —",
       "even when that neighbor itself is outside the filtered result.", 
-      "cellType is precomputed from that same exit count, so you never need to count it yourself: dead-end (one exit),",
-      "corridor (two exits), or junction (three or more). cellType only ever exists for a cell already in filteredTraversalHistory",
+      "cellType is precomputed so you never need to count exits yourself: start-cell (the traversal start), target-cell",
+      "(the destination), dead-end (one exit), corridor (two exits), or junction (three or more). Only dead-end",
+      "should trigger backtracking; start-cell and target-cell are special cells, not ordinary dead ends.",
+      "cellType only ever exists for a cell already in filteredTraversalHistory",
       "— an unvisited cell, including one that only appears as a neighbor inside another cell's openMoves, has no known",
       "cellType and must never be assumed to be of a specific cellType before visiting.",
       "The only way to learn an unvisited cell's own structure is to move there and read its own entry on a later turn.",
@@ -339,7 +343,19 @@ export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
 // it the precomputed label removes the room for that misreading, the same way historyWindowRadius
 // and playerUniqueCellsVisited/allUniqueCellsVisited hand over other conclusions instead of raw
 // material to re-derive.
-function classifyCellType(exitCount: number): "dead-end" | "corridor" | "junction" {
+function classifyCellType(
+  start: CellCoordinate | null,
+  target: CellCoordinate | null,
+  entry: TraversalHistoryEntry,
+): MazeCellType {
+  if (start && entry.row === start.row && entry.col === start.col) {
+    return "start-cell"
+  }
+  if (target && entry.row === target.row && entry.col === target.col) {
+    return "target-cell"
+  }
+
+  const exitCount = entry.openMoves.length
   if (exitCount <= 1) {
     return "dead-end"
   }
@@ -410,6 +426,7 @@ export function buildAgentToolHandlers(
       }
     },
     get_maze_structure() {
+      const startCell = state.startPosition ? cellCoordinateFromGridPoint(state.startPosition) : null
       const currentCell = state.playerPosition ? cellCoordinateFromGridPoint(state.playerPosition) : null
       const destinationCell = state.finalPosition ? cellCoordinateFromGridPoint(state.finalPosition) : null
       // Named historyWindowRadius on the wire (not manhattanDistance) even though it comes from
@@ -433,7 +450,7 @@ export function buildAgentToolHandlers(
         filteredTraversalHistory: filteredHistory.map((entry) => ({
           playerName: entry.playerName,
           cell: { row: entry.row, col: entry.col },
-          cellType: classifyCellType(entry.openMoves.length),
+          cellType: classifyCellType(startCell, destinationCell, entry),
           openMoves: resolvedOpenMoves(entry, visitedCellKeys),
         })),
       }

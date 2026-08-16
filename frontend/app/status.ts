@@ -104,6 +104,24 @@ export function isSuccessfulMoveStatus(
   return status === "applied" || status === "reached-target"
 }
 
+// isValidGridPointEqual returns true only when both positions exist and point to the same grid cell.
+export function isValidGridPointEqual(
+  player: RenderGridPoint | null,
+  target: RenderGridPoint | null,
+): boolean {
+  if (!player || !target) {
+    return false
+  }
+
+  return player.x === target.x && player.y === target.y
+}
+
+// hasReachedTarget reads the live maze position without mutating status, so move replay and
+// turn finalization can answer the same question without depending on commit timing.
+export function hasReachedTarget(state: State): boolean {
+  return isValidGridPointEqual(state.playerPosition, state.finalPosition)
+}
+
 // canTrackDestinationVisibility identifies active rounds whose clock can drive target visibility.
 export function canTrackDestinationVisibility(
   state: State,

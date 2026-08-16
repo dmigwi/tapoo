@@ -20,6 +20,9 @@ export type CellCoordinate = {
   col: number
 }
 
+// MazeCellType describes the model-facing classification for a visited logical maze cell.
+export type MazeCellType = "dead-end" | "corridor" | "junction" | "start-cell" | "target-cell"
+
 // TraversalHistoryEntry records one chronological logical-cell visit for the named player.
 export type TraversalHistoryEntry = CellCoordinate & {
   playerName: string
