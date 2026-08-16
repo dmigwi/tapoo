@@ -162,6 +162,7 @@ describe("agent context", () => {
     expect(toolHandlers.get_last_prediction_outcome({})).toEqual({
       status: "running",
       score: 700,
+      decayUnitsRemaining: 7,
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
       predictionStatus: null,
@@ -171,6 +172,13 @@ describe("agent context", () => {
       visitedBefore: false,
       chargedMovesCount: 1,
     })
+  })
+
+  it("includes the final potentially winning decay unit in the remaining budget", () => {
+    expect(buildAgentToolHandlers(createState({ score: 100 }), null, createAgent())
+      .get_last_prediction_outcome({})).toMatchObject({ decayUnitsRemaining: 1 })
+    expect(buildAgentToolHandlers(createState({ score: 0 }), null, createAgent())
+      .get_last_prediction_outcome({})).toMatchObject({ decayUnitsRemaining: 0 })
   })
 
   // suggestedMovesPerTurn is a static configured range, not derived from maze dimensions — it stays

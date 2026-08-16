@@ -26,7 +26,7 @@ import type {
   TraversalHistoryEntry,
 } from "../types"
 
-const { runtime, scoring } = CONFIG
+const { runtime, scoring, timing } = CONFIG
 const {
   agentBaseDecayUnits,
   agentPartialInvalidPenaltyDecayUnits,
@@ -294,6 +294,9 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
     description: [
       "Get the outcome of the previous submitted moves: whether they fully applied, partially failed, reached the",
       "target, or were rejected. status is the current game status, score is the current score after that outcome.",
+      "decayUnitsRemaining is the current maximum number of decay units the player can spend, starting with this turn,",
+      "to find the target. If the final unit is spent without reaching the target, the score becomes 0 and the level is",
+      "lost; reaching the target with that unit wins with a score of 0.",
       "lastMoveStatus is the outcome of only the single last move actually dispatched that turn:",
       "null=first turn, no history yet; applied=the move executed successfully; visitedBefore indicates whether it",
       "revisited a cell; invalid-move=that move hit a wall or boundary, execution stopped there; reached-target=destination reached,",
@@ -317,7 +320,7 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
       "null when no move applied. On an empty-prediction turn these four fields are always reset to null/empty,",
       "matching that no moves were replayed — they never carry over stale data from an earlier turn.",
       "chargedMovesCount is the total decay units charged toward score that turn.",
-      "Returns JSON: {\"status\":string, \"score\":number,",
+      "Returns JSON: {\"status\":string, \"score\":number, \"decayUnitsRemaining\":number,",
       "\"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"predictionStatus\":string|null,",
       "\"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null,",
       "\"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
@@ -459,6 +462,7 @@ export function buildAgentToolHandlers(
       return {
         status: state.status,
         score: state.score,
+        decayUnitsRemaining: Math.max(0, Math.ceil(state.score / timing.scoreDecayRate)),
         lastPlayerName: lastActionResult?.lastPlayerName ?? null,
         lastMoveStatus: lastActionResult?.lastMoveStatus ?? null,
         predictionStatus: lastActionResult?.predictionStatus ?? null,
