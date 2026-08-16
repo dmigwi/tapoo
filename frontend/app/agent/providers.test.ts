@@ -10,7 +10,7 @@ import {
 import type { ProviderRequestInput } from "./providers"
 import type { AgentChatMessage, AgentToolDefinition } from "../types"
 
-const { contextWindowFloor, temperature, numPredict } = CONFIG.runtime.modelConfig
+const { contextWindowFloor, maxTokens } = CONFIG.runtime.modelConfig
 
 const tools: AgentToolDefinition[] = [
   {
@@ -79,14 +79,14 @@ describe("ollama adapter", () => {
     })
   })
 
-  it("builds the native chat body with sampling options and no format by default", () => {
+  it("builds the native chat body with request options and no format by default", () => {
     const body = PROVIDER_ADAPTERS.ollama.buildBody(requestInput())
 
     expect(body).toEqual({
       model: "llama3.2",
       messages: requestInput().messages,
       tools,
-      options: { num_ctx: contextWindowFloor, temperature, num_predict: numPredict },
+      options: { num_ctx: contextWindowFloor, num_predict: maxTokens },
       think: true,
       stream: false,
     })
@@ -159,7 +159,7 @@ describe("openai adapter", () => {
 
   it("caps tokens with max_tokens and omits response_format without a schema", () => {
     const body = PROVIDER_ADAPTERS.openai.buildBody(requestInput())
-    expect(body.max_tokens).toBe(numPredict)
+    expect(body.max_tokens).toBe(maxTokens)
     expect(body.response_format).toBeUndefined()
     expect(body.tools).toBe(tools)
   })
@@ -375,7 +375,7 @@ describe("anthropic adapter", () => {
 
   it("requires max_tokens and includes output_config only when a schema is requested", () => {
     const withoutFormat = PROVIDER_ADAPTERS.anthropic.buildBody(requestInput())
-    expect(withoutFormat.max_tokens).toBe(numPredict)
+    expect(withoutFormat.max_tokens).toBe(maxTokens)
     expect(withoutFormat.output_config).toBeUndefined()
 
     const withFormat = PROVIDER_ADAPTERS.anthropic.buildBody(requestInput({ wantsPredictionFormat: true }))
@@ -393,7 +393,7 @@ describe("anthropic adapter", () => {
     expect(budgetFor("high")).toEqual({ type: "enabled", budget_tokens: 6000 })
     expect(budgetFor("max")).toEqual({ type: "enabled", budget_tokens: 8000 })
     // Every level stays strictly under max_tokens, which Anthropic requires.
-    expect(budgetFor("max").budget_tokens).toBeLessThan(numPredict)
+    expect(budgetFor("max").budget_tokens).toBeLessThan(maxTokens)
   })
 
   it("folds text and tool_use content blocks into the internal message shape", () => {

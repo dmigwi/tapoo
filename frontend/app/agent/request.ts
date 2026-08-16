@@ -345,7 +345,7 @@ export function requestPredictionWithAbort({
             // A parse failure is broader than an empty prediction: nonempty invalid JSON must stay
             // malformed-response even when its token usage reaches the configured threshold.
             const isEmptyPrediction = (response.message.content ?? "").trim().length === 0
-            const reachedTokenCap = tokensUsed !== undefined && tokensUsed >= CONFIG.runtime.modelConfig.numPredict
+            const reachedTokenCap = tokensUsed !== undefined && tokensUsed >= CONFIG.runtime.modelConfig.maxTokens
 
             // Token-limit exhaustion requires both signals. Empty content alone may be an ordinary
             // malformed response, while high token usage alone may still accompany usable output.

@@ -45,7 +45,7 @@ export function buildPreviewSections(): { heading: string; body: string }[] {
   ).join("\n\n\n")
 
   const duplicateToolCallWarning = buildDuplicateToolCallMessage([SAMPLE_DUPLICATE_TOOL_CALL])
-  const tokenLimitExhaustionWarning = buildTokenLimitExhaustionPrompt(runtime.modelConfig.numPredict)
+  const tokenLimitExhaustionWarning = buildTokenLimitExhaustionPrompt(runtime.modelConfig.maxTokens)
 
   return [
     { heading: promptPreview.systemHeading, body: system.content ?? "" },

@@ -1094,7 +1094,7 @@ describe("agent api turn loop", () => {
         ok: true,
         json: vi.fn().mockResolvedValue({
           prompt_eval_count: 1,
-          eval_count: CONFIG.runtime.modelConfig.numPredict,
+          eval_count: CONFIG.runtime.modelConfig.maxTokens,
           message: { role: "assistant", content: "" },
         }),
       })
@@ -1156,7 +1156,7 @@ describe("agent api turn loop", () => {
       ok: true,
       json: vi.fn().mockResolvedValue({
         prompt_eval_count: 1,
-        eval_count: CONFIG.runtime.modelConfig.numPredict,
+          eval_count: CONFIG.runtime.modelConfig.maxTokens,
         message: { role: "assistant", content: "" },
       }),
     })

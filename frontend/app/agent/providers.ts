@@ -126,8 +126,7 @@ function ollamaBuildBody(input: ProviderRequestInput): Record<string, unknown> {
     tools: input.tools,
     options: {
       num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor,
-      temperature: CONFIG.runtime.modelConfig.temperature,
-      num_predict: CONFIG.runtime.modelConfig.numPredict,
+      num_predict: CONFIG.runtime.modelConfig.maxTokens,
     },
     ...(input.wantsPredictionFormat ? OLLAMA_PREDICTION_FORMAT : {}),
     ...BASE_BODY,
@@ -207,7 +206,7 @@ function openaiBuildBody(input: ProviderRequestInput): Record<string, unknown> {
     // placeholders target (vLLM, LM Studio, llama.cpp). A silently-ignored cap here was
     // indistinguishable from a respected one in a short reply, but surfaced directly once a
     // verbose reasoning model ran long enough to actually hit — and blow past — an uncapped limit.
-    max_tokens: CONFIG.runtime.modelConfig.numPredict,
+    max_tokens: CONFIG.runtime.modelConfig.maxTokens,
     ...(input.reasoningEffort !== "none" ? { reasoning_effort: input.reasoningEffort } : {}),
     ...(input.wantsPredictionFormat ? OPENAI_PREDICTION_FORMAT : {}),
     ...BASE_BODY,
@@ -263,21 +262,21 @@ type AnthropicContentBlock =
   | { type: "tool_result"; tool_use_id: string; content: string }
   | { type: "thinking"; thinking: string; signature?: string }
 
-// ANTHROPIC_THINKING_RESERVE_FRACTION is the share of numPredict (Anthropic's max_tokens) reserved
+// ANTHROPIC_THINKING_RESERVE_FRACTION is the share of maxTokens (Anthropic's max_tokens) reserved
 // for the model's actual reply, never spent on thinking — Anthropic rejects a request where
 // budget_tokens is not strictly less than max_tokens, and a "max" allocation that ate the whole
 // budget would leave no room for a reply at all.
 const ANTHROPIC_THINKING_RESERVE_FRACTION = 0.2
 
-// anthropicThinkingBudget subdivides the reasoning-usable share of numPredict evenly across
+// anthropicThinkingBudget subdivides the reasoning-usable share of maxTokens evenly across
 // Anthropic's own ordered option list (agentConfig.reasoningEffortOptions.anthropic — read from
 // there rather than a second hardcoded list, so the two can't drift apart), so the scale stays
-// correct if numPredict itself is ever retuned rather than hardcoding numbers that would silently
-// drift out of sync with it. At the current numPredict of 10_000 this yields low=2000, medium=4000,
+// correct if maxTokens itself is ever retuned rather than hardcoding numbers that would silently
+// drift out of sync with it. At the current maxTokens of 10_000 this yields low=2000, medium=4000,
 // high=6000, max=8000.
 function anthropicThinkingBudget(effort: AgentReasoningEffort): number {
   const levels = CONFIG.agentConfig.reasoningEffortOptions.anthropic
-  const usableBudget = CONFIG.runtime.modelConfig.numPredict * (1 - ANTHROPIC_THINKING_RESERVE_FRACTION)
+  const usableBudget = CONFIG.runtime.modelConfig.maxTokens * (1 - ANTHROPIC_THINKING_RESERVE_FRACTION)
   const step = usableBudget / levels.length
   const levelIndex = Math.max(0, levels.indexOf(effort))
   return Math.round(step * (levelIndex + 1))
@@ -365,11 +364,11 @@ function anthropicBuildBody(input: ProviderRequestInput): Record<string, unknown
     ...(systemMessage?.content ? { system: systemMessage.content } : {}),
     messages: anthropicMessages,
     tools: anthropicToolDefinitions(input.tools),
-    max_tokens: CONFIG.runtime.modelConfig.numPredict,
+    max_tokens: CONFIG.runtime.modelConfig.maxTokens,
     // Anthropic has no "none" reasoning-effort option (agentConfig.reasoningEffortOptions.anthropic),
     // so thinking is always enabled here — every configured level maps to a budget_tokens share of
-    // numPredict (see anthropicThinkingBudget). temperature is intentionally left unset elsewhere in
-    // this body: Anthropic requires it stay at its default of 1 while thinking is enabled.
+    // maxTokens (see anthropicThinkingBudget). Temperature is intentionally provider-controlled
+    // across all adapters; Anthropic specifically requires its default of 1 while thinking is enabled.
     thinking: { type: "enabled", budget_tokens: anthropicThinkingBudget(input.reasoningEffort) },
     ...(input.wantsPredictionFormat ? ANTHROPIC_PREDICTION_FORMAT : {}),
     ...BASE_BODY,

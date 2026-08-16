@@ -185,7 +185,7 @@ export const CONFIG: AppConfig = {
     modelLabel: "Model",
     modelPlaceholder: "llama3.2",
     apiLabel: "API",
-    requiredFieldNote: "* Required",
+    requiredFieldNote: "* Required · Max output tokens:",
     extraHeadersLabel: "Extra Headers",
     extraHeadersTooltip: 
       "Custom HTTP headers sent with every request to this agent's endpoint, e.g. anthropic-version or X-Wait-For-Model.",
@@ -393,8 +393,7 @@ export const CONFIG: AppConfig = {
       },
     },
     interactivePlayerName: "Self",
-    // Ollama's num_ctx, temperature and num_predict (see requestChatTurn in agent/request.ts),
-    // tuned for parseable moves over good prose.
+    // Provider request limits and agent-facing traversal guidance.
     modelConfig: {
       // Ollama's num_ctx, sent as a fixed value on every request rather than scaled by maze area:
       // filteredTraversalHistory is capped by manhattanDistance regardless of maze size, and
@@ -413,15 +412,12 @@ export const CONFIG: AppConfig = {
       // batch size (p50) and max is the more aggressive, higher-confidence one (p95) — the model
       // picks within the range based on its own confidence for the cells ahead, not a fixed count.
       suggestedMovesPerTurnRange: { min: 2, max: 4 },
-      // Under Ollama's default: an unparseable reply is charged malformed-response, so format
-      // compliance beats creativity.
-      temperature: 0.5,
       // Shared by num_predict (Ollama, think: true) and OpenAI-compatible reasoning_effort models —
       // both count thinking tokens against this same cap rather than a separate budget (Ollama's own
       // thinking response field and usage.completion_tokens/reasoning_tokens respectively), so this
       // must stay sized well above what a compliant reply needs plus a full reasoning pass, not just
       // the reply alone.
-      numPredict: 10000,
+      maxTokens: 10_000,
     },
   },
 }

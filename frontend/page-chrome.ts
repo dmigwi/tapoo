@@ -34,6 +34,19 @@ function configText(key: string): string {
   return value
 }
 
+// configDisplayText also permits finite numeric CONFIG values for visible informational copy.
+function configDisplayText(key: string): string {
+  const value = configValue(key)
+  if (typeof value === "string") {
+    return value
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toLocaleString("en-US")
+  }
+
+  throw new Error(`missing display config entry: ${key}`)
+}
+
 // applyConfigAttribute copies CONFIG-backed text into matching DOM attributes.
 function applyConfigAttribute(
   selector: string,
@@ -47,12 +60,12 @@ function applyConfigAttribute(
       continue
     }
 
-    const value = configText(configKey)
     if (attributeName === "textContent") {
-      node.textContent = value
+      node.textContent = configDisplayText(configKey)
       continue
     }
 
+    const value = configText(configKey)
     node.setAttribute(attributeName, value)
   }
 }

@@ -49,4 +49,15 @@ describe("page chrome data-config-value hydration", () => {
     expect(badge.getAttribute("data-tooltip")).toBe(CONFIG.agentConfig.credentialRotationTooltip)
     expect(badge.getAttribute("aria-label")).toBe(CONFIG.agentConfig.credentialRotationTooltip)
   })
+
+  it("formats a numeric data-config-text value for display", async () => {
+    const outputCap = document.createElement("span")
+    outputCap.dataset.configText = ""
+    outputCap.dataset.configKey = "runtime.modelConfig.maxTokens"
+    document.body.append(outputCap)
+
+    await import("./page-chrome")
+
+    expect(outputCap.textContent).toBe(CONFIG.runtime.modelConfig.maxTokens.toLocaleString("en-US"))
+  })
 })

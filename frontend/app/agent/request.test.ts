@@ -21,7 +21,7 @@ import type {
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt =
-  `You are Blue and your traversal speed classifies as trailblazer. You are in the genius zone and might set a new record if you keep it up. Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, and the previous prediction outcome. The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated. When present in filteredTraversalHistory, playerName Self marks the start cell. Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own. Your objective is to reach destinationCell. cellType start-cell and target-cell label the start and destination cells respectively. Each turn, prioritize an openMoves neighbor from currentCell whose alreadyExplored is false before weighing distance to destinationCell, unless currentCell's cellType is dead-end. Only dead-end should trigger backtracking. Revisiting a cell already in filteredTraversalHistory during deliberate backtracking is not a mistake, although it adds no new-cell progress. cellType is the only reliable way to know it is a dead-end — never assume a cell you have not yet visited is one, since an unexplored cell's own exits are unknown until you land there and the absence of a connection from cells you already know proves nothing. Begin backtracking only when your current cell's cellType is dead-end, and retreat toward a specific visited cell with an openMoves neighbor whose alreadyExplored is false; that visited cell is an actual branch target, not a guess. Once a dead-end is confirmed, filteredTraversalHistory's visit order tells you how far to search: an unexplored branch point still exists among cells visited earlier, maybe within or beyond historyWindowRadius, so keep retreating through known cells until a later turn's filteredTraversalHistory brings it into view. At higher levels, more junctions mean more short dead-end branches along the solution path, so expect to rule out several before finding the right one — a single clean backtrack is the exception, not the rule. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined row and col differences for each candidate, not just one axis — a cell closer on one axis can be equally far or farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome. A turn with any valid moves costs a constant 1-unit decay charge regardless of how many moves it applied. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all. One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions. currentCell's openMoves are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to sustain that classification. get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Because the charge above is per turn rather than per move, a longer prediction whose moves all land can cover more new cells for the same decay. get_prediction_rules explains the live traversal-speed metrics and classification. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
+  `You are Blue and your traversal speed classifies as trailblazer. You are in the genius zone and might set a new record if you keep it up. Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, and the previous prediction outcome. The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated. When present in filteredTraversalHistory, playerName Self marks the start cell. Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own. Your primary objective is to reach destinationCell with the highest traversal speed. cellType start-cell and target-cell label the start and destination cells respectively. Each turn, prioritize an openMoves neighbor from currentCell whose alreadyExplored is false before weighing distance to destinationCell, unless currentCell's cellType is dead-end. Only dead-end should trigger backtracking. Revisiting a cell already in filteredTraversalHistory during deliberate backtracking is not a mistake, although it adds no new-cell progress. cellType is the only reliable way to know it is a dead-end — never assume a cell you have not yet visited is one, since an unexplored cell's own exits are unknown until you land there and the absence of a connection from cells you already know proves nothing. Begin backtracking only when your current cell's cellType is dead-end, and retreat toward a specific visited cell with an openMoves neighbor whose alreadyExplored is false; that visited cell is an actual branch target, not a guess. Once a dead-end is confirmed, filteredTraversalHistory's visit order tells you how far to search: an unexplored branch point still exists among cells visited earlier, maybe within or beyond historyWindowRadius, so keep retreating through known cells until a later turn's filteredTraversalHistory brings it into view. At higher levels, more junctions mean more short dead-end branches along the solution path, so expect to rule out several before finding the right one — a single clean backtrack is the exception, not the rule. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined row and col differences for each candidate, not just one axis — a cell closer on one axis can be equally far or farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it. Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome. A turn with any valid moves costs a constant 1-unit decay charge regardless of how many moves it applied. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all. One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions. currentCell's openMoves are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to sustain that classification. get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit. Because the charge above is per turn rather than per move, a longer prediction whose moves all land can cover more new cells for the same decay. get_prediction_rules explains the live traversal-speed metrics and classification. lastMoveStatus reached-target or status won means the game is complete — stop predicting.`
 const developerMessage = prompt
 const userMessage = `It is Blue's turn to predict next moves. Use the available tools to see the maze state.`
 const agentContextTools = [
@@ -308,7 +308,10 @@ describe("agent request service", () => {
         },
       ],
       tools: uncalledTools(["get_maze_structure"]),
-      options: { num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict },
+      options: {
+        num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor,
+        num_predict: CONFIG.runtime.modelConfig.maxTokens,
+      },
       think: true,
       stream: false,
     }
@@ -568,7 +571,10 @@ describe("agent request service", () => {
         { role: "user", content: userMessage },
       ],
       tools: agentContextTools,
-      options: { num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict },
+      options: {
+        num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor,
+        num_predict: CONFIG.runtime.modelConfig.maxTokens,
+      },
       think: true,
       stream: false,
     })
@@ -792,10 +798,10 @@ describe("agent request service", () => {
       ok: true,
       json: vi.fn().mockResolvedValue({
         // A large prompt_eval_count on its own must never trigger this — only eval_count (the
-        // completion side alone) is compared against numPredict. See providers.test.ts's
+        // completion side alone) is compared against maxTokens. See providers.test.ts's
         // "ignoring the prompt side" coverage for that in isolation.
         prompt_eval_count: 1,
-        eval_count: CONFIG.runtime.modelConfig.numPredict,
+        eval_count: CONFIG.runtime.modelConfig.maxTokens,
         message: { role: "assistant", content: "" },
       }),
     })
@@ -809,7 +815,7 @@ describe("agent request service", () => {
         details: {
           endpoint,
           requestCount: 2,
-          tokensUsed: CONFIG.runtime.modelConfig.numPredict,
+          tokensUsed: CONFIG.runtime.modelConfig.maxTokens,
         },
       },
     })
@@ -828,7 +834,7 @@ describe("agent request service", () => {
     expect(retryBody.messages.slice(0, -1)).toEqual(firstBody.messages)
     expect(retryBody.tools).toEqual(firstBody.tools)
     expect(retryBody.messages.at(-1)).toEqual(buildTokenLimitExhaustionPrompt(
-      CONFIG.runtime.modelConfig.numPredict,
+      CONFIG.runtime.modelConfig.maxTokens,
     ))
   })
 
@@ -836,7 +842,7 @@ describe("agent request service", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
-        prompt_eval_count: CONFIG.runtime.modelConfig.numPredict,
+        prompt_eval_count: CONFIG.runtime.modelConfig.maxTokens,
         eval_count: 0,
         message: { role: "assistant", content: "not-json" },
       }),
@@ -1151,7 +1157,10 @@ describe("agent request service", () => {
     const secondBody = JSON.parse(secondRequest.body as string) as SerializedRequestBody
     expect(secondBody.tools).toEqual([])
     expect(secondBody.format).toEqual(OLLAMA_PREDICTION_FORMAT.format)
-    expect(secondBody.options).toEqual({ num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor, temperature: CONFIG.runtime.modelConfig.temperature, num_predict: CONFIG.runtime.modelConfig.numPredict })
+    expect(secondBody.options).toEqual({
+      num_ctx: CONFIG.runtime.modelConfig.contextWindowFloor,
+      num_predict: CONFIG.runtime.modelConfig.maxTokens,
+    })
   })
 
   it("reminds about a duplicate call while still offering the tools genuinely left uncalled", async () => {

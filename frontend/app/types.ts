@@ -294,9 +294,9 @@ export type AgentToolCall = {
 // tokens_used is internal response metadata normalized by provider adapters — completion tokens
 // only (Ollama's eval_count, OpenAI's usage.completion_tokens, Anthropic's usage.output_tokens),
 // not prompt tokens. Deliberately scoped that way: it's the only figure comparable against
-// CONFIG.runtime.modelConfig.numPredict (a completion-only cap sent as Ollama's num_predict /
+// CONFIG.runtime.modelConfig.maxTokens (a completion-only cap sent as Ollama's num_predict /
 // OpenAI's max_tokens / Anthropic's max_tokens) — a large accumulated prompt would push a
-// prompt-inclusive total past numPredict on its own, so that total could never be used for the
+// prompt-inclusive total past maxTokens on its own, so that total could never be used for the
 // token-limit-exhaustion threshold check. Request serializers must remove it before sending an
 // accumulated assistant message back to a model.
 export type AgentChatMessage = {
@@ -822,8 +822,7 @@ export type AppConfig = {
       contextWindowFloor: number
       manhattanDistance: number
       suggestedMovesPerTurnRange: { min: number; max: number }
-      temperature: number
-      numPredict: number
+      maxTokens: number
     }
   }
 }
