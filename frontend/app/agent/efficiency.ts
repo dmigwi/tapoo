@@ -33,7 +33,7 @@ export type BatchEfficiencyMetrics = {
 // playerName. traversalHistory only records a cell's first visit, so this is the agent's unique
 // progress, not a raw move count.
 function countDistinctCellsForAgent(
-  traversalHistory: TraversalHistoryEntry[],
+  traversalHistory: readonly TraversalHistoryEntry[],
   agent: AgentApiConfig,
 ): number {
   return traversalHistory.filter((entry) => entry.playerName === agent.playerName).length
@@ -41,7 +41,7 @@ function countDistinctCellsForAgent(
 
 // getBatchEfficiencyMetrics returns the raw counts behind the rate.
 export function getBatchEfficiencyMetrics(
-  traversalHistory: TraversalHistoryEntry[],
+  traversalHistory: readonly TraversalHistoryEntry[],
   agent: AgentApiConfig,
 ): BatchEfficiencyMetrics {
   return {
@@ -75,7 +75,7 @@ export function resolveStatusSpeedClass(uniqueCellsVisited: number, decayUnitsCh
 // resolveBatchEfficiencyClass is the single source of truth for an agent's current speed
 // classification, everywhere one is shown or sent.
 export function resolveBatchEfficiencyClass(
-  traversalHistory: TraversalHistoryEntry[],
+  traversalHistory: readonly TraversalHistoryEntry[],
   agent: AgentApiConfig,
 ): BatchEfficiencyClass {
   const { playerUniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(traversalHistory, agent)
@@ -144,7 +144,7 @@ export function nameWithSpeedClass(playerName: string, speedClass: BatchEfficien
 // agentDisplayName names the agent after its current speed classification everywhere the UI shows
 // it — tooltips, dialog titles — so the classification the model is working from stays visible to
 // a human observer too, e.g. "Kora the Trailblazer".
-export function agentDisplayName(agent: AgentApiConfig, traversalHistory: TraversalHistoryEntry[]): string {
+export function agentDisplayName(agent: AgentApiConfig, traversalHistory: readonly TraversalHistoryEntry[]): string {
   return nameWithSpeedClass(agent.playerName, resolveBatchEfficiencyClass(traversalHistory, agent))
 }
 

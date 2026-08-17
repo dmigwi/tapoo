@@ -3,7 +3,6 @@ import {
   MOVE_ACTIONS,
   MOVE_DELTAS,
   cellCoordinateFromGridPoint,
-  cloneTraversalHistory,
   mazeCellKey,
 } from "../traversal"
 import {
@@ -11,6 +10,7 @@ import {
   resolveBatchEfficiencyClass,
 } from "./efficiency"
 import type { BatchEfficiencyClass } from "./efficiency"
+import type { AgentStateSnapshot } from "./state-snapshot"
 import type {
   AgentChatMessage,
   AgentApiConfig,
@@ -22,7 +22,6 @@ import type {
   CellCoordinate,
   MazeActionResult,
   MazeCellType,
-  State,
   TraversalHistoryEntry,
 } from "../types"
 
@@ -404,9 +403,12 @@ function isWithinManhattanDistance(
   return (Math.abs(first.row - second.row) + Math.abs(first.col - second.col)) <= manhattanDistance
 }
 
-// buildAgentToolHandlers binds the latest state snapshot to the context tools for this request.
+// buildAgentToolHandlers binds an already-frozen state snapshot (see snapshotAgentState,
+// agent/state-snapshot.ts — also used for turn logging elsewhere, not tool-specific despite the
+// name of this function) to the context tools for this request. Takes the snapshot itself, not
+// State, so it never has to decide when to (re)read live state — that decision belongs to the caller.
 export function buildAgentToolHandlers(
-  state: State,
+  snapshot: AgentStateSnapshot,
   lastActionResult: MazeActionResult | null,
   agent: AgentApiConfig,
 ): AgentToolHandlers {
@@ -415,31 +417,31 @@ export function buildAgentToolHandlers(
       // Raw counts are exposed instead of the derived rate so the model can compute and verify the
       // classification itself; all are always concrete numbers (0 is a valid count), never null, so
       // there is nothing ambiguous for the model to puzzle over before its first request.
-      const batchEfficiencyClass = resolveBatchEfficiencyClass(state.traversalHistory, agent)
+      const batchEfficiencyClass = resolveBatchEfficiencyClass(snapshot.traversalHistory, agent)
       const { playerUniqueCellsVisited, allUniqueCellsVisited, decayUnitsCharged, playerTurnsTaken } =
-        getBatchEfficiencyMetrics(state.traversalHistory, agent)
+        getBatchEfficiencyMetrics(snapshot.traversalHistory, agent)
       return {
         suggestedMovesPerTurn: runtime.modelConfig.suggestedMovesPerTurnRange,
         allUniqueCellsVisited,
         playerUniqueCellsVisited,
         decayUnitsCharged,
-        totalTurnCount: state.turnCount,
+        totalTurnCount: snapshot.turnCount,
         playerTurnsTaken,
         batchEfficiencyClass,
-        mazeDimensions: state.mazeDimensions
+        mazeDimensions: snapshot.mazeDimensions
           ? {
-              numCols: state.mazeDimensions.numCols,
-              numRows: state.mazeDimensions.numRows,
-              totalMazeCells: state.mazeDimensions.area,
+              numCols: snapshot.mazeDimensions.numCols,
+              numRows: snapshot.mazeDimensions.numRows,
+              totalMazeCells: snapshot.mazeDimensions.area,
             }
           : null,
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       }
     },
     get_maze_structure() {
-      const startCell = state.startPosition ? cellCoordinateFromGridPoint(state.startPosition) : null
-      const currentCell = state.playerPosition ? cellCoordinateFromGridPoint(state.playerPosition) : null
-      const destinationCell = state.finalPosition ? cellCoordinateFromGridPoint(state.finalPosition) : null
+      const startCell = snapshot.startPosition ? cellCoordinateFromGridPoint(snapshot.startPosition) : null
+      const currentCell = snapshot.playerPosition ? cellCoordinateFromGridPoint(snapshot.playerPosition) : null
+      const destinationCell = snapshot.finalPosition ? cellCoordinateFromGridPoint(snapshot.finalPosition) : null
       // Named historyWindowRadius on the wire (not manhattanDistance) even though it comes from
       // runtime.modelConfig.manhattanDistance: sitting beside currentCell/destinationCell under the
       // name "manhattanDistance" reads as the live distance between them, which it is not — it's a
@@ -447,14 +449,13 @@ export function buildAgentToolHandlers(
       // field disagreeing has no way to know it isn't supposed to match, and can burn real
       // reasoning trying to reconcile the two.
       const historyWindowRadius = runtime.modelConfig.manhattanDistance
-      const history = cloneTraversalHistory(state.traversalHistory)
-      const visitedCellKeys = new Set(history.map((entry) => mazeCellKey(entry)))
+      const visitedCellKeys = new Set(snapshot.traversalHistory.map((entry) => mazeCellKey(entry)))
       const filteredHistory = currentCell
-        ? history.filter((entry) => isWithinManhattanDistance(entry, currentCell, historyWindowRadius))
+        ? snapshot.traversalHistory.filter((entry) => isWithinManhattanDistance(entry, currentCell, historyWindowRadius))
         : []
 
       return {
-        level: state.level,
+        level: snapshot.level,
         currentCell,
         destinationCell,
         historyWindowRadius,
@@ -468,9 +469,9 @@ export function buildAgentToolHandlers(
     },
     get_last_prediction_outcome() {
       return {
-        status: state.status,
-        score: state.score,
-        decayUnitsRemaining: Math.max(0, Math.ceil(state.score / timing.scoreDecayRate)),
+        status: snapshot.status,
+        score: snapshot.score,
+        decayUnitsRemaining: Math.max(0, Math.ceil(snapshot.score / timing.scoreDecayRate)),
         lastPlayerName: lastActionResult?.lastPlayerName ?? null,
         lastMoveStatus: lastActionResult?.lastMoveStatus ?? null,
         predictionStatus: lastActionResult?.predictionStatus ?? null,

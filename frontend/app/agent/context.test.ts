@@ -9,6 +9,7 @@ import {
   buildTokenLimitExhaustionPrompt,
   describeAgentSpeedClassification,
 } from "./context"
+import { snapshotAgentState } from "./state-snapshot"
 import {
   buildMazeActionResult,
 } from "../control"
@@ -121,7 +122,7 @@ describe("agent context", () => {
       visitedBefore: false,
       chargedMovesCount: 1,
     })
-    const toolHandlers = buildAgentToolHandlers(createState(), actionResult, createAgent())
+    const toolHandlers = buildAgentToolHandlers(snapshotAgentState(createState()), actionResult, createAgent())
 
     expect(AGENT_CONTEXT_TOOLS.map((tool) => tool.function.name)).toEqual([
       "get_maze_structure",
@@ -174,10 +175,39 @@ describe("agent context", () => {
     })
   })
 
+  it("freezes a snapshot taken once, unaffected by state mutations made afterward", () => {
+    const state = createState()
+    const toolHandlers = buildAgentToolHandlers(snapshotAgentState(state), null, createAgent())
+
+    // Mutate the live state after the snapshot was taken — a push (in place) and reassignments
+    // (new references), mirroring exactly how game.ts mutates State mid-round.
+    state.traversalHistory.push(agentVisit(0, 2, "Blue", ["MoveRight"]))
+    state.playerPosition = { x: 3, y: 1 }
+    state.score = 1
+    state.turnCount = 9
+    state.status = "won"
+
+    expect(toolHandlers.get_prediction_rules({})).toMatchObject({
+      totalTurnCount: 0,
+      playerTurnsTaken: 2,
+    })
+    expect(toolHandlers.get_maze_structure({})).toMatchObject({
+      currentCell: { row: 0, col: 0 },
+      filteredTraversalHistory: [
+        expect.objectContaining({ cell: { row: 0, col: 0 } }),
+        expect.objectContaining({ cell: { row: 0, col: 1 } }),
+      ],
+    })
+    expect(toolHandlers.get_last_prediction_outcome({})).toMatchObject({
+      status: "running",
+      score: 700,
+    })
+  })
+
   it("includes the final potentially winning decay unit in the remaining budget", () => {
-    expect(buildAgentToolHandlers(createState({ score: 100 }), null, createAgent())
+    expect(buildAgentToolHandlers(snapshotAgentState(createState({ score: 100 })), null, createAgent())
       .get_last_prediction_outcome({})).toMatchObject({ decayUnitsRemaining: 1 })
-    expect(buildAgentToolHandlers(createState({ score: 0 }), null, createAgent())
+    expect(buildAgentToolHandlers(snapshotAgentState(createState({ score: 0 })), null, createAgent())
       .get_last_prediction_outcome({})).toMatchObject({ decayUnitsRemaining: 0 })
   })
 
@@ -185,7 +215,7 @@ describe("agent context", () => {
   // the same even in the unreachable case where dimensions are missing.
   it("suggests the same static moves-per-turn range regardless of maze dimensions", () => {
     const toolHandlers = buildAgentToolHandlers(
-      createState({ mazeDimensions: null }),
+      snapshotAgentState(createState({ mazeDimensions: null })),
       null,
       createAgent({}),
     )
@@ -197,7 +227,7 @@ describe("agent context", () => {
 
   it("defaults a fresh agent's prediction rules to a trailblazer level regardless of raw counts", () => {
     const freshAgent = createAgent({ turnCount: undefined, decayUnitsCharged: undefined })
-    const toolHandlers = buildAgentToolHandlers(createState(), null, freshAgent)
+    const toolHandlers = buildAgentToolHandlers(snapshotAgentState(createState()), null, freshAgent)
 
     expect(toolHandlers.get_prediction_rules({})).toEqual({
       suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,
@@ -228,7 +258,7 @@ describe("agent context", () => {
       finalPosition: { x: 15, y: 9 },
       traversalHistory: fullTraversalHistory,
     })
-    const toolHandlers = buildAgentToolHandlers(state, null, createAgent())
+    const toolHandlers = buildAgentToolHandlers(snapshotAgentState(state), null, createAgent())
 
     expect(toolHandlers.get_maze_structure({})).toEqual({
       level: 4,
@@ -278,7 +308,7 @@ describe("agent context", () => {
         agentVisit(4, 8, "Blue"),
       ],
     })
-    const toolHandlers = buildAgentToolHandlers(state, null, createAgent())
+    const toolHandlers = buildAgentToolHandlers(snapshotAgentState(state), null, createAgent())
 
     expect(toolHandlers.get_prediction_rules({})).toMatchObject({
       suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,

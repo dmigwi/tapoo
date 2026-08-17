@@ -1074,7 +1074,7 @@ describe("fitPlayerSegmentToWidth", () => {
   })
 
   it("keeps roughly half the available width from the front, half from the back, dropping the middle", () => {
-    // "Kora the Trailblazer - 1.20x" is 29 characters; a remainder of 33 leaves 22 characters of
+    // "Kora the Trailblazer - 1.20x" is 28 characters; a remainder of 33 leaves 22 characters of
     // room (COMPACT_STATUS_MAX_LENGTH 55 minus 33), so 21 characters go to the label once the "…"
     // marker is accounted for — 10 kept from the front, 11 from the back.
     expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.20x", 33)).toBe(
@@ -1090,7 +1090,7 @@ describe("fitPlayerSegmentToWidth", () => {
     ).toBe("AgentOne t…zer - 1.20x")
   })
 
-  it("applies the same middle-truncation to a label with no parenthesized rate at all", () => {
+  it("applies the same middle-truncation to an arbitrary string with no player/rate structure at all", () => {
     expect(fitPlayerSegmentToWidth("A".repeat(25), 33)).toBe(
       `${"A".repeat(10)}…${"A".repeat(11)}`,
     )

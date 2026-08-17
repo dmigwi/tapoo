@@ -8,6 +8,7 @@ import {
 } from "./context"
 import { OLLAMA_PREDICTION_FORMAT } from "./providers"
 import { requestPredictionWithAbort } from "./request"
+import { snapshotAgentState } from "./state-snapshot"
 import { CONFIG } from "../config"
 import { tapooResetLogs } from "../logs"
 import { loadTapooLog } from "../storage"
@@ -140,11 +141,12 @@ function requestInput(
 ) {
   const lastActionResult =
     Object.keys(resultOverrides).length === 0 ? null : resultOverrides
+  const mergedState = { ...state, ...stateOverrides }
 
   return {
     agent,
     lastActionResult,
-    state: { ...state, ...stateOverrides },
+    stateSnapshot: snapshotAgentState(mergedState),
     timeoutMs: 180_000,
     requestIntervalMs: 0,
   }

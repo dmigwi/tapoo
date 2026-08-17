@@ -349,6 +349,53 @@ describe("anthropic adapter", () => {
     ])
   })
 
+  it("folds a plain-text user warning into a preceding tool-result turn instead of opening a new turn", () => {
+    const messages: AgentChatMessage[] = [
+      { role: "user", content: "It is Blue's turn." },
+      { role: "assistant", content: "", tool_calls: [{ id: "call_1", function: { name: "get_game_status", arguments: {} } }] },
+      { role: "tool", tool_call_id: "call_1", tool_name: "get_game_status", content: "{\"a\":1}" },
+      { role: "user", content: "Warning: try again." },
+    ]
+
+    const body = PROVIDER_ADAPTERS.anthropic.buildBody(requestInput({ messages })) as {
+      messages: { role: string; content: unknown }[]
+    }
+
+    expect(body.messages).toEqual([
+      { role: "user", content: "It is Blue's turn." },
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "call_1", name: "get_game_status", input: {} }],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Warning: try again." },
+          { type: "tool_result", tool_use_id: "call_1", content: "{\"a\":1}" },
+        ],
+      },
+    ])
+    const roles = body.messages.map((message) => message.role)
+    roles.forEach((role, index) => {
+      if (index > 0) expect(role).not.toBe(roles[index - 1])
+    })
+  })
+
+  it("folds a plain-text user warning into a preceding plain-text user turn by concatenating content", () => {
+    const messages: AgentChatMessage[] = [
+      { role: "user", content: "It is Blue's turn." },
+      { role: "user", content: "Warning: try again." },
+    ]
+
+    const body = PROVIDER_ADAPTERS.anthropic.buildBody(requestInput({ messages })) as {
+      messages: { role: string; content: unknown }[]
+    }
+
+    expect(body.messages).toEqual([
+      { role: "user", content: "Warning: try again.\n\nIt is Blue's turn." },
+    ])
+  })
+
   it("does not coalesce a tool result into an unrelated earlier user turn", () => {
     const messages: AgentChatMessage[] = [
       { role: "user", content: "hi" },

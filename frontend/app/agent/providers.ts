@@ -355,7 +355,23 @@ function anthropicBuildBody(input: ProviderRequestInput): Record<string, unknown
       continue
     }
 
-    // "user" role: plain text turn.
+    // "user" role: plain text turn (e.g. a corrective warning). Anthropic rejects consecutive
+    // same-role turns, and this can immediately follow a tool-result turn (also mapped to "user"
+    // above) or another plain-text turn — so fold it into the previous turn instead of opening a
+    // new one, the same way consecutive tool results already coalesce above. Prefixed ahead of the
+    // existing content so the warning reads first, with what it's warning about following it.
+    const previous = anthropicMessages[anthropicMessages.length - 1]
+    if (previous && previous.role === "user" && message.content) {
+      if (Array.isArray(previous.content)) {
+        previous.content.unshift({ type: "text", text: message.content })
+      } else {
+        previous.content = previous.content
+          ? `${message.content}\n\n${previous.content}`
+          : message.content
+      }
+      continue
+    }
+
     anthropicMessages.push({ role: "user", content: message.content ?? "" })
   }
 

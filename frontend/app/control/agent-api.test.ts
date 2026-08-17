@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CONFIG } from "../config"
 import { tapooResetLogs } from "../logs"
-import { loadTapooLog } from "../storage"
+import { loadPersistedAgentApiConfigs, loadTapooLog, savePersistedAgentApiConfigs } from "../storage"
 import type {
   AgentApiConfig,
   MazeAction,
@@ -96,6 +96,23 @@ async function flushImmediateAgentTurn(): Promise<void> {
 // instead of stalling mid-retry.
 async function flushConnectionErrorRetry(): Promise<void> {
   await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiConnectionErrorRetryDelayMs)
+}
+
+// createMemoryStorage is a minimal in-memory Storage polyfill — window.localStorage is unset in
+// this jsdom test environment (unlike sessionStorage, which loadTapooLog relies on elsewhere in
+// this file), so a test that needs recordAgentTurnStats's real persisted output to actually
+// round-trip through storage.ts's loadPersistedAgentApiConfigs/savePersistedAgentApiConfigs must
+// stub one in.
+function createMemoryStorage(): Storage {
+  const store = new Map<string, string>()
+  return {
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => { store.set(key, value) },
+    removeItem: (key) => { store.delete(key) },
+    clear: () => { store.clear() },
+    key: (index) => Array.from(store.keys())[index] ?? null,
+    get length() { return store.size },
+  }
 }
 
 describe("agent api turn loop", () => {
@@ -771,6 +788,52 @@ describe("agent api turn loop", () => {
       CONFIG.runtime.controlModes.agentApi,
     ).find((entry) => entry.payload === "Malformed agent prediction response.")
     expect(malformedEntry?.log).toBe("warn")
+  })
+
+  it("persists the post-commit turnCount for a malformed response, not the turn's pre-request snapshot", async () => {
+    // __commitAgentTurn mirrors commitAgentApiTurn's real state.turnCount += 1 side effect
+    // (control/turn-resolution.ts) without needing its full round-scoring machinery. This test
+    // guards against a real bug where recordRejectedAgentResponse persisted the turn's pre-commit
+    // stateSnapshot.turnCount instead of re-reading state after committing — leaving every agent's
+    // stored levelTurnCount one behind live state and spuriously tripping agentTurnCountMismatch
+    // (a full restart) on the very next turn.
+    vi.stubGlobal("localStorage", createMemoryStorage())
+    const state = createState({ level: 2, cumulativeRoundCount: 0, turnCount: 3 })
+    savePersistedAgentApiConfigs([
+      { ...enabledAgentConfigs()[0], gameLevel: 2, cumulativeRoundCount: 0, levelTurnCount: 3 },
+    ])
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveSideways\"]}" },
+        }),
+      }),
+    )
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: () => {
+        state.turnCount += 1
+      },
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi.fn(),
+      __onActionResult: vi.fn(),
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => state,
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    expect(state.turnCount).toBe(4)
+    const [persistedAgent] = loadPersistedAgentApiConfigs()
+    expect(persistedAgent.levelTurnCount).toBe(4)
   })
 
   it("clears stale replay details on a malformed response instead of carrying over the previous turn's", async () => {

@@ -488,6 +488,18 @@ export type State = {
   bestWinTraversalSpeedUnits: number | null
   winSummary: string
   scoreDecayUnits: number
+  // turnCount counts completed turns within the CURRENT round only — it resets to 0 every time
+  // cumulativeRoundCount increments (a fresh level start, a retry, or a too-small-viewport bailout).
+  // Paired with level and cumulativeRoundCount, it forms a fingerprint that can never collide across
+  // two different points in gameplay: cumulativeRoundCount only rewinds to 0 via a full storage-version
+  // wipe (Reset Progress), so as long as that holds, (level, cumulativeRoundCount, turnCount) uniquely
+  // and monotonically identifies how far into this exact round a given decision or output belongs.
+  // agentTurnCountMismatch (control/agent-api.ts) relies on this to catch a stale/contradictory agent
+  // view before it can be handed turn context that doesn't belong to the round it's actually in. The
+  // same collision-free property also makes it possible to reconstruct the exact play order of every
+  // round logged before a given storage-version upgrade purely from that fingerprint, without relying
+  // on log timestamps or storage layout that the upgrade may have changed — useful for post-hoc
+  // assessment of logged sessions.
   turnCount: number
   cumulativeRoundCount: number // Rounds played since the last reset; each level start and retry counts once.
 
