@@ -392,6 +392,7 @@ export const CONFIG: AppConfig = {
         tapooLog: "tapooLog",
       },
     },
+    promptWarningPrefix: "Warning:",
     interactivePlayerName: "Self",
     // Provider request limits and agent-facing traversal guidance.
     modelConfig: {
@@ -400,7 +401,7 @@ export const CONFIG: AppConfig = {
       // messages is rebuilt fresh every turn rather than accumulated across a round, so per-turn
       // payload size does not grow with the maze. Ollama's own default is too small for the
       // prompt anyway, and it answers 500 rather than truncating.
-      contextWindowFloor: 3000,
+      contextWindowFloor: 4000,
       // Model-facing local context radius — how far back into traversal history get_maze_structure
       // looks. Deliberately independent of suggestedMovesPerTurnRange below: one bounds what the
       // model can see, the other suggests how many moves to batch per turn, and scaling batch size

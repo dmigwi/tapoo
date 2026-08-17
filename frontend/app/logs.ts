@@ -1,6 +1,6 @@
 import { appendTapooLogEntry, clearTapooLog, loadTapooLog } from "./storage"
 import type { LogEntry, LogLevel, MazeControlModeName, State } from "./types"
-import { APP_VERSION } from "./config"
+import { APP_VERSION, CONFIG } from "./config"
 
 type LogStateListener = (logCount: number) => void
 
@@ -66,6 +66,11 @@ export function trimLoggedDescription(
   keepFull: boolean,
 ): string | undefined {
   if (keepFull || !description || description.length <= loggedDescriptionPreviewLength) {
+    return description
+  }
+
+  // Log full warnings
+  if (description.startsWith(CONFIG.runtime.promptWarningPrefix, 0)) {
     return description
   }
 

@@ -817,6 +817,7 @@ export type AppConfig = {
         tapooLog: string
       }
     }
+    promptWarningPrefix: string
     interactivePlayerName: string
     modelConfig: {
       contextWindowFloor: number

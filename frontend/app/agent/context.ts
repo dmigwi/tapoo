@@ -166,8 +166,8 @@ export function buildAgentMessages(playerName: string, batchEfficiencyClass: Bat
 
 // buildDuplicateToolCallMessage names exactly which tool call(s) already have results, rather
 // than claiming no tool call can return anything new — other tools may still be genuinely
-// uncalled, and the model remains free to request those. It is explicitly labeled "Warning:" and
-// uses the same warning terminology as lastPredictionOutcomeTool's malformed-response
+// uncalled, and the model remains free to request those. It is explicitly labeled with the
+// configured warning prefix and uses the same warning terminology as lastPredictionOutcomeTool's malformed-response
 // explanation, so a model that ignores it can tie the resulting penalty back to this message.
 // describeToolCall renders each call as "name (id)", falling back to placeholders for the rare
 // case a provider omits either field.
@@ -178,7 +178,7 @@ export function buildDuplicateToolCallMessage(duplicateToolCalls: AgentToolCall[
   return {
     role: "user",
     content:
-      `Warning: ${duplicateToolCalls.map(describeToolCall).join(", ")} won't yield any new information. ` +
+      `${CONFIG.runtime.promptWarningPrefix} ${duplicateToolCalls.map(describeToolCall).join(", ")} won't yield any new information. ` +
       "You may still call any tools you haven't used yet, or respond now with only the moves JSON. Requesting " +
       "these tool call(s) once again will be treated as a malformed-response.",
   }
@@ -194,7 +194,7 @@ export function buildTokenLimitExhaustionPrompt(tokensUsage: number): AgentChatM
   return {
     role: "user",
     content:
-      `Warning: Your previous response had a token-limit-exhaustion error and used ${tokensUsage} tokens without returning a ` +
+      `${CONFIG.runtime.promptWarningPrefix} Your previous response had a token-limit-exhaustion error and used ${tokensUsage} tokens without returning a ` +
       "prediction. Try once more to return the correct prediction format output without overthinking. This retry is " +
       "free, but on reaching the token limit again without a prediction you will be charged the same fixed penalty "+
       "as a malformed response.",
@@ -308,7 +308,8 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
       "null=first turn, no history yet; applied=the move executed successfully; visitedBefore indicates whether it",
       "revisited a cell; invalid-move=that move hit a wall or boundary, execution stopped there; reached-target=destination reached,",
       "stop predicting; malformed-response=previous response was not valid JSON, requested a tool that does not exist, or",
-      "ignored a warning — no moves were replayed and a fixed score penalty was charged;",
+      "ignored a warning, resulting in zero progress and a fixed score penalty. A warning is a user message beginning",
+      `with "${CONFIG.runtime.promptWarningPrefix}".`,
       "token-limit-exhaustion=the previous empty prediction reached the configured token threshold and its corrective warning opportunity",
       "also returned no prediction — no moves were replayed and the same fixed score penalty was charged; network-error=HTTP",
       "failure, no score charged. predictionStatus instead summarizes the entire submitted prediction as one story:",
