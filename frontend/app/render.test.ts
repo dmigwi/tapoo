@@ -989,6 +989,7 @@ describe("render", () => {
     )
 
     expect(elements.zoomPlaceholder.hidden).toBe(true)
+    expect(elements.zoomPlaceholder.getAttribute("aria-hidden")).toBe("true")
   })
 
   it("shows the zoom placeholder once even the too-small status text can no longer fit", () => {
@@ -1012,6 +1013,7 @@ describe("render", () => {
     )
 
     expect(elements.zoomPlaceholder.hidden).toBe(false)
+    expect(elements.zoomPlaceholder.getAttribute("aria-hidden")).toBe("false")
   })
 
   it("hides the agent seats dock while the zoom placeholder is up, in agent-api mode", () => {

@@ -469,6 +469,11 @@ function updateZoomPlaceholder(elements: Elements, state: State): void {
     )
 
   elements.zoomPlaceholder.hidden = !needsPlaceholder
+  // hidden alone removes it from the accessibility tree while true, but the template's static
+  // aria-hidden="true" never comes back off on its own once hidden is cleared — matching
+  // fallback-policy.ts's showPageView, which keeps aria-hidden explicitly in sync with the JS-error
+  // placeholder's own visibility the same way.
+  elements.zoomPlaceholder.setAttribute("aria-hidden", String(!needsPlaceholder))
 
   // The agent seats dock sits beside #terminal-body, not inside it (see .terminal-frame's flex
   // layout), so the placeholder above — an overlay scoped to #terminal-body's own box — never

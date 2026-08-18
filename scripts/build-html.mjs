@@ -77,6 +77,24 @@ async function renderPromptSections() {
 // the blocks bring their own indentation.
 const promptBlocksSlot = /[ \t]*<!--prompt-blocks-->/
 
+// loadRuntimeConfig bundles and imports the real config module, the same way renderPromptSections
+// does for the prompt builders, so values baked into the static HTML (like the control-mode body
+// attribute) can never drift from what frontend/app/config.ts actually defines.
+async function loadRuntimeConfig() {
+  const bundled = await build({
+    entryPoints: [path.join(rootDirectory, "frontend", "app", "config.ts")],
+    bundle: true,
+    write: false,
+    platform: "node",
+    format: "esm",
+    target: "es2022",
+  })
+
+  const source = Buffer.from(bundled.outputFiles[0].text).toString("base64")
+  const { CONFIG } = await import(`data:text/javascript;base64,${source}`)
+  return CONFIG
+}
+
 async function buildPage(layout, sharedPartials, page) {
   // The page's own template is rendered first: values inserted into the layout are not scanned
   // again, so a placeholder inside pageContent would otherwise survive into the output verbatim.
@@ -110,13 +128,15 @@ const sharedPartials = {
 }
 const scriptTags = indentHtml(`<script defer src="${tapooScriptSrc}"></script>`, "    ",)
 
+const urlPath = "https://dmigwi.github.io/tapoo/"
 const promptContent = await renderPromptSections()
+const { controlModes } = (await loadRuntimeConfig()).runtime
 await mkdir(publicDirectory, { recursive: true })
 
 await Promise.all([
   buildPage(layout, sharedPartials, {
-    bodyAttributes: 'data-tapoo-control-mode="interactive"',
-    canonicalUrl: "https://dmigwi.github.io/tapoo/",
+    bodyAttributes: ` data-tapoo-control-mode="${escapeHtml(controlModes.interactive)}"`,
+    canonicalUrl: urlPath,
     descriptionConfigKey: "pages.game.description",
     descriptionText: escapeHtml(
       "Tapoo maze runner hide and seek game rendered as a browser-based terminal experience.",
@@ -130,8 +150,8 @@ await Promise.all([
     titleText: escapeHtml("Tapoo Maze Runner | Game"),
   }),
   buildPage(layout, sharedPartials, {
-    bodyAttributes: 'data-tapoo-control-mode="agent-api"',
-    canonicalUrl: "https://dmigwi.github.io/tapoo/agents.html",
+    bodyAttributes: ` data-tapoo-control-mode="${escapeHtml(controlModes.agentApi)}"`,
+    canonicalUrl: `${urlPath}agents.html`,
     descriptionConfigKey: "pages.agents.description",
     descriptionText: escapeHtml(
       "Tapoo maze runner played by an HTTP-driven agent with human session controls.",
@@ -150,7 +170,7 @@ await Promise.all([
     placeholderArt: "",
   }, {
     bodyAttributes: "",
-    canonicalUrl: "https://dmigwi.github.io/tapoo/prompts.html",
+    canonicalUrl: `${urlPath}prompts.html`,
     descriptionConfigKey: "pages.prompts.description",
     descriptionText: escapeHtml(
       "The exact system prompt, user message, tool definitions and response format Tapoo sends to a configured AI agent.",
@@ -170,7 +190,7 @@ await Promise.all([
     placeholderArt: "",
   }, {
     bodyAttributes: "",
-    canonicalUrl: "https://dmigwi.github.io/tapoo/privacy.html",
+    canonicalUrl: `${urlPath}privacy.html`,
     descriptionConfigKey: "pages.privacy.description",
     descriptionText: escapeHtml(
       "Privacy details for Tapoo browser storage and optional AI Agent API gameplay context.",

@@ -19,6 +19,11 @@
       content="{{descriptionText}}"
     />
     <link rel="canonical" href="{{canonicalUrl}}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Tapoo" />
+    <meta property="og:url" content="{{canonicalUrl}}" />
+    <meta property="og:title" content="{{titleText}}" />
+    <meta property="og:description" content="{{descriptionText}}" />
     <link rel="icon" type="image/svg+xml" href="./images/favicon.svg" />
     <link
       rel="preload"
@@ -29,7 +34,7 @@
     />
     <link rel="stylesheet" href="{{stylesheetHref}}" />
   </head>
-  <body {{bodyAttributes}}>
+  <body{{bodyAttributes}}>
     <main class="app-shell">
       <header class="top-bar" aria-label="Application controls">
         <div class="top-bar__brand">
@@ -39,7 +44,7 @@
         </div>
         <details class="top-menu">
           {{topMenuSummary}}
-          <div class="top-menu__panel" role="menu" aria-label="More actions">
+          <div class="top-menu__panel" aria-label="More actions">
             {{primaryMenuItem}}
             {{promptsLink}}
             {{privacyLink}}

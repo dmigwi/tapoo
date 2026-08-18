@@ -94,6 +94,8 @@ function currentDestinationVisibility(state: State, isDestinationVisible: boolea
   if (!isDestinationVisible || !state.clock) {
     return true
   }
+  // blink() (clock.ts) already accounts for prefers-reduced-motion itself, returning a steady
+  // "visible" instead of toggling.
   return state.clock.blink()
 }
 

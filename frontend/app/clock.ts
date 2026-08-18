@@ -2,6 +2,13 @@ import { CONFIG } from "./config"
 
 const { timing } = CONFIG
 
+// prefersReducedMotion is read fresh on every call rather than cached: it can change mid-session
+// (the user can flip the OS setting without reloading), and matchMedia is cheap enough that there's
+// no real cost to asking again each time blink() decides.
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches
+}
+
 // GameClock tracks elapsed play time, pause state, and destination blinking cadence.
 export class GameClock {
   levelDurationMs: number
@@ -36,8 +43,14 @@ export class GameClock {
     return Math.max(0, this.levelDurationMs - this.elapsed(now))
   }
 
-  // blink toggles the destination marker in configured visibility phases.
+  // blink toggles the destination marker in configured visibility phases. A steady, always-visible
+  // marker instead of the toggle itself when the user prefers reduced motion — still findable,
+  // just without the blinking that preference exists specifically to avoid.
   blink(now = performance.now()): boolean {
+    if (prefersReducedMotion()) {
+      return true
+    }
+
     // Alternate the destination visibility while the round is active.
     return Math.floor(this.elapsed(now) / timing.blinkIntervalMs) % 2 === 0
   }
