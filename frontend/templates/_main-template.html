@@ -24,6 +24,9 @@
     <meta property="og:url" content="{{canonicalUrl}}" />
     <meta property="og:title" content="{{titleText}}" />
     <meta property="og:description" content="{{descriptionText}}" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="{{titleText}}" />
+    <meta name="twitter:description" content="{{descriptionText}}" />
     <link rel="icon" type="image/svg+xml" href="./images/favicon.svg" />
     <link
       rel="preload"
@@ -33,6 +36,9 @@
       crossorigin
     />
     <link rel="stylesheet" href="{{stylesheetHref}}" />
+    <script type="application/ld+json">
+      {{structuredData}}
+    </script>
   </head>
   <body{{bodyAttributes}}>
     <main class="app-shell">

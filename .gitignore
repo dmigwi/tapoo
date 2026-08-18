@@ -31,6 +31,8 @@ package-lock.json
 public/*.html
 public/js/*.min.js
 public/css/*.min.css
+public/sitemap.xml
+public/robots.txt
 _DS*
 .DS_Store
 .vscode
