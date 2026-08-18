@@ -539,6 +539,27 @@ body {
   overflow: hidden;
 }
 
+/* Covers the terminal with the same unavailable-page.svg artwork placeholder-art uses standalone,
+   for the case where even the too-small status text can no longer render in full (see
+   terminalCanDisplayText, dom.ts) — an opaque background so the (now unreadable) text underneath
+   never bleeds through. */
+.terminal-zoom-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: var(--bg);
+}
+
+.placeholder-art--terminal {
+  /* Reuses .placeholder-art's artwork as-is; only the standalone page's own vertical offset is
+     reset, since this wrapper already centers within the terminal on its own terms. */
+  transform: none;
+}
+
 .terminal-app:focus-visible {
   outline: none;
 }

@@ -1,5 +1,6 @@
 import { CONFIG } from "./config"
 import { shouldDrawDestination } from "./control/turn-resolution"
+import { terminalCanDisplayText } from "./dom"
 import {
   calculateScoreRetentionUnits,
   retentionUnitsToDisplayPercent,
@@ -157,14 +158,21 @@ function rowsWithSpacer(...rows: ScreenLine[]): ScreenLine[] {
   return rows.flatMap((row) => [emptyTextRow(), row])
 }
 
-// tooSmallRows builds the viewport warning shown when the maze no longer fits.
+// tooSmallRows builds the viewport warning shown when the maze no longer fits. The action line must
+// only offer Reset Progress when canShowRestart agrees it would help (updateTouchControls hides the
+// button itself on the same condition) — level 1 has no smaller level to fall back to, so promising
+// it there would be a control with no button behind it.
 function tooSmallRows(state: State): ScreenLine[] {
+  const actionMessage = canShowRestart(state.status, state.level)
+    ? messages.tooSmallActionMessageWithReset
+    : messages.tooSmallActionMessage
+
   return [
     centeredTextRow(
       messages.tooSmallMessage.replace("{level}", String(state.level)),
       "status",
     ),
-    centeredTextRow(messages.tooSmallActionMessage),
+    centeredTextRow(actionMessage),
   ]
 }
 
@@ -346,10 +354,12 @@ function buildScreenLines(
     (width, line) => Math.max(width, line.length),
     0,
   )
-  const lines: ScreenLine[] = [
-    centeredTextRow(navigationText(state)),
-    emptyTextRow(),
-  ]
+  // "Use Arrow Keys/touch buttons to guide Blue to Red" references controls for a maze that isn't
+  // even on screen when there's no room to show one — skip it here rather than pairing gameplay
+  // instructions with a screen that has no gameplay to instruct.
+  const lines: ScreenLine[] = isTooSmallStatus(state.status)
+    ? []
+    : [centeredTextRow(navigationText(state)), emptyTextRow()]
 
   if (mazeLines.length === 0) {
     lines.push(...rowsWithSpacer(...overlayRows(elements, state)))
@@ -444,6 +454,32 @@ function updateAgentConfigForm(elements: Elements, state: State): void {
   elements.body.classList.remove("terminal-body--agent-form-active")
 }
 
+// updateZoomPlaceholder swaps to the same artwork placeholder-art.html uses standalone once the
+// too-small status text (built into screenLines like any other content, so it's still there
+// underneath) can no longer render in full — see terminalCanDisplayText, dom.ts. Checked against
+// tooSmallMessage specifically ("Level {level} needs more screen room!"), the line that matters
+// most: it's shorter than tooSmallActionMessage, so it stays readable a little further into a
+// pinch-zoom before the placeholder takes over.
+function updateZoomPlaceholder(elements: Elements, state: State): void {
+  const needsPlaceholder =
+    isTooSmallStatus(state.status) &&
+    !terminalCanDisplayText(
+      elements,
+      messages.tooSmallMessage.replace("{level}", String(state.level)),
+    )
+
+  elements.zoomPlaceholder.hidden = !needsPlaceholder
+
+  // The agent seats dock sits beside #terminal-body, not inside it (see .terminal-frame's flex
+  // layout), so the placeholder above — an overlay scoped to #terminal-body's own box — never
+  // covers it on its own. Hide it explicitly while the placeholder is up: there's no usable game
+  // behind it to keep the seats dock relevant for. Only touched in agent-api mode, where
+  // control/agent.ts's own bind/unbind flow otherwise owns this element's visibility entirely.
+  if (elements.agentSeatsBody && isAgentApiMode(state.controlMode)) {
+    elements.agentSeatsBody.hidden = needsPlaceholder
+  }
+}
+
 // render turns the current state into HTML and syncs the floating controls.
 export function render(
   elements: Elements,
@@ -464,4 +500,5 @@ export function render(
   updateTouchControls(elements, state)
   updateTopMenuControls(elements, state)
   updateAgentConfigForm(elements, state)
+  updateZoomPlaceholder(elements, state)
 }

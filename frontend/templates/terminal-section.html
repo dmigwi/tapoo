@@ -4,6 +4,15 @@
       <div id="terminal-body" class="terminal-body">
         <pre id="terminal-screen" aria-live="polite"></pre>
         <span id="terminal-measure" class="terminal-measure">MMMMMMMMMM</span>
+        <div
+          id="terminal-zoom-placeholder"
+          class="terminal-zoom-placeholder"
+          hidden
+          aria-hidden="true"
+          aria-label="Zoomed in too far to display status text"
+        >
+          <div class="placeholder-art placeholder-art--terminal"></div>
+        </div>
         <div id="touch-controls" class="touch-controls" hidden aria-label="Touch game controls">
           <button
             class="touch-controls__button touch-controls__button--walls"

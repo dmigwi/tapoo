@@ -116,7 +116,13 @@ export const CONFIG: AppConfig = {
       compact: "Use edge seats to add/manage agents. Tap Proceed.",
     },
     tooSmallMessage: "Level {level} needs more screen room!",
-    tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
+    // Reset Progress only ever restarts at level 1 (restartGame, game.ts) — offering it while
+    // already too-small at level 1 would just redraw the same maze into the same too-small state,
+    // so canShowRestart (status.ts) hides that touch button there. tooSmallActionMessage is the
+    // base case that's always true; tooSmallActionMessageWithReset adds the option only for the
+    // case canShowRestart actually allows it — see tooSmallRows (render.ts) for the selection.
+    tooSmallActionMessage: "Make more screen room on zoom out.",
+    tooSmallActionMessageWithReset: "Make screen room on zoom out, or Reset Progress.",
     runningStatus: {
       wide: "Player: {player}   Level: {level}   Scores: {score}",
       compact: "Player: {player}   Level: {level}   Scores: {score}",
@@ -376,6 +382,13 @@ export const CONFIG: AppConfig = {
     terminalWidthInset: 10,
     terminalWidthScale: 2,
     terminalSampleWidth: 10,
+    // Pinch-zoom is a pure visual magnification — it never changes getBoundingClientRect()/layout
+    // viewport size, so viewportFitStatus (which measures exactly that) can never detect it on its
+    // own. window.visualViewport.scale is the direct signal instead: 1.0 is unzoomed, and this is
+    // the factor above which the visible area is treated as too small to responsibly play — the
+    // same too-small/placeholder-art path a genuinely small window already uses, since neither the
+    // maze nor the touch controls can be trusted to stay reachable past this point.
+    pinchZoomTooCloseScale: 1.2,
   },
   // Runtime settings back persistence validation and agent-mode bootstrapping.
   runtime: {

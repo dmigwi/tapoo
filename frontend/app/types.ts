@@ -529,6 +529,11 @@ export type TerminalElements = {
   controls: HTMLButtonElement[]
   touchControls: HTMLElement
   touchButtons: HTMLButtonElement[]
+  // zoomPlaceholder covers the terminal with the same unavailable-page.svg artwork
+  // placeholder-art.html uses standalone, for the case where the too-small status text itself
+  // can no longer render in full (see terminalCanDisplayText, dom.ts) — a real error condition
+  // like a broken bootstrap uses the separate top-level #placeholder-art instead.
+  zoomPlaceholder: HTMLElement
 }
 
 // AgentElements are only used by the agent-api page overlays and seat roster.
@@ -676,6 +681,7 @@ export type AppConfig = {
     agentAwaitAction: DisplayMsg
     tooSmallMessage: string
     tooSmallActionMessage: string
+    tooSmallActionMessageWithReset: string
     runningStatus: DisplayMsg
     highScoreTemplate: string
     // noPrevious is a single line rather than a comparison group: with no previous record there is
@@ -814,6 +820,7 @@ export type AppConfig = {
     terminalHeightScale: number
     terminalWidthInset: number
     terminalWidthScale: number
+    pinchZoomTooCloseScale: number
   }
   runtime: {
     controlModes: {

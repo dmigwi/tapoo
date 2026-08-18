@@ -19,6 +19,15 @@ function selfVisit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Self", row, col, openMoves: [] }
 }
 
+// setVisualViewportScale mutates the mocked window.visualViewport.scale — a direct assignment
+// fails typecheck since the real VisualViewport.scale is readonly.
+function setVisualViewportScale(scale: number): void {
+  Object.defineProperty(window.visualViewport, "scale", {
+    configurable: true,
+    value: scale,
+  })
+}
+
 function enabledAgentConfig(): AgentApiConfig {
   return {
     id: 1,
@@ -84,6 +93,7 @@ function createElements(): Elements {
     measure: document.createElement("div"),
     controls,
     touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     touchButtons,
   }
 }
@@ -1181,6 +1191,56 @@ describe("bootstrapGame", () => {
         status: "running",
       },
     ])
+  })
+
+  it("treats pinch-zoom past the configured scale as too-small even when the maze still fits", async () => {
+    // Pinch-zoom never changes getBoundingClientRect()/terminalSizes on its own — this maze and
+    // terminal size would otherwise report "fits" at every resize, so the only thing that can be
+    // causing too-small here is window.visualViewport.scale itself.
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: { scale: 1, addEventListener: vi.fn() },
+    })
+
+    const harness = await bootstrapHarness({
+      dimensionsResults: [{ level: 1, numCols: 1, numRows: 1 }],
+      terminalSizes: [
+        { numCols: 20, numRows: 20 },
+        { numCols: 20, numRows: 20 },
+      ],
+    })
+
+    setVisualViewportScale(CONFIG.viewport.pinchZoomTooCloseScale + 0.1)
+    window.dispatchEvent(new Event("resize"))
+
+    const state = latestRenderedState(harness.render)
+    expect(state.status).toBe("too-small")
+  })
+
+  it("resumes automatically once pinch-zoom eases back under the configured scale", async () => {
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: { scale: 1, addEventListener: vi.fn() },
+    })
+
+    // A single fitting entry each — both clamp to themselves for however many extra calls the
+    // recovery path below makes, so this doesn't depend on hand-counting the exact call sequence.
+    const harness = await bootstrapHarness({
+      dimensionsResults: [{ level: 1, numCols: 1, numRows: 1 }],
+      terminalSizes: [{ numCols: 20, numRows: 20 }],
+    })
+
+    setVisualViewportScale(CONFIG.viewport.pinchZoomTooCloseScale + 0.1)
+    window.dispatchEvent(new Event("resize"))
+    expect(latestRenderedState(harness.render).status).toBe("too-small")
+
+    // Still zoomed in past the threshold: must stay too-small, not churn through a restore attempt.
+    window.dispatchEvent(new Event("resize"))
+    expect(latestRenderedState(harness.render).status).toBe("too-small")
+
+    setVisualViewportScale(1)
+    window.dispatchEvent(new Event("resize"))
+    expect(latestRenderedState(harness.render).status).toBe("running")
   })
 
   it("restores a persisted round in paused mode once the viewport fits again", async () => {

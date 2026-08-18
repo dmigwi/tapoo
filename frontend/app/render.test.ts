@@ -79,9 +79,11 @@ function createElements(): RenderElements {
     measure: document.createElement("div"),
     controls: [],
     touchControls,
+    zoomPlaceholder: document.createElement("div"),
     touchButtons,
     agentConfigForm,
     agentManageDialog,
+    agentSeatsBody: document.createElement("div"),
   }
 }
 
@@ -209,7 +211,8 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.interactive.compact)
+    // Too-small has no maze/controls on screen to give navigation instructions about.
+    expect(text).not.toContain(messages.navigation.interactive.compact)
     expect(text).toContain("Level 1 needs more screen room!")
     expect(text).toContain(messages.tooSmallActionMessage)
   })
@@ -918,7 +921,10 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain("Level 1 needs more screen room!")
+    // Level 1 has no lower level to fall back to, so canShowRestart already hides the Reset
+    // Progress button here (asserted below) — the text must not promise an action with no button.
     expect(text).toContain(messages.tooSmallActionMessage)
+    expect(text).not.toContain(messages.tooSmallActionMessageWithReset)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -946,7 +952,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain("Level 2 needs more screen room!")
-    expect(text).toContain(messages.tooSmallActionMessage)
+    expect(text).toContain(messages.tooSmallActionMessageWithReset)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -964,7 +970,115 @@ describe("render", () => {
     expect(elements.touchControls.hidden).toBe(false)
   })
 
-  it("shows compact navigation and too-small messaging on narrow screens", () => {
+  it("keeps the zoom placeholder hidden when the too-small status text still fits", () => {
+    const elements = createElements()
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 200,
+      width: 400, height: 200, toJSON: () => ({}),
+    })
+
+    render(
+      elements,
+      createState({
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    expect(elements.zoomPlaceholder.hidden).toBe(true)
+  })
+
+  it("shows the zoom placeholder once even the too-small status text can no longer fit", () => {
+    const elements = createElements()
+    // "Level 1 needs more screen room!" is 32 characters; charWidth falls back to 9 (elements.measure
+    // is left unmocked here), so a width this narrow leaves room for only a handful of characters.
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: 40, bottom: 200,
+      width: 40, height: 200, toJSON: () => ({}),
+    })
+
+    render(
+      elements,
+      createState({
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    expect(elements.zoomPlaceholder.hidden).toBe(false)
+  })
+
+  it("hides the agent seats dock while the zoom placeholder is up, in agent-api mode", () => {
+    const elements = createElements()
+    elements.agentSeatsBody!.hidden = false
+    // Same narrow width as the previous test: too small for even the too-small status text.
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: 40, bottom: 200,
+      width: 40, height: 200, toJSON: () => ({}),
+    })
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    expect(elements.zoomPlaceholder.hidden).toBe(false)
+    expect(elements.agentSeatsBody!.hidden).toBe(true)
+  })
+
+  it("restores the agent seats dock once the zoom placeholder clears, in agent-api mode", () => {
+    const elements = createElements()
+    elements.agentSeatsBody!.hidden = true
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        status: "await-agent",
+      }),
+    )
+
+    expect(elements.zoomPlaceholder.hidden).toBe(true)
+    expect(elements.agentSeatsBody!.hidden).toBe(false)
+  })
+
+  it("never touches the agent seats dock outside agent-api mode", () => {
+    const elements = createElements()
+    elements.agentSeatsBody!.hidden = false
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: 40, bottom: 200,
+      width: 40, height: 200, toJSON: () => ({}),
+    })
+
+    render(
+      elements,
+      createState({
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    expect(elements.zoomPlaceholder.hidden).toBe(false)
+    expect(elements.agentSeatsBody!.hidden).toBe(false)
+  })
+
+  it("shows too-small messaging without navigation text on narrow screens", () => {
     const elements = createElements()
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
@@ -989,9 +1103,10 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain(messages.navigation.interactive.compact)
+    // Too-small has no maze/controls on screen to give navigation instructions about.
+    expect(text).not.toContain(messages.navigation.interactive.compact)
     expect(text).toContain("Level 2 needs more screen room!")
-    expect(text).toContain(messages.tooSmallActionMessage)
+    expect(text).toContain(messages.tooSmallActionMessageWithReset)
     expect(elements.touchControls.hidden).toBe(false)
   })
 
