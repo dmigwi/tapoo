@@ -1,17 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 
 import { CONFIG } from "./app/config"
+import { applyPageText } from "./page-chrome"
 
-// page-chrome.ts hydrates the page as a side effect of being imported, so every test resets the
-// module registry and rebuilds the DOM it reads from, then imports fresh — the same pattern
-// tapoo.test.ts uses for its own import-time entrypoint.
+// Page-chrome tests call the focused hydration functions directly; tapoo.ts owns runtime startup.
 describe("page chrome data-config-value hydration", () => {
   beforeEach(() => {
-    vi.resetModules()
     document.body.innerHTML = ""
   })
 
-  it("pre-fills an input's value from the resolved config text, not only its placeholder", async () => {
+  it("pre-fills an input's value from the resolved config text, not only its placeholder", () => {
     const input = document.createElement("input")
     // A two-level dotted path (agentConfig.endpointPlaceholders.ollama) exercises the same reduce
     // walker as a one-level one; nothing in configValue special-cases depth.
@@ -19,34 +17,45 @@ describe("page chrome data-config-value hydration", () => {
     input.dataset.configValue = "agentConfig.endpointPlaceholders.ollama"
     document.body.append(input)
 
-    await import("./page-chrome")
+    applyPageText()
 
     expect(input.placeholder).toBe(CONFIG.agentConfig.endpointPlaceholders.ollama)
     expect(input.value).toBe(CONFIG.agentConfig.endpointPlaceholders.ollama)
     expect(input.defaultValue).toBe(CONFIG.agentConfig.endpointPlaceholders.ollama)
   })
 
-  it("leaves inputs without data-config-value untouched", async () => {
+  it("leaves inputs without data-config-value untouched", () => {
     const input = document.createElement("input")
     input.dataset.configPlaceholder = "agentConfig.endpointPlaceholders.ollama"
     input.value = "https://agent.example/move"
     document.body.append(input)
 
-    await import("./page-chrome")
+    applyPageText()
 
     expect(input.placeholder).toBe(CONFIG.agentConfig.endpointPlaceholders.ollama)
     expect(input.value).toBe("https://agent.example/move")
   })
 
-  it("hydrates both data-tooltip and aria-label from a data-config-title element", async () => {
+  it("hydrates both data-tooltip and aria-label from a data-config-title element", () => {
     const badge = document.createElement("span")
     badge.dataset.configTitle = ""
     badge.dataset.configKey = "agentConfig.credentialRotationTooltip"
     document.body.append(badge)
 
-    await import("./page-chrome")
+    applyPageText()
 
     expect(badge.getAttribute("data-tooltip")).toBe(CONFIG.agentConfig.credentialRotationTooltip)
     expect(badge.getAttribute("aria-label")).toBe(CONFIG.agentConfig.credentialRotationTooltip)
+  })
+
+  it("formats a numeric data-config-text value for display", () => {
+    const outputCap = document.createElement("span")
+    outputCap.dataset.configText = ""
+    outputCap.dataset.configKey = "runtime.modelConfig.maxTokens"
+    document.body.append(outputCap)
+
+    applyPageText()
+
+    expect(outputCap.textContent).toBe(CONFIG.runtime.modelConfig.maxTokens.toLocaleString("en-US"))
   })
 })

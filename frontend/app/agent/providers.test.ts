@@ -10,7 +10,7 @@ import {
 import type { ProviderRequestInput } from "./providers"
 import type { AgentChatMessage, AgentToolDefinition } from "../types"
 
-const { contextWindowFloor, temperature, numPredict } = CONFIG.runtime.modelConfig
+const { contextWindowFloor, maxTokens } = CONFIG.runtime.modelConfig
 
 const tools: AgentToolDefinition[] = [
   {
@@ -79,14 +79,14 @@ describe("ollama adapter", () => {
     })
   })
 
-  it("builds the native chat body with sampling options and no format by default", () => {
+  it("builds the native chat body with request options and no format by default", () => {
     const body = PROVIDER_ADAPTERS.ollama.buildBody(requestInput())
 
     expect(body).toEqual({
       model: "llama3.2",
       messages: requestInput().messages,
       tools,
-      options: { num_ctx: contextWindowFloor, temperature, num_predict: numPredict },
+      options: { num_ctx: contextWindowFloor, num_predict: maxTokens },
       think: true,
       stream: false,
     })
@@ -159,7 +159,7 @@ describe("openai adapter", () => {
 
   it("caps tokens with max_tokens and omits response_format without a schema", () => {
     const body = PROVIDER_ADAPTERS.openai.buildBody(requestInput())
-    expect(body.max_tokens).toBe(numPredict)
+    expect(body.max_tokens).toBe(maxTokens)
     expect(body.response_format).toBeUndefined()
     expect(body.tools).toBe(tools)
   })
@@ -349,6 +349,53 @@ describe("anthropic adapter", () => {
     ])
   })
 
+  it("folds a plain-text user warning into a preceding tool-result turn instead of opening a new turn", () => {
+    const messages: AgentChatMessage[] = [
+      { role: "user", content: "It is Blue's turn." },
+      { role: "assistant", content: "", tool_calls: [{ id: "call_1", function: { name: "get_game_status", arguments: {} } }] },
+      { role: "tool", tool_call_id: "call_1", tool_name: "get_game_status", content: "{\"a\":1}" },
+      { role: "user", content: "Warning: try again." },
+    ]
+
+    const body = PROVIDER_ADAPTERS.anthropic.buildBody(requestInput({ messages })) as {
+      messages: { role: string; content: unknown }[]
+    }
+
+    expect(body.messages).toEqual([
+      { role: "user", content: "It is Blue's turn." },
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "call_1", name: "get_game_status", input: {} }],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Warning: try again." },
+          { type: "tool_result", tool_use_id: "call_1", content: "{\"a\":1}" },
+        ],
+      },
+    ])
+    const roles = body.messages.map((message) => message.role)
+    roles.forEach((role, index) => {
+      if (index > 0) expect(role).not.toBe(roles[index - 1])
+    })
+  })
+
+  it("folds a plain-text user warning into a preceding plain-text user turn by concatenating content", () => {
+    const messages: AgentChatMessage[] = [
+      { role: "user", content: "It is Blue's turn." },
+      { role: "user", content: "Warning: try again." },
+    ]
+
+    const body = PROVIDER_ADAPTERS.anthropic.buildBody(requestInput({ messages })) as {
+      messages: { role: string; content: unknown }[]
+    }
+
+    expect(body.messages).toEqual([
+      { role: "user", content: "Warning: try again.\n\nIt is Blue's turn." },
+    ])
+  })
+
   it("does not coalesce a tool result into an unrelated earlier user turn", () => {
     const messages: AgentChatMessage[] = [
       { role: "user", content: "hi" },
@@ -375,7 +422,7 @@ describe("anthropic adapter", () => {
 
   it("requires max_tokens and includes output_config only when a schema is requested", () => {
     const withoutFormat = PROVIDER_ADAPTERS.anthropic.buildBody(requestInput())
-    expect(withoutFormat.max_tokens).toBe(numPredict)
+    expect(withoutFormat.max_tokens).toBe(maxTokens)
     expect(withoutFormat.output_config).toBeUndefined()
 
     const withFormat = PROVIDER_ADAPTERS.anthropic.buildBody(requestInput({ wantsPredictionFormat: true }))
@@ -393,7 +440,7 @@ describe("anthropic adapter", () => {
     expect(budgetFor("high")).toEqual({ type: "enabled", budget_tokens: 6000 })
     expect(budgetFor("max")).toEqual({ type: "enabled", budget_tokens: 8000 })
     // Every level stays strictly under max_tokens, which Anthropic requires.
-    expect(budgetFor("max").budget_tokens).toBeLessThan(numPredict)
+    expect(budgetFor("max").budget_tokens).toBeLessThan(maxTokens)
   })
 
   it("folds text and tool_use content blocks into the internal message shape", () => {

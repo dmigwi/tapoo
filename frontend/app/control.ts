@@ -1,5 +1,7 @@
-import { hasReachedTarget } from "./control/turn-resolution"
-import { isSuccessfulMoveStatus } from "./status"
+import {
+  hasReachedTarget,
+  isSuccessfulMoveStatus,
+} from "./status"
 import {
   isMoveAction,
   resolvePlayerMove,

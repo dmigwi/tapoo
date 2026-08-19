@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-build="{{dataBuildKey}}">
   <head>
     <meta charset="UTF-8" />
     <meta
@@ -10,7 +10,7 @@
     <meta name="color-scheme" content="dark" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self' 'sha256-vvt4KWwuNr51XfE5m+hzeNEGhiOfZzG97ccfqGsPwvE='; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' https: http:; form-action 'none'"
+      content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' https: http:; form-action 'none'"
     />
     <title data-config-key="{{titleConfigKey}}">{{titleText}}</title>
     <meta
@@ -19,6 +19,18 @@
       content="{{descriptionText}}"
     />
     <link rel="canonical" href="{{canonicalUrl}}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Tapoo" />
+    <meta property="og:url" content="{{canonicalUrl}}" />
+    <meta property="og:title" content="{{titleText}}" />
+    <meta property="og:description" content="{{descriptionText}}" />
+    <meta property="og:image" content="{{ogImageUrl}}" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="{{titleText}}" />
+    <meta name="twitter:description" content="{{descriptionText}}" />
+    <meta name="twitter:image" content="{{ogImageUrl}}" />
     <link rel="icon" type="image/svg+xml" href="./images/favicon.svg" />
     <link
       rel="preload"
@@ -27,9 +39,12 @@
       type="font/woff2"
       crossorigin
     />
-    <link rel="stylesheet" href="{{stylesheetHref}}" />
+    <link rel="stylesheet" href="{{stylesheetHref}}" integrity="{{stylesheetIntegrity}}" />
+    <script type="application/ld+json">
+      {{structuredData}}
+    </script>
   </head>
-  <body {{bodyAttributes}}>
+  <body{{bodyAttributes}}>
     <main class="app-shell">
       <header class="top-bar" aria-label="Application controls">
         <div class="top-bar__brand">
@@ -39,8 +54,9 @@
         </div>
         <details class="top-menu">
           {{topMenuSummary}}
-          <div class="top-menu__panel" role="menu" aria-label="More actions">
+          <div class="top-menu__panel" aria-label="More actions">
             {{primaryMenuItem}}
+            {{secondaryMenuItem}}
             {{promptsLink}}
             {{privacyLink}}
             {{contactLink}}

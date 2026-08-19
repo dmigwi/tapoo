@@ -34,6 +34,7 @@ function setupTerminalDom(): void {
     <div id="terminal-screen"></div>
     <div id="terminal-measure"></div>
     <div id="touch-controls"></div>
+    <div id="terminal-zoom-placeholder"></div>
     <div id="agent-seats-body"></div>
     <button id="tapoo-logs-reset"></button>
     <button id="tapoo-logs-download"></button>
@@ -130,6 +131,33 @@ describe("dom", () => {
     } as CSSStyleDeclaration)
 
     expect(getTerminalSize(elements)).toEqual({ numCols: 22, numRows: 11 })
+  })
+
+  it("reports whether a line of text fits the raw character-column width, not the maze-cell width", async () => {
+    const { getGameElements, terminalCanDisplayText, terminalCharacterColumns } = await import("./dom")
+    const elements = getGameElements()
+    if (!elements) {
+      throw new Error("expected terminal elements")
+    }
+
+    // charWidth = 100 / terminalSampleWidth(10) = 10; body.width 200 → 20 raw character columns —
+    // deliberately unrelated to getTerminalSize's maze-cell numCols, which also subtracts insets
+    // and divides by a scale factor this check must not apply.
+    elements.body.getBoundingClientRect = vi.fn(() => ({
+      width: 200, height: 640, top: 0, right: 200, bottom: 640, left: 0, x: 0, y: 0,
+      toJSON: () => ({}),
+    }))
+    elements.measure.getBoundingClientRect = vi.fn(() => ({
+      width: 100, height: 20, top: 0, right: 100, bottom: 20, left: 0, x: 0, y: 0,
+      toJSON: () => ({}),
+    }))
+
+    // terminalCanDisplayText adds a 10-character buffer on top of the raw text length before
+    // comparing against the available columns, so the fit boundary sits 10 characters short of the
+    // raw column count itself (20), not at it.
+    expect(terminalCharacterColumns(elements)).toBe(20)
+    expect(terminalCanDisplayText(elements, "A".repeat(10))).toBe(true)
+    expect(terminalCanDisplayText(elements, "A".repeat(11))).toBe(false)
   })
 
   it("uses actual drawable room for very small terminal measurements", async () => {

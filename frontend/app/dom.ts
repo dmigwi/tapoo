@@ -21,7 +21,8 @@ function hasTerminalElements(): boolean {
     document.getElementById("terminal-body") instanceof HTMLElement &&
     document.getElementById("terminal-screen") instanceof HTMLElement &&
     document.getElementById("terminal-measure") instanceof HTMLElement &&
-    document.getElementById("touch-controls") instanceof HTMLElement
+    document.getElementById("touch-controls") instanceof HTMLElement &&
+    document.getElementById("terminal-zoom-placeholder") instanceof HTMLElement
   )
 }
 
@@ -42,6 +43,7 @@ export function getGameElements(): Elements | null {
       ),
     ),
     touchControls: mustElement<HTMLElement>("touch-controls"),
+    zoomPlaceholder: mustElement<HTMLElement>("terminal-zoom-placeholder"),
     touchButtons: Array.from(
       document.querySelectorAll<HTMLButtonElement>("[data-touch-control]"),
     ),
@@ -81,17 +83,37 @@ export function getGameElements(): Elements | null {
   }
 }
 
+// terminalCharacterColumns reports the raw number of monospace characters that fit across the
+// terminal's current rendered width — real per-character metrics, not the maze-cell-adjusted
+// numCols getTerminalSize below derives from this same measurement.
+export function terminalCharacterColumns(elements: Elements): number {
+  const rect = elements.body.getBoundingClientRect()
+  const sampleRect = elements.measure.getBoundingClientRect()
+  const charWidth = sampleRect.width / viewport.terminalSampleWidth || 9
+  return Math.floor(rect.width / charWidth)
+}
+
+// terminalCanDisplayText reports whether a single line of text would render in full at the
+// terminal's current size. #terminal-screen is white-space: pre (never wraps) and overflow:
+// hidden (clips rather than scrolls), so a line longer than this is silently cut off, not just
+// visually cramped — this is the line beyond which showing text at all stops being useful. The
+// +10 is a deliberate safety margin: the raw character-column count is an approximation (a sampled
+// average char width applied uniformly, not this specific string's actual glyph widths, letter
+// spacing, or centering padding), so treating "just barely fits" as "doesn't" avoids a line that
+// clips by a character or two despite this check saying it was fine.
+export function terminalCanDisplayText(elements: Elements, text: string): boolean {
+  return (text.length + 10) <= terminalCharacterColumns(elements)
+}
+
 // getTerminalSize converts DOM measurements into logical maze dimensions.
 export function getTerminalSize(elements: Elements): BaseDimensions {
   const rect = elements.body.getBoundingClientRect()
-  const sampleRect = elements.measure.getBoundingClientRect()
   const screenStyle = window.getComputedStyle(elements.screen)
-  const charWidth = sampleRect.width / viewport.terminalSampleWidth || 9
-  const measuredRowHeight = sampleRect.height
+  const measuredRowHeight = elements.measure.getBoundingClientRect().height
   const computedLineHeight = Number.parseFloat(screenStyle.lineHeight)
   const computedFontSize = Number.parseFloat(screenStyle.fontSize)
   const terminalRowHeight = measuredRowHeight || computedLineHeight || computedFontSize || 16
-  const terminalColumns = Math.floor(rect.width / charWidth)
+  const terminalColumns = terminalCharacterColumns(elements)
   const terminalRows = Math.floor(rect.height / terminalRowHeight)
 
   return {

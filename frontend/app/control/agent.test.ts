@@ -207,6 +207,7 @@ function createAgentFormElements(): AgentFormElements {
     screen: document.createElement("div"),
     touchButtons: [],
     touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     agentSeatsBody,
     tapooLogsReset,
     tapooLogsDownload,
@@ -361,6 +362,7 @@ describe("agent control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
 
@@ -462,6 +464,7 @@ describe("agent control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
 
     const mode = createTestAgentMode(elements)
@@ -478,6 +481,7 @@ describe("agent control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
 
@@ -523,6 +527,7 @@ describe("agent control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
 
@@ -632,6 +637,7 @@ describe("agent control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
 
@@ -703,6 +709,7 @@ describe("agent control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
 
@@ -774,6 +781,7 @@ describe("agent control mode", () => {
         createButton({ action: "pause" }),
       ],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
 
@@ -840,6 +848,7 @@ describe("agent control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [createButton({ action: "proceed" })],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
 
@@ -928,6 +937,7 @@ describe("agent control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
 
@@ -1003,7 +1013,7 @@ describe("agent control mode", () => {
         {
           playerName: "Self",
           cell: { row: 0, col: 0 },
-          cellType: "dead-end",
+          cellType: "start-cell",
           openMoves: {},
         },
       ],
@@ -1019,6 +1029,7 @@ describe("agent control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
 
@@ -2154,6 +2165,7 @@ describe("agent control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
 
@@ -2192,6 +2204,7 @@ describe("agent control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [pauseButton],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     const outsideInput = document.createElement("input")
     elements.app.tabIndex = 0

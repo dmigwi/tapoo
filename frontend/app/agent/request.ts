@@ -8,6 +8,7 @@ import {
   buildDuplicateToolCallMessage,
   buildTokenLimitExhaustionPrompt,
 } from "./context"
+import type { AgentStateSnapshot } from "./state-snapshot"
 import {
   endpointLabel,
   normalizeToolArguments,
@@ -34,7 +35,6 @@ import type {
   AgentToolDefinition,
   AgentToolHandlers,
   MazeActionResult,
-  State,
 } from "../types"
 
 // AgentChatResponse is the shape every provider adapter's readMessage normalizes its raw payload
@@ -44,13 +44,21 @@ type AgentChatResponse = {
 }
 
 type RequestAgentPredictionInput = {
-  state: State
+  // The only state this turn ever reads — no separate raw State is threaded alongside it. Built
+  // once by the caller (control/agent-api.ts's requestNextAgentTurn), before the first of possibly
+  // several attempts this turn makes (including a connection-error retry, separated by a real
+  // backoff delay) — never rebuilt here, so every attempt sees the exact same frozen values no
+  // matter how much wall-clock time passes between them. See snapshotAgentState.
+  stateSnapshot: AgentStateSnapshot
   timeoutMs: number
   // Delay applied before each provider request after the first within one turn — a turn issuing
   // several rounds while servicing tool calls otherwise fires them back to back with no gap at
   // all, which can look like a burst to the upstream provider even when turns themselves are well
-  // paced. See agentApiTurnPollIntervalMs (config.ts) for the separate, larger delay between
-  // turns — this is deliberately the smaller, request-level sibling of that value.
+  // paced. See agentApiTurnPollIntervalMs (config.ts) for the separate delay between turns — the
+  // two are close (30s vs 35s) rather than one clearly dwarfing the other, because a real model
+  // (Kimi K3) has been observed taking roughly 20s just to process one request; a shorter interval
+  // than that risks a provider seeing two overlapping in-flight requests as a burst and returning
+  // 429, so this is set close to that real processing floor, not to some fraction of the turn delay.
   requestIntervalMs: number
   agent: AgentApiConfig
   lastActionResult: MazeActionResult | null
@@ -210,7 +218,7 @@ async function requestChatTurn(
 // requestPredictionWithAbort hides request construction, timeout control, and tool-call servicing.
 export function requestPredictionWithAbort({
   lastActionResult,
-  state,
+  stateSnapshot,
   agent,
   timeoutMs,
   requestIntervalMs,
@@ -221,13 +229,13 @@ export function requestPredictionWithAbort({
 
   // A level's first agent-api turn is the only one that needs the full system/user prompt
   // and tool descriptions logged; later turns repeat that same static content.
-  const isFirstRequestOfLevel = state.turnCount === 0
+  const isFirstRequestOfLevel = stateSnapshot.turnCount === 0
 
   // Stamp every entry this turn produces with the same turn number and level. turnCount only
   // advances in commitAgentTurn once the turn resolves, so it stays fixed across the several
   // provider requests made below, and a trailing win/loss entry still carries the turn/level that
   // produced it.
-  setTapooLogContext(state)
+  setTapooLogContext(stateSnapshot)
 
   // Each provider request gets its own timeout; one agent turn may make several requests while
   // servicing tool calls before the final move prediction arrives.
@@ -262,11 +270,10 @@ export function requestPredictionWithAbort({
     try {
       const endpointDisplay = endpointLabel(agent.endpoint)
 
-      // Tool handlers expose a stable snapshot for this whole prediction turn.
-      const toolHandlers = buildAgentToolHandlers(state, lastActionResult, agent)
+      const toolHandlers = buildAgentToolHandlers(stateSnapshot, lastActionResult, agent)
       // The classification is computed once up front so it appears unconditionally in the system
       // prompt, not only when the model chooses to call get_prediction_rules.
-      const {playerUniqueCellsVisited, decayUnitsCharged} = getBatchEfficiencyMetrics(state.traversalHistory, agent)
+      const {playerUniqueCellsVisited, decayUnitsCharged} = getBatchEfficiencyMetrics(stateSnapshot.traversalHistory, agent)
       const batchEfficiencyClass = resolveStatusSpeedClass(playerUniqueCellsVisited,decayUnitsCharged)
 
       const player = formatPlayerStatusLabel({
@@ -345,7 +352,7 @@ export function requestPredictionWithAbort({
             // A parse failure is broader than an empty prediction: nonempty invalid JSON must stay
             // malformed-response even when its token usage reaches the configured threshold.
             const isEmptyPrediction = (response.message.content ?? "").trim().length === 0
-            const reachedTokenCap = tokensUsed !== undefined && tokensUsed >= CONFIG.runtime.modelConfig.numPredict
+            const reachedTokenCap = tokensUsed !== undefined && tokensUsed >= CONFIG.runtime.modelConfig.maxTokens
 
             // Token-limit exhaustion requires both signals. Empty content alone may be an ordinary
             // malformed response, while high token usage alone may still accompany usable output.

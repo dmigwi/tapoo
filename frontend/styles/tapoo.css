@@ -504,6 +504,18 @@ body {
   }
 }
 
+/* Ordered before the narrower 480px block below on purpose: both set .privacy-panel's padding at
+   equal specificity, and max-width queries only cascade correctly (narrower wins) when the wider
+   one appears first in source order — the 720px block further down the file also touches
+   .top-bar/.terminal-app/.placeholder-page, but .privacy-panel is kept here instead of there so its
+   own cascade with the 480px/270px rules below stays correct without relying on that block's
+   position relative to this whole group. */
+@media (max-width: 720px) {
+  .privacy-panel {
+    padding: 18px;
+  }
+}
+
 @media (max-width: 480px) {
   .placeholder-art {
     width: min(100%, 180px);
@@ -513,6 +525,10 @@ body {
     background-color: #fbfbfb;
     filter: saturate(1.06) brightness(1.13) contrast(1.02)
       drop-shadow(0 0 14px rgba(72, 198, 62, 0.08));
+  }
+
+  .privacy-panel {
+    padding: 14px;
   }
 }
 
@@ -537,6 +553,27 @@ body {
     calc(var(--safe-bottom) + 18px)
     calc(var(--safe-left) + 18px);
   overflow: hidden;
+}
+
+/* Covers the terminal with the same unavailable-page.svg artwork placeholder-art uses standalone,
+   for the case where even the too-small status text can no longer render in full (see
+   terminalCanDisplayText, dom.ts) — an opaque background so the (now unreadable) text underneath
+   never bleeds through. */
+.terminal-zoom-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: var(--bg);
+}
+
+.placeholder-art--terminal {
+  /* Reuses .placeholder-art's artwork as-is; only the standalone page's own vertical offset is
+     reset, since this wrapper already centers within the terminal on its own terms. */
+  transform: none;
 }
 
 .terminal-app:focus-visible {
@@ -678,7 +715,12 @@ body {
   position: absolute;
   left: 50%;
   bottom: calc(var(--safe-bottom) + 12px);
-  z-index: 3;
+  /* Above .terminal-zoom-placeholder's z-index: 5 — an active touch button (e.g. Reset Progress,
+     the one control a too-small level > 1 screen offers, per canShowRestart) must stay reachable
+     over that placeholder, not buried under it. updateTouchControls already decides on its own
+     whether this is shown at all, so raising it here only affects buttons already meant to be
+     visible. */
+  z-index: 6;
   transform: translateX(-50%);
   width: fit-content;
   display: grid;

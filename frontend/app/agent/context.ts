@@ -3,7 +3,6 @@ import {
   MOVE_ACTIONS,
   MOVE_DELTAS,
   cellCoordinateFromGridPoint,
-  cloneTraversalHistory,
   mazeCellKey,
 } from "../traversal"
 import {
@@ -11,6 +10,7 @@ import {
   resolveBatchEfficiencyClass,
 } from "./efficiency"
 import type { BatchEfficiencyClass } from "./efficiency"
+import type { AgentStateSnapshot } from "./state-snapshot"
 import type {
   AgentChatMessage,
   AgentApiConfig,
@@ -21,11 +21,11 @@ import type {
   AgentToolHandlers,
   CellCoordinate,
   MazeActionResult,
-  State,
+  MazeCellType,
   TraversalHistoryEntry,
 } from "../types"
 
-const { runtime, scoring } = CONFIG
+const { runtime, scoring, timing } = CONFIG
 const {
   agentBaseDecayUnits,
   agentPartialInvalidPenaltyDecayUnits,
@@ -97,41 +97,48 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
   const partialInvalidTurnCost = agentBaseDecayUnits + agentPartialInvalidPenaltyDecayUnits
   return [
     describeAgentSpeedClassification(playerName, batchEfficiencyClass),
-    "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell,",
-    "destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested",
-    "move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status,",
-    "score, and the previous prediction outcome.",
-    "The maze is randomly generated at the start of each level with exactly one path to the destination. For the current",
-    "level, maze dimensions and wall/open-exit structure are fixed once generated. When present in filteredTraversalHistory,",
-    `playerName ${runtime.interactivePlayerName} marks the start cell. Use openMoves from filteredTraversalHistory`,
-    "entries to build a local map; entries recorded by other players are just as trustworthy as your own.",
-    "Your objective is to reach destinationCell. Each turn, prioritize an openMoves neighbor from currentCell whose",
-    "alreadyExplored is false before weighing distance to destinationCell, unless currentCell's cellType is dead-end.",
+    "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read",
+    "currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response",
+    "format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for",
+    "current status, score, and the previous prediction outcome.",
+    "The maze is randomly generated at the start of each level with exactly one path to the destination. For the",
+    "current level, maze dimensions and wall/open-exit structure are fixed once generated. When present in",
+    `filteredTraversalHistory, playerName ${runtime.interactivePlayerName} marks the start cell. Use openMoves from`,
+    "filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy",
+    "as your own. currentCell is the position you landed on after applying the valid moves from the previous turn;",
+    "at the start of each level, currentCell matches the start-cell.",
+    "Your primary objective is to reach destinationCell, the level's fixed target position, with the highest traversal",
+    "speed. cellType start-cell and target-cell label the start and destination cells respectively. Each turn,",
+    "prioritize an openMoves neighbor from currentCell whose alreadyExplored is false before weighing distance to",
+    "destinationCell, unless the filteredTraversalHistory entry matching currentCell has cellType dead-end.",
     "Revisiting a cell already in filteredTraversalHistory during deliberate backtracking is not a mistake, although",
-    "it adds no new-cell progress. cellType is the only reliable way to know it is a dead-end — never assume a cell you",
-    "have not yet visited is one, since an unexplored cell's own exits are unknown until you land there and the absence",
-    "of a connection from cells you already know proves nothing.",
-    "Begin backtracking only when your current cell's cellType is dead-end, and retreat toward a specific visited cell",
-    "with an openMoves neighbor whose alreadyExplored is false; that visited cell is an actual branch target, not a guess.",
+    "it adds no new-cell progress. cellType is the only reliable way to know it is a dead-end — never assume a cell",
+    "you have not yet visited is one, since an unexplored cell's own exits are unknown until you land there and the",
+    "absence of a connection from cells you already know proves nothing.",
+    "Begin backtracking only when the filteredTraversalHistory entry matching currentCell has cellType dead-end, and",
+    "retreat toward a specific visited cell with an openMoves neighbor whose alreadyExplored is false; that visited",
+    "cell is an actual branch target, not a guess.",
     "Once a dead-end is confirmed, filteredTraversalHistory's visit order tells you how far to search: an unexplored",
-    "branch point still exists among cells visited earlier, maybe within or beyond historyWindowRadius, so keep retreating",
-    "through known cells until a later turn's filteredTraversalHistory brings it into view. At higher",
+    "branch point still exists among cells visited earlier, maybe within or beyond historyWindowRadius, so keep",
+    "retreating through known cells until a later turn's filteredTraversalHistory brings it into view. At higher",
     "levels, more junctions mean more short dead-end branches along the solution path, so expect to rule out several",
     "before finding the right one — a single clean backtrack is the exception, not the rule.",
     "When judging whether one candidate cell is closer to destinationCell than another, compare the full combined",
     "row and col differences for each candidate, not just one axis — a cell closer on one axis can be equally far or",
-    "farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start",
-    "to destination; the only valid path may require moving away from the target before turning towards it.",
-    "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome.",
-    `A turn with any valid moves costs a constant ${agentBaseDecayUnits}-unit decay charge regardless of how many moves it`,
-    `applied. If replay then reaches an invalid move, that adds a ${agentPartialInvalidPenaltyDecayUnits}-unit penalty,`,
-    `for a total charge of ${partialInvalidTurnCost}. If the very first submitted move is already invalid — no progress at`,
-    `all — the turn instead costs a flat ${agentZeroProgressPenaltyDecayUnits}-unit decay charge.`,
-    "A malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a",
-    `fixed ${agentMalformedPenaltyDecayUnits} decay units with no moves applied — the costliest outcome of all.`,
+    "farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from",
+    "start to destination; the only valid path may require moving away from the target before turning towards it.",
+    "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that",
+    "outcome.",
+    `A turn with any valid moves costs a constant ${agentBaseDecayUnits}-unit decay charge regardless of how many submitted`,
+    `moves apply. If replay then reaches an invalid move, that adds a ${agentPartialInvalidPenaltyDecayUnits}-unit penalty,`,
+    `for a total charge of ${partialInvalidTurnCost}. If the very first submitted move is already invalid — no progress`,
+    `at all — the turn instead costs a flat ${agentZeroProgressPenaltyDecayUnits}-unit decay charge. A malformed response`,
+    `(invalid JSON, an unknown tool request, or ignoring a warning) costs a fixed ${agentMalformedPenaltyDecayUnits}`,
+    `decay units with no moves applied — the costliest outcome of all.`,
     "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a",
     "picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
-    "currentCell's openMoves are a natural place to start when extracting high-confidence multi-move predictions.",
+    "The openMoves in the filteredTraversalHistory entry matching currentCell are a natural place to start when",
+    "extracting high-confidence multi-move predictions.",
     "With enough of that picture assembled, you can often find several consecutive moves that are all certain to",
     "apply without producing an invalid-move. You could also invent a better way to sustain that classification.",
     "get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in",
@@ -158,8 +165,8 @@ export function buildAgentMessages(playerName: string, batchEfficiencyClass: Bat
 
 // buildDuplicateToolCallMessage names exactly which tool call(s) already have results, rather
 // than claiming no tool call can return anything new — other tools may still be genuinely
-// uncalled, and the model remains free to request those. It is explicitly labeled "Warning:" and
-// uses the same "duplicate tool call warning" phrase as lastPredictionOutcomeTool's malformed-response
+// uncalled, and the model remains free to request those. It is explicitly labeled with the
+// configured warning prefix and uses the same warning terminology as lastPredictionOutcomeTool's malformed-response
 // explanation, so a model that ignores it can tie the resulting penalty back to this message.
 // describeToolCall renders each call as "name (id)", falling back to placeholders for the rare
 // case a provider omits either field.
@@ -170,7 +177,7 @@ export function buildDuplicateToolCallMessage(duplicateToolCalls: AgentToolCall[
   return {
     role: "user",
     content:
-      `Warning: ${duplicateToolCalls.map(describeToolCall).join(", ")} won't yield any new information. ` +
+      `${CONFIG.runtime.promptWarningPrefix} ${duplicateToolCalls.map(describeToolCall).join(", ")} won't yield any new information. ` +
       "You may still call any tools you haven't used yet, or respond now with only the moves JSON. Requesting " +
       "these tool call(s) once again will be treated as a malformed-response.",
   }
@@ -186,7 +193,7 @@ export function buildTokenLimitExhaustionPrompt(tokensUsage: number): AgentChatM
   return {
     role: "user",
     content:
-      `Warning: Your previous response had a token-limit-exhaustion error and used ${tokensUsage} tokens without returning a ` +
+      `${CONFIG.runtime.promptWarningPrefix} Your previous response had a token-limit-exhaustion error and used ${tokensUsage} tokens without returning a ` +
       "prediction. Try once more to return the correct prediction format output without overthinking. This retry is " +
       "free, but on reaching the token limit again without a prediction you will be charged the same fixed penalty "+
       "as a malformed response.",
@@ -211,7 +218,8 @@ const mazeStructureTool: AgentToolDefinition = {
     description: [
       "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down,",
       "col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col",
-      "by 1 and MoveRight increases it by 1. filteredTraversalHistory includes only first-visit records within",
+      "by 1 and MoveRight increases it by 1. currentCell is the position you landed on after applying the valid moves",
+      "from the previous turn. filteredTraversalHistory includes only first-visit records within",
       "historyWindowRadius of currentCell, ordered oldest-visited to most-recently-visited — currentCell's own",
       "position in this list depends on when it was first visited, not on it being current, so it will not always",
       "be last. Entries before currentCell in this list were visited earlier; entries after it were visited more",
@@ -225,8 +233,10 @@ const mazeStructureTool: AgentToolDefinition = {
       "openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether",
       "that neighbor's own alreadyExplored is true — meaning it has been explored and exists in the full maze traversal history —",
       "even when that neighbor itself is outside the filtered result.", 
-      "cellType is precomputed from that same exit count, so you never need to count it yourself: dead-end (one exit),",
-      "corridor (two exits), or junction (three or more). cellType only ever exists for a cell already in filteredTraversalHistory",
+      "cellType is precomputed so you never need to count exits yourself: start-cell (the traversal start), target-cell",
+      "(the destination), dead-end (one exit), corridor (two exits), or junction (three or more). Only dead-end",
+      "should trigger backtracking; start-cell and target-cell are special cells, not ordinary dead ends.",
+      "cellType only ever exists for a cell already in filteredTraversalHistory",
       "— an unvisited cell, including one that only appears as a neighbor inside another cell's openMoves, has no known",
       "cellType and must never be assumed to be of a specific cellType before visiting.",
       "The only way to learn an unvisited cell's own structure is to move there and read its own entry on a later turn.",
@@ -290,11 +300,15 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
     description: [
       "Get the outcome of the previous submitted moves: whether they fully applied, partially failed, reached the",
       "target, or were rejected. status is the current game status, score is the current score after that outcome.",
+      "decayUnitsRemaining is the current maximum number of decay units the player can spend, starting with this turn,",
+      "to find the target. If the final unit is spent without reaching the target, the score becomes 0 and the level is",
+      "lost; reaching the target with that unit wins with a score of 0.",
       "lastMoveStatus is the outcome of only the single last move actually dispatched that turn:",
       "null=first turn, no history yet; applied=the move executed successfully; visitedBefore indicates whether it",
       "revisited a cell; invalid-move=that move hit a wall or boundary, execution stopped there; reached-target=destination reached,",
-      "stop predicting; malformed-response=previous response was not valid JSON, requested a tool that does not exist, or ignored a",
-      "duplicate tool call warning — no moves were replayed and a fixed score penalty was charged;",
+      "stop predicting; malformed-response=previous response was not valid JSON, requested a tool that does not exist, or",
+      "ignored a warning, resulting in zero progress and a fixed score penalty. A warning is a user message beginning",
+      `with "${CONFIG.runtime.promptWarningPrefix}".`,
       "token-limit-exhaustion=the previous empty prediction reached the configured token threshold and its corrective warning opportunity",
       "also returned no prediction — no moves were replayed and the same fixed score penalty was charged; network-error=HTTP",
       "failure, no score charged. predictionStatus instead summarizes the entire submitted prediction as one story:",
@@ -313,7 +327,7 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
       "null when no move applied. On an empty-prediction turn these four fields are always reset to null/empty,",
       "matching that no moves were replayed — they never carry over stale data from an earlier turn.",
       "chargedMovesCount is the total decay units charged toward score that turn.",
-      "Returns JSON: {\"status\":string, \"score\":number,",
+      "Returns JSON: {\"status\":string, \"score\":number, \"decayUnitsRemaining\":number,",
       "\"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"predictionStatus\":string|null,",
       "\"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null,",
       "\"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
@@ -339,7 +353,19 @@ export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
 // it the precomputed label removes the room for that misreading, the same way historyWindowRadius
 // and playerUniqueCellsVisited/allUniqueCellsVisited hand over other conclusions instead of raw
 // material to re-derive.
-function classifyCellType(exitCount: number): "dead-end" | "corridor" | "junction" {
+function classifyCellType(
+  start: CellCoordinate | null,
+  target: CellCoordinate | null,
+  entry: TraversalHistoryEntry,
+): MazeCellType {
+  if (start && entry.row === start.row && entry.col === start.col) {
+    return "start-cell"
+  }
+  if (target && entry.row === target.row && entry.col === target.col) {
+    return "target-cell"
+  }
+
+  const exitCount = entry.openMoves.length
   if (exitCount <= 1) {
     return "dead-end"
   }
@@ -377,9 +403,12 @@ function isWithinManhattanDistance(
   return (Math.abs(first.row - second.row) + Math.abs(first.col - second.col)) <= manhattanDistance
 }
 
-// buildAgentToolHandlers binds the latest state snapshot to the context tools for this request.
+// buildAgentToolHandlers binds an already-frozen state snapshot (see snapshotAgentState,
+// agent/state-snapshot.ts — also used for turn logging elsewhere, not tool-specific despite the
+// name of this function) to the context tools for this request. Takes the snapshot itself, not
+// State, so it never has to decide when to (re)read live state — that decision belongs to the caller.
 export function buildAgentToolHandlers(
-  state: State,
+  snapshot: AgentStateSnapshot,
   lastActionResult: MazeActionResult | null,
   agent: AgentApiConfig,
 ): AgentToolHandlers {
@@ -388,30 +417,31 @@ export function buildAgentToolHandlers(
       // Raw counts are exposed instead of the derived rate so the model can compute and verify the
       // classification itself; all are always concrete numbers (0 is a valid count), never null, so
       // there is nothing ambiguous for the model to puzzle over before its first request.
-      const batchEfficiencyClass = resolveBatchEfficiencyClass(state.traversalHistory, agent)
+      const batchEfficiencyClass = resolveBatchEfficiencyClass(snapshot.traversalHistory, agent)
       const { playerUniqueCellsVisited, allUniqueCellsVisited, decayUnitsCharged, playerTurnsTaken } =
-        getBatchEfficiencyMetrics(state.traversalHistory, agent)
+        getBatchEfficiencyMetrics(snapshot.traversalHistory, agent)
       return {
         suggestedMovesPerTurn: runtime.modelConfig.suggestedMovesPerTurnRange,
         allUniqueCellsVisited,
         playerUniqueCellsVisited,
         decayUnitsCharged,
-        totalTurnCount: state.turnCount,
+        totalTurnCount: snapshot.turnCount,
         playerTurnsTaken,
         batchEfficiencyClass,
-        mazeDimensions: state.mazeDimensions
+        mazeDimensions: snapshot.mazeDimensions
           ? {
-              numCols: state.mazeDimensions.numCols,
-              numRows: state.mazeDimensions.numRows,
-              totalMazeCells: state.mazeDimensions.area,
+              numCols: snapshot.mazeDimensions.numCols,
+              numRows: snapshot.mazeDimensions.numRows,
+              totalMazeCells: snapshot.mazeDimensions.area,
             }
           : null,
         expectedResponseSchema: EXPECTED_RESPONSE_SCHEMA,
       }
     },
     get_maze_structure() {
-      const currentCell = state.playerPosition ? cellCoordinateFromGridPoint(state.playerPosition) : null
-      const destinationCell = state.finalPosition ? cellCoordinateFromGridPoint(state.finalPosition) : null
+      const startCell = snapshot.startPosition ? cellCoordinateFromGridPoint(snapshot.startPosition) : null
+      const currentCell = snapshot.playerPosition ? cellCoordinateFromGridPoint(snapshot.playerPosition) : null
+      const destinationCell = snapshot.finalPosition ? cellCoordinateFromGridPoint(snapshot.finalPosition) : null
       // Named historyWindowRadius on the wire (not manhattanDistance) even though it comes from
       // runtime.modelConfig.manhattanDistance: sitting beside currentCell/destinationCell under the
       // name "manhattanDistance" reads as the live distance between them, which it is not — it's a
@@ -419,29 +449,29 @@ export function buildAgentToolHandlers(
       // field disagreeing has no way to know it isn't supposed to match, and can burn real
       // reasoning trying to reconcile the two.
       const historyWindowRadius = runtime.modelConfig.manhattanDistance
-      const history = cloneTraversalHistory(state.traversalHistory)
-      const visitedCellKeys = new Set(history.map((entry) => mazeCellKey(entry)))
+      const visitedCellKeys = new Set(snapshot.traversalHistory.map((entry) => mazeCellKey(entry)))
       const filteredHistory = currentCell
-        ? history.filter((entry) => isWithinManhattanDistance(entry, currentCell, historyWindowRadius))
+        ? snapshot.traversalHistory.filter((entry) => isWithinManhattanDistance(entry, currentCell, historyWindowRadius))
         : []
 
       return {
-        level: state.level,
+        level: snapshot.level,
         currentCell,
         destinationCell,
         historyWindowRadius,
         filteredTraversalHistory: filteredHistory.map((entry) => ({
           playerName: entry.playerName,
           cell: { row: entry.row, col: entry.col },
-          cellType: classifyCellType(entry.openMoves.length),
+          cellType: classifyCellType(startCell, destinationCell, entry),
           openMoves: resolvedOpenMoves(entry, visitedCellKeys),
         })),
       }
     },
     get_last_prediction_outcome() {
       return {
-        status: state.status,
-        score: state.score,
+        status: snapshot.status,
+        score: snapshot.score,
+        decayUnitsRemaining: Math.max(0, Math.ceil(snapshot.score / timing.scoreDecayRate)),
         lastPlayerName: lastActionResult?.lastPlayerName ?? null,
         lastMoveStatus: lastActionResult?.lastMoveStatus ?? null,
         predictionStatus: lastActionResult?.predictionStatus ?? null,

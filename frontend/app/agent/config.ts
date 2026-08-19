@@ -81,8 +81,11 @@ export function describeProviderHttpFailure(status: number): string | undefined 
     case 503:
       return "Provider temporarily unavailable or overloaded; usually transient."
     case 504:
-      // Hugging Face-compatible routes previously hit this timeout class until Tapoo started
-      // sending the provider-supported X-Wait-For-Model header where applicable.
+      // Hugging Face-compatible routes previously hit this timeout class until the user added the
+      // provider-supported X-Wait-For-Model header for that agent — Tapoo never sends it on its
+      // own; it's only sent when typed into that agent's own extraHeaders field on the agent config
+      // form (see AgentApiConfig.extraHeaders, types.ts), the same generic "Key: Value" field any
+      // other provider-specific header goes through.
       return "Provider gateway timed out waiting on the backend. Long-running requests can contribute."
     default:
       return undefined

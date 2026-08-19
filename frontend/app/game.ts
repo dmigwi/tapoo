@@ -79,7 +79,7 @@ import type {
   TraversalHistoryEntry,
 } from "./types"
 
-const { runtime, timing } = CONFIG
+const { runtime, timing, viewport } = CONFIG
 
 type PersistenceScope = "round" | "state"
 
@@ -585,19 +585,29 @@ function dispatchControl(
   return result
 }
 
-// handleResize revalidates the active or persisted round against the viewport.
+// handleResize revalidates the active or persisted round against the viewport. Also treated as
+// too-small: pinch-zoom past viewport.pinchZoomTooCloseScale. Pinch-zoom never changes
+// getBoundingClientRect()/layout viewport size (viewportFitStatus's only inputs), so it's invisible
+// to that check on its own — window.visualViewport.scale is what actually reports it, and its
+// resize event already drives this same handler.
 function handleResize(): void {
   if (!runtimeElements) {
     return
   }
 
+  const pinchZoomTooClose =
+    (window.visualViewport?.scale ?? 1) > viewport.pinchZoomTooCloseScale
+
   let viewportRoundResolved = false
-  const fitStatus = viewportFitStatus(
-    state.mazeDimensions,
-    getTerminalSize(runtimeElements),
-  )
+  // Forced straight to the worst case when pinched in too close: no maze-cell-grid size could fix
+  // a visible area that's too small on its own terms, so there's nothing for redrawRoundForViewport
+  // (below) to usefully retry against.
+  const fitStatus = pinchZoomTooClose
+    ? "too-small-all"
+    : viewportFitStatus(state.mazeDimensions, getTerminalSize(runtimeElements))
+
   if (!isTooSmallStatus(state.status) && isTooSmallStatus(fitStatus)) {
-    if (fitStatus !== "too-small-all" && redrawRoundForViewport(state.level)) {
+    if (!pinchZoomTooClose && fitStatus !== "too-small-all" && redrawRoundForViewport(state.level)) {
       viewportRoundResolved = true
     } else {
       saveActiveRoundSnapshot(state.controlMode, state)
@@ -606,7 +616,10 @@ function handleResize(): void {
     }
   }
 
-  if (!viewportRoundResolved && isTooSmallStatus(state.status)) {
+  // Also gated on !pinchZoomTooClose: restoring (or self-healing a fresh) round while still
+  // pinched in past the threshold would just re-trigger too-small on the very next check, so stay
+  // on the too-small screen until the zoom itself eases rather than churning through this each call.
+  if (!viewportRoundResolved && !pinchZoomTooClose && isTooSmallStatus(state.status)) {
     const snapshot = loadPersistedSnapshotWithFallbacks(state.controlMode)
     const validRoundWasRestored = noValidRoundExists(snapshot.round) === false
     if (!validRoundWasRestored) {

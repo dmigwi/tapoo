@@ -2,10 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type * as FallbackPolicy from "./app/fallback-policy"
 
+const pageChrome = {
+  applyPageText: vi.fn(),
+  applyPageVersion: vi.fn(),
+  initTopMenus: vi.fn(),
+}
+
 // These tests verify that the entrypoint boots only on pages that expose a game host.
 describe("tapoo entrypoint", () => {
   beforeEach(() => {
     vi.resetModules()
+    vi.clearAllMocks()
+    vi.doMock("./page-chrome", () => pageChrome)
     delete document.body.dataset.tapooControlMode
   })
 
@@ -46,6 +54,12 @@ describe("tapoo entrypoint", () => {
 
     expect(bootstrapGame).toHaveBeenCalledTimes(1)
     expect(bootstrapGame).toHaveBeenCalledWith(interactiveMode, { app: {} })
+    expect(pageChrome.applyPageText).toHaveBeenCalledTimes(1)
+    expect(pageChrome.applyPageVersion).toHaveBeenCalledTimes(1)
+    expect(pageChrome.initTopMenus).toHaveBeenCalledTimes(1)
+    expect(pageChrome.initTopMenus.mock.invocationCallOrder[0]).toBeLessThan(
+      bootstrapGame.mock.invocationCallOrder[0],
+    )
     expect(prepareTerminalAppForBootstrap.mock.invocationCallOrder[0]).toBeLessThan(
       bootstrapGame.mock.invocationCallOrder[0],
     )
@@ -91,7 +105,7 @@ describe("tapoo entrypoint", () => {
     expect(showPlaceholderArt).not.toHaveBeenCalled()
   })
 
-  it("does not boot the game bundle on pages without a terminal host", async () => {
+  it("does not boot the game runtime on pages without a terminal host", async () => {
     const bootstrapGame = vi.fn()
     const showPlaceholderArt = vi.fn()
 

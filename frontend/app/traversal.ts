@@ -1,5 +1,5 @@
 import { CONFIG, WALL_WEIGHTS } from "./config"
-import { hasActiveRoundState, isRunningStatus } from "./status"
+import { hasActiveRoundState, isRunningStatus, isValidGridPointEqual } from "./status"
 import type {
   BaseDimensions,
   CellCoordinate,
@@ -41,10 +41,6 @@ export function gridPointFromCellCoordinate(cell: CellCoordinate): RenderGridPoi
     x: cell.col * maze.renderCellStep + 1,
     y: cell.row * maze.renderCellStep + 1,
   }
-}
-
-function gridPointsEqual(left: RenderGridPoint, right: RenderGridPoint): boolean {
-  return left.x === right.x && left.y === right.y
 }
 
 // mazeCellKey builds a stable string key for deduplicating logical maze cells.
@@ -407,7 +403,7 @@ export function isValidPersistedRound(snapshot: PersistedRound): boolean {
     return false
   }
 
-  if (!gridPointsEqual(snapshot.startPosition, gridPointFromCellCoordinate(snapshot.startCell))) {
+  if (!isValidGridPointEqual(snapshot.startPosition, gridPointFromCellCoordinate(snapshot.startCell))) {
     return false
   }
 

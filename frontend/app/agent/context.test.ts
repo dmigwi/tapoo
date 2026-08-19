@@ -9,6 +9,7 @@ import {
   buildTokenLimitExhaustionPrompt,
   describeAgentSpeedClassification,
 } from "./context"
+import { snapshotAgentState } from "./state-snapshot"
 import {
   buildMazeActionResult,
 } from "../control"
@@ -47,13 +48,13 @@ const expectedAgentPrompt = [
   "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, and the previous prediction outcome.",
   "The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated.",
   `When present in filteredTraversalHistory, playerName ${CONFIG.runtime.interactivePlayerName} marks the start cell.`,
-  "Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own.",
-  "Your objective is to reach destinationCell. Each turn, prioritize an openMoves neighbor from currentCell whose alreadyExplored is false before weighing distance to destinationCell, unless currentCell's cellType is dead-end.",
-  "Revisiting a cell already in filteredTraversalHistory during deliberate backtracking is not a mistake, although it adds no new-cell progress. cellType is the only reliable way to know it is a dead-end — never assume a cell you have not yet visited is one, since an unexplored cell's own exits are unknown until you land there and the absence of a connection from cells you already know proves nothing. Begin backtracking only when your current cell's cellType is dead-end, and retreat toward a specific visited cell with an openMoves neighbor whose alreadyExplored is false; that visited cell is an actual branch target, not a guess. Once a dead-end is confirmed, filteredTraversalHistory's visit order tells you how far to search: an unexplored branch point still exists among cells visited earlier, maybe within or beyond historyWindowRadius, so keep retreating through known cells until a later turn's filteredTraversalHistory brings it into view. At higher levels, more junctions mean more short dead-end branches along the solution path, so expect to rule out several before finding the right one — a single clean backtrack is the exception, not the rule. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined row and col differences for each candidate, not just one axis — a cell closer on one axis can be equally far or farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
+  "Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own. currentCell is the position you landed on after applying the valid moves from the previous turn; at the start of each level, currentCell matches the start-cell.",
+  "Your primary objective is to reach destinationCell, the level's fixed target position, with the highest traversal speed. cellType start-cell and target-cell label the start and destination cells respectively. Each turn, prioritize an openMoves neighbor from currentCell whose alreadyExplored is false before weighing distance to destinationCell, unless the filteredTraversalHistory entry matching currentCell has cellType dead-end.",
+  "Revisiting a cell already in filteredTraversalHistory during deliberate backtracking is not a mistake, although it adds no new-cell progress. cellType is the only reliable way to know it is a dead-end — never assume a cell you have not yet visited is one, since an unexplored cell's own exits are unknown until you land there and the absence of a connection from cells you already know proves nothing. Begin backtracking only when the filteredTraversalHistory entry matching currentCell has cellType dead-end, and retreat toward a specific visited cell with an openMoves neighbor whose alreadyExplored is false; that visited cell is an actual branch target, not a guess. Once a dead-end is confirmed, filteredTraversalHistory's visit order tells you how far to search: an unexplored branch point still exists among cells visited earlier, maybe within or beyond historyWindowRadius, so keep retreating through known cells until a later turn's filteredTraversalHistory brings it into view. At higher levels, more junctions mean more short dead-end branches along the solution path, so expect to rule out several before finding the right one — a single clean backtrack is the exception, not the rule. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined row and col differences for each candidate, not just one axis — a cell closer on one axis can be equally far or farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
   "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome.",
-  "A turn with any valid moves costs a constant 1-unit decay charge regardless of how many moves it applied. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a duplicate tool call warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all.",
+  "A turn with any valid moves costs a constant 1-unit decay charge regardless of how many submitted moves apply. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all.",
   "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
-  "currentCell's openMoves are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to sustain that classification.",
+  "The openMoves in the filteredTraversalHistory entry matching currentCell are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to sustain that classification.",
   "get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
   "Because the charge above is per turn rather than per move, a longer prediction whose moves all land can cover more new cells for the same decay. get_prediction_rules explains the live traversal-speed metrics and classification.",
   "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
@@ -121,7 +122,7 @@ describe("agent context", () => {
       visitedBefore: false,
       chargedMovesCount: 1,
     })
-    const toolHandlers = buildAgentToolHandlers(createState(), actionResult, createAgent())
+    const toolHandlers = buildAgentToolHandlers(snapshotAgentState(createState()), actionResult, createAgent())
 
     expect(AGENT_CONTEXT_TOOLS.map((tool) => tool.function.name)).toEqual([
       "get_maze_structure",
@@ -137,13 +138,13 @@ describe("agent context", () => {
         {
           playerName: "Self",
           cell: { row: 0, col: 0 },
-          cellType: "dead-end",
+          cellType: "start-cell",
           openMoves: { MoveRight: { row: 0, col: 1, alreadyExplored: true } },
         },
         {
           playerName: "Blue",
           cell: { row: 0, col: 1 },
-          cellType: "dead-end",
+          cellType: "target-cell",
           openMoves: { MoveRight: { row: 0, col: 2, alreadyExplored: false } },
         },
       ],
@@ -162,6 +163,7 @@ describe("agent context", () => {
     expect(toolHandlers.get_last_prediction_outcome({})).toEqual({
       status: "running",
       score: 700,
+      decayUnitsRemaining: 7,
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
       predictionStatus: null,
@@ -173,11 +175,47 @@ describe("agent context", () => {
     })
   })
 
+  it("freezes a snapshot taken once, unaffected by state mutations made afterward", () => {
+    const state = createState()
+    const toolHandlers = buildAgentToolHandlers(snapshotAgentState(state), null, createAgent())
+
+    // Mutate the live state after the snapshot was taken — a push (in place) and reassignments
+    // (new references), mirroring exactly how game.ts mutates State mid-round.
+    state.traversalHistory.push(agentVisit(0, 2, "Blue", ["MoveRight"]))
+    state.playerPosition = { x: 3, y: 1 }
+    state.score = 1
+    state.turnCount = 9
+    state.status = "won"
+
+    expect(toolHandlers.get_prediction_rules({})).toMatchObject({
+      totalTurnCount: 0,
+      playerTurnsTaken: 2,
+    })
+    expect(toolHandlers.get_maze_structure({})).toMatchObject({
+      currentCell: { row: 0, col: 0 },
+      filteredTraversalHistory: [
+        expect.objectContaining({ cell: { row: 0, col: 0 } }),
+        expect.objectContaining({ cell: { row: 0, col: 1 } }),
+      ],
+    })
+    expect(toolHandlers.get_last_prediction_outcome({})).toMatchObject({
+      status: "running",
+      score: 700,
+    })
+  })
+
+  it("includes the final potentially winning decay unit in the remaining budget", () => {
+    expect(buildAgentToolHandlers(snapshotAgentState(createState({ score: 100 })), null, createAgent())
+      .get_last_prediction_outcome({})).toMatchObject({ decayUnitsRemaining: 1 })
+    expect(buildAgentToolHandlers(snapshotAgentState(createState({ score: 0 })), null, createAgent())
+      .get_last_prediction_outcome({})).toMatchObject({ decayUnitsRemaining: 0 })
+  })
+
   // suggestedMovesPerTurn is a static configured range, not derived from maze dimensions — it stays
   // the same even in the unreachable case where dimensions are missing.
   it("suggests the same static moves-per-turn range regardless of maze dimensions", () => {
     const toolHandlers = buildAgentToolHandlers(
-      createState({ mazeDimensions: null }),
+      snapshotAgentState(createState({ mazeDimensions: null })),
       null,
       createAgent({}),
     )
@@ -189,7 +227,7 @@ describe("agent context", () => {
 
   it("defaults a fresh agent's prediction rules to a trailblazer level regardless of raw counts", () => {
     const freshAgent = createAgent({ turnCount: undefined, decayUnitsCharged: undefined })
-    const toolHandlers = buildAgentToolHandlers(createState(), null, freshAgent)
+    const toolHandlers = buildAgentToolHandlers(snapshotAgentState(createState()), null, freshAgent)
 
     expect(toolHandlers.get_prediction_rules({})).toEqual({
       suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,
@@ -220,7 +258,7 @@ describe("agent context", () => {
       finalPosition: { x: 15, y: 9 },
       traversalHistory: fullTraversalHistory,
     })
-    const toolHandlers = buildAgentToolHandlers(state, null, createAgent())
+    const toolHandlers = buildAgentToolHandlers(snapshotAgentState(state), null, createAgent())
 
     expect(toolHandlers.get_maze_structure({})).toEqual({
       level: 4,
@@ -270,7 +308,7 @@ describe("agent context", () => {
         agentVisit(4, 8, "Blue"),
       ],
     })
-    const toolHandlers = buildAgentToolHandlers(state, null, createAgent())
+    const toolHandlers = buildAgentToolHandlers(snapshotAgentState(state), null, createAgent())
 
     expect(toolHandlers.get_prediction_rules({})).toMatchObject({
       suggestedMovesPerTurn: CONFIG.runtime.modelConfig.suggestedMovesPerTurnRange,

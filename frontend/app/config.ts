@@ -22,10 +22,10 @@ const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
 const VERSION_MAJOR = 2
 
 // VERSION_MINOR is the semantic minor version for the browser SPA runtime.
-const VERSION_MINOR = 3
+const VERSION_MINOR = 4
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 9
+const VERSION_PATCH = 1
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -51,28 +51,34 @@ export const CONFIG: AppConfig = {
     game: {
       documentTitle: "Tapoo Maze Runner | Game",
       description:
-        "Tapoo maze runner hide and seek game rendered as a browser-based terminal experience.",
+        "Tapoo is an AI agent intelligence quantifier built as a maze runner hide-and-seek " +
+        "game — play it yourself in this browser-based terminal experience.",
       pageLabel: "Game",
       aiAgentsLabel: "AI Agents",
     },
     agents: {
       documentTitle: "Tapoo Maze Runner | AI Agents",
       description:
-        "Tapoo maze runner played by an HTTP-driven agent with human session controls.",
+        "Tapoo quantifies AI agent intelligence: an HTTP-driven agent navigates a maze " +
+        "runner under a standardized prompt with built-in uncertainty, with human session " +
+        "controls.",
       pageLabel: "AI Agents",
       backToGameLabel: "Back To Game",
     },
     prompts: {
       documentTitle: "Tapoo Maze Runner | Agent Prompts",
       description:
-        "The exact system prompt, user message, tool definitions and response format Tapoo sends to a configured AI agent.",
+        "Tapoo, an AI agent intelligence quantifier, publishes the exact system prompt, " +
+        "user message, tool definitions and response format it sends to a configured AI " +
+        "agent.",
       pageLabel: "Agent Prompts",
       backToAgentsLabel: "Back To AI Agents",
     },
     privacy: {
       documentTitle: "Tapoo Maze Runner | Privacy",
       description:
-        "Privacy details for Tapoo browser storage and optional AI Agent API gameplay context.",
+        "Privacy details for Tapoo, an AI agent intelligence quantifier, covering browser " +
+        "storage and optional AI Agent API gameplay context.",
       pageLabel: "Privacy",
     },
   },
@@ -116,7 +122,13 @@ export const CONFIG: AppConfig = {
       compact: "Use edge seats to add/manage agents. Tap Proceed.",
     },
     tooSmallMessage: "Level {level} needs more screen room!",
-    tooSmallActionMessage: "Make more screen room, or use Reset Progress.",
+    // Reset Progress only ever restarts at level 1 (restartGame, game.ts) — offering it while
+    // already too-small at level 1 would just redraw the same maze into the same too-small state,
+    // so canShowRestart (status.ts) hides that touch button there. tooSmallActionMessage is the
+    // base case that's always true; tooSmallActionMessageWithReset adds the option only for the
+    // case canShowRestart actually allows it — see tooSmallRows (render.ts) for the selection.
+    tooSmallActionMessage: "Make more screen room on zoom out.",
+    tooSmallActionMessageWithReset: "Make screen room on zoom out, or Reset Progress.",
     runningStatus: {
       wide: "Player: {player}   Level: {level}   Scores: {score}",
       compact: "Player: {player}   Level: {level}   Scores: {score}",
@@ -185,7 +197,7 @@ export const CONFIG: AppConfig = {
     modelLabel: "Model",
     modelPlaceholder: "llama3.2",
     apiLabel: "API",
-    requiredFieldNote: "* Required",
+    requiredFieldNote: "* Required · Max output tokens:",
     extraHeadersLabel: "Extra Headers",
     extraHeadersTooltip: 
       "Custom HTTP headers sent with every request to this agent's endpoint, e.g. anthropic-version or X-Wait-For-Model.",
@@ -376,6 +388,13 @@ export const CONFIG: AppConfig = {
     terminalWidthInset: 10,
     terminalWidthScale: 2,
     terminalSampleWidth: 10,
+    // Pinch-zoom is a pure visual magnification — it never changes getBoundingClientRect()/layout
+    // viewport size, so viewportFitStatus (which measures exactly that) can never detect it on its
+    // own. window.visualViewport.scale is the direct signal instead: 1.0 is unzoomed, and this is
+    // the factor above which the visible area is treated as too small to responsibly play — the
+    // same too-small/placeholder-art path a genuinely small window already uses, since neither the
+    // maze nor the touch controls can be trusted to stay reachable past this point.
+    pinchZoomTooCloseScale: 1.2,
   },
   // Runtime settings back persistence validation and agent-mode bootstrapping.
   runtime: {
@@ -392,16 +411,27 @@ export const CONFIG: AppConfig = {
         tapooLog: "tapooLog",
       },
     },
+    promptWarningPrefix: "Warning:",
     interactivePlayerName: "Self",
-    // Ollama's num_ctx, temperature and num_predict (see requestChatTurn in agent/request.ts),
-    // tuned for parseable moves over good prose.
+    // The deployed site's own base URL — canonical links, Open Graph/sitemap URLs, and robots.txt
+    // are all derived from this single value at build time, so redeploying to a different host is
+    // a one-line change here rather than a hunt through scripts/build-html.mjs.
+    siteUrl: "https://dmigwi.github.io/tapoo/",
+    // Feeds structured-data author attribution only (scripts/build-html.mjs) — kept separate from
+    // contact-link.html's own hardcoded href since that template isn't run through render()'s
+    // token substitution, and a personal profile URL changing is not a realistic drift risk.
+    author: {
+      name: "Daniel Migwi",
+      profileUrl: "https://www.linkedin.com/in/migwi-ndungu/",
+    },
+    // Provider request limits and agent-facing traversal guidance.
     modelConfig: {
       // Ollama's num_ctx, sent as a fixed value on every request rather than scaled by maze area:
       // filteredTraversalHistory is capped by manhattanDistance regardless of maze size, and
       // messages is rebuilt fresh every turn rather than accumulated across a round, so per-turn
       // payload size does not grow with the maze. Ollama's own default is too small for the
       // prompt anyway, and it answers 500 rather than truncating.
-      contextWindowFloor: 3000,
+      contextWindowFloor: 4000,
       // Model-facing local context radius — how far back into traversal history get_maze_structure
       // looks. Deliberately independent of suggestedMovesPerTurnRange below: one bounds what the
       // model can see, the other suggests how many moves to batch per turn, and scaling batch size
@@ -413,15 +443,12 @@ export const CONFIG: AppConfig = {
       // batch size (p50) and max is the more aggressive, higher-confidence one (p95) — the model
       // picks within the range based on its own confidence for the cells ahead, not a fixed count.
       suggestedMovesPerTurnRange: { min: 2, max: 4 },
-      // Under Ollama's default: an unparseable reply is charged malformed-response, so format
-      // compliance beats creativity.
-      temperature: 0.5,
       // Shared by num_predict (Ollama, think: true) and OpenAI-compatible reasoning_effort models —
       // both count thinking tokens against this same cap rather than a separate budget (Ollama's own
       // thinking response field and usage.completion_tokens/reasoning_tokens respectively), so this
       // must stay sized well above what a compliant reply needs plus a full reasoning pass, not just
       // the reply alone.
-      numPredict: 10000,
+      maxTokens: 10_000,
     },
   },
 }

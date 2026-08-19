@@ -82,6 +82,7 @@ describe("interactive control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [createButton({ move: "MoveRight" })],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
     const dispatch = vi.fn((action: { type: string }) => (
@@ -139,6 +140,7 @@ describe("interactive control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
     const dispatch = vi.fn()
@@ -166,6 +168,7 @@ describe("interactive control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [createButton({ move: "MoveRight" })],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
     const dispatch = vi.fn(() => createActionResult({ lastMoveStatus: "invalid-move" }))
@@ -193,6 +196,7 @@ describe("interactive control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     const outsideInput = document.createElement("input")
     elements.app.tabIndex = 0
@@ -230,6 +234,7 @@ describe("interactive control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.tabIndex = 0
     elements.app.append(restartButton, nestedInput)
@@ -262,6 +267,7 @@ describe("interactive control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
     elements.app.focus = vi.fn()
     const firstDispatch = vi.fn()
@@ -288,6 +294,7 @@ describe("interactive control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
 
     const mode = createInteractiveMode(elements)
@@ -308,6 +315,7 @@ describe("interactive control mode", () => {
       screen: document.createElement("div"),
       touchButtons: [],
       touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
     }
 
     const clock = new GameClock(10_000)

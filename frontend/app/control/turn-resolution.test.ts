@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { CONFIG } from "../config"
+import { hasReachedTarget } from "../status"
 import type { State, TraversalHistoryEntry } from "../types"
 import {
   commitAgentApiTurn,
   commitInteractiveTurn,
-  hasReachedTarget,
   refreshRunningRoundFrame,
   shouldDrawDestination,
 } from "./turn-resolution"
@@ -72,6 +72,17 @@ describe("hasReachedTarget", () => {
     expect(hasReachedTarget(state)).toBe(false)
     expect(state.status).toBe("running")
   })
+
+  it.each([
+    { playerPosition: null, finalPosition: { x: 3, y: 1 } },
+    { playerPosition: { x: 3, y: 1 }, finalPosition: null },
+    { playerPosition: null, finalPosition: null },
+  ])("returns false when either position is missing", (overrides) => {
+    const state = createState(overrides)
+
+    expect(hasReachedTarget(state)).toBe(false)
+    expect(state.status).toBe("running")
+  })
 })
 
 describe("commitInteractiveTurn", () => {
@@ -105,6 +116,32 @@ describe("commitInteractiveTurn", () => {
     expect(persistNow).toHaveBeenCalledWith("state")
     expect(scheduleRoundPersistence).not.toHaveBeenCalled()
     expect(renderState).toHaveBeenCalled()
+  })
+
+  it("wins at zero score when the interactive move reaches the target", () => {
+    const state = createState({
+      playerPosition: { x: 3, y: 1 },
+    })
+    const applyWinSummary = vi.fn(() => {
+      state.winSummary = "0% retention"
+    })
+    const persistNow = vi.fn()
+
+    commitInteractiveTurn({
+      state,
+      applyWinSummary,
+      calculateRoundScore: vi.fn(() => 0),
+      persistNow,
+      scheduleRoundPersistence: vi.fn(),
+      renderState: vi.fn(),
+    })
+
+    expect(state.status).toBe("won")
+    expect(state.score).toBe(0)
+    expect(state.lastRoundScore).toBe(0)
+    expect(state.winSummary).toBe("0% retention")
+    expect(applyWinSummary).toHaveBeenCalledWith(2)
+    expect(persistNow).toHaveBeenCalledWith("state")
   })
 
   it("schedules persistence for a non-terminal interactive move", () => {
@@ -229,6 +266,33 @@ describe("commitAgentApiTurn", () => {
 
     expect(state.lastRoundScore).toBe(125)
     expect(state.status).toBe("won")
+    expect(applyWinSummary).toHaveBeenCalledWith(2)
+    expect(persistNow).toHaveBeenCalledWith("state")
+  })
+
+  it("wins at zero score when the agent batch reaches the target", () => {
+    const state = createState({
+      controlMode: CONFIG.runtime.controlModes.agentApi,
+      playerPosition: { x: 3, y: 1 },
+    })
+    const applyWinSummary = vi.fn(() => {
+      state.winSummary = "0% retention"
+    })
+    const persistNow = vi.fn()
+
+    commitAgentApiTurn({
+      state,
+      applyWinSummary,
+      calculateRoundScore: vi.fn(() => 0),
+      persistNow,
+      renderState: vi.fn(),
+      chargedMovesCount: 1,
+    })
+
+    expect(state.status).toBe("won")
+    expect(state.score).toBe(0)
+    expect(state.lastRoundScore).toBe(0)
+    expect(state.winSummary).toBe("0% retention")
     expect(applyWinSummary).toHaveBeenCalledWith(2)
     expect(persistNow).toHaveBeenCalledWith("state")
   })

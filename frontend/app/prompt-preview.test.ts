@@ -77,8 +77,8 @@ describe("prompt preview content", () => {
   it("publishes the token limit exhaustion warning rendered at the real configured token cap", () => {
     const warning = bodyOf(promptPreview.tokenLimitExhaustionHeading)
 
-    expect(warning).toBe(buildTokenLimitExhaustionPrompt(runtime.modelConfig.numPredict).content)
-    expect(warning).toContain(String(runtime.modelConfig.numPredict))
+    expect(warning).toBe(buildTokenLimitExhaustionPrompt(runtime.modelConfig.maxTokens).content)
+    expect(warning).toContain(String(runtime.modelConfig.maxTokens))
   })
 
   it("names the agent the prompt was rendered for", () => {
