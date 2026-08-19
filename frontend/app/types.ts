@@ -838,6 +838,11 @@ export type AppConfig = {
     }
     promptWarningPrefix: string
     interactivePlayerName: string
+    siteUrl: string
+    author: {
+      name: string
+      profileUrl: string
+    }
     modelConfig: {
       contextWindowFloor: number
       manhattanDistance: number

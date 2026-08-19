@@ -51,28 +51,34 @@ export const CONFIG: AppConfig = {
     game: {
       documentTitle: "Tapoo Maze Runner | Game",
       description:
-        "Tapoo maze runner hide and seek game rendered as a browser-based terminal experience.",
+        "Tapoo is an AI agent intelligence quantifier built as a maze runner hide-and-seek " +
+        "game — play it yourself in this browser-based terminal experience.",
       pageLabel: "Game",
       aiAgentsLabel: "AI Agents",
     },
     agents: {
       documentTitle: "Tapoo Maze Runner | AI Agents",
       description:
-        "Tapoo maze runner played by an HTTP-driven agent with human session controls.",
+        "Tapoo quantifies AI agent intelligence: an HTTP-driven agent navigates a maze " +
+        "runner under a standardized prompt with built-in uncertainty, with human session " +
+        "controls.",
       pageLabel: "AI Agents",
       backToGameLabel: "Back To Game",
     },
     prompts: {
       documentTitle: "Tapoo Maze Runner | Agent Prompts",
       description:
-        "The exact system prompt, user message, tool definitions and response format Tapoo sends to a configured AI agent.",
+        "Tapoo, an AI agent intelligence quantifier, publishes the exact system prompt, " +
+        "user message, tool definitions and response format it sends to a configured AI " +
+        "agent.",
       pageLabel: "Agent Prompts",
       backToAgentsLabel: "Back To AI Agents",
     },
     privacy: {
       documentTitle: "Tapoo Maze Runner | Privacy",
       description:
-        "Privacy details for Tapoo browser storage and optional AI Agent API gameplay context.",
+        "Privacy details for Tapoo, an AI agent intelligence quantifier, covering browser " +
+        "storage and optional AI Agent API gameplay context.",
       pageLabel: "Privacy",
     },
   },
@@ -407,6 +413,17 @@ export const CONFIG: AppConfig = {
     },
     promptWarningPrefix: "Warning:",
     interactivePlayerName: "Self",
+    // The deployed site's own base URL — canonical links, Open Graph/sitemap URLs, and robots.txt
+    // are all derived from this single value at build time, so redeploying to a different host is
+    // a one-line change here rather than a hunt through scripts/build-html.mjs.
+    siteUrl: "https://dmigwi.github.io/tapoo/",
+    // Feeds structured-data author attribution only (scripts/build-html.mjs) — kept separate from
+    // contact-link.html's own hardcoded href since that template isn't run through render()'s
+    // token substitution, and a personal profile URL changing is not a realistic drift risk.
+    author: {
+      name: "Daniel Migwi",
+      profileUrl: "https://www.linkedin.com/in/migwi-ndungu/",
+    },
     // Provider request limits and agent-facing traversal guidance.
     modelConfig: {
       // Ollama's num_ctx, sent as a fixed value on every request rather than scaled by maze area:
