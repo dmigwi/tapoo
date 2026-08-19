@@ -16,12 +16,10 @@ import {
   getMazeDimensions,
 } from "./maze"
 import { render } from "./render"
-import { calculateTraversalSpeedUnits } from "./agent/efficiency"
 import {
   calculateElapsedScore,
   calculateMaxScore,
   calculateScoreAfterDecay,
-  resolveWinScore,
 } from "./scoring"
 import {
   canTrackDestinationVisibility,
@@ -264,31 +262,6 @@ function renderState(): void {
 
   reportStateInvariant()
   render(runtimeElements, state, activeControlMode?.readCurrentPlayer?.() ?? null)
-}
-
-// applyWinSummary delegates post-win scoring details and stores the resolved result.
-function applyWinSummary(totalCells: number): void {
-  // Only cells the agents actually reached count as progress; the start cell is seeded under the
-  // interactive player name and was never earned, so it must not inflate the round's speed.
-  const agentCellsVisited = state.traversalHistory.filter(
-    (entry) => entry.playerName !== runtime.interactivePlayerName,
-  ).length
-  const winScore = resolveWinScore({
-    bestWinRetentionUnits: state.bestWinRetentionUnits,
-    bestWinTraversalSpeedUnits: state.bestWinTraversalSpeedUnits,
-    controlMode: state.controlMode,
-    lastAttemptRetentionUnits: state.lastAttemptRetentionUnits,
-    lastWinTraversalSpeedUnits: state.lastWinTraversalSpeedUnits,
-    score: state.score,
-    totalCells,
-    traversalSpeedUnits: calculateTraversalSpeedUnits(agentCellsVisited, state.scoreDecayUnits),
-  })
-
-  state.winSummary = winScore.winSummary
-  state.lastAttemptRetentionUnits = winScore.lastAttemptRetentionUnits
-  state.bestWinRetentionUnits = winScore.bestWinRetentionUnits
-  state.lastWinTraversalSpeedUnits = winScore.lastWinTraversalSpeedUnits
-  state.bestWinTraversalSpeedUnits = winScore.bestWinTraversalSpeedUnits
 }
 
 // scheduleRoundPersistence debounces in-progress interactive move snapshots so rapid key repeats
@@ -685,16 +658,20 @@ export function bootstrapGame(
 
   const commitTurnDeps = {
     state,
-    applyWinSummary,
     calculateRoundScore,
     persistNow,
     renderState,
   }
 
+  // Agent-api's own dispatch loop (control/agent-api.ts) always calls commitTurn with both real
+  // values already computed for that turn; interactive mode never supplies either. traversalSpeedUnits
+  // is optional on AgentApiTurnResolutionDeps itself — handleWin already branches on its presence —
+  // so there's nothing to default here beyond the trivial charged-count fallback.
   const commitTurn = isAgentApiMode(controlMode.name)
-    ? (chargedMovesCount = 0) => commitAgentApiTurn({
+    ? (chargedMovesCount = 0, traversalSpeedUnits?: number) => commitAgentApiTurn({
       ...commitTurnDeps,
       chargedMovesCount,
+      traversalSpeedUnits,
     })
     : () => commitInteractiveTurn({
       ...commitTurnDeps,

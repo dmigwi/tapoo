@@ -149,18 +149,13 @@ export function resolveWinScore(input: WinScoreInput): WinScoreResult {
   const bestWinRetentionUnits = selectBestRetentionUnits(currentRetentionUnits, input.bestWinRetentionUnits)
 
   if (input.controlMode === runtime.controlModes.interactive) {
-    // Interactive wins translate retention deltas back into time-like progress messages.
+    // Interactive wins keep retention metrics only; win-summary text is agent-api specific.
     return {
       bestWinRetentionUnits,
       bestWinTraversalSpeedUnits: input.bestWinTraversalSpeedUnits,
       lastAttemptRetentionUnits: currentRetentionUnits,
       lastWinTraversalSpeedUnits: input.lastWinTraversalSpeedUnits,
-      winSummary: buildWinSummary(
-        currentRetentionUnits,
-        input.lastAttemptRetentionUnits,
-        input.bestWinRetentionUnits,
-        input.totalCells * timing.interactiveDecayIntervalPerCellMs,
-      ),
+      winSummary: "",
     }
   }
 

@@ -940,11 +940,11 @@ describe("bootstrapGame", () => {
     expect(state.lastRoundScore).toBe(200)
     expect(state.lastAttemptRetentionUnits).toBe(1_000_000)
     expect(state.bestWinRetentionUnits).toBe(1_000_000)
-    expect(state.winSummary).toBe("New scores retention record")
+    expect(state.winSummary).toBe("")
     expect(harness.saveActiveRoundSnapshot).toHaveBeenCalled()
   })
 
-  it("builds a browser win summary from persisted timing history", async () => {
+  it("updates browser retention metrics without creating an interactive win summary", async () => {
     const harness = await bootstrapHarness({
       dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }],
       round: createHorizontalRound(),
@@ -982,9 +982,7 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("won")
     expect(state.lastAttemptRetentionUnits).toBe(600000)
     expect(state.bestWinRetentionUnits).toBe(1_000_000)
-    expect(state.winSummary).toBe(
-      "1.20s faster than previous (0.80s behind best)",
-    )
+    expect(state.winSummary).toBe("")
   })
 
   it("does not duplicate traversal history when the player backtracks", async () => {

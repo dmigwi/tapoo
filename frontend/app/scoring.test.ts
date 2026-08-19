@@ -76,7 +76,7 @@ describe("score helpers", () => {
     )
   })
 
-  it("resolves interactive win summaries and retention metrics together", () => {
+  it("resolves interactive retention metrics without win-summary text", () => {
     expect(
       resolveWinScore({
         bestWinRetentionUnits: 1_000_000,
@@ -95,7 +95,7 @@ describe("score helpers", () => {
       bestWinTraversalSpeedUnits: null,
       lastAttemptRetentionUnits: 900_000,
       lastWinTraversalSpeedUnits: null,
-      winSummary: "1.00s faster than previous (1.00s behind best)",
+      winSummary: "",
     })
   })
 

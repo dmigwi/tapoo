@@ -362,6 +362,7 @@ export function recordAgentTurnStats(
   levelTurnCount: number,
 ): AgentApiConfig {
   let updatedAgent: AgentApiConfig = turnAgent
+  let foundTurnAgent = false
 
   const nextConfigs = loadPersistedAgentApiConfigs().map((agent) => {
     const isSameAttempt = agent.gameLevel === level && agent.cumulativeRoundCount === cumulativeRoundCount
@@ -378,6 +379,7 @@ export function recordAgentTurnStats(
     }
 
     if (isTurnAgent) {
+      foundTurnAgent = true
       updatedAgent = nextAgent
     }
 
@@ -385,6 +387,18 @@ export function recordAgentTurnStats(
   })
 
   savePersistedAgentApiConfigs(nextConfigs)
+  if (!foundTurnAgent) {
+    const isSameAttempt = turnAgent.gameLevel === level && turnAgent.cumulativeRoundCount === cumulativeRoundCount
+    updatedAgent = {
+      ...turnAgent,
+      gameLevel: level,
+      cumulativeRoundCount,
+      levelTurnCount,
+      turnCount: (isSameAttempt ? (turnAgent.turnCount ?? 0) : 0) + 1,
+      decayUnitsCharged: (isSameAttempt ? (turnAgent.decayUnitsCharged ?? 0) : 0) + chargedDecayUnits,
+    }
+  }
+
   return updatedAgent
 }
 

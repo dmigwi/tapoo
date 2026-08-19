@@ -320,7 +320,7 @@ describe("agent api turn loop", () => {
       dispatch,
       expect.objectContaining({ model: "llama3.2", playerName: "Blue" }),
     )
-    expect(commitAgentTurn).toHaveBeenCalledWith(2)
+    expect(commitAgentTurn).toHaveBeenCalledWith(2, expect.any(Number))
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "invalid-move",
@@ -771,9 +771,7 @@ describe("agent api turn loop", () => {
     poller.__setAttached(true)
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
-    expect(commitAgentTurn).toHaveBeenCalledWith(
-      CONFIG.scoring.agentMalformedPenaltyDecayUnits,
-    )
+    expect(commitAgentTurn).toHaveBeenCalledWith(CONFIG.scoring.agentMalformedPenaltyDecayUnits, expect.any(Number))
 
     expect(dispatchAgentAction).not.toHaveBeenCalled()
     expect(onActionResult).toHaveBeenCalledWith(
@@ -1210,7 +1208,7 @@ describe("agent api turn loop", () => {
       dispatch,
       expect.objectContaining({ playerName: "Blue" }),
     )
-    expect(commitAgentTurn).toHaveBeenCalledWith(CONFIG.scoring.agentBaseDecayUnits)
+    expect(commitAgentTurn).toHaveBeenCalledWith(CONFIG.scoring.agentBaseDecayUnits, expect.any(Number))
 
   })
 
@@ -1247,9 +1245,7 @@ describe("agent api turn loop", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(commitAgentTurn).toHaveBeenCalledTimes(1)
-    expect(commitAgentTurn).toHaveBeenCalledWith(
-      CONFIG.scoring.agentMalformedPenaltyDecayUnits,
-    )
+    expect(commitAgentTurn).toHaveBeenCalledWith(CONFIG.scoring.agentMalformedPenaltyDecayUnits, expect.any(Number))
     expect(onActionResult).toHaveBeenCalledWith(expect.objectContaining({
       lastMoveStatus: "token-limit-exhaustion",
       predictionStatus: "empty-prediction",

@@ -297,7 +297,9 @@ type AgentRoundLogDetails = {
   level: number
   outcome: "won" | "lost"
   score: number
-  uniqueCellsVisited: number
+  playerUniqueCellsVisited: number
+  allUniqueCellsVisited: number
+  decayUnitsCharged: number
   winSummary: string
 }
 
@@ -441,9 +443,7 @@ describe("agent control mode", () => {
       { type: "MoveDown" },
       { wantFeedback: true, playerName: "Blue" },
     )
-    expect(commitAgentTurn).toHaveBeenCalledWith(
-      1,
-    )
+    expect(commitAgentTurn).toHaveBeenCalledWith(1, expect.any(Number))
     expect(commitAgentTurn).toHaveBeenCalledTimes(1)
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
@@ -562,7 +562,7 @@ describe("agent control mode", () => {
     await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(1)
-    expect(commitAgentTurn).toHaveBeenCalledWith(1)
+    expect(commitAgentTurn).toHaveBeenCalledWith(1, expect.any(Number))
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
@@ -623,9 +623,10 @@ describe("agent control mode", () => {
     // chargedMovesCount, etc.), not the round as a whole, and everything that mattered about the
     // round outcome is already covered by the fields above.
     expect(lastEntry.details).not.toHaveProperty("lastActionResult")
-    // Summarised rather than embedded: the entry carries the visited-cell count, not the trail.
-    // The fixture records only the start cell, so the count is 1.
-    expect(lastEntry.details.uniqueCellsVisited).toBe(1)
+    // Summarised rather than embedded: the entry carries scoped and collective counts, not the trail.
+    expect(lastEntry.details.playerUniqueCellsVisited).toBe(0)
+    expect(lastEntry.details.allUniqueCellsVisited).toBe(1)
+    expect(lastEntry.details.decayUnitsCharged).toBe(1)
   })
 
   it("applies score decay to every submitted move in a valid prediction batch even when replay stops early", async () => {
@@ -685,9 +686,7 @@ describe("agent control mode", () => {
     await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(2)
-    expect(commitAgentTurn).toHaveBeenCalledWith(
-      2,
-    )
+    expect(commitAgentTurn).toHaveBeenCalledWith(2, expect.any(Number))
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
@@ -755,7 +754,7 @@ describe("agent control mode", () => {
       { type: "MoveRight" },
       { wantFeedback: true, playerName: "Blue" },
     )
-    expect(commitAgentTurn).toHaveBeenCalledWith(1)
+    expect(commitAgentTurn).toHaveBeenCalledWith(1, expect.any(Number))
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },

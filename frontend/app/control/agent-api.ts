@@ -1,6 +1,7 @@
 import { CONFIG } from "../config"
 import { mergeMazeActionResult } from "../control"
 import { requestPredictionWithAbort } from "../agent/request"
+import { calculateTraversalSpeedUnits, getBatchEfficiencyMetrics } from "../agent/efficiency"
 import { snapshotAgentState } from "../agent/state-snapshot"
 import type { AgentStateSnapshot } from "../agent/state-snapshot"
 import { logTapooDiagnostic } from "../logs"
@@ -11,6 +12,7 @@ import type {
   AgentPredictionFailure,
   AgentPredictionRequest,
   AgentPredictionResult,
+  AgentPlayerStatus,
   MazeAction,
   MazeActionDispatch,
   MazeActionResult,
@@ -59,7 +61,7 @@ export type AgentMovePoller = {
 
 type HandleAgentTurnLoopOptions = {
   __elements: { body: HTMLElement }
-  __commitAgentTurn: (chargedMovesCount?: number) => void
+  __commitAgentTurn: (chargedMovesCount?: number, traversalSpeedUnits?: number) => void
   __dispatch: MazeActionDispatch
   __dispatchAgentAction: (
     action: MazeAction,
@@ -76,6 +78,7 @@ type HandleAgentTurnLoopOptions = {
 
 export type AgentRoundState = {
   __agent: AgentApiConfig
+  __playerStatus: AgentPlayerStatus
   __state: State
   __actionResult: MazeActionResult
 }
@@ -193,6 +196,7 @@ export function handleAgentTurnLoop({
   // have been committed, so diagnostics receive the same state the UI is about to show.
   const notifyRoundCompletion = (
     agent: AgentApiConfig,
+    playerStatus: AgentPlayerStatus,
     actionResult: MazeActionResult,
   ): void => {
     const currentState = __readState()
@@ -200,6 +204,7 @@ export function handleAgentTurnLoop({
     if (isWonStatus(currentState.status) || isLostStatus(currentState.status)) {
       __onRoundOutcome({
         __agent: agent,
+        __playerStatus: playerStatus,
         __state: currentState,
         __actionResult: actionResult,
       })
@@ -217,6 +222,19 @@ export function handleAgentTurnLoop({
     lastReplayStartIndex: undefined,
     visitedBefore: undefined,
     predictionStatus: "empty-prediction" as const,
+  }
+
+  // playerStatusFor scopes traversal speed to the agent that just acted, never the whole team.
+  const playerStatusFor = (agent: AgentApiConfig, currentState: State): AgentPlayerStatus => {
+    const { playerUniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(
+      currentState.traversalHistory,
+      agent,
+    )
+    return {
+      playerName: agent.playerName,
+      uniqueCellsVisited: playerUniqueCellsVisited,
+      decayUnitsCharged,
+    }
   }
 
   // recordAgentNetworkError disables failed agents and records the no-score-decay network state.
@@ -241,19 +259,27 @@ export function handleAgentTurnLoop({
 
   // recordRejectedAgentResponse spends the fixed mistake decay without replaying any move. The
   // status keeps malformed output distinct from a token-limit exhaustion, while both retain the
-  // same scoring consequence because neither produced a usable prediction. Reads state fresh via
-  // __readState() *after* __commitAgentTurn, not the turn's stateSnapshot — __commitAgentTurn bumps
-  // state.turnCount, and recordAgentTurnStats must persist that post-commit value (mirroring the
-  // success path in requestNextAgentTurn below), or every agent's stored levelTurnCount ends up one
-  // behind live state and spuriously trips agentTurnCountMismatch on the very next turn.
+  // same scoring consequence because neither produced a usable prediction. Agent stats are recorded
+  // with the next turn count before committing so a terminal turn's summary can use that post-turn
+  // agent status immediately.
   const recordRejectedAgentResponse = (
     agent: AgentApiConfig,
     lastMoveStatus: RejectedAgentResponseReason,
   ): void => {
     const chargedMovesCount = agentMalformedPenaltyDecayUnits
-    __commitAgentTurn(chargedMovesCount)
-    const {level, cumulativeRoundCount, turnCount } = __readState()
-    recordAgentTurnStats(agent, level, cumulativeRoundCount, chargedMovesCount, turnCount)
+    const preCommitState = __readState()
+    const updatedAgent = recordAgentTurnStats(
+      agent,
+      preCommitState.level,
+      preCommitState.cumulativeRoundCount,
+      chargedMovesCount,
+      preCommitState.turnCount + 1,
+    )
+    const playerStatus = playerStatusFor(updatedAgent, preCommitState)
+    __commitAgentTurn(
+      chargedMovesCount,
+      calculateTraversalSpeedUnits(playerStatus.uniqueCellsVisited, playerStatus.decayUnitsCharged),
+    )
 
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
@@ -264,7 +290,7 @@ export function handleAgentTurnLoop({
     lastActionResult = nextResult
 
     __onActionResult(nextResult)
-    notifyRoundCompletion(agent, nextResult)
+    notifyRoundCompletion(updatedAgent, playerStatus, nextResult)
   }
 
   // applyPredictionFailureConsequence dispatches a failure's game effect. caller-abort means
@@ -541,9 +567,19 @@ export function handleAgentTurnLoop({
               : (invalidMovesPenalty > 0 ? "partially-applied" : "all-applied"))
           : "invalid-prediction"
 
-      __commitAgentTurn(chargedMovesCount)
-      const {level, cumulativeRoundCount, turnCount } = __readState()
-      recordAgentTurnStats(selectedAgent, level, cumulativeRoundCount, chargedMovesCount, turnCount)
+      const preCommitState = __readState()
+      const updatedAgent = recordAgentTurnStats(
+        selectedAgent,
+        preCommitState.level,
+        preCommitState.cumulativeRoundCount,
+        chargedMovesCount,
+        preCommitState.turnCount + 1,
+      )
+      const playerStatus = playerStatusFor(updatedAgent, preCommitState)
+      __commitAgentTurn(
+        chargedMovesCount,
+        calculateTraversalSpeedUnits(playerStatus.uniqueCellsVisited, playerStatus.decayUnitsCharged),
+      )
 
       const nextResult = mergeReplayResult(lastReplayResult, {
         lastPlayerName: selectedAgent.playerName,
@@ -557,7 +593,7 @@ export function handleAgentTurnLoop({
 
       lastActionResult = nextResult
       __onActionResult(nextResult)
-      notifyRoundCompletion(selectedAgent, nextResult)
+      notifyRoundCompletion(updatedAgent, playerStatus, nextResult)
     } finally {
       activeRequest = null
       if (shouldPollAgent()) {

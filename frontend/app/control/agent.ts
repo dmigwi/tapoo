@@ -15,7 +15,13 @@ import {
   isAgentReasoningEffort,
   normalizeAgentEndpoint,
 } from "../agent/config"
-import { formatPlayerStatusLabel, getBatchEfficiencyMetrics } from "../agent/efficiency"
+import {
+  calculateTraversalSpeedUnits,
+  formatPlayerStatusLabel,
+  getBatchEfficiencyMetrics,
+  resolveStatusSpeedClass,
+  traversalSpeedUnitsToDisplay,
+} from "../agent/efficiency"
 import {
   handleAgentTurnLoop,
 } from "./agent-api"
@@ -57,8 +63,12 @@ type AgentButtonBinding = {
 
 // logAgentRoundCompletion captures the final agent-api round state without serializing the live
 // clock or maze grid, keeping diagnostics useful while avoiding large circular-ish payloads.
-function logAgentRoundCompletion({ __state, __agent }: AgentRoundState): void {
+function logAgentRoundCompletion({ __state, __agent, __playerStatus }: AgentRoundState): void {
   const outcome = __state.status
+  const traversalSpeedUnits = calculateTraversalSpeedUnits(
+    __playerStatus.uniqueCellsVisited,
+    __playerStatus.decayUnitsCharged,
+  )
 
   logTapooDiagnostic(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
     outcome,
@@ -80,10 +90,14 @@ function logAgentRoundCompletion({ __state, __agent }: AgentRoundState): void {
     startPosition: __state.startPosition,
     playerPosition: __state.playerPosition,
     finalPosition: __state.finalPosition,
-    // Only the count: an entry per visited cell is the largest thing in State, and it grew again
-    // when openMoves became a resolved adjacency map. Paired with turnCount it still gives
-    // the cells-per-request efficiency these entries are read for.
-    uniqueCellsVisited: __state.traversalHistory.length,
+    allUniqueCellsVisited: __state.traversalHistory.length,
+    playerUniqueCellsVisited: __playerStatus.uniqueCellsVisited,
+    decayUnitsCharged: __playerStatus.decayUnitsCharged,
+    traversalSpeed: traversalSpeedUnitsToDisplay(traversalSpeedUnits),
+    traversalSpeedClass: resolveStatusSpeedClass(
+      __playerStatus.uniqueCellsVisited,
+      __playerStatus.decayUnitsCharged,
+    ),
   })
 }
 

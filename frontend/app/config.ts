@@ -25,7 +25,7 @@ const VERSION_MAJOR = 2
 const VERSION_MINOR = 4
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 1
+const VERSION_PATCH = 2
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -403,7 +403,7 @@ export const CONFIG: AppConfig = {
       interactive: "interactive",
     },
     storage: {
-      version: 4.5,
+      version: 4.6,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",
