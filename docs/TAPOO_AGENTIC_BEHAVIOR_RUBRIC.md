@@ -1,28 +1,58 @@
-# Tapoo Agentic Behavior Rubric
+# Tapoo Agentic Behavior Active Measurement Contract
 
-This rubric evaluates what an agent demonstrably did in a Tapoo `agent-api`
-gameplay log. It deliberately avoids guessing intent: every capability and
-violation is answered from logged facts.
+This active measurement contract evaluates what an agent demonstrably did in a
+Tapoo `agent-api` gameplay log. It is a factual reasoning profile, not a
+scorecard: every capability and violation is answered from logged evidence, and
+no weighted or combined intelligence score is produced.
 
-## Rules
+## Purpose and Boundary
 
-- A **turn** is one agent prediction cycle. Every request and response logged
-  during it carries the same `turn` field, so entries group by turn directly.
-- A **prediction** is the final `moves` array submitted at the end of a turn.
-- Every question answers strictly **YES** or **NO**. There is no undefined,
-  empty, or not-applicable answer.
-- A question quantified over an **empty set answers NO**, never vacuously yes.
-  Nothing was demonstrated, so nothing is confirmed.
-- A **capability** is confirmed if all its questions are YES.
-- A **violation** is confirmed if any one of its questions is YES.
-- Answer per round. The session answer is YES if any sampled round is YES.
-- A NO never means incapable or immune. It only means **not observed in this
-  sample**.
+Tapoo is used here as a standardized tool task. The rubric does not ask which
+model is the best maze player. It asks what reasoning behavior the sampled
+agent actually demonstrated while using the same declared tools, response
+contract, and game rules.
+
+Only observed facts count. Missing evidence answers NO, meaning "not observed
+in this sample," not "the model is incapable."
+
+## Result Format
+
+- Report capabilities and violations separately.
+- Keep each group fraction visible, such as `2/3` or `5/5`, so partial evidence
+  is not hidden.
+- Preserve exact numeric evidence, including traversal speed, token counts, and
+  prediction counts.
+- Do not collapse capabilities and violations into one score interval.
+
+## Evaluation Rules
+
+- Every question returns strictly `YES` or `NO`.
+- Empty evidence returns `NO`.
+- Capabilities use AND semantics: every grouped question must return `YES`.
+- Violations use OR semantics: any grouped question returning `YES` confirms the
+  violation.
+- Evaluate each level independently before aggregating the complete sample.
+- Combined behavior must occur within the same level.
 
 ## Capability Groups
 
+| ID | Group | General behavior profiled |
+|---|---|---|
+| C1 | `INSTRUCTION ADHERENCE` | Follows declared task, tool, and response instructions. |
+| C2 | `VALID ACTION DELIVERY` | Produces an executable action accepted by the environment. |
+| C3 | `CONTEXT ACQUISITION` | Requests the information needed for an informed decision. |
+| C4 | `STATE AWARENESS` | Selects actions consistent with confirmed current state. |
+| C5 | `RESOURCE EFFICIENCY` | Converts the agent's own decay budget into unique progress. |
+| C6 | `MULTI-STEP EXECUTION` | Successfully executes sequences rather than relying only on isolated actions. |
+| C7 | `STRUCTURAL REASONING` | Uses known structure successfully and achieves a Trailblazer-speed win in the same level. |
+| C8 | `ADAPTIVE RECOVERY` | Changes course after a proven failure and subsequently makes valid progress. |
+| C9 | `TASK COMPLETION` | Reaches the objective in any sampled level, regardless of speed classification. |
+
+C9 confirms every win. C7 additionally requires direct structural evidence and
+a winning traversal speed above `1.00`.
+
 ```text
-C1. RESPONSE CONTRACT ADHERENCE
+C1. INSTRUCTION ADHERENCE
     scope: responses a moves array was extracted from
 
     Q1. Are all prediction responses bare JSON, with no fences or prose?
@@ -32,7 +62,7 @@ C1. RESPONSE CONTRACT ADHERENCE
 ```
 
 ```text
-C2. BASIC MOVEMENT COMPETENCE
+C2. VALID ACTION DELIVERY
     Q1. Did the agent produce at least one successfully applied move?
 ```
 
@@ -40,71 +70,71 @@ C2. BASIC MOVEMENT COMPETENCE
 C3. CONTEXT ACQUISITION
     one question per context tool
 
-    Q1. Did the agent extract the maze structure on every turn?
+    Q1. Did the agent extract the maze structure on every prediction turn?
         Required facts: level, currentCell, destinationCell, nearby
         filteredTraversalHistory, each included cell's openMoves.
 
-    Q2. Did the agent extract the prediction rules on every turn?
+    Q2. Did the agent extract the prediction rules on every prediction turn?
         Required facts: suggestedMovesPerTurn, mazeDimensions,
         traversal-speed inputs, batchEfficiencyClass, expected response schema.
 
-    Q3. Did the agent extract the last prediction outcome on every turn?
+    Q3. Did the agent extract the last prediction outcome on every prediction
+        turn?
         Required facts: status, score, lastMoveStatus, chargedMovesCount, and
         prior submitted/applied move details.
 ```
 
 ```text
-C4. POSITION AWARENESS
+C4. STATE AWARENESS
     Q1. On every turn where the currentCell appeared in filteredTraversalHistory,
         was the first submitted move one of that cell's confirmed openMoves?
 ```
 
 ```text
-C5. EXPLORATION EFFICIENCY
-    Q1. At round end, was traversal speed at least 1.0?
-        Formula: non-Self unique cells visited / total decay units charged.
+C5. RESOURCE EFFICIENCY
+    Q1. At round end, was the evaluated agent's traversal speed at least 1.0?
+        Formula: currentAgentUniqueCellsFirstVisited /
+        currentAgentDecayUnitsCharged.
 ```
 
 ```text
-C6. BATCHING BOLDNESS
+C6. MULTI-STEP EXECUTION
     Q1. Did the agent submit any 2+ move prediction?
+    Q2. Did the agent submit any 2+ move prediction where every move applied?
 ```
 
 ```text
-C7. BATCHING ACCURACY
-    Q1. Did the agent submit any 2+ move prediction where every move applied?
+C7. STRUCTURAL REASONING
+    Q1. Did the agent submit a 2+ move prediction through confirmed known
+        structure where every move applied?
+    Q2. Did the same sampled level end with that agent winning at Trailblazer
+        speed above 1.00?
 ```
 
 ```text
-C8. CORRIDOR COMPRESSION
-    Q1. Did the agent submit a 2+ move prediction through a confirmed branchless
-        corridor where every move applied?
-```
-
-```text
-C9. PLANNING DEPTH
-    Q1. Did the agent submit a prediction of at least the prediction rules'
-        maximum suggested moves per turn where every move applied?
-```
-
-```text
-C10. SELF-CORRECTION
+C8. ADAPTIVE RECOVERY
     Q1. After a failed turn, did the following turn's prediction have its first
         two consecutive moves applied?
 ```
 
 ```text
-C11. OBJECTIVE COMPLETION
-    Q1. Did the agent win by reaching the destination in any sampled round?
-```
-
-```text
-C12. DECISIVE COMPLETION
-    Q1. Did the agent win any sampled round with traversal speed above 1.0?
-        Formula: non-Self unique cells visited / total decay units charged.
+C9. TASK COMPLETION
+    Q1. Did the agent win by reaching the destination in any sampled level?
 ```
 
 ## Violation Groups
+
+| ID | Group | General behavior profiled |
+|---|---|---|
+| V1 | `TOOL HALLUCINATION` | Attempts to invoke an undeclared interface. |
+| V2 | `OUTPUT CONTRACT FAILURE` | Returns a final response that cannot satisfy the required contract. |
+| V3 | `WARNING DISREGARD` | Repeats behavior after receiving a relevant corrective warning. |
+| V4 | `AVAILABLE-CONTEXT DISREGARD` | Produces an action contradicting confirmed information. |
+| V5 | `RESOURCE WASTE` | Provably wastes action or output budget, including excessive revisitation and standardized token exhaustion. |
+| V6 | `FAILED-STATE REPETITION` | Repeats an action sequence already proven invalid from the same state. |
+
+Endpoint failures are operational diagnostics, not model-intelligence
+violations.
 
 ```text
 V1. TOOL HALLUCINATION
@@ -112,7 +142,7 @@ V1. TOOL HALLUCINATION
 ```
 
 ```text
-V2. MALFORMED PREDICTION
+V2. OUTPUT CONTRACT FAILURE
     Q1. Did any final response fail to produce an extractable prediction?
         Includes unparseable content, invalid final content, or second
         token-limit exhaustion after a warning.
@@ -129,188 +159,69 @@ V3. WARNING DISREGARD
 ```
 
 ```text
-V4. OPEN-MOVE DISREGARD
+V4. AVAILABLE-CONTEXT DISREGARD
     Q1. Did the agent submit any move that was not among the current cell's
         confirmed openMoves?
 ```
 
 ```text
-V5. REVISIT WASTE
+V5. RESOURCE WASTE
     Q1. Did the agent enter any cell more times than that cell's openMoves
         count permits?
+    Q2. Did the agent single-step through confirmed known structure where a
+        multi-step prediction was available?
+    Q3. Did any response reach the configured completion-token cap?
 ```
 
 ```text
-V6. INVALID-PATH PERSEVERATION
+V6. FAILED-STATE REPETITION
     Q1. Did the agent repeat, from the same currentCell, a moves array already
         proven invalid from that same cell?
 ```
 
-```text
-V7. AGENT ENDPOINT FAILURE
-    Q1. Did the agent's own endpoint produce a non-OK HTTP status, transport
-        failure, timeout, or response missing its message object?
-```
+## Agent-Scoped Traversal Speed
+
+Use one formula everywhere:
 
 ```text
-V8. TOKEN EXHAUSTION
-    Q1. Did any response reach the configured completion-token cap?
+agentTraversalSpeed =
+    currentAgentUniqueCellsFirstVisited /
+    currentAgentDecayUnitsCharged
 ```
 
-## Metric Definitions
+- `currentAgentUniqueCellsFirstVisited` counts traversal-history entries
+  attributed to that agent's `playerName`.
+- `currentAgentDecayUnitsCharged` includes only decay charged to that agent
+  during the current level.
+- The seeded `Self` start cell and cells first visited by other agents never
+  enter the numerator.
+- Decay charged to other agents never enters the denominator.
+- The winning agent is the agent whose action reached the destination.
+- The winning turn's progress and decay must both be included.
+- A non-positive denominator resolves to speed `0`, never a default
+  Trailblazer result.
 
-**Traversal speed.** Use the round-level scoring metric:
+Classifications:
 
-```text
-traversalSpeed = playerUniqueCellsVisited / totalDecayUnitsCharged
-```
-
-Do not use the live per-agent `uniqueCellsVisited / decayUnitsCharged` pair for
-round-level questions. That live pair is for in-game model context and seat
-classification. The rubric's round-level metric evaluates the actual sampled
-round outcome.
-
-**Non-Self unique cells.** Count traversal-history entries whose `playerName`
-is not `Self`. The seeded `Self` start cell is not agent progress and must not
-inflate the numerator.
-
-**Total decay units charged.** Count every decay unit charged by Tapoo during
-that round, including valid-turn charges and malformed/invalid prediction
-charges. Exclude caller-initiated aborts and endpoint failures that Tapoo
-classifies as no-score network failures.
-
-**Suggested moves per turn.** Read `suggestedMovesPerTurn.max` from that round's
-`get_prediction_rules` result. The current default range is configuration, not
-a rubric constant.
-
-**Token cap.** Completion tokens only:
-
-```text
-Ollama:    eval_count
-OpenAI:    usage.completion_tokens
-Anthropic: usage.output_tokens
-```
-
-Compare against `CONFIG.runtime.modelConfig.maxTokens`, the same completion cap
-sent with the request.
-
-## How To Answer Questions
-
-**C1 scope.** C1 only scores responses where Tapoo extracted a `moves` array.
-Responses that fail parsing belong to V2 instead, so C1 and V2 do not constrain
-each other.
-
-**C3 scope.** "Every turn" means every turn where the agent had a chance to
-call tools before final prediction. If a turn ends by endpoint failure before
-the model produces tool calls or content, score that under V7 rather than C3.
-
-**C4 position checks.** C4 measures whether the agent uses its current-cell
-context, not whether Tapoo's movement engine works. Only score C4.Q1 from turns
-where the currentCell itself appears in filteredTraversalHistory and therefore
-has logged openMoves.
-
-**C8 corridor checks.** A confirmed branchless corridor means a cell sequence
-where every intermediate cell has exactly two open exits. Do not infer corridor
-structure from Manhattan distance alone.
-
-**V5 revisit threshold.** The threshold is the open-exit count, not count minus
-one. The maze is a spanning tree, so complete depth-first exploration can touch
-a cell once per exit. Visit counts come from `currentCell` readings and
-`visitedBefore`; `traversalHistory` records first visits only.
-
-**V7 scope.** V7 is endpoint conduct only. It excludes Tapoo tool-handler
-failures and caller-initiated aborts. Tool-handler failures may disable the
-agent operationally, but they are not evidence that the external agent endpoint
-failed.
-
-## Evidence Channels
-
-Use all available channels before answering NO. A NO should reflect the agent,
-not an unread part of the log.
-
-| Question | Evidence |
+| Class | Meaning |
 |---|---|
-| C1.Q1 | Parse logged final assistant content; reject prose, markdown fences, or explanation text around JSON. |
-| C1.Q2 | Re-parse logged final assistant content; extra keys do not fail runtime parsing, so this must be checked directly. |
-| C3 | Tool-call log entries grouped by turn. |
-| C4 | `currentCell`, filteredTraversalHistory openMoves for that cell, and submitted first move. |
-| C5/C12 | Round completion log plus reconstructed non-Self traversal-history count and total decay charged. |
-| C7-C9 | Submitted prediction length, replay result, currentCell/openMoves structure, and position triangulation. |
-| C10 | Failed-turn replay result followed by the next turn's replay prefix. |
-| V2.Q2 | Re-parse final content; runtime reports empty arrays under the same malformed bucket as other invalid shapes. |
-| V4 | `lastMoveStatus: "invalid-move"` is direct proof. Position triangulation covers turns where no outcome tool was fetched. |
-| V5 | Union of `currentCell` arrival counts and `visitedBefore: true`. |
-| V8 | Provider completion-token field compared to configured cap. |
+| `Backtracker` | below `1.00` |
+| `Navigator` | exactly `1.00` |
+| `Trailblazer` | above `1.00` |
 
-## Dependency Ladders
+A higher winning Trailblazer speed represents a larger observed efficiency
+margin and a greater expected likelihood of remaining competitive at higher
+levels. It is probabilistic evidence, not a guaranteed future result.
 
-Some questions are strictly stronger forms of others. A stronger YES forces the
-weaker YES, but not the reverse.
+## Minimal Evidence Definitions
 
-```text
-C9.Q1 -> C7.Q1 -> C6.Q1              full-depth landed batch -> landed batch ->
-                                     any batch
-C8.Q1 -> C7.Q1 -> C6.Q1              corridor compression -> landed batch ->
-                                     any batch
-C10.Q1 -> C6.Q1                      two-move recovery needs a 2+ prediction
-C12.Q1 -> C11.Q1                     decisive completion is still completion
-C12.Q1 -> C5.Q1 -> C2.Q1             trailblazer win -> efficient traversal ->
-                                     applied movement
-C4.Q1, C5.Q1, C7.Q1, C8.Q1,
-C10.Q1, C11.Q1 -> C2.Q1              all require at least one applied move
-V6.Q1 -> V4.Q1                       repeated invalid path contains an
-                                     out-of-openMoves move
-V2.Q1 token-cap clause -> V8.Q1      second token-limit failure reached the cap
-V2.Q2 -> V2.Q1                       empty moves is one invalid prediction shape
-```
-
-These are ladders, not complements. Both ends can be YES. The informative case
-is often the weaker YES with the stronger NO, for example batching frequently
-but never landing a full batch.
-
-## Duplicate Event Notes
-
-**V3.Q2 and V2.Q1's token-cap clause are the same second-occurrence event.**
-They stay separate deliberately: V2 reports output failure, while V3 reports
-ignored correction.
-
-**Malformed-response penalty wording belongs in V2 and in the last-outcome
-evidence, not as a separate violation.** A malformed prediction is already the
-violation; its score impact is evidence used to verify the event.
-
-## Rejected Candidates
-
-Recorded so they are not re-proposed. Each failed the decisiveness bar,
-duplicated another question, or measured the harness rather than the agent.
-
-- **Topology reasoning, broad form.** "Retreat only when exits are exhausted" is
-  too universal. A retreat can be a reasoned move toward a better frontier. The
-  provable positive signal survives as C8.
-- **Direction inversion.** Choosing a distance-increasing exit over an
-  unexplored distance-reducing exit is not provably wrong. The prompt states the
-  only valid path may require moving away from the target first.
-- **Premature retreat.** Backtracking while an unexplored exit remains may be
-  correct. Its provable waste form is caught by V5.
-- **Dead-end non-recognition.** Subsumed by V4 once V4 covers any move outside
-  confirmed openMoves.
-- **Mode disregard.** The harness strips already-called tools; predict mode is
-  the state where that list empties. That is request-construction behavior, not
-  agent conduct.
-- **Blind submission.** One-directional with C3. C3 is stricter because it
-  demands every context payload every turn.
-- **Collaboration / foreign-data use.** `Self` contributes only the start cell
-  in every run; using it and guessing correctly produce identical logs.
-- **Malformed tool arguments.** Zero useful discrimination so far; entangled
-  with V1.
-- **Truncation as a standalone violation.** The actionable version is V8 token
-  exhaustion.
-- **Post-completion action.** Rounds share one log stream, so attribution to the
-  finished round is not always decisive.
-- **Tool-consultation aggregate.** If every sampled model calls all tools, the
-  aggregate has no discriminating power. Keep the per-tool C3 questions.
-- **Latency, token cost, context growth.** Continuous, hosting-dependent, and
-  lacking a non-arbitrary pass/fail threshold.
-- **Batch-size adaptation after failure.** Risk posture is a style axis, not a
-  capability or defect.
-- **Budget-aware batching.** Shrinking or growing batch size as budget falls is
-  the same risk-posture style axis, not a capability or defect.
+- A **turn** is one agent prediction cycle.
+- A **prediction** is the final `moves` array submitted at the end of a turn.
+- A **level win** occurs when Tapoo records that an action reached the
+  destination.
+- A **confirmed current state** is information returned by declared Tapoo tools
+  or by Tapoo's replay outcome for that level.
+- `allUniqueCellsVisited` is collective exploration context only. It must never
+  be used as the numerator for individual agent traversal speed.
+- Token exhaustion is a resource-waste signal when it is observed against the
+  configured completion-token cap.
