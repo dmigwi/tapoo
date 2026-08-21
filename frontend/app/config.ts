@@ -51,7 +51,7 @@ export const CONFIG: AppConfig = {
     game: {
       documentTitle: "Tapoo Maze Runner | Game",
       description:
-        "Tapoo is an AI agent intelligence quantifier built as a maze runner hide-and-seek " +
+        "Tapoo is an AI agent behavior profiler built as a maze runner hide-and-seek " +
         "game — play it yourself in this browser-based terminal experience.",
       pageLabel: "Game",
       aiAgentsLabel: "AI Agents",
@@ -59,7 +59,7 @@ export const CONFIG: AppConfig = {
     agents: {
       documentTitle: "Tapoo Maze Runner | AI Agents",
       description:
-        "Tapoo quantifies AI agent intelligence: an HTTP-driven agent navigates a maze " +
+        "Tapoo profiles AI agent behavior: an HTTP-driven agent navigates a maze " +
         "runner under a standardized prompt with built-in uncertainty, with human session " +
         "controls.",
       pageLabel: "AI Agents",
@@ -68,7 +68,7 @@ export const CONFIG: AppConfig = {
     prompts: {
       documentTitle: "Tapoo Maze Runner | Agent Prompts",
       description:
-        "Tapoo, an AI agent intelligence quantifier, publishes the exact system prompt, " +
+        "Tapoo, an AI agent behavior profiler, publishes the exact system prompt, " +
         "user message, tool definitions and response format it sends to a configured AI " +
         "agent.",
       pageLabel: "Agent Prompts",
@@ -77,7 +77,7 @@ export const CONFIG: AppConfig = {
     privacy: {
       documentTitle: "Tapoo Maze Runner | Privacy",
       description:
-        "Privacy details for Tapoo, an AI agent intelligence quantifier, covering browser " +
+        "Privacy details for Tapoo, an AI agent behavior profiler, covering browser " +
         "storage and optional AI Agent API gameplay context.",
       pageLabel: "Privacy",
     },

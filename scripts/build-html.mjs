@@ -276,7 +276,8 @@ sharedPartials.dataBuildKey = dataBuildKey(STORE_BLEND_KEY, STORE_ENCODING_PREFI
 const website = {
   "@type": "WebSite",
   "@id": `${urlPath}#website`,
-  name: "Tapoo",
+  name: "Tapoo — AI agent behavior profiler",
+  description: "Measures an agent's strategy execution under uncertainty.",
   url: urlPath,
   image: ogImageUrl,
   author: { "@type": "Person", name: author.name, sameAs: author.profileUrl },
@@ -330,7 +331,7 @@ await Promise.all([
         description: gameDescription,
         url: urlPath,
         extra: {
-          applicationCategory: "AI Agent Intelligence Quantifier Tool",
+          applicationCategory: "AI Agent Behavior Profiler Tool",
           operatingSystem: "Any",
           browserRequirements: "Requires JavaScript",
           softwareVersion: APP_VERSION,
@@ -361,7 +362,7 @@ await Promise.all([
         description: agentsDescription,
         url: agentsUrl,
         extra: {
-          applicationCategory: "AI Agent Intelligence Quantifier Tool",
+          applicationCategory: "AI Agent Behavior Profiler Tool",
           operatingSystem: "Any",
           browserRequirements: "Requires JavaScript",
           softwareVersion: APP_VERSION,

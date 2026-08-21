@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Tapoo — AI agent intelligence quantifier">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Tapoo — AI agent behavior profiler">
   <defs>
     <filter id="markerGlow" x="-60%" y="-60%" width="220%" height="220%">
       <feGaussianBlur stdDeviation="4" />
@@ -14,8 +14,8 @@
   <g font-family="'PT Mono', 'Courier New', monospace">
     <text x="76" y="220" font-size="88" font-weight="700" fill="#48c63e">TAPOO</text>
     <text x="76" y="270" font-size="30" fill="rgba(72, 198, 62, 0.72)">Maze Runner</text>
-    <text x="76" y="330" font-size="34" font-weight="600" fill="#48c63e">AI Agent Intelligence</text>
-    <text x="76" y="372" font-size="34" font-weight="600" fill="#48c63e">Quantifier</text>
+    <text x="76" y="330" font-size="34" font-weight="600" fill="#48c63e">AI Agent Behavior</text>
+    <text x="76" y="372" font-size="34" font-weight="600" fill="#48c63e">Profiler</text>
   </g>
 
   <g stroke="#2f862d" stroke-width="3" stroke-linecap="square" fill="none">
