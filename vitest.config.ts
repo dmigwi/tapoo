@@ -15,7 +15,7 @@ export default defineConfig({
         url: "http://localhost/",
       },
     },
-    include: ["frontend/**/*.test.ts"],
+    include: ["frontend/**/*.test.ts", "frontend/**/*.test.mjs"],
     coverage: {
       include: ["frontend/app/**/*.ts", "frontend/tapoo.ts"],
       provider: "v8",

@@ -19,7 +19,7 @@ import {
   calculateTraversalSpeedUnits,
   formatPlayerStatusLabel,
   getBatchEfficiencyMetrics,
-  resolveStatusSpeedClass,
+  resolveTraversalSpeedClass,
   traversalSpeedUnitsToDisplay,
 } from "../agent/efficiency"
 import {
@@ -61,8 +61,9 @@ type AgentButtonBinding = {
   __onClick: () => void
 }
 
-// logAgentRoundCompletion captures the final agent-api round state without serializing the live
-// clock or maze grid, keeping diagnostics useful while avoiding large circular-ish payloads.
+// logAgentRoundCompletion captures the round's outcome and the stats that evolved to reach it.
+// level/cumulativeRoundCount/startPosition/finalPosition/maze never change once a round starts, so
+// they're logged once at round start (game.ts's startRoundWithDimensions) rather than repeated here.
 function logAgentRoundCompletion({ __state, __agent, __playerStatus }: AgentRoundState): void {
   const outcome = __state.status
   const traversalSpeedUnits = calculateTraversalSpeedUnits(
@@ -78,26 +79,15 @@ function logAgentRoundCompletion({ __state, __agent, __playerStatus }: AgentRoun
       model: __agent.model,
       enabled: __agent.enabled,
     },
-    level: __state.level,
-    // Round-end displays and persistence use lastRoundScore, which is finalized only after the
-    // current request's decay has been committed. Reusing it here keeps diagnostics aligned with
-    // the win/loss overlay instead of serializing a transient live score value.
     score: __state.lastRoundScore,
-    winSummary: __state.winSummary,
     turnCount: __state.turnCount,
-    cumulativeRoundCount: __state.cumulativeRoundCount,
-    mazeDimensions: __state.mazeDimensions,
-    startPosition: __state.startPosition,
     playerPosition: __state.playerPosition,
-    finalPosition: __state.finalPosition,
     allUniqueCellsVisited: __state.traversalHistory.length,
     playerUniqueCellsVisited: __playerStatus.uniqueCellsVisited,
     decayUnitsCharged: __playerStatus.decayUnitsCharged,
     traversalSpeed: traversalSpeedUnitsToDisplay(traversalSpeedUnits),
-    traversalSpeedClass: resolveStatusSpeedClass(
-      __playerStatus.uniqueCellsVisited,
-      __playerStatus.decayUnitsCharged,
-    ),
+    traversalSpeedClass: resolveTraversalSpeedClass(traversalSpeedUnits),
+    winSummary: __state.winSummary,
   })
 }
 

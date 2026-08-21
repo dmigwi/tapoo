@@ -2,6 +2,7 @@ package maze_test
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -160,6 +161,64 @@ func TestGenerateMazeRepeatable(t *testing.T) {
 			assertPlayableMaze(t, config, data)
 		})
 	}
+}
+
+// newXorshift128Generator returns a small, deterministic maze.PRNGGenerator for tests — mirrors
+// frontend/app/maze.test.ts's createXorshift128Generator algorithm exactly (same standard 4-word
+// xorshift128 state update, same 32-bit word arithmetic) so both codebases' test suites inject the
+// same generator rather than each rolling their own. Using uint32 throughout keeps every shift a
+// logical (zero-filling) shift, matching JS's explicit >>> operator bit for bit.
+func newXorshift128Generator(seed int) maze.PRNGGenerator {
+	x := uint32(seed)
+	if x == 0 {
+		x = 1
+	}
+	y, z, w := uint32(362436069), uint32(521288629), uint32(88675123)
+
+	return func(limit int) (int, error) {
+		if limit <= 0 {
+			return 0, nil
+		}
+
+		t := x ^ (x << 11)
+		x, y, z = y, z, w
+		w = (w ^ (w >> 19)) ^ (t ^ (t >> 8))
+		return int(w % uint32(limit)), nil
+	}
+}
+
+// TestGenerateMazeDeterministicWithFixedGenerator swaps secureRandomIndex for a seeded generator
+// (newXorshift128Generator above) instead of exercising real crypto/rand, mirroring
+// frontend/app/maze.test.ts's "generates a deterministic maze layout for a fixed random source" test
+// with the same xorshift128 algorithm — proving GenerateMaze's new optional generator parameter
+// actually makes layout generation fully reproducible.
+func TestGenerateMazeDeterministicWithFixedGenerator(t *testing.T) {
+	t.Parallel()
+
+	first := maze.Dimensions{NumCols: 5, NumRows: 5}
+	firstData, err := first.GenerateMaze(maze.WallWeightRegular, newXorshift128Generator(1))
+	if err != nil {
+		t.Fatalf("GenerateMaze returned error: %v", err)
+	}
+
+	second := maze.Dimensions{NumCols: 5, NumRows: 5}
+	secondData, err := second.GenerateMaze(maze.WallWeightRegular, newXorshift128Generator(1))
+	if err != nil {
+		t.Fatalf("GenerateMaze returned error: %v", err)
+	}
+
+	if !reflect.DeepEqual(firstData, secondData) {
+		t.Fatalf("expected the same seeded generator to reproduce an identical maze layout")
+	}
+
+	if first.StartPosition != second.StartPosition || first.FinalPosition != second.FinalPosition {
+		t.Fatalf(
+			"expected the same seeded generator to reproduce identical endpoints, got start=%v/%v final=%v/%v",
+			first.StartPosition, second.StartPosition, first.FinalPosition, second.FinalPosition,
+		)
+	}
+
+	assertPlayableMaze(t, first, firstData)
 }
 
 func assertPlayableMaze(t *testing.T, config maze.Dimensions, data [][]string) {

@@ -10,7 +10,7 @@ import { OLLAMA_PREDICTION_FORMAT } from "./providers"
 import { requestPredictionWithAbort } from "./request"
 import { snapshotAgentState } from "./state-snapshot"
 import { CONFIG } from "../config"
-import { tapooResetLogs } from "../logs"
+import { checksumLoggedDescription, tapooResetLogs } from "../logs"
 import { loadTapooLog } from "../storage"
 import type {
   AgentApiConfig,
@@ -44,7 +44,7 @@ const agentContextTools = [
     function: {
       name: "get_prediction_rules",
       description:
-        "Get move response rules. suggestedMovesPerTurn is a min/max range for how many moves to include in your prediction response per turn: submit min moves when you are only confident about the immediate next cell or two, and go up to max only when the local map supports a longer high-confidence run. Batching accuracy drops sharply the further out a prediction reaches, so lean toward min rather than max whenever you are unsure. When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. When decayUnitsCharged is 0, do not divide; batchEfficiencyClass defaults to trailblazer. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator at 1.0 (one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the only classification that can set a new best-score record). allUniqueCellsVisited is every cell any player has reached this level, not just your own — compare it against mazeDimensions.totalMazeCells to know how much of the maze the team has collectively explored so far. At the initial game levels the single solution path covers nearly all of totalMazeCells, so expect to explore most of the maze before reaching the destination; the path's length relative to totalMazeCells drops only slightly as the level number grows, so at higher levels the destination can be reachable well before allUniqueCellsVisited approaches totalMazeCells. It does not affect your traversal speed, which is scored on playerUniqueCellsVisited against decayUnitsCharged. totalTurnCount is the total number of completed prediction turns in this game level. playerTurnsTaken is the number completed by the player and is reported for context; neither count affects your speed, classification, or scores. The resulting score is visible via get_last_prediction_outcome. mazeDimensions.totalMazeCells is the full level size. Returns JSON: {\"suggestedMovesPerTurn\":{\"min\":number,\"max\":number}, \"allUniqueCellsVisited\":number, \"playerUniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"batchEfficiencyClass\":string, \"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null, \"expectedResponseSchema\":object}.",
+        "Get move response rules. suggestedMovesPerTurn is a min/max range for how many moves to include in your prediction response per turn: submit min moves when you are only confident about the immediate next cell or two, and go up to max only when the local map supports a longer high-confidence run. Batching accuracy drops sharply the further out a prediction reaches, so lean toward min rather than max whenever you are unsure. When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. When decayUnitsCharged is 0, do not divide; batchEfficiencyClass defaults to trailblazer. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below 1.0, navigator at 1.0, or trailblazer above 1.0. Retrace-only batching can save turns but cannot create new-cell progress, so trailblazer is evidence that forward prediction into unvisited cells succeeded. allUniqueCellsVisited is every cell any player has reached this level, not just your own — compare it against mazeDimensions.totalMazeCells to know how much of the maze the team has collectively explored so far. At the initial game levels the single solution path covers nearly all of totalMazeCells, so expect to explore most of the maze before reaching the destination; the path's length relative to totalMazeCells drops only slightly as the level number grows, so at higher levels the destination can be reachable well before allUniqueCellsVisited approaches totalMazeCells. It does not affect your traversal speed, which is scored on playerUniqueCellsVisited against decayUnitsCharged. totalTurnCount is the total number of completed prediction turns in this game level. playerTurnsTaken is the number completed by the player and is reported for context; neither count affects your speed, classification, or scores. The resulting score is visible via get_last_prediction_outcome. mazeDimensions.totalMazeCells is the full level size. Returns JSON: {\"suggestedMovesPerTurn\":{\"min\":number,\"max\":number}, \"allUniqueCellsVisited\":number, \"playerUniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"batchEfficiencyClass\":string, \"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null, \"expectedResponseSchema\":object}.",
       parameters: {
         type: "object",
         properties: {},
@@ -79,9 +79,10 @@ function uncalledTools(calledNames: string[]) {
 function expectedLoggedTools(
   wireTools: ReturnType<typeof uncalledTools>,
   keepFull: boolean,
-): { name: string; description: string }[] {
+): { name: string; description_checksum: string | undefined; description: string }[] {
   return wireTools.map(({ function: fn }) => ({
     name: fn.name,
+    description_checksum: checksumLoggedDescription(fn.description),
     description: keepFull ? fn.description : `${fn.description.slice(0, 25)}...`,
   }))
 }
@@ -394,8 +395,8 @@ describe("agent request service", () => {
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), true),
       messages: [
-        { role: "system", content: developerMessage },
-        { role: "user", content: userMessage },
+        { role: "system", content_checksum: checksumLoggedDescription(developerMessage), content: developerMessage },
+        { role: "user", content_checksum: checksumLoggedDescription(userMessage), content: userMessage },
       ],
     })
 
@@ -414,8 +415,16 @@ describe("agent request service", () => {
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
-        { role: "system", content: `${developerMessage.slice(0, 25)}...` },
-        { role: "user", content: `${userMessage.slice(0, 25)}...` },
+        {
+          role: "system",
+          content_checksum: checksumLoggedDescription(developerMessage),
+          content: `${developerMessage.slice(0, 25)}...`,
+        },
+        {
+          role: "user",
+          content_checksum: checksumLoggedDescription(userMessage),
+          content: `${userMessage.slice(0, 25)}...`,
+        },
         {
           role: "assistant",
           content: "",
@@ -502,8 +511,16 @@ describe("agent request service", () => {
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), false),
       messages: [
-        { role: "system", content: `${developerMessage.slice(0, 25)}...` },
-        { role: "user", content: `${userMessage.slice(0, 25)}...` },
+        {
+          role: "system",
+          content_checksum: checksumLoggedDescription(developerMessage),
+          content: `${developerMessage.slice(0, 25)}...`,
+        },
+        {
+          role: "user",
+          content_checksum: checksumLoggedDescription(userMessage),
+          content: `${userMessage.slice(0, 25)}...`,
+        },
       ],
     })
 
@@ -519,8 +536,16 @@ describe("agent request service", () => {
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
-        { role: "system", content: `${developerMessage.slice(0, 25)}...` },
-        { role: "user", content: `${userMessage.slice(0, 25)}...` },
+        {
+          role: "system",
+          content_checksum: checksumLoggedDescription(developerMessage),
+          content: `${developerMessage.slice(0, 25)}...`,
+        },
+        {
+          role: "user",
+          content_checksum: checksumLoggedDescription(userMessage),
+          content: `${userMessage.slice(0, 25)}...`,
+        },
         {
           role: "assistant",
           content: "",

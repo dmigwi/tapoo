@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { loadTapooLog } from "./storage"
 import { APP_VERSION } from "./config"
 import {
+  checksumLoggedDescription,
+  encodeMazeForLog,
   initTapooLogs,
   logTapooDiagnostic,
   subscribeTapooLogs,
@@ -12,6 +14,7 @@ import {
   tapooResetLogs,
   trimLoggedDescription,
 } from "./logs"
+import type { EncodedMazeForLog } from "./logs"
 
 // These tests keep the in-memory Tapoo log export/reset behavior intentionally small.
 describe("tapoo logs", () => {
@@ -204,5 +207,87 @@ describe("trimLoggedDescription", () => {
   it("leaves text exactly at the preview length untouched", () => {
     const exact = "x".repeat(25)
     expect(trimLoggedDescription(exact, false)).toBe(exact)
+  })
+})
+
+describe("checksumLoggedDescription", () => {
+  it("returns undefined for undefined input", () => {
+    expect(checksumLoggedDescription(undefined)).toBeUndefined()
+  })
+
+  it("returns a 0x-prefixed 64-bit hex checksum", () => {
+    expect(checksumLoggedDescription("some prompt text")).toMatch(/^0x[0-9a-f]{16}$/)
+  })
+
+  it("hashes UTF-8 bytes so non-ASCII text (curly quotes, em dash, arrows) checksums consistently", () => {
+    const nonAscii = "“curly” quotes — an em dash → an arrow"
+    expect(checksumLoggedDescription(nonAscii)).toMatch(/^0x[0-9a-f]{16}$/)
+    // Same input still round-trips to the same checksum — not just any hex string.
+    expect(checksumLoggedDescription(nonAscii)).toBe(checksumLoggedDescription(nonAscii))
+  })
+
+  it("matches independently-known FNV-1a 64-bit test vectors, proving external portability", () => {
+    // Empty input never enters the loop, so the result is just the untouched offset basis — a
+    // standard published FNV-1a 64-bit test vector, not something only this implementation agrees
+    // with itself on.
+    expect(checksumLoggedDescription("")).toBe("0xcbf29ce484222325")
+    // Single-byte ASCII "a" is another standard published FNV-1a 64-bit test vector.
+    expect(checksumLoggedDescription("a")).toBe("0xaf63dc4c8601ec8c")
+  })
+
+  it("returns the same checksum for the same input", () => {
+    const text = "This description is definitely longer than the preview length allows."
+    expect(checksumLoggedDescription(text)).toBe(checksumLoggedDescription(text))
+  })
+
+  it("returns a different checksum for different input", () => {
+    expect(checksumLoggedDescription("first text")).not.toBe(checksumLoggedDescription("second text"))
+  })
+})
+
+// decodeMazeForLogInTest stands in for the external, out-of-tool decode step an analysis script
+// would perform — proving the encoding is genuinely reversible rather than just asserting
+// encodeMazeForLog's output looks plausible. Fully self-contained: only needs the payload itself,
+// no CONFIG or wallWeight lookup, since index_chars already lists every token the structure digits index.
+function decodeMazeForLogInTest({ index_chars, structure }: EncodedMazeForLog): string {
+  return structure
+    .split("")
+    .map((digit) => index_chars[Number(digit)])
+    .join("")
+}
+
+describe("encodeMazeForLog", () => {
+  it("round-trips to the exact printable maze text render.ts itself would produce", () => {
+    const maze = [
+      ["|", "---", "-"],
+      ["|", " ", "|"],
+      ["|", "---", "-"],
+    ]
+    const printable = maze.map((row) => row.join("")).join("\n")
+
+    expect(decodeMazeForLogInTest(encodeMazeForLog(maze))).toBe(printable)
+  })
+
+  it("lists only the tokens actually used, in first-seen order, with the row separator last", () => {
+    const maze = [
+      ["|", "---", "-"],
+      ["|", " ", "|"],
+    ]
+
+    expect(encodeMazeForLog(maze)).toEqual({
+      index_chars: ["|", "---", "-", " ", "\n"],
+      structure: "012" + "4" + "030",
+    })
+  })
+
+  it("never emits an index_chars entry unused by the maze that was actually passed in", () => {
+    const maze = [
+      ["|", "---", "-"],
+      ["|", "---", "-"],
+    ]
+
+    // Only three distinct tokens ever appear, so index_chars holds exactly those three plus the
+    // separator — never a full five-token alphabet padded out for tokens this maze never used.
+    expect(encodeMazeForLog(maze).index_chars).toEqual(["|", "---", "-", "\n"])
   })
 })

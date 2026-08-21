@@ -259,7 +259,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain("Player: Kora the Trailblazer - 1.20x")
+    expect(text).toContain("Player: Kora the Trailblazer - 1.2000x")
   })
 
   it("shows - Default instead of a computed rate for a player with no decay units charged yet", () => {
@@ -335,7 +335,7 @@ describe("render", () => {
 
     // Roughly half the available width is kept from the front, half from the back, with the
     // middle dropped — the same middle-truncation compactAgentModelLabel (agent/seats.ts) uses.
-    expect(statusLineText(elements)).toBe("Player: Kora the T…zer - 1.20x   Level: 1   Scores: 900")
+    expect(statusLineText(elements)).toBe("Player: Kora the T…r - 1.2000x   Level: 1   Scores: 900")
   })
 
   it("leaves the wide-viewport label untouched even when it would exceed the compact budget", () => {
@@ -356,7 +356,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain("Player: AgentOne the Trailblazer - 1.20x")
+    expect(text).toContain("Player: AgentOne the Trailblazer - 1.2000x")
   })
 
   it("trims a long player label to fit the compact status line too, dropping its middle", () => {
@@ -399,7 +399,7 @@ describe("render", () => {
       currentPlayerLabel,
     )
 
-    expect(statusLineText(elements)).toBe("Player: AgentOne t…zer - 1.20x   Level: 1   Scores: 900")
+    expect(statusLineText(elements)).toBe("Player: AgentOne t…r - 1.2000x   Level: 1   Scores: 900")
   })
 
   it("keeps a compact label untouched right at the character-budget boundary", () => {
@@ -1185,17 +1185,17 @@ describe("render", () => {
 // isolated, standalone string rather than embedded inside a full running-status line.
 describe("fitPlayerSegmentToWidth", () => {
   it("returns the label unchanged when it already fits the available width", () => {
-    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.20x", 20)).toBe(
-      "Kora the Trailblazer - 1.20x",
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.2000x", 20)).toBe(
+      "Kora the Trailblazer - 1.2000x",
     )
   })
 
   it("keeps roughly half the available width from the front, half from the back, dropping the middle", () => {
-    // "Kora the Trailblazer - 1.20x" is 28 characters; a remainder of 33 leaves 22 characters of
+    // "Kora the Trailblazer - 1.2000x" is 30 characters; a remainder of 33 leaves 22 characters of
     // room (COMPACT_STATUS_MAX_LENGTH 55 minus 33), so 21 characters go to the label once the "…"
     // marker is accounted for — 10 kept from the front, 11 from the back.
-    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.20x", 33)).toBe(
-      "Kora the T…zer - 1.20x",
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.2000x", 33)).toBe(
+      "Kora the T…r - 1.2000x",
     )
   })
 
@@ -1203,8 +1203,8 @@ describe("fitPlayerSegmentToWidth", () => {
     // "AgentOne" is 8 characters — CONFIG.agentConfig.playerNameMaxLength, the real cap on agent
     // names — so this is the longest label the running app can ever actually need to trim.
     expect(
-      fitPlayerSegmentToWidth("AgentOne the Trailblazer - 1.20x", 33),
-    ).toBe("AgentOne t…zer - 1.20x")
+      fitPlayerSegmentToWidth("AgentOne the Trailblazer - 1.2000x", 33),
+    ).toBe("AgentOne t…r - 1.2000x")
   })
 
   it("applies the same middle-truncation to an arbitrary string with no player/rate structure at all", () => {
@@ -1214,10 +1214,10 @@ describe("fitPlayerSegmentToWidth", () => {
   })
 
   it("keeps only the marker plus a single trailing character when almost nothing fits", () => {
-    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.20x", 53)).toBe("…x")
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.2000x", 53)).toBe("…x")
   })
 
   it("returns an empty string when there is no room for the label at all", () => {
-    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.20x", 55)).toBe("")
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.2000x", 55)).toBe("")
   })
 })

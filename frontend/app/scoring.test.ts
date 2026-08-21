@@ -56,23 +56,23 @@ describe("score helpers", () => {
   it("builds agent-api win summaries from traversal speeds", () => {
     // Every summary leads with the pace actually achieved and the rank it earned, since that is
     // the only figure comparable across mazes of different sizes.
-    expect(buildAgentWinSummary(200, null, null)).toBe(
-      "2.00 (Trailblazer) — new traversal speed record",
+    expect(buildAgentWinSummary(20_000, null, null)).toBe(
+      "2.0000 (Trailblazer) — new traversal speed record",
     )
     // Speed is better when higher, the opposite direction to the request count it replaced.
-    expect(buildAgentWinSummary(200, 150, 250)).toBe(
-      "2.00 (Trailblazer) — 0.50 faster than previous (0.50 behind best)",
+    expect(buildAgentWinSummary(20_000, 15_000, 25_000)).toBe(
+      "2.0000 (Trailblazer) — 0.5000 faster than previous (0.5000 behind best)",
     )
   })
 
   it("labels the leading speed with the rank that speed earned", () => {
     // The rank is derived from the achieved pace, never from the delta: a round can be behind the
     // stored best and still have earned trailblazer, or ahead of it and still be a backtracker.
-    expect(buildAgentWinSummary(50, 25, 300)).toBe(
-      "0.50 (Backtracker) — 0.25 faster than previous (2.50 behind best)",
+    expect(buildAgentWinSummary(5_000, 2_500, 30_000)).toBe(
+      "0.5000 (Backtracker) — 0.2500 faster than previous (2.5000 behind best)",
     )
-    expect(buildAgentWinSummary(100, 100, 100)).toBe(
-      "1.00 (Navigator) — matched previous traversal speed (matched as best)",
+    expect(buildAgentWinSummary(10_000, 10_000, 10_000)).toBe(
+      "1.0000 (Navigator) — matched previous traversal speed (matched as best)",
     )
   })
 
@@ -86,7 +86,7 @@ describe("score helpers", () => {
         lastWinTraversalSpeedUnits: null,
         score: 900,
         totalCells: 10,
-        traversalSpeedUnits: 200,
+        traversalSpeedUnits: 20_000,
       }),
     ).toEqual({
       bestWinRetentionUnits: 1_000_000,
@@ -103,21 +103,21 @@ describe("score helpers", () => {
     expect(
       resolveWinScore({
         bestWinRetentionUnits: 800_000,
-        bestWinTraversalSpeedUnits: 250,
+        bestWinTraversalSpeedUnits: 25_000,
         controlMode: "agent-api",
         lastAttemptRetentionUnits: 700_000,
-        lastWinTraversalSpeedUnits: 150,
+        lastWinTraversalSpeedUnits: 15_000,
         score: 900,
         totalCells: 10,
-        traversalSpeedUnits: 200,
+        traversalSpeedUnits: 20_000,
       }),
     ).toEqual({
       bestWinRetentionUnits: 900_000,
-      // 2.00 does not beat the stored 2.50, so the record stands.
-      bestWinTraversalSpeedUnits: 250,
+      // 2.0000 does not beat the stored 2.5000, so the record stands.
+      bestWinTraversalSpeedUnits: 25_000,
       lastAttemptRetentionUnits: 900_000,
-      lastWinTraversalSpeedUnits: 200,
-      winSummary: "2.00 (Trailblazer) — 0.50 faster than previous (0.50 behind best)",
+      lastWinTraversalSpeedUnits: 20_000,
+      winSummary: "2.0000 (Trailblazer) — 0.5000 faster than previous (0.5000 behind best)",
     })
   })
 
@@ -125,18 +125,18 @@ describe("score helpers", () => {
     expect(
       resolveWinScore({
         bestWinRetentionUnits: 800_000,
-        bestWinTraversalSpeedUnits: 250,
+        bestWinTraversalSpeedUnits: 25_000,
         controlMode: "agent-api",
         lastAttemptRetentionUnits: 700_000,
-        lastWinTraversalSpeedUnits: 150,
+        lastWinTraversalSpeedUnits: 15_000,
         score: 900,
         totalCells: 10,
-        traversalSpeedUnits: 300,
+        traversalSpeedUnits: 30_000,
       }),
     ).toMatchObject({
-      bestWinTraversalSpeedUnits: 300,
-      lastWinTraversalSpeedUnits: 300,
-      winSummary: "3.00 (Trailblazer) — 1.50 faster than previous (new record)",
+      bestWinTraversalSpeedUnits: 30_000,
+      lastWinTraversalSpeedUnits: 30_000,
+      winSummary: "3.0000 (Trailblazer) — 1.5000 faster than previous (new record)",
     })
   })
 })

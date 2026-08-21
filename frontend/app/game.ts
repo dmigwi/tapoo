@@ -1,5 +1,5 @@
 import { GameClock } from "./clock"
-import { logTapooDiagnostic } from "./logs"
+import { encodeMazeForLog, logTapooDiagnostic, setTapooLogContext } from "./logs"
 import {
   CONFIG,
   WALL_WEIGHTS,
@@ -384,8 +384,24 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
   state.turnCount = 0
   state.cumulativeRoundCount += 1
   state.winSummary = ""
+  
   if (isAgentApiMode(state.controlMode)) {
     resetAgentRoundStats(state.level, state.cumulativeRoundCount)
+    // setTapooLogContext stamps this entry's own level/game (turn stays 0, no request has happened
+    // yet), so details below never needs to repeat them.
+    setTapooLogContext(state)
+    // Logged at round start, not just at completion: an interrupted/incomplete agent-api round
+    // (network failure, all agents disabled, browser closed) would otherwise never have its static,
+    // round-long-unchanging state captured, since logAgentRoundCompletion (control/agent.ts) only
+    // ever fires on a won/lost round. startPosition/finalPosition/maze never change once a round
+    // starts, so they belong here rather than duplicated at every completion log too.
+    logTapooDiagnostic(state.controlMode, "info", "Agent level started.", {
+      startPosition: round.startPosition,
+      finalPosition: round.finalPosition,
+      // cloneMazeDimensions strips dimensions down to {numCols, numRows, area} — level is already
+      // this entry's own top-level field via setTapooLogContext above.
+      maze: { ...encodeMazeForLog(round.maze), dimensions: cloneMazeDimensions(dimensions) },
+    })
   }
 
   const totalCells = dimensions.area

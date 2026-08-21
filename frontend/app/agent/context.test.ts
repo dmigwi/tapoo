@@ -44,7 +44,7 @@ function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
 }
 
 const expectedAgentPrompt = [
-  "You are Blue and your traversal speed has dropped to a classification of navigator. You've got an uphill task and need to work smarter to climb into the genius zone of trailblazer classification.",
+  "You are Blue and your traversal speed currently classifies as navigator. Conservative play and retrace-only batching can be structurally capped below trailblazer; exceeding 1.0 requires forward batching into unvisited cells.",
   "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, and the previous prediction outcome.",
   "The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated.",
   `When present in filteredTraversalHistory, playerName ${CONFIG.runtime.interactivePlayerName} marks the start cell.`,
@@ -385,30 +385,30 @@ describe("buildTokenLimitExhaustionPrompt", () => {
 })
 
 describe("describeAgentSpeedClassification", () => {
-  it("tells a trailblazer it's in the genius zone rather than needing to climb toward it", () => {
+  it("states that trailblazer means forward deduction happened", () => {
     const description = describeAgentSpeedClassification("Blue", "trailblazer")
 
     expect(description).toContain("You are Blue")
     expect(description).toContain("classifies as trailblazer")
-    expect(description).toContain("genius zone")
-    expect(description).toContain("might set a new record")
+    expect(description).toContain("more than one new-cell visit per decay unit")
+    expect(description).toContain("forward deduction into unexplored structure")
   })
 
-  it("tells a backtracker it has dropped from trailblazer and should climb back", () => {
+  it("states that backtracker can be a structural ceiling without forward batching", () => {
     const description = describeAgentSpeedClassification("Blue", "backtracker")
 
     expect(description).toContain("You are Blue")
-    expect(description).toContain("dropped to a classification of backtracker")
-    expect(description).toContain("work smarter to climb into")
-    expect(description).toContain("climb into the genius zone")
+    expect(description).toContain("currently classifies as backtracker")
+    expect(description).toContain("structurally capped below trailblazer")
+    expect(description).toContain("forward batching into unvisited cells")
   })
 
-  it("tells a navigator it has dropped from trailblazer and should climb back", () => {
+  it("states that navigator can be a structural ceiling without forward batching", () => {
     const description = describeAgentSpeedClassification("Blue", "navigator")
 
     expect(description).toContain("You are Blue")
-    expect(description).toContain("dropped to a classification of navigator")
-    expect(description).toContain("work smarter to climb into")
-    expect(description).toContain("climb into the genius zone")
+    expect(description).toContain("currently classifies as navigator")
+    expect(description).toContain("structurally capped below trailblazer")
+    expect(description).toContain("forward batching into unvisited cells")
   })
 })

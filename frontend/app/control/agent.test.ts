@@ -294,7 +294,6 @@ type AgentRoundLogDetails = {
     model: string
     playerName: string
   }
-  level: number
   outcome: "won" | "lost"
   score: number
   playerUniqueCellsVisited: number
@@ -307,6 +306,10 @@ type AgentRoundLogEntry = {
   details: AgentRoundLogDetails
   payload: string
   log: string
+  // level/game are stamped on every entry by setTapooLogContext, so logAgentRoundCompletion's own
+  // details never repeats them.
+  level: number
+  game: number
 }
 
 function createControlFixture(
@@ -515,7 +518,7 @@ describe("agent control mode", () => {
     mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
     await flushImmediateAgentTurn()
 
-    expect(mode.readCurrentPlayer?.()).toBe("Blue the Backtracker - 0.50x")
+    expect(mode.readCurrentPlayer?.()).toBe("Blue the Backtracker - 0.5000x")
   })
 
   it("keeps a single successful prediction as applied", async () => {
@@ -587,6 +590,17 @@ describe("agent control mode", () => {
       }),
     )
 
+    // A real, deterministically generated 3x3-cell maze (generateMaze seed 1), not a contrived
+    // stand-in — the same wall/corridor pattern encodeMazeForLog would actually see in production.
+    const finalMaze = [
+      ["|", "---", "-", "---", "-", "---", "|"],
+      ["|", "   ", " ", "   ", " ", "   ", "|"],
+      ["|", "   ", "|", "---", "-", "---", "|"],
+      ["|", "   ", "|", "   ", " ", "   ", "|"],
+      ["|", "   ", "|", "   ", "|", "   ", "|"],
+      ["|", "   ", " ", "   ", "|", "   ", "|"],
+      ["|", "---", "-", "---", "|", "---", "|"],
+    ]
     let state = createControlFixture({ status: "running", score: 800 })
     const dispatch = vi.fn(() =>
       createControlFixture({
@@ -602,6 +616,8 @@ describe("agent control mode", () => {
         score: 700,
         status: "won",
         winSummary: "New record",
+        maze: finalMaze,
+        mazeDimensions: { numCols: 3, numRows: 3, area: 9 },
       })
     })
 
@@ -614,7 +630,7 @@ describe("agent control mode", () => {
     expect(lastEntry.payload).toBe("Agent level won.")
     expect(lastEntry.log).toBe("info")
     expect(lastEntry.details.outcome).toBe("won")
-    expect(lastEntry.details.level).toBe(4)
+    expect(lastEntry.level).toBe(4)
     expect(lastEntry.details.score).toBe(800)
     expect(lastEntry.details.winSummary).toBe("New record")
     expect(lastEntry.details.agent.playerName).toBe("Blue")
@@ -627,6 +643,71 @@ describe("agent control mode", () => {
     expect(lastEntry.details.playerUniqueCellsVisited).toBe(0)
     expect(lastEntry.details.allUniqueCellsVisited).toBe(1)
     expect(lastEntry.details.decayUnitsCharged).toBe(1)
+    // The maze grid/dimensions are no longer repeated here: they never change once a round starts,
+    // so they're logged once in game.ts's "Agent level started." entry instead (see game.test.ts).
+    expect(lastEntry.details).not.toHaveProperty("maze")
+  })
+
+  it("logs final round payload when the round is lost", async () => {
+    const elements = createAgentFormElements()
+    savePersistedAgentApiConfigs(enabledAgentConfigs())
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      }),
+    )
+
+    // A real, deterministically generated 3x3-cell maze (generateMaze seed 1), not a contrived
+    // stand-in — the same wall/corridor pattern encodeMazeForLog would actually see in production.
+    const finalMaze = [
+      ["|", "---", "-", "---", "-", "---", "|"],
+      ["|", "   ", " ", "   ", " ", "   ", "|"],
+      ["|", "   ", "|", "---", "-", "---", "|"],
+      ["|", "   ", "|", "   ", " ", "   ", "|"],
+      ["|", "   ", "|", "   ", "|", "   ", "|"],
+      ["|", "   ", " ", "   ", "|", "   ", "|"],
+      ["|", "---", "-", "---", "|", "---", "|"],
+    ]
+    let state = createControlFixture({ status: "running", score: 100 })
+    const dispatch = vi.fn(() =>
+      createControlFixture({
+        currentCell: { row: 0, col: 1 },
+        lastMoveStatus: "invalid-move",
+      }),
+    )
+    const commitAgentTurn = vi.fn(() => {
+      state = createControlFixture({
+        turnCount: 5,
+        cumulativeRoundCount: 1,
+        lastRoundScore: 0,
+        score: 0,
+        status: "lost",
+        winSummary: "",
+        maze: finalMaze,
+        mazeDimensions: { numCols: 3, numRows: 3, area: 9 },
+      })
+    })
+
+    const mode = createAgentMode(elements)
+    mode.bindActionDispatch(dispatch, () => state, commitAgentTurn)
+    await flushImmediateAgentTurn()
+
+    const logEntries = loadTapooLog<AgentRoundLogEntry>(CONFIG.runtime.controlModes.agentApi)
+    const lastEntry = logEntries[logEntries.length - 1]
+    expect(lastEntry.payload).toBe("Agent level lost.")
+    expect(lastEntry.log).toBe("info")
+    expect(lastEntry.details.outcome).toBe("lost")
+    expect(lastEntry.level).toBe(4)
+    expect(lastEntry.details.score).toBe(0)
+    expect(lastEntry.details.winSummary).toBe("")
+    expect(lastEntry.details.agent.playerName).toBe("Blue")
+    expect(lastEntry.details.agent.model).toBe("llama3.2")
+    // The maze grid/dimensions are no longer repeated here — see the "won" test above.
+    expect(lastEntry.details).not.toHaveProperty("maze")
   })
 
   it("applies score decay to every submitted move in a valid prediction batch even when replay stops early", async () => {

@@ -70,25 +70,25 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
 // --- 1. Messages ---
 // System and user messages are the first content the model receives each turn.
 
-// describeAgentSpeedClassification states the agent's current traversal-speed classification, with
-// enough color to make it land emotionally. It does not restate the mechanics: the flat per-turn
-// charge that makes climbing the classification worthwhile is already explained once in
-// buildMazeActionPrompt, so repeating it here would only duplicate that reasoning rather than
-// reinforce it.
+// describeAgentSpeedClassification states the agent's current traversal-speed classification as a
+// factual diagnosis, not motivational pressure. Trailblazer is evidence of forward deduction into
+// unvisited structure; lower classes can be the structural ceiling for conservative play.
 export function describeAgentSpeedClassification(
   playerName: string,
   speedClass: BatchEfficiencyClass,
 ): string {
   if (speedClass === "trailblazer") {
     return [
-      `You are ${playerName} and your traversal speed classifies as trailblazer. You are in the genius zone and`,
-      `might set a new record if you keep it up.`,
+      `You are ${playerName} and your traversal speed classifies as trailblazer.`,
+      "That means your previous predictions created more than one new-cell visit per decay unit,",
+      "which requires forward deduction into unexplored structure.",
     ].join(" ")
   }
 
   return [
-    `You are ${playerName} and your traversal speed has dropped to a classification of ${speedClass}. You've got an`,
-    `uphill task and need to work smarter to climb into the genius zone of trailblazer classification.`,
+    `You are ${playerName} and your traversal speed currently classifies as ${speedClass}.`,
+    "Conservative play and retrace-only batching can be structurally capped below trailblazer;",
+    "exceeding 1.0 requires forward batching into unvisited cells.",
   ].join(" ")
 }
 
@@ -270,9 +270,9 @@ const predictionRulesTool: AgentToolDefinition = {
       "decayUnitsCharged is 0, do not divide; batchEfficiencyClass defaults to trailblazer. Only a cell's first visit",
       "counts as progress. The higher",
       "the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyClass is set to",
-      "backtracker when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator",
-      "at 1.0 (one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the",
-      "only classification that can set a new best-score record). allUniqueCellsVisited is every cell any player has",
+      "backtracker when the speed is below 1.0, navigator at 1.0, or trailblazer above 1.0. Retrace-only batching can save",
+      "turns but cannot create new-cell progress, so trailblazer is evidence that forward prediction into unvisited cells",
+      "succeeded. allUniqueCellsVisited is every cell any player has",
       "reached this level, not just your own — compare it against mazeDimensions.totalMazeCells to know how much of the",
       "maze the team has collectively explored so far. At the initial game levels the single solution path covers nearly",
       "all of totalMazeCells, so expect to explore most of the maze before reaching the destination; the path's length",

@@ -25,7 +25,7 @@ const VERSION_MAJOR = 2
 const VERSION_MINOR = 4
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 2
+const VERSION_PATCH = 4
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -347,7 +347,7 @@ export const CONFIG: AppConfig = {
     agentPartialInvalidPenaltyDecayUnits: 1, // Added on top of the base charge when at least one move applied before an invalid move (total 2).
     agentZeroProgressPenaltyDecayUnits: 2,   // Flat charge when the very first submitted move was already invalid — no progress made.
     agentMalformedPenaltyDecayUnits: 3,      // Flat charge for a malformed/protocol-violation response — costlier than any gameplay mistake.
-    traversalSpeedScaleUnits: 100, // Scales the traversal speed ratio as its display precision.
+    traversalSpeedScaleUnits: 10_000, // 4dp Scales the traversal speed ratio as its display precision.
   },
   // Timing values drive UI redraws, persistence debounce, score decay, and slower agent-api pacing.
   timing: {
@@ -403,7 +403,7 @@ export const CONFIG: AppConfig = {
       interactive: "interactive",
     },
     storage: {
-      version: 4.6,
+      version: 4.7,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",

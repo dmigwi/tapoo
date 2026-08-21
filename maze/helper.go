@@ -36,6 +36,14 @@ type (
 	}
 )
 
+// PRNGGenerator returns a random integer in the range [0, limit), matching secureRandomIndex's own
+// contract. GenerateMaze/GenerateMazeWithProfile accept one as an optional trailing argument,
+// defaulting to secureRandomIndex when omitted, so tests can substitute a seeded, deterministic
+// generator (e.g. an xorshift128 implementation living in the test file) instead of crypto/rand.
+// Production code must never pass one — the default is what keeps maze layouts genuinely
+// unpredictable there.
+type PRNGGenerator func(limit int) (int, error)
+
 // secureRandomIndex returns a cryptographically random index in the range [0, limit).
 // Maze generation only uses this for start-cell selection, where preserving unpredictability matters.
 func secureRandomIndex(limit int) (int, error) {
@@ -49,6 +57,17 @@ func secureRandomIndex(limit int) (int, error) {
 	}
 
 	return int(value.Int64()), nil
+}
+
+// resolveGenerator returns the caller-supplied generator when GenerateMaze/GenerateMazeWithProfile
+// received one, otherwise secureRandomIndex. Variadic rather than a plain optional parameter (Go has
+// no default argument values) keeps every existing call site compiling unchanged.
+func resolveGenerator(generator []PRNGGenerator) PRNGGenerator {
+	if len(generator) > 0 && generator[0] != nil {
+		return generator[0]
+	}
+
+	return secureRandomIndex
 }
 
 // CreatePlayingField creates the initial version of the maze which is a grid of cells.

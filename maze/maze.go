@@ -28,18 +28,23 @@ type pathStep struct {
 // GenerateMaze converts the created grid view playing field into a series on paths and walls.
 // The Maze is created such that only a single path can exists between the starting point and
 // and the goal. Maze size controls how strongly generation should resist long straight corridors.
-func (config *Dimensions) GenerateMaze(weight WallWeight) ([][]string, error) {
-	return config.GenerateMazeWithProfile(weight, GetNavigationProfile(*config))
+// generator is an optional trailing argument (see PRNGGenerator) — omit it in production code.
+func (config *Dimensions) GenerateMaze(weight WallWeight, generator ...PRNGGenerator) ([][]string, error) {
+	return config.GenerateMazeWithProfile(weight, GetNavigationProfile(*config), generator...)
 }
 
 // GenerateMazeWithProfile carves a maze under a caller-supplied navigation profile instead of the
 // one GetNavigationProfile derives from area. Gameplay always wants the derived profile, so this
 // exists for measurement: because the profile is a pure function of area, nothing else can hold the
 // grid fixed while moving a knob, which is what separates a knob's effect from the grid's own.
+// generator is an optional trailing argument (see PRNGGenerator) — omit it in production code.
 func (config *Dimensions) GenerateMazeWithProfile(
 	weight WallWeight,
 	navigationProfile NavigationProfile,
+	generator ...PRNGGenerator,
 ) ([][]string, error) {
+	prng := resolveGenerator(generator)
+
 	totalCells, errValidate := config.validateMazeGenerationInputs(weight)
 	if errValidate != nil {
 		config.resetPositions()
@@ -48,7 +53,7 @@ func (config *Dimensions) GenerateMazeWithProfile(
 
 	// The visited set is scoped to a single generation so repeated runs do not leak traversal state.
 	visitedCells := make([]bool, totalCells+1)
-	startPos, errStart := config.getStartPosition()
+	startPos, errStart := config.getStartPosition(prng)
 	if errStart != nil {
 		config.resetPositions()
 		return nil, fmt.Errorf("select maze start position: %w", errStart)
@@ -81,7 +86,7 @@ func (config *Dimensions) GenerateMazeWithProfile(
 
 		// Corridor shaping happens here; the returned cell still preserves DFS behavior.
 		nextChoice, nextChoiceErr := config.chooseNextCell(
-			neighbors, cellsPath[len(cellsPath)-1], navigationProfile, visitedCells,
+			neighbors, cellsPath[len(cellsPath)-1], navigationProfile, visitedCells, prng,
 		)
 		if nextChoiceErr != nil {
 			config.resetPositions()
@@ -121,6 +126,7 @@ func (config *Dimensions) GenerateMazeWithProfile(
 // behavior.
 func (config *Dimensions) chooseNextCell(
 	neighbors []int, currentState pathStep, profile NavigationProfile, visitedCells []bool,
+	generator PRNGGenerator,
 ) (pathStep, error) {
 	var (
 		allCount    int
@@ -161,7 +167,7 @@ func (config *Dimensions) chooseNextCell(
 	}
 
 	if len(choices) > 1 {
-		biasRoll, err := secureRandomIndex(percentScale)
+		biasRoll, err := generator(percentScale)
 		if err != nil {
 			return pathStep{}, err
 		}
@@ -195,7 +201,7 @@ func (config *Dimensions) chooseNextCell(
 	}
 
 	// A final random pick keeps mazes of the same size from following the same local path every run.
-	nextChoiceIndex, err := secureRandomIndex(len(choices))
+	nextChoiceIndex, err := generator(len(choices))
 	if err != nil {
 		return pathStep{}, err
 	}
@@ -359,10 +365,10 @@ func (config *Dimensions) directionBetween(currentCell, nextCell int) direction 
 // getStartPosition returns the cell which becomes the maze traversal starting position.
 // The starting position can only be a cell along the  maze edges i.e. has less than four
 // neighbors. When getStartPosition is called, all cells are have no common paths to other cells.
-func (config *Dimensions) getStartPosition() (int, error) {
+func (config *Dimensions) getStartPosition(generator PRNGGenerator) (int, error) {
 	totalCells := config.NumCols * config.NumRows
 	for {
-		randCellNo, err := secureRandomIndex(totalCells)
+		randCellNo, err := generator(totalCells)
 		if err != nil {
 			return 0, err
 		}

@@ -39,3 +39,5 @@ _DS*
 .claude
 # Benchmark report emitted by "make ci-bench"
 bench-report.json
+bench-report.charts.svg
+bench-report.preferred.charts.svg
