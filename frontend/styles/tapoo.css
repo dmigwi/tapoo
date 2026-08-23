@@ -1133,8 +1133,36 @@ body {
   gap: 16px;
 }
 
+.agent-config-form__row--equal {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .agent-config-form__row > .agent-config-form__field {
   min-width: 0;
+}
+
+.agent-config-form__unit-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agent-config-form__unit-input input {
+  flex: 0 1 15ch;
+  min-width: 0;
+}
+
+.agent-config-form__unit {
+  flex: 0 0 auto;
+}
+
+.agent-config-form select:disabled,
+.agent-config-form input:disabled:not([type="checkbox"]) {
+  border-color: rgba(143, 148, 122, 0.42);
+  background: rgba(143, 148, 122, 0.08);
+  color: var(--disabled);
+  cursor: not-allowed;
 }
 
 .agent-config-form__required {

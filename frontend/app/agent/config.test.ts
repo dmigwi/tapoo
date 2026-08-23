@@ -13,6 +13,7 @@ import type { AgentApiConfig } from "../types"
 // so each test only spells out the fields it's actually varying.
 const baseValidationInput = {
   api: "ollama" as const,
+  requestIntervalSeconds: String(CONFIG.timing.defaultAgentApiRequestIntervalSeconds),
   reasoningEffort: "max" as const,
   credential: "",
   extraHeaders: "",
@@ -25,6 +26,7 @@ function agent(playerName: string): AgentApiConfig {
     model: "llama3.2",
     endpoint: new URL("https://agents.example/move"),
     api: "ollama",
+    requestIntervalSeconds: CONFIG.timing.defaultAgentApiRequestIntervalSeconds,
     enabled: true,
   }
 }
@@ -99,6 +101,47 @@ describe("agent config", () => {
         playerName: "Scout",
       }),
     ).toBe(CONFIG.agentConfig.invalidEndpointMessage)
+  })
+
+  it("rejects request intervals outside the configured whole-second range", () => {
+    const invalidRequestIntervalMessage = CONFIG.agentConfig.invalidRequestIntervalTemplate
+      .replace("{min}", String(CONFIG.agentConfig.requestIntervalMinSeconds))
+      .replace("{max}", String(CONFIG.agentConfig.requestIntervalMaxSeconds))
+
+    for (const requestIntervalSeconds of ["0", "301", "1.5", "soon"]) {
+      expect(
+        agentConfigValidationError({
+          ...baseValidationInput,
+          endpoint: "https://agents.example/move",
+          existingAgents: [],
+          model: "llama3.2",
+          playerName: "Scout",
+          requestIntervalSeconds,
+        }),
+      ).toBe(invalidRequestIntervalMessage)
+    }
+
+    expect(
+      agentConfigValidationError({
+        ...baseValidationInput,
+        endpoint: "https://agents.example/move",
+        existingAgents: [],
+        model: "llama3.2",
+        playerName: "Scout",
+        requestIntervalSeconds: String(CONFIG.agentConfig.requestIntervalMinSeconds),
+      }),
+    ).toBeNull()
+
+    expect(
+      agentConfigValidationError({
+        ...baseValidationInput,
+        endpoint: "https://agents.example/move",
+        existingAgents: [],
+        model: "llama3.2",
+        playerName: "Scout",
+        requestIntervalSeconds: String(CONFIG.agentConfig.requestIntervalMaxSeconds),
+      }),
+    ).toBeNull()
   })
 
   it("requires a credential for Anthropic, but not for Ollama or OpenAI", () => {

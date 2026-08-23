@@ -166,14 +166,31 @@
               data-config-placeholder="agentConfig.modelPlaceholder"
             />
           </label>
-          <label class="agent-config-form__field">
-            <span data-config-text data-config-key="agentConfig.apiLabel"></span>
-            <select id="agent-config-api" name="api">
-              <option value="ollama" selected data-config-text data-config-key="agentConfig.providerLabels.ollama"></option>
-              <option value="openai" data-config-text data-config-key="agentConfig.providerLabels.openai"></option>
-              <option value="anthropic" data-config-text data-config-key="agentConfig.providerLabels.anthropic"></option>
-            </select>
-          </label>
+          <div class="agent-config-form__row agent-config-form__row--equal">
+            <label class="agent-config-form__field">
+              <span data-config-text data-config-key="agentConfig.apiLabel"></span>
+              <select id="agent-config-api" name="api">
+                <option value="ollama" selected data-config-text data-config-key="agentConfig.providerLabels.ollama"></option>
+                <option value="openai" data-config-text data-config-key="agentConfig.providerLabels.openai"></option>
+                <option value="anthropic" data-config-text data-config-key="agentConfig.providerLabels.anthropic"></option>
+              </select>
+            </label>
+            <label class="agent-config-form__field">
+              <span class="agent-config-form__field-label"><span data-config-text data-config-key="agentConfig.requestIntervalLabel"></span>
+              <span class="agent-config-form__required" aria-hidden="true">*</span></span>
+              <span class="agent-config-form__unit-input">
+                <input
+                  id="agent-config-request-interval"
+                  name="requestIntervalSeconds"
+                  type="number"
+                  inputmode="numeric"
+                  required
+                  data-config-value="timing.defaultAgentApiRequestIntervalSeconds"
+                />
+                <span class="agent-config-form__unit" data-config-text data-config-key="agentConfig.requestIntervalUnitLabel"></span>
+              </span>
+            </label>
+          </div>
           <label class="agent-config-form__field">
             <span class="agent-config-form__field-label"><span data-config-text data-config-key="agentConfig.endpointLabel"></span>
             <span class="agent-config-form__required" aria-hidden="true">*</span></span>
@@ -323,6 +340,30 @@
             <span class="agent-config-form__toggle-control" aria-hidden="true"></span>
             <span id="agent-manage-enabled-label"></span>
           </label>
+          <div class="agent-config-form__row">
+            <label class="agent-config-form__field">
+              <span data-config-text data-config-key="agentConfig.apiLabel"></span>
+              <select id="agent-manage-api" name="api" disabled>
+                <option value="ollama" selected data-config-text data-config-key="agentConfig.providerLabels.ollama"></option>
+                <option value="openai" data-config-text data-config-key="agentConfig.providerLabels.openai"></option>
+                <option value="anthropic" data-config-text data-config-key="agentConfig.providerLabels.anthropic"></option>
+              </select>
+            </label>
+            <label class="agent-config-form__field">
+              <span class="agent-config-form__field-label"><span data-config-text data-config-key="agentConfig.requestIntervalLabel"></span>
+              <span class="agent-config-form__required" aria-hidden="true">*</span></span>
+              <span class="agent-config-form__unit-input">
+                <input
+                  id="agent-manage-request-interval"
+                  name="requestIntervalSeconds"
+                  type="number"
+                  inputmode="numeric"
+                  required
+                />
+                <span class="agent-config-form__unit" data-config-text data-config-key="agentConfig.requestIntervalUnitLabel"></span>
+              </span>
+            </label>
+          </div>
           <div class="agent-config-form__row">
             <div class="agent-config-form__field">
               <span class="agent-config-form__field-label">

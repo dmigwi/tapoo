@@ -42,8 +42,6 @@ async function flushImmediateAgentTurn(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0)
 }
 
-const originalAgentApiRequestPollIntervalMs = CONFIG.timing.agentApiRequestPollIntervalMs
-
 function visit(row: number, col: number): TraversalHistoryEntry {
   return { playerName: "Blue", row, col, openMoves: [] }
 }
@@ -88,6 +86,7 @@ function createAgentFormElements(): AgentFormElements {
   const agentConfigPlayerName = document.createElement("input")
   const agentConfigModel = document.createElement("input")
   const agentConfigApi = document.createElement("select")
+  const agentConfigRequestInterval = document.createElement("input")
   const agentConfigEndpoint = document.createElement("input")
   const agentConfigCredential = document.createElement("input")
   const agentConfigCredentialLabel = document.createElement("span")
@@ -122,6 +121,8 @@ function createAgentFormElements(): AgentFormElements {
   const agentManageEnabled = document.createElement("input")
   const agentManageEnabledText = document.createElement("span")
   const agentManageReasoningEffort = document.createElement("select")
+  const agentManageApi = document.createElement("select")
+  const agentManageRequestInterval = document.createElement("input")
   const agentManageEchoBackReasoningLabel = document.createElement("label")
   const agentManageEchoBackReasoning = document.createElement("input")
   const agentManageEchoBackReasoningText = document.createElement("span")
@@ -133,6 +134,9 @@ function createAgentFormElements(): AgentFormElements {
   agentSeatsBody.hidden = true
   agentConfigForm.hidden = true
   agentConfigForm.noValidate = true
+  agentConfigRequestInterval.type = "number"
+  agentConfigRequestInterval.value = String(CONFIG.timing.defaultAgentApiRequestIntervalSeconds)
+  agentManageRequestInterval.type = "number"
   agentManageDialog.hidden = true
   agentConfigEnabledLabel.className = "agent-config-form__toggle"
   agentManageEnabledLabel.className = "agent-config-form__toggle"
@@ -162,14 +166,21 @@ function createAgentFormElements(): AgentFormElements {
     manageOption.value = value
     agentManageReasoningEffort.append(manageOption)
   })
+  ;["ollama", "openai", "anthropic"].forEach((value) => {
+    const option = document.createElement("option")
+    option.value = value
+    agentManageApi.append(option)
+  })
   agentConfigReasoningEffort.value = "max"
   agentManageReasoningEffort.value = "max"
+  agentManageApi.value = "ollama"
   agentConfigCredentialRequired.hidden = true
   agentConfigForm.append(
     agentConfigTitle,
     agentConfigPlayerName,
     agentConfigModel,
     agentConfigApi,
+    agentConfigRequestInterval,
     agentConfigEndpoint,
     agentConfigCredential,
     agentConfigCredentialLabel,
@@ -191,6 +202,8 @@ function createAgentFormElements(): AgentFormElements {
     agentDeleteTarget,
     agentManageEnabledLabel,
     agentManageReasoningEffort,
+    agentManageApi,
+    agentManageRequestInterval,
     agentManageEchoBackReasoningLabel,
     agentManageApply,
     agentDeleteConfirm,
@@ -217,6 +230,7 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigPlayerName,
     agentConfigModel,
     agentConfigApi,
+    agentConfigRequestInterval,
     agentConfigEndpoint,
     agentConfigCredential,
     agentConfigCredentialLabel,
@@ -236,6 +250,8 @@ function createAgentFormElements(): AgentFormElements {
     agentManageEnabled,
     agentManageEnabledLabel: agentManageEnabledText,
     agentManageReasoningEffort,
+    agentManageApi,
+    agentManageRequestInterval,
     agentManageEchoBackReasoning,
     agentManageEchoBackReasoningLabel: agentManageEchoBackReasoningText,
     agentManageApply,
@@ -346,7 +362,6 @@ describe("agent control mode", () => {
     vi.stubGlobal("localStorage", createMemoryStorage())
     window.localStorage.clear()
     vi.useFakeTimers()
-    CONFIG.timing.agentApiRequestPollIntervalMs = 0
   })
 
   afterEach(() => {
@@ -355,7 +370,6 @@ describe("agent control mode", () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
-    CONFIG.timing.agentApiRequestPollIntervalMs = originalAgentApiRequestPollIntervalMs
   })
 
   it("polls the agent endpoint for traversal moves and dispatches them with feedback enabled", async () => {
@@ -998,6 +1012,7 @@ describe("agent control mode", () => {
 
     elements.touchButtons[0].click()
     await flushImmediateAgentTurn()
+    await vi.advanceTimersByTimeAsync(CONFIG.timing.defaultAgentApiRequestIntervalSeconds * 1_000)
 
     expect(fetchMock).toHaveBeenCalled()
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: "proceed" }, { playerName: "Self" })
@@ -1068,6 +1083,7 @@ describe("agent control mode", () => {
     mode.clearActionResult()
 
     await flushImmediateAgentTurn()
+    await vi.advanceTimersByTimeAsync(CONFIG.timing.defaultAgentApiRequestIntervalSeconds * 1_000)
     expect(fetchMock).toHaveBeenCalledTimes(2)
 
     const request = fetchMock.mock.calls[1][1] as RequestInit
@@ -1271,8 +1287,9 @@ describe("agent control mode", () => {
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
-        api: "ollama",
+        api: "openai",
         reasoningEffort: "max",
+        requestIntervalSeconds: 42,
         echoBackReasoning: true,
         enabled: true,
       },
@@ -1300,6 +1317,10 @@ describe("agent control mode", () => {
     )
     expect(elements.agentDeleteTarget?.textContent).toBe("Delete now?")
     expect(elements.agentDeleteConfirm?.checked).toBe(false)
+    expect(elements.agentManageApi?.value).toBe("openai")
+    expect(elements.agentManageApi?.disabled).toBe(true)
+    expect(elements.agentManageRequestInterval?.value).toBe("42")
+    expect(elements.agentManageRequestInterval?.disabled).toBe(false)
     expect(elements.agentManageEchoBackReasoning?.checked).toBe(true)
 
     elements.agentDeleteConfirm.checked = true
@@ -1321,11 +1342,13 @@ describe("agent control mode", () => {
         ?.closest(".agent-config-form__toggle")
         ?.classList.contains("agent-config-form__toggle--disabled"),
     ).toBe(true)
+    expect(elements.agentManageRequestInterval?.disabled).toBe(true)
 
     elements.agentDeleteConfirm.checked = false
     elements.agentDeleteConfirm.dispatchEvent(new Event("change"))
     expect(elements.agentManageEnabled?.disabled).toBe(false)
     expect(elements.agentManageEchoBackReasoning?.disabled).toBe(false)
+    expect(elements.agentManageRequestInterval?.disabled).toBe(false)
   })
 
   it("locks echo-back-reasoning off in the manage dialog when reasoning effort is none", () => {

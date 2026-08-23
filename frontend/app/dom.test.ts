@@ -44,6 +44,7 @@ function setupTerminalDom(): void {
     <input id="agent-config-player-name" />
     <input id="agent-config-model" />
     <select id="agent-config-api"></select>
+    <input id="agent-config-request-interval" />
     <input id="agent-config-endpoint" />
     <input id="agent-config-credential" />
     <span id="agent-config-credential-label"></span>
@@ -63,6 +64,8 @@ function setupTerminalDom(): void {
     <input id="agent-manage-enabled" />
     <span id="agent-manage-enabled-label"></span>
     <select id="agent-manage-reasoning-effort"></select>
+    <select id="agent-manage-api"></select>
+    <input id="agent-manage-request-interval" />
     <input id="agent-manage-echo-back-reasoning" />
     <span id="agent-manage-echo-back-reasoning-label"></span>
     <button id="agent-manage-apply"></button>

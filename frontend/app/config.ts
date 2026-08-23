@@ -197,6 +197,11 @@ export const CONFIG: AppConfig = {
     modelLabel: "Model",
     modelPlaceholder: "llama3.2",
     apiLabel: "API",
+    requestIntervalLabel: "Requests Interval",
+    requestIntervalUnitLabel: "seconds",
+    requestIntervalMinSeconds: 1,
+    requestIntervalMaxSeconds: 300,
+    requestIntervalStepSeconds: 1,
     requiredFieldNote: "* Required · Max output tokens:",
     extraHeadersLabel: "Extra Headers",
     extraHeadersTooltip: 
@@ -276,10 +281,11 @@ export const CONFIG: AppConfig = {
     echoBackReasoningOnLabel: "Reasoning will be sent back.",
     echoBackReasoningOffLabel: "Reasoning will not be sent back.",
     submitLabel: "Add Agent",
-    invalidMessage: "Fill in Player Name, Model and Endpoint.",
+    invalidMessage: "Fill in Player Name, Model, Endpoint and Request Interval.",
     invalidApiMessage: "This agent's API provider is not properly configured.",
     invalidEndpointMessage:
       "Endpoint must be a full http:// or https:// URL (or host:port) including the request path.",
+    invalidRequestIntervalTemplate: "Request Interval must be between {min} and {max} seconds.",
     invalidAnthropicCredentialsMessage: "Anthropic requires an API Key.",
     invalidExtraHeadersMessage: "One of the extra header names isn't a valid HTTP header name.",
     duplicatePlayerNameMessage: "This player name is already configured.",
@@ -358,17 +364,9 @@ export const CONFIG: AppConfig = {
     // animation (see restoreClock's comment in game.ts) — agent-api score decay comes from
     // scoreDecayUnits, not this figure.
     interactiveDecayIntervalPerCellMs: 1_000, // Translates to 1sec
-    // The real wall-clock delay between agent turns, throttling how often a new turn's first
-    // request goes out. This sits above the scoring math so provider-facing pacing can be tuned
-    // independently when bursts of fresh turns would otherwise trigger transient 429/backpressure
-    // responses upstream.
-    agentApiTurnPollIntervalMs: 35_000,           // Translates to 35secs
-    // A turn issues several provider requests in a row while servicing tool calls (see the
-    // request-count derivation in agent/request.ts), with no gap between them otherwise — this is
-    // the delay applied before each request after the first within one turn, so even a single busy
-    // turn does not hit the provider as one immediate burst and provoke transient 429/backpressure
-    // responses.
-    agentApiRequestPollIntervalMs: 30_000,           // Translates to 30secs
+    // Default whole-second request interval shown in the agent form. Agent configs store this same
+    // second-level precision and convert to milliseconds only when scheduling timers.
+    defaultAgentApiRequestIntervalSeconds: 30,
     // Per provider request, not per turn: a turn issues several rounds, so a whole turn can take a
     // multiple of this (see the request-count derivation in agent/request.ts). Per-request by
     // design — a provider that stops responding is caught on the first round regardless.
@@ -403,7 +401,7 @@ export const CONFIG: AppConfig = {
       interactive: "interactive",
     },
     storage: {
-      version: 4.7,
+      version: 4.81,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",

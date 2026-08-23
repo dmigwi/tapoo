@@ -162,6 +162,7 @@ describe("storage", () => {
         model: "llama3.2",
         endpoint: endpoint("/api/agents/a/move"),
         api: "ollama",
+        requestIntervalSeconds: 45,
         enabled: true,
       },
       {
@@ -190,6 +191,7 @@ describe("storage", () => {
         endpoint: endpoint("/api/agents/a/move"),
         api: "ollama",
         reasoningEffort: "none",
+        requestIntervalSeconds: 45,
         enabled: true,
       },
       {
@@ -199,6 +201,7 @@ describe("storage", () => {
         endpoint: endpoint("/api/agents/b/move"),
         api: "ollama",
         reasoningEffort: "none",
+        requestIntervalSeconds: CONFIG.timing.defaultAgentApiRequestIntervalSeconds,
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_000,
@@ -236,6 +239,7 @@ describe("storage", () => {
         endpoint: endpoint("/api/agents/legacy/move"),
         api: "ollama",
         reasoningEffort: "none",
+        requestIntervalSeconds: CONFIG.timing.defaultAgentApiRequestIntervalSeconds,
       },
     ])
 
@@ -246,6 +250,24 @@ describe("storage", () => {
     expect(storedAfterLoad).not.toBeNull()
     expect(storedAfterLoad).toContain(STORE_ENCODING_PREFIX)
     expect(loadPersistedAgentApiConfigs()).toEqual(loaded)
+  })
+
+  it("drops an agent record with an explicitly invalid request interval instead of rewriting it", () => {
+    const invalidRecord = {
+      id: 1,
+      playerName: "Broken",
+      model: "llama3.2",
+      endpoint: endpoint("/api/agents/broken/move").href,
+      api: "ollama",
+      requestIntervalSeconds: CONFIG.agentConfig.requestIntervalMaxSeconds + 1,
+      enabled: true,
+    }
+    window.localStorage.setItem(
+      agentStorageKey(agentConfigs),
+      window.btoa(JSON.stringify([invalidRecord])),
+    )
+
+    expect(loadPersistedAgentApiConfigs()).toEqual([])
   })
 
   it("normalizes fixed agent seats without reassigning occupied slots", () => {
@@ -365,6 +387,7 @@ describe("storage", () => {
         endpoint: endpoint("/api/agents/a/move"),
         api: "ollama",
         reasoningEffort: "none",
+        requestIntervalSeconds: CONFIG.timing.defaultAgentApiRequestIntervalSeconds,
         enabled: true,
       },
       {
@@ -374,6 +397,7 @@ describe("storage", () => {
         endpoint: endpoint("/api/agents/b/move"),
         api: "ollama",
         reasoningEffort: "none",
+        requestIntervalSeconds: CONFIG.timing.defaultAgentApiRequestIntervalSeconds,
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_001,

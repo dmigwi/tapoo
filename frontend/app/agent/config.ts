@@ -9,6 +9,7 @@ type AgentConfigValidationInput = {
   model: string
   playerName: string
   api: AgentApiProvider
+  requestIntervalSeconds: string
   reasoningEffort: AgentReasoningEffort
   credential: string
   extraHeaders: string
@@ -54,6 +55,31 @@ export const AGENT_REASONING_EFFORTS = Object.keys(agentConfig.reasoningEffortLa
 // the provider-scoped check should also test membership in agentConfig.reasoningEffortOptions[api].
 export function isAgentReasoningEffort(value: unknown): value is AgentReasoningEffort {
   return typeof value === "string" && AGENT_REASONING_EFFORTS.includes(value as AgentReasoningEffort)
+}
+
+export function defaultAgentApiRequestIntervalSeconds(): number {
+  return CONFIG.timing.defaultAgentApiRequestIntervalSeconds
+}
+
+export function parseAgentRequestIntervalSeconds(value: string): number | null {
+  const trimmedValue = value.trim()
+  if (!/^\d+$/.test(trimmedValue)) {
+    return null
+  }
+
+  const seconds = Number(trimmedValue)
+  return seconds >= agentConfig.requestIntervalMinSeconds &&
+    seconds <= agentConfig.requestIntervalMaxSeconds
+      ? seconds
+      : null
+}
+
+export function agentRequestIntervalSeconds(agent: AgentApiConfig): number {
+  return agent.requestIntervalSeconds ?? defaultAgentApiRequestIntervalSeconds()
+}
+
+export function agentRequestIntervalMs(agent: AgentApiConfig): number {
+  return agentRequestIntervalSeconds(agent) * 1_000
 }
 
 // describeProviderHttpFailure augments a raw HTTP status with the small amount of agent-provider
@@ -127,11 +153,12 @@ export function agentConfigValidationError({
   model,
   playerName,
   api,
+  requestIntervalSeconds,
   reasoningEffort,
   credential,
   extraHeaders,
 }: AgentConfigValidationInput): string | null {
-  if (!playerName || !model || !endpoint) {
+  if (!playerName || !model || !endpoint || !requestIntervalSeconds) {
     return agentConfig.invalidMessage
   }
 
@@ -168,6 +195,12 @@ export function agentConfigValidationError({
 
   if (!isValidAgentEndpoint(endpoint)) {
     return agentConfig.invalidEndpointMessage
+  }
+
+  if (parseAgentRequestIntervalSeconds(requestIntervalSeconds) === null) {
+    return agentConfig.invalidRequestIntervalTemplate
+      .replace("{min}", String(agentConfig.requestIntervalMinSeconds))
+      .replace("{max}", String(agentConfig.requestIntervalMaxSeconds))
   }
 
   // Unlike Ollama/OpenAI, where an empty credential just means "send no auth header" against a

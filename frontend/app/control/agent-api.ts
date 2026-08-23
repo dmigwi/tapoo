@@ -2,6 +2,7 @@ import { CONFIG } from "../config"
 import { mergeMazeActionResult } from "../control"
 import { requestPredictionWithAbort } from "../agent/request"
 import type { EncodedMazeForLevelStart } from "../agent/request"
+import { agentRequestIntervalMs } from "../agent/config"
 import { calculateTraversalSpeedUnits, getBatchEfficiencyMetrics } from "../agent/efficiency"
 import { snapshotAgentState } from "../agent/state-snapshot"
 import type { AgentStateSnapshot } from "../agent/state-snapshot"
@@ -205,6 +206,9 @@ export function handleAgentTurnLoop({
   // not whatever the status was back when the current turn's snapshot was taken.
   const shouldPollAgent = (): boolean => attached && isRunningStatus(__readState().status)
 
+  const defaultAgentRequestIntervalMs = (): number =>
+    timing.defaultAgentApiRequestIntervalSeconds * 1_000
+
   // notifyRoundCompletion invokes final-state callbacks only after score decay and replay metadata
   // have been committed, so diagnostics receive the same state the UI is about to show.
   const notifyRoundCompletion = (
@@ -360,7 +364,7 @@ export function handleAgentTurnLoop({
   // stateSnapshot here — a new turn's snapshot doesn't exist until requestNextAgentTurn takes one
   // fresh, at the start of that specific turn; this only ever decides whether/when to begin one.
   const scheduleNextAgentTurn = (
-    delayMs = timing.agentApiTurnPollIntervalMs,
+    delayMs = defaultAgentRequestIntervalMs(),
     isDelay = false,
   ): void => {
     clearScheduledTurn()
@@ -402,7 +406,7 @@ export function handleAgentTurnLoop({
       stateSnapshot,
       encodedMazeForLevelStart,
       timeoutMs: timing.agentApiResponseTimeoutMs,
-      requestIntervalMs: timing.agentApiRequestPollIntervalMs,
+      requestIntervalMs: agentRequestIntervalMs(agent),
     })
     activeRequest = predictionRequest
     return predictionRequest.promise
@@ -465,7 +469,7 @@ export function handleAgentTurnLoop({
   // every turn (it reschedules itself via scheduleNextAgentTurn in the finally block below), so it's
   // the right place to take the turn's stateSnapshot, not a level any higher.
   const requestNextAgentTurn = async (
-    nextDelayMs = timing.agentApiTurnPollIntervalMs,
+    nextDelayMs = defaultAgentRequestIntervalMs(),
   ): Promise<void> => {
     if (!shouldPollAgent()) {
       return
@@ -482,6 +486,7 @@ export function handleAgentTurnLoop({
         awaitAgent()
         return
       }
+      nextDelayMs = agentRequestIntervalMs(selectedAgent)
 
       // The turn's one and only live read, taken fresh on every call to this function (i.e. once
       // per turn). The mismatch gate below reads it directly, live — see agentTurnCountMismatch's

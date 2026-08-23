@@ -36,6 +36,19 @@ describe("page chrome data-config-value hydration", () => {
     expect(input.value).toBe("https://agent.example/move")
   })
 
+  it("pre-fills a numeric input value from config", () => {
+    const input = document.createElement("input")
+    input.type = "number"
+    input.dataset.configValue = "timing.defaultAgentApiRequestIntervalSeconds"
+    document.body.append(input)
+
+    applyPageText()
+
+    const expectedValue = String(CONFIG.timing.defaultAgentApiRequestIntervalSeconds)
+    expect(input.value).toBe(expectedValue)
+    expect(input.defaultValue).toBe(expectedValue)
+  })
+
   it("hydrates both data-tooltip and aria-label from a data-config-title element", () => {
     const badge = document.createElement("span")
     badge.dataset.configTitle = ""

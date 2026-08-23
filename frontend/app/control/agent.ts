@@ -11,9 +11,12 @@ import type {
 } from "../types"
 import {
   agentConfigValidationError,
+  agentRequestIntervalSeconds,
+  defaultAgentApiRequestIntervalSeconds,
   isAgentApiProvider,
   isAgentReasoningEffort,
   normalizeAgentEndpoint,
+  parseAgentRequestIntervalSeconds,
 } from "../agent/config"
 import {
   calculateTraversalSpeedUnits,
@@ -397,6 +400,24 @@ export function createAgentMode(
         )
       }
 
+      const configureRequestIntervalInput = (input: HTMLInputElement | undefined): void => {
+        if (!input) {
+          return
+        }
+
+        input.min = String(agentConfig.requestIntervalMinSeconds)
+        input.max = String(agentConfig.requestIntervalMaxSeconds)
+        input.step = String(agentConfig.requestIntervalStepSeconds)
+      }
+
+      const requestIntervalSecondsFor = (agent: AgentApiConfig): string =>
+        String(agentRequestIntervalSeconds(agent))
+
+      const invalidRequestIntervalMessage = (): string =>
+        agentConfig.invalidRequestIntervalTemplate
+          .replace("{min}", String(agentConfig.requestIntervalMinSeconds))
+          .replace("{max}", String(agentConfig.requestIntervalMaxSeconds))
+
       // extraHeaderKeyInputs/extraHeaderValueInputs read the current set of header rows — however
       // many the user has added — rather than assuming just the one the form starts with.
       const extraHeaderKeyInputs = (): HTMLInputElement[] =>
@@ -565,6 +586,10 @@ export function createAgentMode(
         if (elements.agentConfigApi) {
           elements.agentConfigApi.value = "ollama"
         }
+        configureRequestIntervalInput(elements.agentConfigRequestInterval)
+        if (elements.agentConfigRequestInterval) {
+          elements.agentConfigRequestInterval.value = String(defaultAgentApiRequestIntervalSeconds())
+        }
         if (elements.agentConfigEchoBackReasoning) {
           elements.agentConfigEchoBackReasoning.checked = false
         }
@@ -650,6 +675,9 @@ export function createAgentMode(
           agentConfig.echoBackReasoningOffLabel,
           shouldDelete || reasoningIsNone,
         )
+        if (elements.agentManageRequestInterval) {
+          elements.agentManageRequestInterval.disabled = shouldDelete
+        }
       }
 
       // openAgentManageDialog pauses an active round and opens the manage overlay for the chosen seat.
@@ -684,6 +712,14 @@ export function createAgentMode(
           syncReasoningEffortOptions(elements.agentManageReasoningEffort, agent.api)
           elements.agentManageReasoningEffort.value =
             agent.reasoningEffort ?? agentConfig.reasoningEffortDefaults[agent.api]
+        }
+        if (elements.agentManageApi) {
+          elements.agentManageApi.value = agent.api
+          elements.agentManageApi.disabled = true
+        }
+        configureRequestIntervalInput(elements.agentManageRequestInterval)
+        if (elements.agentManageRequestInterval) {
+          elements.agentManageRequestInterval.value = requestIntervalSecondsFor(agent)
         }
         if (elements.agentManageEchoBackReasoning) {
           elements.agentManageEchoBackReasoning.checked = agent.echoBackReasoning ?? false
@@ -793,6 +829,7 @@ export function createAgentMode(
           !elements.agentConfigPlayerName ||
           !elements.agentConfigModel ||
           !elements.agentConfigApi ||
+          !elements.agentConfigRequestInterval ||
           !elements.agentConfigEndpoint ||
           !elements.agentConfigCredential ||
           !elements.agentConfigCredentialLabel ||
@@ -817,6 +854,7 @@ export function createAgentMode(
           const model = elements.agentConfigModel?.value.trim() ?? ""
           const playerName = elements.agentConfigPlayerName?.value.trim() ?? ""
           const endpoint = elements.agentConfigEndpoint?.value.trim() ?? ""
+          const requestIntervalSecondsValue = elements.agentConfigRequestInterval?.value.trim() ?? ""
           const selectedApi = elements.agentConfigApi?.value
           const api: AgentApiProvider = isAgentApiProvider(selectedApi) ? selectedApi : "ollama"
           const credential = elements.agentConfigCredential?.value.trim() ?? ""
@@ -842,6 +880,7 @@ export function createAgentMode(
             model,
             playerName,
             api,
+            requestIntervalSeconds: requestIntervalSecondsValue,
             reasoningEffort,
             credential,
             extraHeaders,
@@ -863,12 +902,19 @@ export function createAgentMode(
             return
           }
 
+          const requestIntervalSeconds = parseAgentRequestIntervalSeconds(requestIntervalSecondsValue)
+          if (requestIntervalSeconds === null) {
+            setAgentConfigError(invalidRequestIntervalMessage())
+            return
+          }
+
           const nextAgent: AgentApiConfig = {
             id: selectedSeatId,
             playerName,
             model,
             endpoint: normalizedEndpoint,
             api,
+            requestIntervalSeconds,
             reasoningEffort,
             ...(credential ? { credential } : {}),
             ...(extraHeaders ? { extraHeaders } : {}),
@@ -931,6 +977,8 @@ export function createAgentMode(
           !elements.agentManageEnabled ||
           !elements.agentManageEnabledLabel ||
           !elements.agentManageReasoningEffort ||
+          !elements.agentManageApi ||
+          !elements.agentManageRequestInterval ||
           !elements.agentManageEchoBackReasoning ||
           !elements.agentManageEchoBackReasoningLabel ||
           !elements.agentManageApply ||
@@ -954,31 +1002,49 @@ export function createAgentMode(
           const enabled = elements.agentManageEnabled?.checked ?? false
           const echoBackReasoning = elements.agentManageEchoBackReasoning?.checked ?? false
           const shouldDelete = elements.agentDeleteConfirm?.checked ?? false
-          const nextAgents = shouldDelete
-            ? readAgentConfigs().filter((agent) => agent.id !== manageSeatId)
-            : readAgentConfigs().map((agent) => {
-                if (agent.id !== manageSeatId) {
-                  return agent
-                }
+          const requestIntervalSeconds = parseAgentRequestIntervalSeconds(
+            elements.agentManageRequestInterval?.value ?? "",
+          )
+          if (shouldDelete) {
+            savePersistedAgentApiConfigs(readAgentConfigs().filter((agent) => agent.id !== manageSeatId))
+            closeAgentManageDialog()
+            renderAgentRoster()
+            syncCurrentPoller()
+            return
+          }
 
-                const selectedReasoningEffort = elements.agentManageReasoningEffort?.value
-                const reasoningEffort: AgentReasoningEffort =
-                  isAgentReasoningEffort(selectedReasoningEffort) &&
-                  agentConfig.reasoningEffortOptions[agent.api].includes(selectedReasoningEffort)
-                    ? selectedReasoningEffort
-                    : agentConfig.reasoningEffortDefaults[agent.api]
+          if (requestIntervalSeconds === null) {
+            setAgentConfigError(invalidRequestIntervalMessage())
+            return
+          }
+          const nextAgents = readAgentConfigs().map((agent) => {
+            if (agent.id !== manageSeatId) {
+              return agent
+            }
 
-                // Omit the key entirely rather than storing false, matching how the add form only
-                // ever persists this field when it is true (see agentFormSubmitHandler above).
-                // reasoningEffort is unconditionally set instead — unlike echo-back, there is always
-                // a meaningful, provider-valid level in effect, never a meaningful "absent".
-                const nextAgent: AgentApiConfig = { ...agent, enabled, reasoningEffort }
-                delete nextAgent.echoBackReasoning
-                if (echoBackReasoning) {
-                  nextAgent.echoBackReasoning = echoBackReasoning
-                }
-                return nextAgent
-              })
+            const selectedReasoningEffort = elements.agentManageReasoningEffort?.value
+            const reasoningEffort: AgentReasoningEffort =
+              isAgentReasoningEffort(selectedReasoningEffort) &&
+              agentConfig.reasoningEffortOptions[agent.api].includes(selectedReasoningEffort)
+                ? selectedReasoningEffort
+                : agentConfig.reasoningEffortDefaults[agent.api]
+
+            // Omit the key entirely rather than storing false, matching how the add form only
+            // ever persists this field when it is true (see agentFormSubmitHandler above).
+            // reasoningEffort is unconditionally set instead — unlike echo-back, there is always
+            // a meaningful, provider-valid level in effect, never a meaningful "absent".
+            const nextAgent: AgentApiConfig = {
+              ...agent,
+              enabled,
+              reasoningEffort,
+              requestIntervalSeconds,
+            }
+            delete nextAgent.echoBackReasoning
+            if (echoBackReasoning) {
+              nextAgent.echoBackReasoning = echoBackReasoning
+            }
+            return nextAgent
+          })
           savePersistedAgentApiConfigs(nextAgents)
           closeAgentManageDialog()
           renderAgentRoster()

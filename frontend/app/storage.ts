@@ -186,6 +186,15 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   const credentialValue = "credential" in value ? value.credential : undefined
   const extraHeadersValue = "extraHeaders" in value ? value.extraHeaders : undefined
   const echoBackReasoningValue = "echoBackReasoning" in value ? value.echoBackReasoning : undefined
+  const requestIntervalSecondsValue = "requestIntervalSeconds" in value ? value.requestIntervalSeconds : undefined
+  const requestIntervalSeconds: number | null =
+    requestIntervalSecondsValue === undefined
+      ? timing.defaultAgentApiRequestIntervalSeconds
+      : (typeof requestIntervalSecondsValue === "number" && Number.isInteger(requestIntervalSecondsValue) &&
+          requestIntervalSecondsValue >= agentConfig.requestIntervalMinSeconds && 
+          requestIntervalSecondsValue <= agentConfig.requestIntervalMaxSeconds)
+        ? requestIntervalSecondsValue
+        : null
   const endpointValue = value.endpoint
   const endpoint =
     endpointValue instanceof URL
@@ -200,6 +209,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
     typeof value.playerName === "string" &&
     hasValidAgentPlayerName(value.playerName.trim()) &&
     typeof value.model === "string" && value.model.length > 0 &&
+    requestIntervalSeconds !== null &&
     endpoint !== null && typeof value.enabled === "boolean" &&
     (disabledReasonValue === undefined || disabledReasonValue === "network-error") &&
     (lastErrorAt === undefined || (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt))) &&
@@ -223,6 +233,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
       endpoint,
       api,
       reasoningEffort,
+      requestIntervalSeconds,
       enabled: value.enabled,
       ...(disabledReason ? { disabledReason } : {}),
       ...(credential ? { credential } : {}),

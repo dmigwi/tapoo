@@ -46,6 +46,20 @@ function configDisplayText(key: string): string {
   throw new Error(`missing display config entry: ${key}`)
 }
 
+// configInputValue permits string and finite numeric CONFIG values for form defaults. Numbers stay
+// unlocalized so <input type="number"> receives a browser-parseable value.
+function configInputValue(key: string): string {
+  const value = configValue(key)
+  if (typeof value === "string") {
+    return value
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value)
+  }
+
+  throw new Error(`missing input config entry: ${key}`)
+}
+
 // applyConfigAttribute copies CONFIG-backed text into matching DOM attributes.
 function applyConfigAttribute(
   selector: string,
@@ -122,7 +136,7 @@ export function applyPageText(): void {
         return
       }
 
-      input.defaultValue = configText(configKey)
+      input.defaultValue = configInputValue(configKey)
       input.value = input.defaultValue
     })
 }

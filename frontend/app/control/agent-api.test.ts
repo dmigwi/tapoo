@@ -548,6 +548,7 @@ describe("agent api turn loop", () => {
         endpoint: new URL("https://agents.example/api/agents/a/move"),
         api: "ollama",
         reasoningEffort: "max",
+        requestIntervalSeconds: CONFIG.agentConfig.requestIntervalMinSeconds,
         enabled: true,
       },
       {
@@ -557,6 +558,7 @@ describe("agent api turn loop", () => {
         endpoint: new URL("https://agents.example/api/agents/b/move"),
         api: "ollama",
         reasoningEffort: "max",
+        requestIntervalSeconds: CONFIG.agentConfig.requestIntervalMinSeconds,
         enabled: true,
       },
       {
@@ -574,6 +576,7 @@ describe("agent api turn loop", () => {
         endpoint: new URL("https://agents.example/api/agents/c/move"),
         api: "ollama",
         reasoningEffort: "max",
+        requestIntervalSeconds: CONFIG.agentConfig.requestIntervalMinSeconds,
         enabled: true,
       },
     ]
@@ -611,10 +614,10 @@ describe("agent api turn loop", () => {
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(testAgentMovePollIntervalMs)
+    await vi.advanceTimersByTimeAsync(CONFIG.agentConfig.requestIntervalMinSeconds * 1_000)
     await flushImmediateAgentTurn()
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    await vi.advanceTimersByTimeAsync(testAgentMovePollIntervalMs)
+    await vi.advanceTimersByTimeAsync(CONFIG.agentConfig.requestIntervalMinSeconds * 1_000)
     await flushImmediateAgentTurn()
     expect(fetchMock).toHaveBeenCalledTimes(3)
 
@@ -1188,7 +1191,7 @@ describe("agent api turn loop", () => {
     poller.__setAttached(true)
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
-    await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiRequestPollIntervalMs)
+    await vi.advanceTimersByTimeAsync(CONFIG.timing.defaultAgentApiRequestIntervalSeconds * 1_000)
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const retryRequest = fetchMock.mock.calls[1]?.[1] as RequestInit
@@ -1241,7 +1244,7 @@ describe("agent api turn loop", () => {
     poller.__setAttached(true)
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
-    await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiRequestPollIntervalMs)
+    await vi.advanceTimersByTimeAsync(CONFIG.timing.defaultAgentApiRequestIntervalSeconds * 1_000)
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(commitAgentTurn).toHaveBeenCalledTimes(1)

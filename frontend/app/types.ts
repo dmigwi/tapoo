@@ -392,6 +392,11 @@ export type AgentApiConfig = {
   // require it withheld from multi-turn context. See the on-form tooltip that asks the user to
   // confirm their model's own guidance before turning this on.
   echoBackReasoning?: boolean
+  // requestIntervalSeconds stores the same whole-second value the user edits in the form. It is
+  // converted to milliseconds only at the timer/request boundary.
+  // Optional only for old stored entries; storage normalization backfills the configured default
+  // when the field is absent, but preserves explicit valid values unchanged.
+  requestIntervalSeconds?: number
   enabled: boolean
   disabledReason?: "network-error"
   lastErrorAt?: number
@@ -547,6 +552,7 @@ export type AgentElements = {
   agentConfigPlayerName?: HTMLInputElement
   agentConfigModel?: HTMLInputElement
   agentConfigApi?: HTMLSelectElement
+  agentConfigRequestInterval?: HTMLInputElement
   agentConfigEndpoint?: HTMLInputElement
   agentConfigCredential?: HTMLInputElement
   agentConfigCredentialLabel?: HTMLElement
@@ -566,6 +572,8 @@ export type AgentElements = {
   agentManageEnabled?: HTMLInputElement
   agentManageEnabledLabel?: HTMLElement
   agentManageReasoningEffort?: HTMLSelectElement
+  agentManageApi?: HTMLSelectElement
+  agentManageRequestInterval?: HTMLInputElement
   agentManageEchoBackReasoning?: HTMLInputElement
   agentManageEchoBackReasoningLabel?: HTMLElement
   agentManageApply?: HTMLButtonElement
@@ -735,6 +743,11 @@ export type AppConfig = {
     modelLabel: string
     modelPlaceholder: string
     apiLabel: string
+    requestIntervalLabel: string
+    requestIntervalUnitLabel: string
+    requestIntervalMinSeconds: number
+    requestIntervalMaxSeconds: number
+    requestIntervalStepSeconds: number
     requiredFieldNote: string
     providerLabels: Record<AgentApiProvider, string>
     endpointLabel: string
@@ -760,6 +773,7 @@ export type AppConfig = {
     invalidMessage: string
     invalidApiMessage: string
     invalidEndpointMessage: string
+    invalidRequestIntervalTemplate: string
     invalidAnthropicCredentialsMessage: string
     invalidExtraHeadersMessage: string
     editTitle: string
@@ -807,8 +821,7 @@ export type AppConfig = {
     blinkIntervalMs: number
     scoreDecayRate: number
     interactiveDecayIntervalPerCellMs: number
-    agentApiTurnPollIntervalMs: number
-    agentApiRequestPollIntervalMs: number
+    defaultAgentApiRequestIntervalSeconds: number
     agentApiResponseTimeoutMs: number
     agentApiConnectionErrorRetryDelayMs: number
   }

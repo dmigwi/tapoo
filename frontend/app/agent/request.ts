@@ -56,14 +56,9 @@ type RequestAgentPredictionInput = {
   // stateSnapshot because context tools do not need the raw or encoded maze grid.
   encodedMazeForLevelStart: EncodedMazeForLevelStart | null
   timeoutMs: number
-  // Delay applied before each provider request after the first within one turn — a turn issuing
-  // several rounds while servicing tool calls otherwise fires them back to back with no gap at
-  // all, which can look like a burst to the upstream provider even when turns themselves are well
-  // paced. See agentApiTurnPollIntervalMs (config.ts) for the separate delay between turns — the
-  // two are close (30s vs 35s) rather than one clearly dwarfing the other, because a real model
-  // (Kimi K3) has been observed taking roughly 20s just to process one request; a shorter interval
-  // than that risks a provider seeing two overlapping in-flight requests as a burst and returning
-  // 429, so this is set close to that real processing floor, not to some fraction of the turn delay.
+  // Delay applied before each provider request after the first within one turn. The caller passes
+  // the same provider-facing request interval used between agent turns, keeping one rate-limit
+  // policy for both fresh turns and tool-call follow-up requests.
   requestIntervalMs: number
   agent: AgentApiConfig
   lastActionResult: MazeActionResult | null
@@ -334,10 +329,8 @@ export function requestPredictionWithAbort({
 
         requestCount += 1
 
-        // Only the first request of a turn is paced by agentApiTurnPollIntervalMs (the caller
-        // schedules that before this function is even invoked) — every request after it within
-        // the same turn otherwise fires immediately back to back, which a provider's rate limiting
-        // can see as a burst even when turns themselves are well spaced.
+        // The first request is paced by the caller's turn scheduler. Follow-up requests inside the
+        // same tool-calling turn use the same request interval here.
         if (requestCount > 1) {
           await sleep(requestIntervalMs)
           if (wasExpectedAbort) {
