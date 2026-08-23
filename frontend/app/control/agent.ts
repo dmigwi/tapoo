@@ -63,7 +63,7 @@ type AgentButtonBinding = {
 
 // logAgentRoundCompletion captures the round's outcome and the stats that evolved to reach it.
 // level/cumulativeRoundCount/startPosition/finalPosition/maze never change once a round starts, so
-// they're logged once at round start (game.ts's startRoundWithDimensions) rather than repeated here.
+// they're logged beside the first full agent request rather than repeated here.
 function logAgentRoundCompletion({ __state, __agent, __playerStatus }: AgentRoundState): void {
   const outcome = __state.status
   const traversalSpeedUnits = calculateTraversalSpeedUnits(

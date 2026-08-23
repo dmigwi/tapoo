@@ -2,9 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { loadTapooLog } from "./storage"
 import { APP_VERSION } from "./config"
+import { generateMaze } from "./maze"
+import type { PRNGGenerator } from "./maze"
 import {
   checksumLoggedDescription,
   encodeMazeForLog,
+  fnv1a64Checksum,
   initTapooLogs,
   logTapooDiagnostic,
   subscribeTapooLogs,
@@ -14,7 +17,25 @@ import {
   tapooResetLogs,
   trimLoggedDescription,
 } from "./logs"
+import { createMazeDimensions } from "./traversal"
 import type { EncodedMazeForLog } from "./logs"
+
+function createXorshift128Generator(seed: number): PRNGGenerator {
+  let [x, y, z, w] = [seed || 1, 362436069, 521288629, 88675123]
+
+  return (limit: number): number => {
+    if (limit <= 0) {
+      return 0
+    }
+
+    const t = x ^ (x << 11)
+    x = y
+    y = z
+    z = w
+    w = (w ^ (w >>> 19)) ^ (t ^ (t >>> 8))
+    return (w >>> 0) % limit
+  }
+}
 
 // These tests keep the in-memory Tapoo log export/reset behavior intentionally small.
 describe("tapoo logs", () => {
@@ -246,26 +267,58 @@ describe("checksumLoggedDescription", () => {
 })
 
 // decodeMazeForLogInTest stands in for the external, out-of-tool decode step an analysis script
-// would perform — proving the encoding is genuinely reversible rather than just asserting
-// encodeMazeForLog's output looks plausible. Fully self-contained: only needs the payload itself,
-// no CONFIG or wallWeight lookup, since index_chars already lists every token the structure digits index.
-function decodeMazeForLogInTest({ index_chars, structure }: EncodedMazeForLog): string {
-  return structure
-    .split("")
-    .map((digit) => index_chars[Number(digit)])
-    .join("")
+// would perform. It reconstructs the original maze grid, not just printable text, and validates the
+// checksum plus row separators before trusting the compact structure string.
+function decodeMazeForLogInTest({
+  index_chars,
+  structure,
+  structure_checksum,
+}: EncodedMazeForLog): string[][] {
+  if (structure_checksum !== fnv1a64Checksum(structure)) {
+    throw new Error("encoded maze structure checksum mismatch")
+  }
+
+  const rowSeparatorIndex = index_chars.indexOf("\n")
+  if (rowSeparatorIndex < 0) {
+    throw new Error("encoded maze is missing a row separator token")
+  }
+
+  const rowSeparator = String(rowSeparatorIndex)
+  return structure.split(rowSeparator).map((encodedRow) =>
+    encodedRow.split("").map((digit) => {
+      const token = index_chars[Number(digit)]
+      if (token === undefined || token === "\n") {
+        throw new Error(`encoded maze contains invalid token index: ${digit}`)
+      }
+
+      return token
+    }),
+  )
 }
 
 describe("encodeMazeForLog", () => {
-  it("round-trips to the exact printable maze text render.ts itself would produce", () => {
+  it("round-trips to the exact original maze grid", () => {
     const maze = [
       ["|", "---", "-"],
       ["|", " ", "|"],
       ["|", "---", "-"],
     ]
-    const printable = maze.map((row) => row.join("")).join("\n")
 
-    expect(decodeMazeForLogInTest(encodeMazeForLog(maze))).toBe(printable)
+    expect(decodeMazeForLogInTest(encodeMazeForLog(maze))).toEqual(maze)
+  })
+
+  it("round-trips a generated maze grid exactly", () => {
+    const dimensions = { ...createMazeDimensions({ numCols: 5, numRows: 5 }), level: 1 }
+    const { maze } = generateMaze(
+      dimensions,
+      1,
+      undefined,
+      createXorshift128Generator(1),
+    )
+    const encodedMaze = encodeMazeForLog(maze)
+
+    expect(encodedMaze.structure_checksum).toBe(fnv1a64Checksum(encodedMaze.structure))
+    expect(decodeMazeForLogInTest(encodedMaze)).toEqual(maze)
   })
 
   it("lists only the tokens actually used, in first-seen order, with the row separator last", () => {
@@ -276,6 +329,7 @@ describe("encodeMazeForLog", () => {
 
     expect(encodeMazeForLog(maze)).toEqual({
       index_chars: ["|", "---", "-", " ", "\n"],
+      structure_checksum: "0x21db7e68faa2be77",
       structure: "012" + "4" + "030",
     })
   })
@@ -289,5 +343,48 @@ describe("encodeMazeForLog", () => {
     // Only three distinct tokens ever appear, so index_chars holds exactly those three plus the
     // separator — never a full five-token alphabet padded out for tokens this maze never used.
     expect(encodeMazeForLog(maze).index_chars).toEqual(["|", "---", "-", "\n"])
+  })
+
+  it("adds a checksum for the compact structure string", () => {
+    const firstMaze = [
+      ["|", "---", "-"],
+      ["|", " ", "|"],
+    ]
+    const secondMaze = [
+      ["|", "---", "-"],
+      ["|", "---", "-"],
+    ]
+
+    const firstEncoding = encodeMazeForLog(firstMaze)
+    const secondEncoding = encodeMazeForLog(secondMaze)
+
+    expect(firstEncoding.structure_checksum).toBe(fnv1a64Checksum(firstEncoding.structure))
+    expect(firstEncoding.structure_checksum).not.toBe(secondEncoding.structure_checksum)
+  })
+
+  it("rejects a structure string whose checksum no longer matches", () => {
+    const encodedMaze = encodeMazeForLog([
+      ["|", "---", "-"],
+      ["|", " ", "|"],
+    ])
+
+    expect(() => decodeMazeForLogInTest({
+      ...encodedMaze,
+      structure: `${encodedMaze.structure}0`,
+    })).toThrow("encoded maze structure checksum mismatch")
+  })
+
+  it("rejects an encoded token index that is not present in index_chars", () => {
+    const encodedMaze = encodeMazeForLog([
+      ["|", "---", "-"],
+      ["|", " ", "|"],
+    ])
+    const corruptedStructure = `${encodedMaze.structure}9`
+
+    expect(() => decodeMazeForLogInTest({
+      ...encodedMaze,
+      structure: corruptedStructure,
+      structure_checksum: fnv1a64Checksum(corruptedStructure),
+    })).toThrow("encoded maze contains invalid token index: 9")
   })
 })

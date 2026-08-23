@@ -108,6 +108,9 @@ export function checksumLoggedDescription(description: string | undefined): stri
 // structure (including the separator digits) reconstructs the exact original printable maze text.
 export type EncodedMazeForLog = {
   index_chars: string[]
+  // structure_checksum lets offline consumers verify the compact structure string arrived intact
+  // before expanding it with index_chars. Fnva1-64bit checksum hash.
+  structure_checksum: string
   // structure's exact length is (2R+1)(2C+1) + 2R for an R x C logical maze (renderCellStep 2: one
   // digit per rendered cell, plus one row-separator digit per row boundary) — for a roughly square
   // maze (R ~ C ~ sqrt(area)), that's well estimated from mazeDimensions.area alone as
@@ -135,7 +138,8 @@ export function encodeMazeForLog(maze: string[][]): EncodedMazeForLog {
 
   const rows = maze.map((row) => row.map(codeFor).join(""))
   const rowSeparator = String(codeFor("\n"))
-  return { index_chars, structure: rows.join(rowSeparator) }
+  const structure = rows.join(rowSeparator)
+  return { index_chars, structure_checksum: fnv1a64Checksum(structure), structure }
 }
 
 // initTapooLogs seeds the in-memory log count from sessionStorage entries that survived a page

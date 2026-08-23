@@ -10,7 +10,7 @@ import { OLLAMA_PREDICTION_FORMAT } from "./providers"
 import { requestPredictionWithAbort } from "./request"
 import { snapshotAgentState } from "./state-snapshot"
 import { CONFIG } from "../config"
-import { checksumLoggedDescription, tapooResetLogs } from "../logs"
+import { checksumLoggedDescription, encodeMazeForLog, tapooResetLogs } from "../logs"
 import { loadTapooLog } from "../storage"
 import type {
   AgentApiConfig,
@@ -135,6 +135,16 @@ type SerializedRequestBody = {
   options?: unknown
 }
 
+function encodeMazeForLevelStart(state: State) {
+  if (!state.maze || !state.mazeDimensions) {
+    return null
+  }
+
+  return {
+    ...encodeMazeForLog(state.maze),
+    dimensions: state.mazeDimensions,
+  }
+}
 
 function requestInput(
   stateOverrides: Partial<State> = {},
@@ -147,6 +157,7 @@ function requestInput(
   return {
     agent,
     lastActionResult,
+    encodedMazeForLevelStart: encodeMazeForLevelStart(mergedState),
     stateSnapshot: snapshotAgentState(mergedState),
     timeoutMs: 180_000,
     requestIntervalMs: 0,
@@ -446,6 +457,53 @@ describe("agent request service", () => {
     })
   })
 
+  it("logs the encoded maze before the level's first request", async () => {
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(successfulResponse(JSON.stringify({ moves: ["MoveRight"] }))),
+    )
+
+    await requestPrediction(requestInput({
+      finalPosition: { x: 1, y: 1 },
+      maze: [
+        ["|", "---", "|"],
+        ["|", "   ", "|"],
+        ["|", "---", "|"],
+      ],
+      mazeDimensions: { numCols: 1, numRows: 1, area: 1 },
+      startPosition: { x: 1, y: 1 },
+    }))
+
+    const entries = loadTapooLog<{
+      payload: string
+      level: number
+      game: number
+      details?: Record<string, unknown>
+    }>(CONFIG.runtime.controlModes.agentApi)
+
+    const levelStartedIndex = entries.findIndex((entry) => entry.payload === "Agent level started.")
+    const requestIndex = entries.findIndex((entry) => entry.payload === "Agent request.")
+    expect(levelStartedIndex).toBeGreaterThanOrEqual(0)
+    expect(requestIndex).toBeGreaterThan(levelStartedIndex)
+
+    const levelStarted = entries[levelStartedIndex]
+    expect(levelStarted.level).toBe(1)
+    expect(levelStarted.game).toBe(0)
+    // Static expected encoding for this 1x1 maze, first-seen order "|"(0), "---"(1), "   "(2),
+    // then "\n"(3) as the row separator.
+    expect(levelStarted.details).toEqual({
+      startPosition: { x: 1, y: 1 },
+      finalPosition: { x: 1, y: 1 },
+      maze: {
+        index_chars: ["|", "---", "   ", "\n"],
+        structure_checksum: "0x279d74cddf9d2e85",
+        structure: "01030203010",
+        dimensions: { numCols: 1, numRows: 1, area: 1 },
+      },
+    })
+  })
+
   it("stamps every request/response entry with the maze level being played", async () => {
     tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
@@ -499,6 +557,10 @@ describe("agent request service", () => {
     )
 
     expect(requestEntries).toHaveLength(2)
+    expect(
+      loadTapooLog<{ payload: string }>(CONFIG.runtime.controlModes.agentApi)
+        .some((entry) => entry.payload === "Agent level started."),
+    ).toBe(false)
 
     // Round 1: the static system/user prompt is previewed (role intact, content shortened),
     // and tool descriptions are previewed too, since both repeat verbatim every turn.

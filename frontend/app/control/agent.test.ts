@@ -644,7 +644,7 @@ describe("agent control mode", () => {
     expect(lastEntry.details.allUniqueCellsVisited).toBe(1)
     expect(lastEntry.details.decayUnitsCharged).toBe(1)
     // The maze grid/dimensions are no longer repeated here: they never change once a round starts,
-    // so they're logged once in game.ts's "Agent level started." entry instead (see game.test.ts).
+    // so they're logged beside the level's first full agent request instead.
     expect(lastEntry.details).not.toHaveProperty("maze")
   })
 

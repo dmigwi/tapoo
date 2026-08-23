@@ -1,4 +1,5 @@
 import { logTapooDiagnostic, setTapooLogContext } from "../logs"
+import type { EncodedMazeForLog } from "../logs"
 import { CONFIG } from "../config"
 import { describeProviderHttpFailure } from "./config"
 import {
@@ -35,6 +36,7 @@ import type {
   AgentToolDefinition,
   AgentToolHandlers,
   MazeActionResult,
+  MazeDimensions,
 } from "../types"
 
 // AgentChatResponse is the shape every provider adapter's readMessage normalizes its raw payload
@@ -50,6 +52,9 @@ type RequestAgentPredictionInput = {
   // backoff delay) — never rebuilt here, so every attempt sees the exact same frozen values no
   // matter how much wall-clock time passes between them. See snapshotAgentState.
   stateSnapshot: AgentStateSnapshot
+  // Pre-encoded static maze diagnostics for the level's first request. Kept separate from
+  // stateSnapshot because context tools do not need the raw or encoded maze grid.
+  encodedMazeForLevelStart: EncodedMazeForLevelStart | null
   timeoutMs: number
   // Delay applied before each provider request after the first within one turn — a turn issuing
   // several rounds while servicing tool calls otherwise fires them back to back with no gap at
@@ -85,6 +90,25 @@ type ToolServicingResult =
 // "tools" offers remaining context tools, "predict" asks for moves after all tools were used,
 // and "warned" follows an all-duplicate tool-call response.
 type AgentMode = "predict" | "tools" | "warned"
+
+export type EncodedMazeForLevelStart = EncodedMazeForLog & {
+  dimensions: MazeDimensions
+}
+
+function logAgentLevelStarted(
+  stateSnapshot: AgentStateSnapshot,
+  encodedMazeForLogs: EncodedMazeForLevelStart,
+): void {
+  if (!stateSnapshot.startPosition || !stateSnapshot.finalPosition) {
+    return
+  }
+
+  logTapooDiagnostic(CONFIG.runtime.controlModes.agentApi, "info", "Agent level started.", {
+    startPosition: stateSnapshot.startPosition,
+    finalPosition: stateSnapshot.finalPosition,
+    maze: encodedMazeForLogs,
+  })
+}
 
 // buildToolResultMessages executes requested tools and converts their values into chat messages.
 async function buildToolResultMessages(
@@ -219,6 +243,7 @@ async function requestChatTurn(
 export function requestPredictionWithAbort({
   lastActionResult,
   stateSnapshot,
+  encodedMazeForLevelStart,
   agent,
   timeoutMs,
   requestIntervalMs,
@@ -293,6 +318,12 @@ export function requestPredictionWithAbort({
       // Only one corrective warning can be active at a time. Genuine tool progress clears it;
       // otherwise a second warning-worthy response ends the turn instead of stacking warnings.
       let hasWarningBeenIssued = false
+
+      if (isFirstRequestOfLevel && encodedMazeForLevelStart) {
+        // Keep the static maze snapshot beside the first full request log. Positions come from
+        // stateSnapshot; only the encoded maze travels as a separate logging payload.
+        logAgentLevelStarted(stateSnapshot, encodedMazeForLevelStart)
+      }
 
       while (true) {
         // Honor aborts that land between provider requests, when no active controller exists yet.

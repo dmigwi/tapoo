@@ -1,12 +1,14 @@
 import { CONFIG } from "../config"
 import { mergeMazeActionResult } from "../control"
 import { requestPredictionWithAbort } from "../agent/request"
+import type { EncodedMazeForLevelStart } from "../agent/request"
 import { calculateTraversalSpeedUnits, getBatchEfficiencyMetrics } from "../agent/efficiency"
 import { snapshotAgentState } from "../agent/state-snapshot"
 import type { AgentStateSnapshot } from "../agent/state-snapshot"
-import { logTapooDiagnostic } from "../logs"
+import { encodeMazeForLog, logTapooDiagnostic } from "../logs"
 import { recordAgentTurnStats } from "../storage"
 import { isLostStatus, isRunningStatus, isWonStatus } from "../status"
+import { cloneMazeDimensions } from "../traversal"
 import type {
   AgentApiConfig,
   AgentPredictionFailure,
@@ -81,6 +83,17 @@ export type AgentRoundState = {
   __playerStatus: AgentPlayerStatus
   __state: State
   __actionResult: MazeActionResult
+}
+
+function encodeMazeForLevelStart(state: State): EncodedMazeForLevelStart | null {
+  if (!state.maze || !state.mazeDimensions) {
+    return null
+  }
+
+  return {
+    ...encodeMazeForLog(state.maze),
+    dimensions: cloneMazeDimensions(state.mazeDimensions),
+  }
 }
 
 // handleAgentTurnLoop owns the HTTP polling cycle used by the agent-api control mode.
@@ -380,12 +393,14 @@ export function handleAgentTurnLoop({
   const requestAgentPrediction = (
     agent: AgentApiConfig,
     stateSnapshot: AgentStateSnapshot,
+    encodedMazeForLevelStart: EncodedMazeForLevelStart | null,
   ): Promise<AgentPredictionResult> => {
     // The request service owns HTTP, timeout, tool calls, and classified failure handling.
     const predictionRequest = requestPredictionWithAbort({
       agent,
       lastActionResult: activeActionResult(),
       stateSnapshot,
+      encodedMazeForLevelStart,
       timeoutMs: timing.agentApiResponseTimeoutMs,
       requestIntervalMs: timing.agentApiRequestPollIntervalMs,
     })
@@ -407,8 +422,9 @@ export function handleAgentTurnLoop({
   const requestAgentPredictionWithRetry = async (
     agent: AgentApiConfig,
     stateSnapshot: AgentStateSnapshot,
+    encodedMazeForLevelStart: EncodedMazeForLevelStart | null,
   ): Promise<AgentPredictionResult> => {
-    const firstAttempt = await requestAgentPrediction(agent, stateSnapshot)
+    const firstAttempt = await requestAgentPrediction(agent, stateSnapshot, encodedMazeForLevelStart)
     if (firstAttempt.ok) {
       return firstAttempt
     }
@@ -433,7 +449,7 @@ export function handleAgentTurnLoop({
     // Reuses the same stateSnapshot the first attempt used, not a fresh read — a connection-error
     // means no HTTP response ever arrived, so nothing about the turn's own outcome could have
     // changed state in the meantime; the retry should still see exactly what the turn started with.
-    const retryAttempt = await requestAgentPrediction(agent, stateSnapshot)
+    const retryAttempt = await requestAgentPrediction(agent, stateSnapshot, null)
     if (retryAttempt.ok) {
       logTapooDiagnostic(runtime.controlModes.agentApi, "warn", "Recovered after a connection-error retry.")
       return retryAttempt
@@ -485,7 +501,12 @@ export function handleAgentTurnLoop({
       __onActiveAgentChange?.(selectedAgent)
 
       const stateSnapshot = snapshotAgentState(currentState)
-      const prediction = await requestAgentPredictionWithRetry(selectedAgent, stateSnapshot)
+      const encodedMazeForLevelStart = stateSnapshot.turnCount === 0 ? encodeMazeForLevelStart(currentState) : null
+      const prediction = await requestAgentPredictionWithRetry(
+        selectedAgent,
+        stateSnapshot,
+        encodedMazeForLevelStart,
+      )
       // Failure logging and game consequences are handled inside requestAgentPredictionWithRetry.
       if (prediction.ok === false) {
         return

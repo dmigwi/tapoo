@@ -871,36 +871,6 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("await-agent")
   })
 
-  // Logged at round start rather than only at completion (control/agent.ts's
-  // logAgentRoundCompletion), so an interrupted/incomplete agent-api round — network failure, all
-  // agents disabled, browser closed before a win/loss — still has its maze captured for analysis.
-  it("logs the encoded maze at round start, before any agent turn has happened", async () => {
-    const harness = await bootstrapHarness({
-      mode: CONFIG.runtime.controlModes.agentApi,
-    })
-
-    const calls = harness.appendTapooLogEntry.mock.calls as Array<
-      [string, { payload: string; level: number; game: number; details: Record<string, unknown> }]
-    >
-    const startEntryCall = calls.find(([, entry]) => entry.payload === "Agent level started.")
-    if (!startEntryCall) {
-      throw new Error("expected an \"Agent level started.\" log entry")
-    }
-
-    const [, entry] = startEntryCall
-    // level/cumulativeRoundCount are stamped on the entry itself by setTapooLogContext, so details
-    // below never repeats them.
-    expect(entry.level).toBe(1)
-    expect(entry.game).toBe(1)
-    // Static expected encoding for createRound()'s maze, first-seen order "|"(0), "---"(1), "   "(2),
-    // then "\n"(3) as the row separator.
-    expect(entry.details.maze).toEqual({
-      index_chars: ["|", "---", "   ", "\n"],
-      structure: "01030203010",
-      dimensions: { numCols: 1, numRows: 1, area: 1 },
-    })
-  })
-
   it("pauses and resumes a running round through interactive controls", async () => {
     const harness = await bootstrapHarness()
 
