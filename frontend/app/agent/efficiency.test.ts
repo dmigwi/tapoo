@@ -27,7 +27,7 @@ function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
 }
 
 function visit(playerName: string, row: number, col: number): TraversalHistoryEntry {
-  return { playerName, row, col, openMoves: [] }
+  return { playerName, row, col, openMoves: [], visitCount: 1 }
 }
 
 describe("resolveBatchEfficiencyClass", () => {

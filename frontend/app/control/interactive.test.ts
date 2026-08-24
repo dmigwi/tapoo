@@ -63,7 +63,7 @@ function createState(overrides: Partial<State> = {}): State {
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [], visitCount: 1 }
 }
 
 // These tests guard the interactive-mode translation layer and contract shape.

@@ -9,6 +9,7 @@ import {
 import {
   SUBMITTED_MOVES_SCHEMA,
 } from "./agent/context"
+import type { ResolvedPlayerMove } from "./traversal"
 import type {
   MazeAction,
   MazeActionDispatchOptions,
@@ -58,7 +59,7 @@ type MazeActionHandlers = {
   restartGame: () => void
   resumeOrProceed: () => void
   cycleWallWeight: () => void
-  movePlayer: (action: MoveAction, playerName: string) => void
+  movePlayer: (moveEvaluation: ResolvedPlayerMove, playerName: string) => void
   recordActionResult: (actionResult: MazeActionResult) => void
 }
 
@@ -102,7 +103,7 @@ export function executeActionWithFeedback(
     return actionResult
   }
 
-  handlers.movePlayer(move, playerName)
+  handlers.movePlayer(moveEvaluation, playerName)
   const finalStatus: MoveStatus = hasReachedTarget(handlers.state) ? "reached-target" : "applied"
 
   const actionResult = buildReplayState(playerName, move, finalStatus, moveEvaluation.visitedBefore)
@@ -121,7 +122,10 @@ export function executeMazeAction(
     case "MoveRight":
     case "MoveUp":
     case "MoveDown":
-      handlers.movePlayer(action.type, playerName)
+      {
+        const moveEvaluation = resolvePlayerMove(handlers.state, action.type)
+        handlers.movePlayer(moveEvaluation, playerName)
+      }
       return
     case "pause":
       handlers.pauseGame()

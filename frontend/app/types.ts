@@ -23,9 +23,23 @@ export type CellCoordinate = {
 // MazeCellType describes the model-facing classification for a visited logical maze cell.
 export type MazeCellType = "dead-end" | "corridor" | "junction" | "start-cell" | "target-cell"
 
-// TraversalHistoryEntry records one chronological logical-cell visit for the named player.
+// VisitStatus is the model-facing exploration state of one logical cell. It is derived from
+// TraversalHistoryEntry.visitCount and the cell's open-exit count, so the raw visit tally never has
+// to be exposed to the model. MazeCellType describes fixed maze structure; VisitStatus describes how
+// heavily that structure has already been worked through. See cellVisitStatus (agent/context.ts).
+export type VisitStatus =
+  | "unvisited"    // no traversal-history entry exists for the cell
+  | "explored"     // 0 < visitCount < openMoves.length; at least one exit may still be unvisited
+  | "backtracking" // visitCount == openMoves.length; each open exit has been used once
+  | "oscillating"  // visitCount > openMoves.length; the cell is being over-revisited
+
+// TraversalHistoryEntry records one chronological logical-cell visit for the named player. There is
+// exactly one entry per cell — a revisit increments visitCount rather than appending, which is what
+// keeps allUniqueCellsVisited (agent/efficiency.ts) and the persisted-round duplicate check
+// (isValidPersistedRound, traversal.ts) reading a distinct-cell count off the array length.
 export type TraversalHistoryEntry = CellCoordinate & {
   playerName: string
+  visitCount: number  // It is always >= 1 when for a cell included here.
   openMoves: MoveAction[]
 }
 

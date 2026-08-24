@@ -4,6 +4,7 @@ import { CONFIG } from "./config"
 import {
   executeActionWithFeedback,
 } from "./control"
+import type { ResolvedPlayerMove } from "./traversal"
 import type {
   MazeAction,
   MazeActionResult,
@@ -13,11 +14,11 @@ import type {
 } from "./types"
 
 function agentVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Blue", row, col, openMoves: [] }
+  return { playerName: "Blue", row, col, openMoves: [], visitCount: 1 }
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [], visitCount: 1 }
 }
 
 const expectedLastSubmittedMovesSchema: NonNullable<
@@ -77,10 +78,17 @@ function createClock(): State["clock"] {
 
 // createContext provides the minimal runtime hooks consumed by movement feedback execution.
 function createContext(state: State) {
-  const movePlayer = vi.fn((action: MoveAction) => {
-    if (action === "MoveRight") {
-      state.playerPosition = { x: 3, y: 1 }
-      state.traversalHistory = [selfVisit(0, 0), agentVisit(0, 1)]
+  const movePlayer = vi.fn((moveEvaluation: ResolvedPlayerMove, playerName: string) => {
+    if (!moveEvaluation.canMove) {
+      return
+    }
+
+    state.playerPosition = moveEvaluation.nextGridPoint
+    if (!moveEvaluation.visitedBefore) {
+      state.traversalHistory = [
+        ...state.traversalHistory,
+        { ...moveEvaluation.nextCell, playerName, openMoves: [], visitCount: 1 },
+      ]
     }
   })
 
@@ -165,12 +173,19 @@ describe("control", () => {
   it("reports when a move reaches the destination", () => {
     const state = createState()
     const context = createContext(state)
-    context.handlers.movePlayer.mockImplementationOnce((action: MoveAction) => {
-      if (action === "MoveRight") {
-        state.playerPosition = { x: 3, y: 1 }
-        state.traversalHistory = [selfVisit(0, 0), agentVisit(0, 1)]
-        state.status = "won"
+    context.handlers.movePlayer.mockImplementationOnce((moveEvaluation: ResolvedPlayerMove, playerName: string) => {
+      if (!moveEvaluation.canMove) {
+        return
       }
+
+      state.playerPosition = moveEvaluation.nextGridPoint
+      if (!moveEvaluation.visitedBefore) {
+        state.traversalHistory = [
+          ...state.traversalHistory,
+          { ...moveEvaluation.nextCell, playerName, openMoves: [], visitCount: 1 },
+        ]
+      }
+      state.status = "won"
     })
 
     const actionResult = executeActionWithFeedback(
@@ -189,7 +204,15 @@ describe("control", () => {
       lastAppliedMoveIndex: 0,
       chargedMovesCount: 0,
     })
-    expect(context.handlers.movePlayer).toHaveBeenCalledWith("MoveRight", "Blue")
+    expect(context.handlers.movePlayer).toHaveBeenCalledWith(
+      {
+        canMove: true,
+        nextCell: { row: 0, col: 1 },
+        nextGridPoint: { x: 3, y: 1 },
+        visitedBefore: false,
+      },
+      "Blue",
+    )
     expect(context.handlers.recordActionResult).toHaveBeenCalledWith(actionResult)
   })
 
@@ -199,10 +222,12 @@ describe("control", () => {
       traversalHistory: [selfVisit(0, 0), agentVisit(0, 1)],
     })
     const context = createContext(state)
-    context.handlers.movePlayer.mockImplementationOnce((action: MoveAction) => {
-      if (action === "MoveLeft") {
-        state.playerPosition = { x: 1, y: 1 }
+    context.handlers.movePlayer.mockImplementationOnce((moveEvaluation: ResolvedPlayerMove) => {
+      if (!moveEvaluation.canMove) {
+        return
       }
+
+      state.playerPosition = moveEvaluation.nextGridPoint
     })
 
     const actionResult = executeActionWithFeedback(

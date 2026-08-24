@@ -28,7 +28,7 @@ function agent(id: number, playerName: string, model = "llama3.2"): AgentApiConf
 }
 
 function visit(playerName: string, row: number, col: number): TraversalHistoryEntry {
-  return { playerName, row, col, openMoves: [] }
+  return { playerName, row, col, openMoves: [], visitCount: 1 }
 }
 
 // Agent-seat tests keep display labels, dataset ids, and fixed roster slots centralized.

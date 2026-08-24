@@ -9,7 +9,7 @@ import type { AgentElements, Elements, State, TraversalHistoryEntry } from "./ty
 const { messages } = CONFIG
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [], visitCount: 1 }
 }
 
 // normalizeScreenText keeps DOM assertions readable by collapsing non-breaking spaces.

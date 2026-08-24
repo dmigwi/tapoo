@@ -50,14 +50,14 @@ import {
   cloneMazeRows,
   cloneRenderGridPoint,
   cloneTraversalHistory,
+  findTraversalHistoryEntry,
   isValidPersistedRound,
   isWallWeight,
   nextWallWeight,
-  resolvePlayerMove,
   reweightMaze,
   traversalHistoryEntry,
-  traversalHistoryIncludes,
 } from "./traversal"
+import type { ResolvedPlayerMove } from "./traversal"
 import type {
   Elements,
   GameRuntime,
@@ -68,7 +68,6 @@ import type {
   MazeActionResult,
   MazeControlModeName,
   MazeDimensions,
-  MoveAction,
   PersistedGameStatus,
   PersistedRound,
   PersistedSnapshot,
@@ -513,19 +512,25 @@ function cycleWallWeight(): boolean {
   return true
 }
 
-// movePlayer applies one validated move step and leaves turn finalization to the active control mode.
-function movePlayer(action: MoveAction, playerName: string): void {
-  const moveEvaluation = resolvePlayerMove(state, action)
+// movePlayer applies a resolved move step and keeps the game-side mutation boundary defensive.
+function movePlayer(moveEvaluation: ResolvedPlayerMove, playerName: string): void {
   if (!moveEvaluation.canMove) {
     return
   }
 
   state.playerPosition = moveEvaluation.nextGridPoint
-  if (!traversalHistoryIncludes(state.traversalHistory, moveEvaluation.nextCell)) {
-    state.traversalHistory.push(
-      traversalHistoryEntry(moveEvaluation.nextCell, playerName, state.maze),
-    )
+  // One entry per cell: a revisit bumps that cell's tally rather than appending, so the array length
+  // stays a distinct-cell count while visitCount still records how worked-over the cell is (which is
+  // what agent/context.ts turns into visitStatus).
+  const visitedEntry = findTraversalHistoryEntry(state.traversalHistory, moveEvaluation.nextCell)
+  if (visitedEntry) {
+    visitedEntry.visitCount += 1
+    return
   }
+
+  state.traversalHistory.push(
+    traversalHistoryEntry(moveEvaluation.nextCell, playerName, state.maze),
+  )
 }
 
 // dispatchControl gives the shared control layer the game-owned effects needed to run actions.

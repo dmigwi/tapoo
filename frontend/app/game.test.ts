@@ -15,8 +15,8 @@ import type {
   TraversalHistoryEntry,
 } from "./types"
 
-function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Self", row, col, openMoves: [] }
+function selfVisit(row: number, col: number, visitCount = 1): TraversalHistoryEntry {
+  return { playerName: "Self", row, col, openMoves: [], visitCount }
 }
 
 // setVisualViewportScale mutates the mocked window.visualViewport.scale — a direct assignment
@@ -143,13 +143,17 @@ function createTraversalMock({
     y: row * CONFIG.maze.renderCellStep + 1,
   })
   const mazeCellKey = ({ row, col }: { row: number; col: number }) => `${row}:${col}`
-  const traversalHistoryIncludes = (
+  const findTraversalHistoryEntry = (
     traversalHistory: TraversalHistoryEntry[],
     cell: { row: number; col: number },
   ) =>
-    traversalHistory.some(
+    traversalHistory.find(
       (visitedCell) => visitedCell.row === cell.row && visitedCell.col === cell.col,
     )
+  const traversalHistoryIncludes = (
+    traversalHistory: TraversalHistoryEntry[],
+    cell: { row: number; col: number },
+  ) => findTraversalHistoryEntry(traversalHistory, cell) !== undefined
   const cloneCellCoordinate = ({ row, col }: { row: number; col: number }) => ({
     row,
     col,
@@ -195,7 +199,9 @@ function createTraversalMock({
     cloneMazeRows: vi.fn((mazeRows: string[][]) => mazeRows.map((row) => [...row])),
     cloneRenderGridPoint: vi.fn(({ x, y }: { x: number; y: number }) => ({ x, y })),
     cloneTraversalHistory: vi.fn((history: TraversalHistoryEntry[]) =>
-      history.map(({ playerName, row, col, openMoves }) => ({ playerName, row, col, openMoves: [...openMoves] })),
+      history.map(({ playerName, row, col, openMoves, visitCount }) => ({
+        playerName, row, col, openMoves: [...openMoves], visitCount,
+      })),
     ),
     gridPointFromCellCoordinate: vi.fn(gridPointFromCellCoordinate),
     isMoveAction: vi.fn((action: { type: string }) =>
@@ -288,8 +294,10 @@ function createTraversalMock({
       ...cell,
       playerName,
       openMoves: [],
+      visitCount: 1,
     })),
     traversalHistoryIncludes: vi.fn(traversalHistoryIncludes),
+    findTraversalHistoryEntry: vi.fn(findTraversalHistoryEntry),
     startCellFromTraversalHistory: vi.fn((history: TraversalHistoryEntry[]) => {
       const [startCell] = history
       return startCell ? cloneCellCoordinate(startCell) : null
@@ -1006,8 +1014,11 @@ describe("bootstrapGame", () => {
 
     const state = latestRenderedState(harness.render)
     expect(state.playerPosition).toEqual({ x: 1, y: 1 })
+    // The backtrack onto (0,0) bumps that cell's visitCount instead of appending a second entry, so
+    // the array stays a distinct-cell list while still recording how worked-over the cell is — which
+    // is what agent/context.ts reads to derive visitStatus.
     expect(state.traversalHistory).toEqual([
-      selfVisit(0, 0),
+      selfVisit(0, 0, 2),
       selfVisit(0, 1),
     ])
   })
