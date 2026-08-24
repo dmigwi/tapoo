@@ -102,6 +102,7 @@ function statusText(state: State, currentPlayerLabel: string | null): string {
   const [beforePlayer, afterPlayerRaw] = template.split("{player}")
   const afterPlayer = afterPlayerRaw
     .replace("{level}", String(state.level))
+    .replace("{turn}", String(state.turnCount))
     .replace("{score}", String(state.score))
 
   if (!currentPlayerLabel) {

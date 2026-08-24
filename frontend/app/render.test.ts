@@ -293,7 +293,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).not.toContain("Player:")
-    expect(text).toContain("Level: 1   Scores: 900")
+    expect(text).toContain("Level: 1   Turn: 0   Scores: 900")
   })
 
   it("ellipsis-trims an overlong player label to fit the compact status line's character budget", () => {

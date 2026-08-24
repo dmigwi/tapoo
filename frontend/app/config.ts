@@ -130,7 +130,7 @@ export const CONFIG: AppConfig = {
     tooSmallActionMessage: "Make more screen room on zoom out.",
     tooSmallActionMessageWithReset: "Make screen room on zoom out, or Reset Progress.",
     runningStatus: {
-      wide: "Player: {player}   Level: {level}   Scores: {score}",
+      wide: "Player: {player}   Level: {level}   Turn: {turn}   Scores: {score}",
       compact: "Player: {player}   Level: {level}   Scores: {score}",
     },
     highScoreTemplate:

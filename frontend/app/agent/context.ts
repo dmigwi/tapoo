@@ -192,9 +192,9 @@ export function buildTokenLimitExhaustionPrompt(tokensUsage: number): AgentChatM
   return {
     role: "user",
     content:
-      `${CONFIG.runtime.promptWarningPrefix} Your previous response had a token-limit-exhaustion error and used ${tokensUsage} tokens without returning a ` +
-      "prediction. Try once more to return the correct prediction format output without overthinking. This retry is " +
-      "free, but on reaching the token limit again without a prediction you will be charged the same fixed penalty "+
+      `${CONFIG.runtime.promptWarningPrefix} Your previous response had a token-limit-exhaustion error and used ${tokensUsage} `+
+      "tokens without returning a prediction. Try once more to return the correct prediction format output without overthinking. "+
+      "This retry is free, but on reaching the token limit again without a prediction you will be charged the same fixed penalty " +
       "as a malformed response.",
   }
 }
@@ -274,10 +274,13 @@ const predictionRulesTool: AgentToolDefinition = {
       "When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current",
       "traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. When",
       "decayUnitsCharged is 0, batchEfficiencyClass defaults to trailblazer. Only a cell's first visit",
-      "counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time.",
+      "counts as progress. Higher traversal speed means more progress per decay unit, increasing the chance of reaching",
+      "the target before score runs out.",
       "batchEfficiencyClass is set to backtracker when the speed is below 1.0000, navigator at 1.0000, or trailblazer above 1.0000.",
-      "Retrace-only batching can save turns but cannot create new-cell progress, so trailblazer is evidence that forward",
-      "prediction into unvisited cells succeeded.",
+      "Backtracker rates prediction efficiency, while get_maze_structure's backtracking visitStatus marks one cell as a",
+      "spent direction. Both are independent: a player can classify as backtracker without ever entering a backtracking cell,",
+      "and crossing such cells does not by itself lower the class. Retrace-only batching can save turns but cannot",
+      "create new-cell progress, so trailblazer is evidence that forward prediction into unvisited cells succeeded.",
       "allUniqueCellsVisited is every cell any player has reached this level, not just your own — compare it",
       "against mazeDimensions.totalMazeCells to know how much of the maze the team has collectively explored so far;",
       "it does not affect your traversal speed, which is scored on playerUniqueCellsVisited against decayUnitsCharged.",
