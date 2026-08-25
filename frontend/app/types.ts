@@ -603,6 +603,13 @@ export type TerminalElements = {
   // can no longer render in full (see terminalCanDisplayText, dom.ts) — a real error condition
   // like a broken bootstrap uses the separate top-level #placeholder-art instead.
   zoomPlaceholder: HTMLElement
+  // The info gate overlay (info-gate.ts). It lives in TerminalElements rather than AgentElements
+  // because both terminal pages carry the markup and either can need consent before booting.
+  infoGate: HTMLElement
+  infoGateTitle: HTMLElement
+  infoGateMessage: HTMLElement
+  infoGateDetail: HTMLElement
+  infoGateProceed: HTMLButtonElement
 }
 
 // AgentElements are only used by the agent-api page overlays and seat roster.
@@ -704,6 +711,19 @@ export type LogEntry = {
   log: LogLevel
   payload: string
   details?: unknown
+}
+
+// InfoGateNotice is one gate's worth of copy (see info-gate.ts). It is deliberately not part of
+// AppConfig: gate copy is read by whichever module raises a gate and handed over as an
+// InfoGateContent, never resolved through applyPageText's data-config-key lookup the way page
+// chrome copy is. INFO_GATE_NOTICES (config.ts) holds the payloads themselves.
+export type InfoGateNotice = {
+  title: string
+  acknowledgement: string
+  // detailTemplate's placeholders are filled by the caller, which is the only place the counts and
+  // their singular/plural wording are known.
+  detailTemplate?: string
+  proceedLabel: string
 }
 
 // AppConfig gathers translatable copy and shared runtime constants.

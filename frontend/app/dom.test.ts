@@ -35,6 +35,11 @@ function setupTerminalDom(): void {
     <div id="terminal-measure"></div>
     <div id="touch-controls"></div>
     <div id="terminal-zoom-placeholder"></div>
+    <div id="info-gate" hidden></div>
+    <strong id="info-gate-title"></strong>
+    <p id="info-gate-message"></p>
+    <p id="info-gate-detail" hidden></p>
+    <button id="info-gate-proceed"></button>
     <div id="agent-seats-body"></div>
     <button id="tapoo-logs-reset"></button>
     <button id="tapoo-logs-download"></button>

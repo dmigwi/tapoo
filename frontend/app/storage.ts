@@ -48,19 +48,80 @@ function storageKey(
   return `tapoo.v${storageConfig.version}.${modeName}.${suffix}`
 }
 
-// removeStaleStorageEntries clears old versioned Tapoo keys without touching current-version data.
-function removeStaleStorageEntries(storage: Storage): void {
+// StaleStorageSummary describes what an older schema version left behind, in the only terms that
+// can be established without reading it: how many keys exist and which versions wrote them.
+export type StaleStorageSummary = {
+  versions: string[]
+  itemCount: number
+}
+
+// STALE_STORAGE_KEY_VERSION captures the version segment of a Tapoo key. The version is itself
+// dotted (4.82), so the segment is matched as digits-and-dots up to the mode name rather than by
+// splitting on "." — which would read "tapoo.v4.82.agent-api.agentConfigs" as version "4".
+const STALE_STORAGE_KEY_VERSION = /^tapoo\.v(\d+(?:\.\d+)*)\./
+
+// staleStorageKeys lists the keys a previous schema version wrote, without touching their values.
+// Everything downstream — the count, the version list, the deletion — is derived from key names
+// alone: a payload written under an older schema must never be decoded by this build, because
+// interpreting it against current validators is the migration hazard the versioning exists to
+// avoid.
+function staleStorageKeys(storage: Storage): string[] {
   const currentPrefix = `tapoo.v${storageConfig.version}.`
+  const staleKeys: string[] = []
 
   for (let index = storage.length - 1; index >= 0; index -= 1) {
     const key = storage.key(index)
     if (key?.startsWith("tapoo.v") && !key.startsWith(currentPrefix)) {
-      storage.removeItem(key)
+      staleKeys.push(key)
     }
+  }
+
+  return staleKeys
+}
+
+// readStaleStorageKeys tolerates a storage object that throws on access at all, which is what a
+// browser in private mode or with site data blocked does — there, "no stale data" is the only
+// answer available, and the same best-effort posture the rest of this file takes.
+function readStaleStorageKeys(readStorage: () => Storage): string[] {
+  try {
+    return staleStorageKeys(readStorage())
+  } catch {
+    return []
   }
 }
 
-// clearStaleStorageVersions runs once during startup to discard obsolete browser storage versions.
+// staleStorageSummary reports what clearStaleStorageVersions would remove, so the user can be told
+// what they are agreeing to before it happens rather than after.
+export function staleStorageSummary(): StaleStorageSummary {
+  const staleKeys = [
+    ...readStaleStorageKeys(() => window.localStorage),
+    ...readStaleStorageKeys(() => window.sessionStorage),
+  ]
+
+  const versions = new Set<string>()
+  for (const key of staleKeys) {
+    const version = STALE_STORAGE_KEY_VERSION.exec(key)?.[1]
+    if (version) {
+      versions.add(version)
+    }
+  }
+
+  return {
+    versions: [...versions].sort(),
+    itemCount: staleKeys.length,
+  }
+}
+
+// removeStaleStorageEntries clears old versioned Tapoo keys without touching current-version data.
+function removeStaleStorageEntries(storage: Storage): void {
+  for (const key of staleStorageKeys(storage)) {
+    storage.removeItem(key)
+  }
+}
+
+// clearStaleStorageVersions discards obsolete browser storage versions. It is deliberately NOT
+// called during startup: deletion happens only after the user acknowledges it (see tapoo.ts), so
+// an upgrade can never silently destroy stored agent credentials or progress.
 export function clearStaleStorageVersions(): void {
   try {
     removeStaleStorageEntries(window.localStorage)
@@ -274,33 +335,6 @@ function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
   return normalizedConfigs.sort((left, right) => left.seatId - right.seatId)
 }
 
-// migrateLegacyAgentSessionMetrics lifts the volatile counters older builds kept inside each
-// localStorage agent config into this tab's sessionStorage. Those records predate sessionId, so
-// each is stamped with the one normalizeAgentApiConfig just assigned to the same seat, keeping the
-// migrated row valid against the config it came from. A record carrying no legacy `enabled` key was
-// written by a current build and is skipped: without that gate every new tab would rewrite rows
-// holding exactly what mergeAgentSessionMetrics already defaults to.
-function migrateLegacyAgentSessionMetrics(
-  decodedConfigs: unknown,
-  normalizedConfigs: AgentApiConfig[],
-): AgentApiSessionMetrics[] {
-  if (!Array.isArray(decodedConfigs)) {
-    return []
-  }
-
-  const sessionIdBySeatId = new Map(normalizedConfigs.map((config) => [config.seatId, config.sessionId] as const))
-
-  return normalizeAgentSessionMetrics(
-    decodedConfigs
-      .filter((record): record is Record<string, unknown> =>
-        typeof record === "object" && record !== null && "enabled" in record)
-      .map((record) => {
-        const seatId = (record.seatId ?? record.id) as number
-        return { ...record, seatId, sessionId: sessionIdBySeatId.get(seatId) }
-      }),
-  )
-}
-
 // loadPersistedAgentApiConfigs restores the configurable HTTP agents for agent-api mode.
 export function loadPersistedAgentApiConfigs(): AgentApiConfig[] {
   try {
@@ -313,13 +347,11 @@ export function loadPersistedAgentApiConfigs(): AgentApiConfig[] {
 
     const decodedConfigs = decodeStoredPayload<unknown>(storedConfigs)
     const normalizedConfigs = normalizeAgentApiConfigs(decodedConfigs)
-    if (loadPersistedAgentSessionMetrics().length === 0) {
-      const migratedStats = migrateLegacyAgentSessionMetrics(decodedConfigs, normalizedConfigs)
-      if (migratedStats.length > 0) {
-        savePersistedAgentSessionMetrics(migratedStats)
-      }
-    }
-
+    // The volatile counters an older build kept inside these records are deliberately not carried
+    // over. Tapoo resets mismatched state rather than migrating it, and lifting the old enabled
+    // flag would be the one path able to switch an agent on in a tab nobody switched it on in —
+    // exactly what AgentApiSessionMetrics.enabled promises never happens. They are dropped here by
+    // the save below, which rewrites each record through normalizeAgentApiConfig's field list.
     if (JSON.stringify(decodedConfigs) !== JSON.stringify(normalizedConfigs)) {
       savePersistedAgentApiConfigs(normalizedConfigs)
     }

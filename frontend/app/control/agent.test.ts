@@ -224,6 +224,11 @@ function createAgentFormElements(): AgentFormElements {
     touchButtons: [],
     touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     agentSeatsBody,
     tapooLogsReset,
     tapooLogsDownload,
@@ -387,6 +392,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -487,6 +497,11 @@ describe("agent control mode", () => {
       touchButtons: [],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
 
     const mode = createTestAgentMode(elements)
@@ -504,6 +519,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -550,6 +570,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -741,6 +766,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -811,6 +841,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -883,6 +918,11 @@ describe("agent control mode", () => {
       ],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -950,6 +990,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "proceed" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -1040,6 +1085,11 @@ describe("agent control mode", () => {
       touchButtons: [],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -1133,6 +1183,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -2310,6 +2365,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -2349,6 +2409,11 @@ describe("agent control mode", () => {
       touchButtons: [pauseButton],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     const outsideInput = document.createElement("input")
     elements.app.tabIndex = 0

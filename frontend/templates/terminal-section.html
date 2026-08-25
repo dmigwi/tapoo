@@ -124,6 +124,16 @@
             <span data-config-text data-config-key="controls.touch.resetProgressLabel"></span>
           </button>
         </div>
+        <div id="info-gate" class="info-gate" hidden role="alertdialog" aria-modal="true" aria-labelledby="info-gate-title" aria-describedby="info-gate-message">
+          <div class="info-gate__panel">
+            <strong id="info-gate-title" class="info-gate__title"></strong>
+            <p id="info-gate-message" class="info-gate__message"></p>
+            <p id="info-gate-detail" class="info-gate__detail" hidden></p>
+            <div class="info-gate__actions">
+              <button id="info-gate-proceed" class="info-gate__proceed" type="button"></button>
+            </div>
+          </div>
+        </div>
         <form
           id="agent-config-form"
           class="agent-config-form"

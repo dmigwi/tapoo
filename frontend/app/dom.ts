@@ -47,6 +47,11 @@ export function getGameElements(): Elements | null {
     touchButtons: Array.from(
       document.querySelectorAll<HTMLButtonElement>("[data-touch-control]"),
     ),
+    infoGate: mustElement<HTMLElement>("info-gate"),
+    infoGateTitle: mustElement<HTMLElement>("info-gate-title"),
+    infoGateMessage: mustElement<HTMLElement>("info-gate-message"),
+    infoGateDetail: mustElement<HTMLElement>("info-gate-detail"),
+    infoGateProceed: mustElement<HTMLButtonElement>("info-gate-proceed"),
     agentSeatsBody: mustElement<HTMLElement>("agent-seats-body"),
     tapooLogsReset: mustElement<HTMLButtonElement>("tapoo-logs-reset"),
     tapooLogsDownload: mustElement<HTMLButtonElement>("tapoo-logs-download"),

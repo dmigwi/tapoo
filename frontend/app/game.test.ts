@@ -95,6 +95,11 @@ function createElements(): Elements {
     controls,
     touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     touchButtons,
   }
 }
@@ -486,7 +491,6 @@ async function bootstrapHarness({
   vi.doMock("./storage", () => ({
     clearPersistedSnapshot,
     clearPersistedRound,
-    clearStaleStorageVersions: vi.fn(),
     agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
     disableAgentApiConfigForNetworkError: vi.fn(),
     loadAgentApiSeatConfigs: vi.fn(() => agentConfigs),
@@ -583,7 +587,6 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      clearStaleStorageVersions: vi.fn(),
       agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
       loadAgentApiSeatConfigs: vi.fn(() => []),
@@ -656,7 +659,6 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      clearStaleStorageVersions: vi.fn(),
       agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
       loadAgentApiSeatConfigs: vi.fn(() => []),
@@ -714,7 +716,6 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      clearStaleStorageVersions: vi.fn(),
       agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
       loadAgentApiSeatConfigs: vi.fn(() => []),
@@ -776,7 +777,6 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      clearStaleStorageVersions: vi.fn(),
       agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
       loadAgentApiSeatConfigs: vi.fn(() => []),

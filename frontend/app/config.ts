@@ -1,5 +1,6 @@
 import type {
   AppConfig,
+  InfoGateNotice,
   NavigationProfile,
   WallWeight,
 } from "./types"
@@ -451,6 +452,21 @@ export const CONFIG: AppConfig = {
     },
   },
 }
+
+// INFO_GATE_NOTICES collects every blocking acknowledgement Tapoo can raise, keyed by what it is
+// about. One entry today; the shape is a map so a second gate does not have to restructure this.
+export const INFO_GATE_NOTICES = {
+  // Shown before anything an older storage schema left behind is deleted.
+  staleStorage: {
+    title: "Stored data from an older version",
+    acknowledgement:
+      "This version of Tapoo uses a new storage format and cannot read what the previous " +
+      "version saved. Continuing removes that leftover data, including any saved agent " +
+      "configuration and game progress. This cannot be undone.",
+    detailTemplate: "{items} stored from {versions}.",
+    proceedLabel: "Proceed",
+  },
+} satisfies Record<string, InfoGateNotice>
 
 // PAGE_COPYRIGHT_TEXT is the fully composed footer text shared by static browser pages.
 export const PAGE_COPYRIGHT_TEXT = CONFIG.chrome.pageVersionTemplate

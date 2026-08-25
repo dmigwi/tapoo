@@ -16,6 +16,7 @@ import {
   saveActiveRoundSnapshot,
   saveGameProgress,
   savePersistedAgentApiConfigs,
+  staleStorageSummary,
 } from "./storage"
 // The real guard rather than a local copy: loadPersistedSnapshot takes it from its caller, so a copy
 // here would let these tests keep accepting weights production had already stopped accepting.
@@ -555,43 +556,6 @@ describe("storage", () => {
     })
   })
 
-  it("migrates old localStorage agent counters into this tab's session stats before stripping stable configs", () => {
-    const storedKey = agentStorageKey(agentConfigs)
-    window.localStorage.setItem(
-      storedKey,
-      window.btoa(JSON.stringify([
-        {
-          seatId: 1,
-          sessionId: 1_700_000_000_001,
-          playerName: "Blue",
-          model: "llama3.2",
-          endpoint: "https://agents.example/api/agents/blue/move",
-          api: "ollama",
-          enabled: true,
-          gameLevel: 9,
-          cumulativeRoundCount: 12,
-          levelTurnCount: 343,
-          turnCount: 342,
-          decayUnitsCharged: 342,
-        },
-      ])),
-    )
-
-    expect(loadAgentApiSeatConfigs()[0]).toMatchObject({
-      gameLevel: 9,
-      cumulativeRoundCount: 12,
-      levelTurnCount: 343,
-      turnCount: 342,
-      decayUnitsCharged: 342,
-    })
-    expect(loadAgentApiSeatConfigs()[0]).toMatchObject({
-      turnCount: 342,
-      decayUnitsCharged: 342,
-    })
-    window.sessionStorage.clear()
-    expect(loadPersistedAgentApiConfigs()[0]).not.toHaveProperty("decayUnitsCharged")
-  })
-
   it("resets both counters when the level changes", () => {
     savePersistedAgentApiConfigs([
       {
@@ -803,6 +767,53 @@ describe("storage", () => {
       lastWinTraversalSpeedUnits: 1_500,
       bestWinTraversalSpeedUnits: 2_500,
     })
+  })
+
+  it("reports what an older version left behind without reading any of it", () => {
+    const currentVersion = CONFIG.runtime.storage.version
+    window.localStorage.setItem(versionedStorageKey(currentVersion, MODE, gameSetup), "current")
+    window.localStorage.setItem(versionedStorageKey(currentVersion + 1, MODE, gameSetup), "old")
+    window.localStorage.setItem(versionedStorageKey(currentVersion + 1, MODE, winMetrics), "old")
+    window.sessionStorage.setItem(versionedStorageKey(currentVersion + 2, MODE, "round"), "older")
+
+    // Counts both stores, ignores the current version, and lists each stale version once.
+    expect(staleStorageSummary()).toEqual({
+      versions: [String(currentVersion + 1), String(currentVersion + 2)].sort(),
+      itemCount: 3,
+    })
+  })
+
+  it("reports nothing stale when only current-version entries exist", () => {
+    saveGameProgress(MODE, {
+      level: 8,
+      wallWeight: 3,
+      lastAttemptRetentionUnits: 710000,
+      bestWinRetentionUnits: 840000,
+      lastWinTraversalSpeedUnits: 6,
+      bestWinTraversalSpeedUnits: 4,
+    })
+
+    expect(staleStorageSummary()).toEqual({ versions: [], itemCount: 0 })
+  })
+
+  // The version segment is itself dotted, so a naive split on "." would report "4" for every key.
+  it("reads the whole dotted version out of a stale key", () => {
+    window.localStorage.setItem(`tapoo.v4.82.${MODE}.${gameSetup}`, "old")
+
+    expect(staleStorageSummary()).toEqual({ versions: ["4.82"], itemCount: 1 })
+  })
+
+  // The regression guard for the whole change: reading persisted data must no longer delete
+  // anything an older version wrote. Consent now gates that, and it happens in tapoo.ts.
+  it("leaves stale entries in place when current-version data is loaded", () => {
+    const staleKey = versionedStorageKey(CONFIG.runtime.storage.version + 1, MODE, gameSetup)
+    window.localStorage.setItem(staleKey, "old")
+
+    loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
+    loadPersistedAgentApiConfigs()
+
+    expect(window.localStorage.getItem(staleKey)).toBe("old")
+    expect(staleStorageSummary().itemCount).toBe(1)
   })
 
   it("clears stale browser storage versions without touching the current version", () => {

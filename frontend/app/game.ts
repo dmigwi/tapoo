@@ -38,7 +38,6 @@ import {
 import {
   clearPersistedSnapshot,
   clearPersistedRound,
-  clearStaleStorageVersions,
   loadPersistedSnapshot,
   resetAgentRoundStats,
   saveGameProgress,
@@ -621,9 +620,7 @@ export function bootstrapGame(
 ): GameRuntime {
   runtimeElements = elements
   activeControlMode = controlMode
-
   state.controlMode = controlMode.name
-  clearStaleStorageVersions()
 
   window.addEventListener("resize", handleResize)
   window.visualViewport?.addEventListener("resize", handleResize)
