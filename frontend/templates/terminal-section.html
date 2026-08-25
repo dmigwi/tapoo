@@ -126,7 +126,7 @@
         </div>
         <div id="info-gate" class="info-gate" hidden role="alertdialog" aria-modal="true" aria-labelledby="info-gate-title" aria-describedby="info-gate-message">
           <div class="info-gate__panel">
-            <strong id="info-gate-title" class="info-gate__title"></strong>
+            <h2 id="info-gate-title" class="info-gate__title"></h2>
             <p id="info-gate-message" class="info-gate__message"></p>
             <p id="info-gate-detail" class="info-gate__detail" hidden></p>
             <div class="info-gate__actions">
@@ -416,7 +416,73 @@
           </div>
         </section>
       </div>
-      <div id="agent-seats-body" class="agent-seats-body" hidden aria-label="Agent seats and Tapoo logs">
+      <section
+        id="system-settings-dialog"
+        class="agent-config-form agent-manage-dialog"
+        hidden
+        aria-label="System settings"
+      >
+        <div class="agent-config-form__header">
+          <strong id="system-settings-title"></strong>
+          <button
+            id="system-settings-close"
+            class="agent-config-form__close"
+            type="button"
+            aria-label="Close system settings"
+          >
+            ×
+          </button>
+        </div>
+        <label class="agent-config-form__field">
+          <span class="agent-config-form__field-label">
+            <span data-config-text data-config-key="systemSettings.restartLevelLabel"></span>
+            <span class="agent-config-form__info-badge" tabindex="0" data-config-title data-config-key="systemSettings.restartLevelTooltip">!</span>
+          </span>
+          <input
+            id="system-settings-restart-level"
+            class="system-settings__level-input"
+            name="restartLevel"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            step="1"
+            required
+          />
+        </label>
+        <span
+          id="system-settings-status"
+          class="agent-config-form__status"
+          role="status"
+          aria-live="polite"
+        ></span>
+        <div class="agent-config-form__actions">
+          <button
+            id="system-settings-apply"
+            class="agent-config-form__submit"
+            type="button"
+            data-config-text
+            data-config-key="systemSettings.applyLabel"
+          >
+          </button>
+        </div>
+      </section>
+      <div id="system-palette" class="system-palette" hidden aria-label="System configuration palette">
+        <div class="system-palette__actions" aria-label="System settings">
+          <button
+            id="system-settings"
+            class="tapoo-logs-control"
+            type="button"
+            title="System settings"
+            aria-label="System settings"
+          >
+            <svg class="tapoo-logs-control__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                d="M12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5Zm7.43-2.53a7.6 7.6 0 0 0 0-1.94l2.05-1.58a.5.5 0 0 0 .12-.64l-1.94-3.36a.5.5 0 0 0-.61-.22l-2.42.97a7.35 7.35 0 0 0-1.68-.97l-.36-2.57a.5.5 0 0 0-.5-.42h-3.88a.5.5 0 0 0-.5.42l-.36 2.57a7.35 7.35 0 0 0-1.68.97l-2.42-.97a.5.5 0 0 0-.61.22L2.4 8.81a.5.5 0 0 0 .12.64l2.05 1.58a7.6 7.6 0 0 0 0 1.94L2.52 14.55a.5.5 0 0 0-.12.64l1.94 3.36a.5.5 0 0 0 .61.22l2.42-.97a7.35 7.35 0 0 0 1.68.97l.36 2.57a.5.5 0 0 0 .5.42h3.88a.5.5 0 0 0 .5-.42l.36-2.57a7.35 7.35 0 0 0 1.68-.97l2.42.97a.5.5 0 0 0 .61-.22l1.94-3.36a.5.5 0 0 0-.12-.64Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+        </div>
         <div class="tapoo-logs-controls" aria-label="Tapoo log controls">
           <button
             id="tapoo-logs-reset"

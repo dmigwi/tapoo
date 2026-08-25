@@ -25,7 +25,7 @@ function staleDataGateContent(summary: StaleStorageSummary): InfoGateContent {
   // either is plural.
   const items = `${summary.itemCount} ${summary.itemCount === 1 ? "entry" : "entries"}`
   const versionLabel = summary.versions.length === 1 ? "version" : "versions"
-  const versions = `${versionLabel} ${summary.versions.join(", ")}`
+  const versions = `${versionLabel} (${summary.versions.join(", ")})`
 
   return {
     title: notice.title,

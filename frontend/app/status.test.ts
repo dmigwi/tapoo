@@ -78,6 +78,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: "interactive",
     level: 1,
+    restartLevel: 1,
     status: "running",
     mazeDimensions: { numCols: 1, numRows: 1, area: 1 },
     maze: [

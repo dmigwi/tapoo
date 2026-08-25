@@ -200,13 +200,26 @@ export const CONFIG: AppConfig = {
       resetProgressLabel: "Reset Progress",
     },
   },
+  // System settings copy, shown by the palette's settings dialog.
+  systemSettings: {
+    // Named for the mode it is opened from, so a setting that only governs this mode's play never
+    // reads as global. {mode} is filled from runtime.displayLabels at open time, not at build
+    // time — which is also why this title carries no data-config-key in the markup.
+    title: "{mode} System Settings Configuration",
+    restartLevelLabel: "Restart Level",
+    restartLevelTooltip:
+      "The level a fresh or restarted game opens on, and the lowest level any round can open " +
+      "at. Applies for this page only — reloading returns to the built-in default.",
+    applyLabel: "Apply",
+    invalidRestartLevelMessage: "Restart level must be a whole number of 1 or more.",
+  },
   // Agent configuration copy is only used by the agent-api overlay form.
   agentConfig: {
     title: "New Agent",
     newAgentLabel: "New Agent",
     agentEnabledLabel: "Agent is enabled.",
     agentDisabledLabel: "Agent is disabled.",
-    maxSeats: 6,
+    maxSeats: 5,
     maxModelDisplayLength: 18,
     playerNameMinLength: 3,
     playerNameMaxLength: 8,
@@ -418,6 +431,18 @@ export const CONFIG: AppConfig = {
       agentApi: "agent-api",
       interactive: "interactive",
     },
+    // Human-facing names for the control modes above, kept beside them rather than inside whichever
+    // feature happens to render one first. controlModes carries the wire/storage identifiers; these
+    // are what a person should read.
+    displayLabels: {
+      agentApi: "Agent-API",
+      interactive: "Interactive",
+    },
+    // The level a game opens on before anyone has chosen otherwise. It seeds State.restartLevel,
+    // which is what every entry point actually reads, so they can never disagree about where a
+    // game begins. State.restartLevel is memory-only, so this is also where each page load starts
+    // again — changing it moves the opening level for everyone.
+    defaultRestartLevel: 1,
     storage: {
       version: 4.9,
       suffixes: {
@@ -475,12 +500,15 @@ export const CONFIG: AppConfig = {
 export const INFO_GATE_NOTICES = {
   // Shown before anything an older storage schema left behind is deleted.
   staleStorage: {
-    title: "Stored data from an older version",
+    title: "Incompatible old Tapoo data detected!",
     acknowledgement:
-      "This version of Tapoo uses a new storage format and cannot read what the previous " +
-      "version saved. Continuing removes that leftover data, including any saved agent " +
-      "configuration and game progress. This cannot be undone.",
-    detailTemplate: "{items} stored from {versions}.",
+      "The current version of Tapoo uses an updated persistence format. "+
+      "Proceeding, removes all old data; including any saved agent " +
+      "configuration and game progress. This cannot be undone!",
+    // {versions} arrives carrying its own noun ("version (4.81)" / "versions (4.81, 4.82)"),
+    // because only the caller knows how many there are. Putting the word here instead duplicates
+    // it — the template cannot pluralise.
+    detailTemplate: "- {items} with storage {versions}.",
     proceedLabel: "Proceed",
   },
 } satisfies Record<string, InfoGateNotice>

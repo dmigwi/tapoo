@@ -94,7 +94,10 @@ describe("requireStaleDataAcknowledgement", () => {
 
     requireStaleDataAcknowledgement(elements, vi.fn())
 
-    expect(elements.infoGateDetail.textContent).toBe("1 entry stored from version 4.82.")
+    expect(elements.infoGateDetail.textContent).toBe(INFO_GATE_NOTICES.staleStorage.detailTemplate
+        .replace("{items}", "1 entry")
+        .replace("{versions}", "version (4.82)"),
+    )
     expect(elements.infoGateDetail.hidden).toBe(false)
     expect(elements.infoGateTitle.textContent).toBe(INFO_GATE_NOTICES.staleStorage.title)
   })
@@ -108,7 +111,10 @@ describe("requireStaleDataAcknowledgement", () => {
 
     requireStaleDataAcknowledgement(elements, vi.fn())
 
-    expect(elements.infoGateDetail.textContent).toBe("3 entries stored from versions 0.1, 0.2.")
+    expect(elements.infoGateDetail.textContent).toBe(INFO_GATE_NOTICES.staleStorage.detailTemplate
+        .replace("{items}", "3 entries")
+        .replace("{versions}", "versions (0.1, 0.2)"),
+    )
   })
 
   // Several entries written by a single old version must not read as plural versions.
@@ -119,6 +125,9 @@ describe("requireStaleDataAcknowledgement", () => {
 
     requireStaleDataAcknowledgement(elements, vi.fn())
 
-    expect(elements.infoGateDetail.textContent).toBe("2 entries stored from version 0.1.")
+    expect(elements.infoGateDetail.textContent).toBe(INFO_GATE_NOTICES.staleStorage.detailTemplate
+        .replace("{items}", "2 entries")
+        .replace("{versions}", "version (0.1)"),
+    )
   })
 })

@@ -14,6 +14,7 @@ import type {
   AgentApiSeatConfig,
   AgentElements,
   Elements,
+  GameControls,
   MazeAction,
   MazeActionDispatchOptions,
   MazeActionResult,
@@ -21,6 +22,13 @@ import type {
   State,
   TraversalHistoryEntry,
 } from "../types"
+
+// testGameControls stands in for the game-owned mutations bindActionDispatch receives. vi.fn so a
+// test can assert what the UI drove, and a permissive default return so nothing depends on it.
+function testGameControls(): GameControls {
+  return { setRestartLevel: vi.fn(() => true) }
+}
+
 
 function enabledAgentConfigs(): AgentApiSeatConfig[] {
   return [
@@ -80,7 +88,7 @@ function createButton({
 type AgentFormElements = Elements & Required<AgentElements>
 
 function createAgentFormElements(): AgentFormElements {
-  const agentSeatsBody = document.createElement("div")
+  const systemPalette = document.createElement("div")
   const tapooLogsReset = document.createElement("button")
   const tapooLogsDownload = document.createElement("button")
   const agentSeatRoster = document.createElement("div")
@@ -134,7 +142,7 @@ function createAgentFormElements(): AgentFormElements {
   const agentManageClose = document.createElement("button")
 
   agentSeatRoster.hidden = true
-  agentSeatsBody.hidden = true
+  systemPalette.hidden = true
   agentConfigForm.hidden = true
   agentConfigForm.noValidate = true
   agentConfigRequestInterval.type = "number"
@@ -196,6 +204,9 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigStatus,
   )
   const app = document.createElement("div")
+  // Matches #terminal-app's tabindex="0" in the real markup. Without it app.focus() is a no-op in
+  // jsdom, and any test asserting that focus was NOT stolen would pass no matter what the code did.
+  app.tabIndex = 0
   agentManageEnabledText.id = "agent-manage-enabled-label"
   agentManageEnabledLabel.append(agentManageEnabled, agentManageEnabledText)
   agentManageEchoBackReasoningText.id = "agent-manage-echo-back-reasoning-label"
@@ -212,8 +223,24 @@ function createAgentFormElements(): AgentFormElements {
     agentDeleteConfirm,
     agentManageClose,
   )
-  app.append(agentSeatsBody, agentConfigForm, agentManageDialog)
-  agentSeatsBody.append(tapooLogsReset, tapooLogsDownload, agentSeatRoster)
+  const systemSettings = document.createElement("button")
+  const systemSettingsDialog = document.createElement("section")
+  systemSettingsDialog.hidden = true
+  const systemSettingsTitle = document.createElement("strong")
+  const systemSettingsRestartLevel = document.createElement("input")
+  systemSettingsRestartLevel.type = "number"
+  const systemSettingsStatus = document.createElement("span")
+  const systemSettingsApply = document.createElement("button")
+  const systemSettingsClose = document.createElement("button")
+  systemSettingsDialog.append(
+    systemSettingsTitle,
+    systemSettingsRestartLevel,
+    systemSettingsStatus,
+    systemSettingsApply,
+    systemSettingsClose,
+  )
+  systemPalette.append(systemSettings, tapooLogsReset, tapooLogsDownload, agentSeatRoster)
+  app.append(systemPalette, systemSettingsDialog, agentConfigForm, agentManageDialog)
 
   return {
     app,
@@ -229,7 +256,14 @@ function createAgentFormElements(): AgentFormElements {
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
       infoGateProceed: document.createElement("button"),
-    agentSeatsBody,
+    systemPalette,
+    systemSettings,
+    systemSettingsDialog,
+    systemSettingsTitle,
+    systemSettingsRestartLevel,
+    systemSettingsStatus,
+    systemSettingsApply,
+    systemSettingsClose,
     tapooLogsReset,
     tapooLogsDownload,
     agentSeatRoster,
@@ -351,6 +385,7 @@ function createControlFixture(
     lastRoundScore: 0,
     lastWinTraversalSpeedUnits: null,
     level: 4,
+    restartLevel: 1,
     maze: null,
     mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
     startPosition: { x: 1, y: 1 },
@@ -440,7 +475,7 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     expect(fetchMock).toHaveBeenCalled()
@@ -554,7 +589,7 @@ describe("agent control mode", () => {
     const agentWithDecay = { ...enabledAgentConfigs()[0], decayUnitsCharged: 2 }
     const mode = createAgentMode(elements, () => [agentWithDecay])
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     expect(mode.readCurrentPlayer?.()).toBe("Blue the Backtracker - 0.5000x")
@@ -605,7 +640,7 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(1)
@@ -667,7 +702,7 @@ describe("agent control mode", () => {
     })
 
     const mode = createAgentMode(elements)
-    mode.bindActionDispatch(dispatch, () => state, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, () => state, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     const logEntries = loadTapooLog<AgentRoundLogEntry>(CONFIG.runtime.controlModes.agentApi)
@@ -739,7 +774,7 @@ describe("agent control mode", () => {
     })
 
     const mode = createAgentMode(elements)
-    mode.bindActionDispatch(dispatch, () => state, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, () => state, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     const logEntries = loadTapooLog<AgentRoundLogEntry>(CONFIG.runtime.controlModes.agentApi)
@@ -814,7 +849,7 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(2)
@@ -883,7 +918,7 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(1)
@@ -940,7 +975,7 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, vi.fn(() => createControlFixture()))
+    mode.bindActionDispatch(dispatch, readState, vi.fn(() => createControlFixture()), testGameControls())
     elements.touchButtons[0].click()
     elements.touchButtons[1].click()
     elements.touchButtons[2].click()
@@ -1058,7 +1093,7 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
     expect(fetchMock).not.toHaveBeenCalled()
 
@@ -1130,7 +1165,7 @@ describe("agent control mode", () => {
     const commitAgentTurn = vi.fn(() => createControlFixture({ level: 1 }))
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     mode.recordActionResult(createControlFixture({
       currentCell: { row: 9, col: 9 },
       level: 99,
@@ -1204,6 +1239,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture()),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
     await flushImmediateAgentTurn()
     // The one-shot connection-error retry fires after its own backoff; the stubbed fetch keeps
@@ -1251,6 +1287,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     expect(elements.agentSeatRoster?.hidden).toBe(false)
@@ -1294,9 +1331,10 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
-    expect(elements.agentSeatsBody?.hidden).toBe(false)
+    expect(elements.systemPalette?.hidden).toBe(false)
     expect(elements.tapooLogsReset?.disabled).toBe(true)
     expect(elements.tapooLogsDownload?.disabled).toBe(true)
     logTapooDiagnostic("agent-api", "info", "downloadable log")
@@ -1318,6 +1356,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     expect(elements.tapooLogsReset?.disabled).toBe(true)
@@ -1370,6 +1409,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "running" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickDeleteSeat(elements, "2")
@@ -1440,6 +1480,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickDeleteSeat(elements, "1")
@@ -1492,6 +1533,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickDeleteSeat(elements, "2")
@@ -1542,6 +1584,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickDeleteSeat(elements, "1")
@@ -1603,6 +1646,7 @@ describe("agent control mode", () => {
       vi.fn(() => createControlFixture({ lastMoveStatus: "applied" })),
       vi.fn(() => createControlFixture({ status: "running" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     await flushImmediateAgentTurn()
@@ -1655,6 +1699,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     await flushImmediateAgentTurn()
@@ -1694,6 +1739,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1732,6 +1778,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1753,6 +1800,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1780,6 +1828,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1820,6 +1869,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickDeleteSeat(elements, "1")
@@ -1846,6 +1896,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "running" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1871,6 +1922,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1894,6 +1946,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1920,6 +1973,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -1956,6 +2010,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1992,6 +2047,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -2021,6 +2077,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -2062,6 +2119,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2117,6 +2175,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2142,6 +2201,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2176,6 +2236,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2204,6 +2265,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2235,6 +2297,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2266,6 +2329,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2307,6 +2371,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -2339,6 +2404,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2390,8 +2456,8 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(firstDispatch, readState, vi.fn(() => createControlFixture()))
-    mode.bindActionDispatch(secondDispatch, readState, vi.fn(() => createControlFixture()))
+    mode.bindActionDispatch(firstDispatch, readState, vi.fn(() => createControlFixture()), testGameControls())
+    mode.bindActionDispatch(secondDispatch, readState, vi.fn(() => createControlFixture()), testGameControls())
     elements.touchButtons[0].click()
 
     expect(firstDispatch).not.toHaveBeenCalled()
@@ -2427,6 +2493,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "running" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     outsideInput.focus()
@@ -2440,5 +2507,145 @@ describe("agent control mode", () => {
 
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: "pause" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenNthCalledWith(2, { type: "pause" }, { playerName: "Self" })
+  })
+})
+
+describe("system settings dialog", () => {
+  // bindSettings wires an agent mode against a live restartLevel, and hands back the pieces a test
+  // needs to drive the dialog and see what it did.
+  function bindSettings(restartLevel = 1) {
+    const elements = createAgentFormElements()
+    const setRestartLevel = vi.fn(() => true)
+    const state = createControlFixture({ status: "running" })
+    state.restartLevel = restartLevel
+    // In the document, or focus() is a no-op and any focus assertion silently passes on whatever
+    // an earlier test left focused.
+    document.body.append(elements.app)
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      () => state,
+      vi.fn(),
+      { setRestartLevel },
+    )
+
+    return { elements, setRestartLevel }
+  }
+
+  it("opens on the gear with the live restart level already filled in", () => {
+    const { elements } = bindSettings(84)
+
+    expect(elements.systemSettingsDialog?.hidden).toBe(true)
+    elements.systemSettings?.click()
+
+    expect(elements.systemSettingsDialog?.hidden).toBe(false)
+    // Prefilled so Apply with no edit is a no-op rather than a surprise reset to some default.
+    expect(elements.systemSettingsRestartLevel?.value).toBe("84")
+  })
+
+  // The title names the mode it was opened from, so a per-mode setting never reads as global.
+  it("titles the dialog with the mode it was opened from", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+
+    expect(elements.systemSettingsTitle?.textContent).toBe(
+      CONFIG.systemSettings.title.replace("{mode}", CONFIG.runtime.displayLabels.agentApi),
+    )
+    expect(elements.systemSettingsTitle?.textContent).toContain("Agent-API")
+  })
+
+  // The bug this guards: the terminal grabs focus back on any click inside #terminal-app, so an
+  // overlay missing from the shared "is anything open" check cannot be typed into — clicking its
+  // input hands focus straight to the terminal. It fails silently, as an unusable field.
+  it("does not let the terminal steal focus while the dialog is open", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    elements.systemSettingsRestartLevel?.focus()
+    expect(document.activeElement).toBe(elements.systemSettingsRestartLevel)
+
+    // A click anywhere inside the app, exactly as clicking into the field produces by bubbling.
+    elements.app.click()
+
+    expect(document.activeElement).toBe(elements.systemSettingsRestartLevel)
+  })
+
+  it("dims the terminal while the dialog is open, like the agent overlays", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    expect(elements.body.classList.contains("terminal-body--agent-form-active")).toBe(true)
+
+    elements.systemSettingsClose?.click()
+    expect(elements.body.classList.contains("terminal-body--agent-form-active")).toBe(false)
+  })
+
+  it("closes on Escape, like the agent overlays", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+
+    expect(elements.systemSettingsDialog?.hidden).toBe(true)
+  })
+
+  it("applies a valid level and closes", () => {
+    const { elements, setRestartLevel } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    elements.systemSettingsRestartLevel.value = "84"
+    elements.systemSettingsApply?.click()
+
+    expect(setRestartLevel).toHaveBeenCalledWith(84)
+    expect(elements.systemSettingsDialog?.hidden).toBe(true)
+  })
+
+  // 1 is the only bound: there is no known ceiling to a level, so nothing above it is refused.
+  it.each([
+    ["zero", "0"],
+    ["negative", "-3"],
+    ["fractional", "2.5"],
+    ["empty", ""],
+    ["not a number", "abc"],
+  ])("refuses a %s restart level and stays open", (_label, value) => {
+    const { elements, setRestartLevel } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    elements.systemSettingsRestartLevel.value = value
+    elements.systemSettingsApply?.click()
+
+    expect(setRestartLevel).not.toHaveBeenCalled()
+    expect(elements.systemSettingsDialog?.hidden).toBe(false)
+    expect(elements.systemSettingsStatus?.textContent).toBe(
+      CONFIG.systemSettings.invalidRestartLevelMessage,
+    )
+  })
+
+  it("accepts any level at or above the minimum", () => {
+    const { elements, setRestartLevel } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    elements.systemSettingsRestartLevel.value = "1"
+    elements.systemSettingsApply?.click()
+
+    expect(setRestartLevel).toHaveBeenCalledWith(1)
+  })
+
+  // A rejected value must not greet the next open as if it were still a problem.
+  it("clears a previous error when reopened", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    elements.systemSettingsRestartLevel.value = "0"
+    elements.systemSettingsApply?.click()
+    expect(elements.systemSettingsStatus?.textContent).not.toBe("")
+
+    elements.systemSettingsClose?.click()
+    elements.systemSettings?.click()
+
+    expect(elements.systemSettingsStatus?.textContent).toBe("")
+    expect(elements.systemSettingsDialog?.hidden).toBe(false)
   })
 })

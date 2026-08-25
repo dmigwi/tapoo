@@ -114,6 +114,7 @@ const state: State = {
   lastRoundScore: 0,
   lastWinTraversalSpeedUnits: null,
   level: 1,
+  restartLevel: 1,
   maze: null,
   mazeDimensions,
   startPosition: { x: 1, y: 1 },
@@ -162,6 +163,8 @@ function requestInput(
     stateSnapshot: snapshotAgentState(mergedState),
     timeoutMs: 180_000,
     requestIntervalMs: 0,
+    // Running unless a test says otherwise, which is the state every turn starts from.
+    isRoundRunning: () => true,
   }
 }
 
@@ -1182,6 +1185,53 @@ describe("agent request service", () => {
     await Promise.resolve()
     await Promise.resolve()
     request.abort()
+
+    await expect(request.promise).resolves.toEqual({ ok: false, reason: "caller-abort" })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  // A round that stops mid-turn is lifecycle cleanup, exactly like a caller abort — not a provider
+  // failure — so it must not spend score or disable the agent.
+  it("stops before the first request when the round is no longer running", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    const request = requestPredictionWithAbort({
+      ...requestInput(),
+      isRoundRunning: () => false,
+    })
+
+    await expect(request.promise).resolves.toEqual({ ok: false, reason: "caller-abort" })
+    // Not one provider request went out for a round that had already stopped.
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(request.isAborted()).toBe(true)
+  })
+
+  // The case the live callback exists for: a turn spans several provider requests, and the round
+  // stops after the first. A value read off the frozen stateSnapshot could never notice this.
+  it("stops between provider requests when the round stops mid-turn", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        toolCallResponse([
+          { function: { name: "get_maze_structure", arguments: {} } },
+        ]),
+      )
+      .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    let running = true
+    const request = requestPredictionWithAbort({
+      ...requestInput(),
+      isRoundRunning: () => running,
+    })
+
+    // Let the first round's fetch resolve and its tool call be serviced, then stop the round
+    // before the follow-up request goes out.
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    running = false
 
     await expect(request.promise).resolves.toEqual({ ok: false, reason: "caller-abort" })
     expect(fetchMock).toHaveBeenCalledTimes(1)

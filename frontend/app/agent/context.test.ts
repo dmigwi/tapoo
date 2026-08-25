@@ -95,6 +95,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.agentApi,
     level: 4,
+    restartLevel: 1,
     mazeDimensions: { numCols: 2, numRows: 1, area: 2 },
     maze: [
       ["|", "---", "|", "---", "|"],

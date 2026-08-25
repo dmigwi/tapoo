@@ -59,9 +59,9 @@ import {
   tapooLogCount,
   tapooResetLogs,
 } from "../logs"
-import { isRunningStatus } from "../status"
+import { isAgentApiMode, isRunningStatus } from "../status"
 
-const { agentConfig, runtime } = CONFIG
+const { agentConfig, runtime, systemSettings } = CONFIG
 
 type AgentButtonBinding = {
   __button: HTMLButtonElement
@@ -136,12 +136,19 @@ export function createAgentMode(
   // Open overlays temporarily own focus, so normal app refocus should pause until they close.
   const isAgentConfigFormOpen = (): boolean => elements.agentConfigForm?.hidden === false
   const isAgentManageDialogOpen = (): boolean => elements.agentManageDialog?.hidden === false
-  // At most one overlay is ever open (openAgentConfigForm/openAgentManageDialog each close the
-  // other before opening), but callers that only care whether the app should yield focus or dim
-  // don't need to know which — this is the shared "something is showing" check for those callers.
-  const isAnyAgentOverlayOpen = (): boolean => isAgentConfigFormOpen() || isAgentManageDialogOpen()
+  const isSystemSettingsOpen = (): boolean => elements.systemSettingsDialog?.hidden === false
+  // At most one overlay is ever open (each open* closes the others first), but callers that only
+  // care whether the app should yield focus or dim don't need to know which — this is the shared
+  // "something is showing" check for those callers.
+  //
+  // Every overlay must be listed here, including ones that are not about agents: an omission does
+  // not fail visibly, it steals focus. The terminal takes focus back on any click inside #terminal-app
+  // (see the focusCurrentApp listener below), so an overlay missing from this check cannot be typed
+  // into at all — clicking its input immediately hands focus to the terminal instead.
+  const isAnyOverlayOpen = (): boolean =>
+    isAgentConfigFormOpen() || isAgentManageDialogOpen() || isSystemSettingsOpen()
   const focusCurrentApp = (): void => {
-    if (isAnyAgentOverlayOpen()) {
+    if (isAnyOverlayOpen()) {
       return
     }
 
@@ -158,8 +165,8 @@ export function createAgentMode(
         agentMovePoller?.__setAttached(false)
         agentMovePoller?.__stopPolling()
         elements.body.classList.remove("terminal-body--agent-form-active")
-        if (elements.agentSeatsBody) {
-          elements.agentSeatsBody.hidden = true
+        if (elements.systemPalette) {
+          elements.systemPalette.hidden = true
         }
         releaseLogSubscription?.()
         releaseLogSubscription = null
@@ -244,6 +251,7 @@ export function createAgentMode(
       dispatch: MazeActionDispatch,
       readState,
       commitTurn,
+      gameControls,
     ) {
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
@@ -295,8 +303,8 @@ export function createAgentMode(
 
       // renderAgentRoster repaints the seat list with the latest config and highlights the currently playing agent.
       const renderAgentRoster = (): void => {
-        if (elements.agentSeatsBody) {
-          elements.agentSeatsBody.hidden = false
+        if (elements.systemPalette) {
+          elements.systemPalette.hidden = false
         }
         renderAgentSeatRoster(
           elements.agentSeatRoster,
@@ -324,7 +332,7 @@ export function createAgentMode(
       const syncOverlayState = (): void => {
         elements.body.classList.toggle(
           "terminal-body--agent-form-active",
-          isAnyAgentOverlayOpen(),
+          isAnyOverlayOpen(),
         )
       }
 
@@ -770,6 +778,96 @@ export function createAgentMode(
         renderAgentRoster()
       }
 
+      // closeSystemSettings hides the settings overlay and clears any message it was showing, so
+      // a stale error never greets the next open.
+      const closeSystemSettings = (): void => {
+        if (elements.systemSettingsDialog) {
+          elements.systemSettingsDialog.hidden = true
+        }
+        if (elements.systemSettingsStatus) {
+          elements.systemSettingsStatus.textContent = ""
+        }
+        syncOverlayState()
+      }
+
+      // openSystemSettings shows the overlay with the live restart level already filled in, so
+      // Apply with no edit is a no-op rather than a surprise.
+      const openSystemSettings = (): void => {
+        // One overlay at a time, the same rule openAgentConfigForm and openAgentManageDialog keep.
+        closeAgentConfigForm()
+        closeAgentManageDialog()
+        // Named per mode rather than statically, so a setting that only governs this mode's play
+        // is never mistaken for a global one. Read from live state so the dialog stays correct if
+        // the palette is ever shown in interactive mode too.
+        if (elements.systemSettingsTitle) {
+          const { displayLabels } = runtime
+          elements.systemSettingsTitle.textContent = systemSettings.title.replace(
+            "{mode}",
+            isAgentApiMode(readState().controlMode)
+              ? displayLabels.agentApi
+              : displayLabels.interactive,
+          )
+        }
+        if (elements.systemSettingsRestartLevel) {
+          elements.systemSettingsRestartLevel.value = String(readState().restartLevel)
+        }
+        if (elements.systemSettingsStatus) {
+          elements.systemSettingsStatus.textContent = ""
+        }
+        if (elements.systemSettingsDialog) {
+          elements.systemSettingsDialog.hidden = false
+        }
+        // Dims the terminal behind the overlay, the same as the agent dialogs do.
+        syncOverlayState()
+        elements.systemSettingsRestartLevel?.focus()
+      }
+
+      // bindSystemSettingsDialog wires the palette's gear to the settings overlay and its Apply.
+      const bindSystemSettingsDialog = (): void => {
+        const settingsButton = elements.systemSettings
+        if (settingsButton) {
+          const onClick = (): void => {
+            openSystemSettings()
+          }
+          buttonBindings.push({ __button: settingsButton, __onClick: onClick })
+          settingsButton.addEventListener("click", onClick)
+        }
+
+        const closeButton = elements.systemSettingsClose
+        if (closeButton) {
+          const onClick = (): void => {
+            closeSystemSettings()
+          }
+          buttonBindings.push({ __button: closeButton, __onClick: onClick })
+          closeButton.addEventListener("click", onClick)
+        }
+
+        const applyButton = elements.systemSettingsApply
+        if (applyButton) {
+          const onClick = (): void => {
+            // The input is the only value validated here: a whole number of 1 or more. Everything
+            // above that is allowed on purpose — there is no known ceiling to a level, so refusing
+            // a high one would be inventing a limit the game does not have.
+            const restartLevel = Number(elements.systemSettingsRestartLevel?.value ?? "")
+            if (!Number.isInteger(restartLevel) || restartLevel < 1) {
+              if (elements.systemSettingsStatus) {
+                elements.systemSettingsStatus.textContent =
+                  systemSettings.invalidRestartLevelMessage
+              }
+              return
+            }
+
+            // setRestartLevel stops the round in progress, so the dialog closes onto a game that
+            // has already halted rather than one still decaying behind it.
+            gameControls.setRestartLevel(restartLevel)
+            closeSystemSettings()
+            renderAgentRoster()
+          }
+          buttonBindings.push({ __button: applyButton, __onClick: onClick })
+          applyButton.addEventListener("click", onClick)
+        }
+      }
+
       // bindLogButtons wires the reset and download controls to the agent-api log store.
       const bindLogButtons = (): void => {
         // syncResetButton disables both log controls when there is nothing to act on.
@@ -1085,6 +1183,11 @@ export function createAgentMode(
           return true
         }
 
+        if (isSystemSettingsOpen()) {
+          closeSystemSettings()
+          return true
+        }
+
         return false
       }
 
@@ -1119,6 +1222,7 @@ export function createAgentMode(
 
       bindSessionButtons(elements.controls)
       bindSessionButtons(elements.touchButtons)
+      bindSystemSettingsDialog()
       bindLogButtons()
       bindAgentRoster()
       bindAgentConfigForm()

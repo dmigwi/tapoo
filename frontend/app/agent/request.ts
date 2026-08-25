@@ -62,6 +62,12 @@ type RequestAgentPredictionInput = {
   requestIntervalMs: number
   agent: AgentApiSeatConfig
   lastActionResult: MazeActionResult | null
+  // Live read of whether the round is still running — deliberately a callback, not a value off
+  // stateSnapshot, which is frozen at turn start and so can never report a round that stopped
+  // mid-turn. A turn can span several provider requests and minutes of wall clock; anything that
+  // halts the round in that window (a pause, a restart, a level change) must stop the remaining
+  // requests rather than let them land on a game that has moved on.
+  isRoundRunning: () => boolean
 }
 
 // sleep resolves after delayMs — used only to pace consecutive provider requests within one turn.
@@ -242,10 +248,31 @@ export function requestPredictionWithAbort({
   agent,
   timeoutMs,
   requestIntervalMs,
+  isRoundRunning,
 }: RequestAgentPredictionInput): AgentPredictionRequest {
   // Expected aborts are lifecycle cleanup; timeout aborts remain provider/network failures.
   let activeController: AbortController | null = null
   let wasExpectedAbort = false
+
+  // shouldStopRequesting answers the one question both in-loop checkpoints ask: is there any
+  // reason not to send another provider request? A caller abort and a round that stopped under us
+  // are the same situation — lifecycle cleanup, not a provider failure — so a stopped round is
+  // promoted to an expected abort here, cancelling anything in flight. That keeps every later
+  // check, including the catch below, on the single wasExpectedAbort flag.
+  const shouldStopRequesting = (): boolean => {
+    if (wasExpectedAbort) {
+      return true
+    }
+
+    if (isRoundRunning()) {
+      return false
+    }
+
+    wasExpectedAbort = true
+    activeController?.abort()
+    activeController = null
+    return true
+  }
 
   // A level's first agent-api turn is the only one that needs the full system/user prompt
   // and tool descriptions logged; later turns repeat that same static content.
@@ -321,9 +348,10 @@ export function requestPredictionWithAbort({
       }
 
       while (true) {
-        // Honor aborts that land between provider requests, when no active controller exists yet.
-        if (wasExpectedAbort) {
-          // Exit 1: caller aborted between provider requests.
+        // Honor aborts that land between provider requests, when no active controller exists yet,
+        // and stop just as promptly when the round itself is no longer running.
+        if (shouldStopRequesting()) {
+          // Exit 1: caller aborted, or the round stopped, between provider requests.
           return { ok: false, reason: "caller-abort" }
         }
 
@@ -333,8 +361,8 @@ export function requestPredictionWithAbort({
         // same tool-calling turn use the same request interval here.
         if (requestCount > 1) {
           await sleep(requestIntervalMs)
-          if (wasExpectedAbort) {
-            // Exit 1: caller aborted while this request was waiting to go out.
+          if (shouldStopRequesting()) {
+            // Exit 1: caller aborted, or the round stopped, while this request waited to go out.
             return { ok: false, reason: "caller-abort" }
           }
         }

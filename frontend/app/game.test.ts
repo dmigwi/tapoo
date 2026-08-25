@@ -608,7 +608,7 @@ describe("bootstrapGame", () => {
 
     expect(loadPersistedSnapshot).toHaveBeenCalledWith(
       CONFIG.runtime.controlModes.interactive,
-      1,
+      CONFIG.runtime.defaultRestartLevel,
       1,
       expect.any(Function),
     )
@@ -748,6 +748,62 @@ describe("bootstrapGame", () => {
     )
   })
 
+  // restartLevel is a floor on every round, not only on restarts: with it set above the level a
+  // player would advance into, the next round opens at the floor instead of below it.
+  it("lifts a round that would open below the restart level up to it", async () => {
+    const elements = createElements()
+    const render = vi.fn<(elements: Elements, state: State) => void>()
+    const loadPersistedSnapshot = vi.fn(() => ({
+      preferences: { level: 3, wallWeight: 1 },
+      round: createPersistedWonRound(),
+    }))
+    const getMazeDimensions = vi.fn((level: number) => ({ level, numCols: 1, numRows: 1 }))
+    const generateMaze = vi.fn(() => createRound())
+
+    vi.doMock("./dom", () => ({
+      elements,
+      getTerminalSize: vi.fn(() => ({ numCols: 20, numRows: 20 })),
+    }))
+    vi.doMock("./maze", () => ({
+      generateMaze,
+      getMazeDimensions,
+      getNavigationProfile: vi.fn(() => ({
+        __maxCorridorLength: 10,
+        __leastNeighborsBias: 100,
+      })),
+    }))
+    vi.doMock("./traversal", () => createTraversalMock())
+    vi.doMock("./render", () => ({ render }))
+    vi.doMock("./storage", () => ({
+      clearPersistedSnapshot: vi.fn(),
+      clearPersistedRound: vi.fn(),
+      agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
+      disableAgentApiConfigForNetworkError: vi.fn(),
+      loadAgentApiSeatConfigs: vi.fn(() => []),
+      loadPersistedSnapshot,
+      resetAgentRoundStats: vi.fn(),
+      saveGameProgress: vi.fn(),
+      saveActiveRoundSnapshot: vi.fn(),
+      loadTapooLog: vi.fn(() => []),
+      saveTapooLog: vi.fn(),
+      appendTapooLogEntry: vi.fn(),
+      clearTapooLog: vi.fn(),
+    }))
+    vi.spyOn(window, "setInterval").mockImplementation(() => 1)
+
+    const { createInteractiveMode } = await import("./control/interactive")
+    const { bootstrapGame } = await import("./game")
+
+    const runtime = bootstrapGame(createInteractiveMode(elements), elements)
+    expect(runtime.setRestartLevel(84)).toBe(true)
+
+    // Advancing from the restored level-3 win would ask for level 4, which is below the floor.
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+
+    expect(getMazeDimensions).toHaveBeenLastCalledWith(84, { numCols: 20, numRows: 20 })
+    expect(getMazeDimensions).not.toHaveBeenCalledWith(4, { numCols: 20, numRows: 20 })
+  })
+
   it("cycles wall weight and reweights the live maze when Ctrl+B is pressed", async () => {
     const elements = createElements()
     const render = vi.fn<(elements: Elements, state: State) => void>()
@@ -813,7 +869,69 @@ describe("bootstrapGame", () => {
     expect(state.maze).toEqual(reweightedMaze)
   })
 
-  it("clears persisted browser state before restarting from level 1", async () => {
+  // The mechanics the UI will drive: a level chosen mid-session decides where the next restart
+  // lands, without disturbing the round already running.
+  it("restarts into a session-chosen level rather than the configured default", async () => {
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        { preferences: { level: 7, wallWeight: 3 }, round: null },
+      ],
+    })
+
+    // Bootstrap opened the stored level, not the restart level — the two are independent.
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(7, { numCols: 20, numRows: 20 })
+    expect(harness.runtime.readRestartLevel()).toBe(CONFIG.runtime.defaultRestartLevel)
+
+    expect(harness.runtime.setRestartLevel(84)).toBe(true)
+    // Choosing a level does not touch the round in progress; nothing is regenerated.
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(7, { numCols: 20, numRows: 20 })
+
+    harness.elements.controls[0].click()
+
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(84, { numCols: 20, numRows: 20 })
+  })
+
+  // Changing where games begin stops what is playing first, so the change lands at a moment the
+  // player chose rather than whenever something next happens to restart — and so the score stops
+  // decaying against a round they have already left.
+  it("stops an interactive round in progress before moving the floor", async () => {
+    const harness = await bootstrapHarness({})
+    expect(latestRenderedState(harness.render).status).toBe("running")
+
+    expect(harness.runtime.setRestartLevel(84)).toBe(true)
+
+    expect(latestRenderedState(harness.render).status).toBe("paused")
+    expect(harness.runtime.readRestartLevel()).toBe(84)
+  })
+
+  // Paused, not await-agent: that status means play has no enabled agent seat, which is untrue of
+  // a round an agent was mid-turn on.
+  it("pauses an agent-api round in progress before moving the floor", async () => {
+    const harness = await bootstrapHarness({
+      mode: CONFIG.runtime.controlModes.agentApi,
+      agentConfigs: [enabledAgentConfig()],
+    })
+    expect(latestRenderedState(harness.render).status).toBe("running")
+
+    expect(harness.runtime.setRestartLevel(84)).toBe(true)
+
+    expect(latestRenderedState(harness.render).status).toBe("paused")
+    expect(harness.runtime.readRestartLevel()).toBe(84)
+  })
+
+  it("rejects a restart level gameplay could not use, keeping the last good one", async () => {
+    const harness = await bootstrapHarness({})
+
+    expect(harness.runtime.setRestartLevel(12)).toBe(true)
+    for (const invalid of [0, -1, 2.5]) {
+      expect(harness.runtime.setRestartLevel(invalid)).toBe(false)
+    }
+    // A repeat of the current value is not a change either, so callers can set unconditionally.
+    expect(harness.runtime.setRestartLevel(12)).toBe(false)
+    expect(harness.runtime.readRestartLevel()).toBe(12)
+  })
+
+  it("clears persisted browser state before restarting from the configured opening level", async () => {
     const harness = await bootstrapHarness({
       persistedSnapshots: [
         {
@@ -832,7 +950,10 @@ describe("bootstrapGame", () => {
 
     expect(harness.clearPersistedSnapshot).toHaveBeenCalledTimes(1)
     expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(1)
-    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(1, {
+    // Read from CONFIG rather than hardcoded, so raising defaultRestartLevel for a playtest deep
+    // in the level curve does not fail the suite — while still proving restartGame goes through
+    // that knob instead of a literal of its own.
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(CONFIG.runtime.defaultRestartLevel, {
       numCols: 20,
       numRows: 20,
     })

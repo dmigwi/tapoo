@@ -419,6 +419,9 @@ export function handleAgentTurnLoop({
       encodedMazeForLevelStart,
       timeoutMs: timing.agentApiResponseTimeoutMs,
       requestIntervalMs: agentRequestIntervalMs(agent),
+      // Read live, not from stateSnapshot: the snapshot is frozen at turn start, so only a fresh
+      // read can notice the round stopping part-way through a multi-request turn.
+      isRoundRunning: () => isRunningStatus(__readState().status),
     })
     activeRequest = predictionRequest
     return predictionRequest.promise

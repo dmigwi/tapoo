@@ -521,6 +521,15 @@ export type AgentPlayerStatus = {
   decayUnitsCharged: number
 }
 
+// GameControls are the game-owned mutations a control mode may drive from its own UI, beyond the
+// action dispatcher. Kept separate from MazeAction because these carry values: MazeAction is a
+// union of bare type tags, and giving one a payload would reshape every action in it.
+export type GameControls = {
+  // Moves the floor every round opens at or above, returning whether it changed. Stops the round
+  // in progress first — see setRestartLevel in game.ts.
+  setRestartLevel: (level: number) => boolean
+}
+
 // MazeActionControl defines the production contract that each browser action-control mode implements.
 export interface MazeActionControl {
   name: MazeControlModeName
@@ -528,6 +537,7 @@ export interface MazeActionControl {
     dispatch: MazeActionDispatch,
     readState: () => State,
     commitTurn: (chargedMovesCount?: number, traversalSpeedUnits?: number) => void,
+    gameControls: GameControls,
   ) => void
   readLastActionResult: () => MazeActionResult | null
   recordActionResult: (actionResult: MazeActionResult) => void
@@ -539,6 +549,15 @@ export interface MazeActionControl {
 export type State = {
   controlMode: MazeControlModeName
   level: number
+  // restartLevel is the floor every round opens at or above — level is where the player currently
+  // is, and the two move apart the moment a game progresses past it. Seeded from
+  // CONFIG.runtime.defaultRestartLevel and editable while the game runs, so a playtest can open
+  // deep in the level curve without a code change.
+  //
+  // Deliberately not persisted: it is a live choice for the page in front of you, and every load
+  // starts again from the configured default rather than inheriting a floor nobody remembers
+  // setting. Changing it stops the round in progress first — see setRestartLevel in game.ts.
+  restartLevel: number
   status: GameStatus
 
   maze: string[][] | null
@@ -580,6 +599,11 @@ export type GameRuntime = {
   mode: MazeControlModeName
   dispatch: MazeActionDispatch
   persistSnapshot: () => void
+  // setRestartLevel chooses where fresh and restarted games begin for the rest of this session,
+  // returning whether anything changed. A round already running is left alone: the new level
+  // applies at the next restart, so this is safe to call mid-game.
+  setRestartLevel: (level: number) => boolean
+  readRestartLevel: () => number
 }
 
 // ScreenLine is the renderer's normalized line model before HTML generation.
@@ -614,7 +638,17 @@ export type TerminalElements = {
 
 // AgentElements are only used by the agent-api page overlays and seat roster.
 export type AgentElements = {
-  agentSeatsBody?: HTMLElement
+  // The agent-api side palette: settings, Tapoo log controls, and the seat roster. Named for the
+  // wider role it is expected to grow into rather than for seats alone, but shown only in agent-api
+  // mode until interactive play has something to put in it.
+  systemPalette?: HTMLElement
+  systemSettings?: HTMLButtonElement
+  systemSettingsDialog?: HTMLElement
+  systemSettingsTitle?: HTMLElement
+  systemSettingsRestartLevel?: HTMLInputElement
+  systemSettingsStatus?: HTMLElement
+  systemSettingsApply?: HTMLButtonElement
+  systemSettingsClose?: HTMLButtonElement
   tapooLogsReset?: HTMLButtonElement
   tapooLogsDownload?: HTMLButtonElement
   agentSeatRoster?: HTMLElement
@@ -813,6 +847,13 @@ export type AppConfig = {
     duplicateToolCallHeading: string
     tokenLimitExhaustionHeading: string
   }
+  systemSettings: {
+    title: string
+    restartLevelLabel: string
+    restartLevelTooltip: string
+    applyLabel: string
+    invalidRestartLevelMessage: string
+  }
   agentConfig: {
     title: string
     newAgentLabel: string
@@ -926,6 +967,11 @@ export type AppConfig = {
       interactive: MazeControlModeName
       agentApi: MazeControlModeName
     }
+    displayLabels: {
+      interactive: string
+      agentApi: string
+    }
+    defaultRestartLevel: number
     storage: {
       version: number
       suffixes: {

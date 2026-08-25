@@ -762,20 +762,33 @@ body {
   pointer-events: none;
 }
 
-.agent-seats-body {
+/* The palette docks beside #terminal-body in both control modes. Three rows: settings, log
+   controls, then the roster shell, which takes the remaining height and is empty outside agent-api
+   mode. */
+.system-palette {
   flex: 0 0 auto;
   align-self: stretch;
   min-height: 0;
   display: grid;
-  grid-template-rows: max-content 1fr;
+  grid-template-rows: max-content max-content 1fr;
   gap: 6px;
   padding-inline-start: 4px;
   border-inline-start: 1px solid rgba(72, 198, 62, 0.34);
   pointer-events: auto;
 }
 
-.agent-seats-body[hidden] {
+.system-palette[hidden] {
   display: none;
+}
+
+/* Separated from the log controls below by a rule rather than spacing alone, so the settings entry
+   does not read as a third log action. */
+.system-palette__actions {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding-block-end: 6px;
+  border-block-end: 1px solid rgba(72, 198, 62, 0.18);
 }
 
 .tapoo-logs-controls {
@@ -1070,7 +1083,11 @@ body {
   inset: 0;
   z-index: 6;
   display: flex;
-  align-items: center;
+  /* Biased above centre, the same 44% .agent-config-form uses: a panel centred on the exact middle
+     reads as sitting low, because the eye takes the visual centre to be higher than the geometric
+     one. flex-start plus a percentage margin keeps the panel free to grow downward on a short
+     viewport, which a translate(-50%) would push off the top instead. */
+  align-items: flex-start;
   justify-content: center;
   padding: 16px;
   background: rgba(2, 5, 2, 0.82);
@@ -1081,6 +1098,7 @@ body {
 }
 
 .info-gate__panel {
+  margin-block-start: min(18vh, 140px);
   width: min(520px, 100%);
   border: 1px solid rgba(72, 198, 62, 0.18);
   border-radius: 14px;
@@ -1091,24 +1109,37 @@ body {
     inset 0 0 28px rgba(72, 198, 62, 0.035);
   color: var(--text);
   display: grid;
-  gap: 12px;
-  padding: 18px;
+  /* Roomier than the agent dialogs on purpose. Those are forms a returning user skims; this one
+     asks for consent to delete data, and the four parts — what happened, what it costs, what will
+     go, and the button that does it — each need to register separately rather than read as one
+     block of text. */
+  gap: 18px;
+  padding: 24px 22px 20px;
 }
 
+/* An h2 rather than a styled strong: this is the dialog's accessible name (aria-labelledby) and
+   the heading of its content, so it should carry that role natively. h2 rather than h1 because the
+   gate is transient — making a hidden element the page's only top-level heading would mean the
+   outline changed depending on whether stale data happened to exist. The margins and font-size a
+   heading brings are reset here; the panel's own grid gap owns the spacing. */
 .info-gate__title {
+  margin: 0;
   color: var(--status);
   font-size: 1.08rem;
+  line-height: 1.35;
+  text-align: center;
+  text-transform: capitalize;
 }
 
 .info-gate__message {
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.65;
 }
 
 .info-gate__detail {
   margin: 0;
   color: var(--status);
-  line-height: 1.5;
+  line-height: 1.65;
 }
 
 .info-gate__detail[hidden] {
@@ -1118,6 +1149,9 @@ body {
 .info-gate__actions {
   display: flex;
   justify-content: flex-end;
+  /* A little extra above the only irreversible control here, so it is never the thing a fast
+     reader's cursor lands on next. */
+  margin-block-start: 6px;
 }
 
 .info-gate__proceed {
@@ -1329,6 +1363,11 @@ body {
   visibility: visible;
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+/* A level is a handful of digits; a full-width box invites the reader to expect something longer. */
+.system-settings__level-input {
+  max-width: 20ch;
 }
 
 .agent-config-form__field input,

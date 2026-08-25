@@ -40,7 +40,14 @@ function setupTerminalDom(): void {
     <p id="info-gate-message"></p>
     <p id="info-gate-detail" hidden></p>
     <button id="info-gate-proceed"></button>
-    <div id="agent-seats-body"></div>
+    <div id="system-palette"></div>
+    <button id="system-settings"></button>
+    <section id="system-settings-dialog" hidden></section>
+    <strong id="system-settings-title"></strong>
+    <input id="system-settings-restart-level" type="number" />
+    <span id="system-settings-status"></span>
+    <button id="system-settings-apply"></button>
+    <button id="system-settings-close"></button>
     <button id="tapoo-logs-reset"></button>
     <button id="tapoo-logs-download"></button>
     <div id="agent-seat-roster"></div>

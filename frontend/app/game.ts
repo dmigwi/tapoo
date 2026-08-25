@@ -91,7 +91,10 @@ type RuntimeRoundState = {
 
 const state: State = {
   controlMode: runtime.controlModes.interactive,
-  level: 1,
+  level: runtime.defaultRestartLevel,
+  // Replaced during bootstrap by whatever this session already chose; the config default only
+  // applies until then, and on a session that has never set one.
+  restartLevel: runtime.defaultRestartLevel,
   maze: null,
   mazeDimensions: null,
   startPosition: null,
@@ -122,7 +125,7 @@ let runtimeElements: Elements | null = null
 function loadPersistedSnapshotWithFallbacks(
   mode: MazeControlModeName,
 ): PersistedSnapshot {
-  return loadPersistedSnapshot(mode, 1, WALL_WEIGHTS[0], isWallWeight)
+  return loadPersistedSnapshot(mode, state.restartLevel, WALL_WEIGHTS[0], isWallWeight)
 }
 
 // calculateRoundScore resolves authoritative score updates for gameplay state changes.
@@ -399,10 +402,16 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
 }
 
 // startRound generates and initializes a fresh round for the requested level.
-function startRound(level: number, persist = true): boolean {
+function startRound(requestedLevel: number, persist = true): boolean {
   if (!runtimeElements) {
     return false
   }
+
+  // restartLevel is a floor, not just a restart target: no round may open below where this session
+  // says games begin. Applied here rather than at each call site so every entry point obeys it —
+  // a restore from stored progress, a retry, and a viewport bailout included. Progression above the
+  // floor is untouched, since a level already past it is its own maximum.
+  const level = Math.max(requestedLevel, state.restartLevel)
 
   const terminalSize = getTerminalSize(runtimeElements)
   const dimensions = getMazeDimensions(level, terminalSize)
@@ -432,7 +441,7 @@ function redrawRoundForViewport(level: number): boolean {
   return startRoundWithDimensions(dimensions)
 }
 
-// restartGame clears persisted progress and restarts from level one.
+// restartGame clears persisted progress and restarts from the configured opening level.
 function restartGame(): boolean {
   cancelScheduledRoundPersist()
   clearPersistedSnapshot(state.controlMode)
@@ -444,7 +453,48 @@ function restartGame(): boolean {
   state.bestWinTraversalSpeedUnits = null
   state.lastRoundScore = 0
   state.winSummary = ""
-  return startRound(1, false)
+  return startRound(state.restartLevel, false)
+}
+
+// stopActiveRound freezes a game that is actually playing, so state can be changed underneath it.
+// Nothing else: no mode-specific handling, and no status written when there was nothing to stop.
+//
+// Paused in both modes. await-agent is not the agent-api equivalent of a pause — it means play has
+// no enabled agent seat to run (see awaitAgent below, and the dispatch in control/agent-api.ts),
+// which is untrue of a round an agent was mid-turn on. Stopping such a round is a pause, and
+// paused is also what lets it resume by the ordinary route.
+//
+// The running check is the only condition, and it is checked here rather than delegated to
+// awaitAgent/pauseGame, whose own guards can decline — pauseGame additionally requires a clock
+// (canTrackDestinationVisibility) — leaving a live round running behind a caller that believed it
+// had stopped.
+function stopActiveRound(): boolean {
+  if (!isRunningStatus(state.status)) {
+    return false
+  }
+
+  // Optional because a running round without a clock is possible in principle; the status change
+  // below is what actually stops play, and it must happen either way.
+  state.clock?.pause()
+  state.status = "paused"
+  persistNow("state")
+  return true
+}
+
+// setRestartLevel moves the floor every round opens at or above, returning whether it changed.
+//
+// The round in progress is stopped first. A level chosen mid-play would otherwise sit inert until
+// something happened to call startRound, and the score would keep decaying against a round the
+// player has mentally already left. Stopping makes the change take effect at a moment the player
+// chose, rather than at whatever moment the game next happens to restart.
+function setRestartLevel(level: number): boolean {
+  if (!Number.isInteger(level) || level < 1 || level === state.restartLevel) {
+    return false
+  }
+
+  stopActiveRound()
+  state.restartLevel = level
+  return true
 }
 
 // resumeOrProceed resumes a pause or advances from a finished round.
@@ -681,7 +731,7 @@ export function bootstrapGame(
       scheduleRoundPersistence,
     })
 
-  controlMode.bindActionDispatch(dispatchControl, readState, commitTurn)
+  controlMode.bindActionDispatch(dispatchControl, readState, commitTurn, { setRestartLevel })
   if (isInteractiveMode(controlMode.name)) {
     runtimeElements.app.focus()
   }
@@ -692,5 +742,10 @@ export function bootstrapGame(
     persistSnapshot: () => {
       persistNow("state")
     },
+    // Exposed on the runtime rather than as a MazeAction because MazeAction carries no payload —
+    // every action is a bare type tag. Giving one a level value is a change to that whole union,
+    // and belongs with the UI work rather than ahead of it.
+    setRestartLevel,
+    readRestartLevel: () => state.restartLevel,
   }
 }

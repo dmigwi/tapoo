@@ -63,6 +63,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.interactive,
     level: 1,
+    restartLevel: 1,
     maze: [
       ["|", "---", "-", "---", "|"],
       ["|", "   ", " ", "   ", "|"],

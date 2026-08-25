@@ -43,6 +43,7 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 0,
     lastWinTraversalSpeedUnits: null,
     level: 2,
+    restartLevel: 1,
     maze: null,
     mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
     startPosition: { x: 1, y: 1 },
@@ -169,6 +170,69 @@ describe("agent api turn loop", () => {
     await flushImmediateAgentTurn()
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(elements.body.dataset.agentControl).toBe("active")
+  })
+
+  // The status read handed to the request service must be live. stateSnapshot also carries a
+  // status, and typechecks identically, but it is frozen at turn start — so a round that stops
+  // part-way through a multi-request turn would go unnoticed and the remaining requests would land
+  // on a game that had already moved on.
+  it("stops a turn's later requests once the round is no longer running", async () => {
+    const elements = { body: document.createElement("div") }
+    let state = createState({ status: "running" })
+    const fetchMock = vi
+      .fn()
+      // First round asks for a tool, so the turn needs a second request to finish.
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: {
+            role: "assistant",
+            content: "",
+            tool_calls: [{ function: { name: "get_maze_structure", arguments: {} } }],
+          },
+        }),
+      })
+      .mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const poller = handleAgentTurnLoop({
+      __elements: elements,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi.fn(() =>
+        createActionResult({ lastMoveStatus: "applied" }),
+      ),
+      __commitAgentTurn: vi.fn(),
+      __onActionResult: vi.fn(),
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: () => [
+        { ...enabledAgentConfigs()[0], requestIntervalSeconds: CONFIG.agentConfig.requestIntervalMinSeconds },
+      ],
+      __readState: () => state,
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+
+    // Let the first request go out and its tool call be serviced, then stop the round before the
+    // follow-up request is sent — the window a frozen snapshot could never see.
+    await flushImmediateAgentTurn()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    state = createState({ status: "paused" })
+
+    // Past the inter-request interval, so the follow-up request would have gone out by now if
+    // nothing stopped it. Without this the count stays at 1 whatever the code does, and the test
+    // proves nothing.
+    await vi.advanceTimersByTimeAsync(
+      CONFIG.agentConfig.requestIntervalMinSeconds * 1_000 + 1_000,
+    )
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it("moves the game into agent waiting state immediately when no enabled agent exists", () => {
