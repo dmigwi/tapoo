@@ -7,11 +7,11 @@ import { calculateTraversalSpeedUnits, getBatchEfficiencyMetrics } from "../agen
 import { snapshotAgentState } from "../agent/state-snapshot"
 import type { AgentStateSnapshot } from "../agent/state-snapshot"
 import { encodeMazeForLog, logTapooDiagnostic } from "../logs"
-import { recordAgentTurnStats } from "../storage"
+import { agentForCurrentRound, recordAgentTurnStats } from "../storage"
 import { isLostStatus, isRunningStatus, isWonStatus } from "../status"
 import { cloneMazeDimensions } from "../traversal"
 import type {
-  AgentApiConfig,
+  AgentApiSeatConfig,
   AgentPredictionFailure,
   AgentPredictionRequest,
   AgentPredictionResult,
@@ -69,18 +69,18 @@ type HandleAgentTurnLoopOptions = {
   __dispatchAgentAction: (
     action: MazeAction,
     dispatch: MazeActionDispatch,
-    agent: AgentApiConfig,
+    agentName: string,
   ) => MazeActionResult
-  __disableAgentAfterNetworkError: (agent: AgentApiConfig) => void
-  __onActiveAgentChange?: (agent: AgentApiConfig | null) => void
+  __disableAgentAfterNetworkError: (agent: AgentApiSeatConfig) => void
+  __onActiveAgentChange?: (agent: AgentApiSeatConfig | null) => void
   __onRoundOutcome: (event: AgentRoundState) => void
-  __readAgentConfigs: () => AgentApiConfig[]
+  __readAgentConfigs: () => AgentApiSeatConfig[]
   __onActionResult: (actionResult: MazeActionResult) => void
   __readState: () => State
 }
 
 export type AgentRoundState = {
-  __agent: AgentApiConfig
+  __agent: AgentApiSeatConfig
   __playerStatus: AgentPlayerStatus
   __state: State
   __actionResult: MazeActionResult
@@ -123,7 +123,7 @@ export function handleAgentTurnLoop({
   const hasEnabledAgents = (): boolean => __readAgentConfigs().some((agent) => agent.enabled)
 
   // nextAgent rotates through all enabled agents configured for the shared maze.
-  const nextAgent = (): AgentApiConfig | null => {
+  const nextAgent = (): AgentApiSeatConfig | null => {
     const enabledAgents = __readAgentConfigs().filter((agent) => agent.enabled)
     if (enabledAgents.length === 0) {
       return null
@@ -158,7 +158,7 @@ export function handleAgentTurnLoop({
   // the turn's stateSnapshot: this check runs before a turn's request is even attempted, so it isn't
   // "building/sending the request" — the one thing stateSnapshot exists for — and it must see the
   // round exactly as it is right now, not a view captured for a different purpose.
-  const agentTurnCountMismatch = (agent: AgentApiConfig, currentState: State): boolean =>
+  const agentTurnCountMismatch = (agent: AgentApiSeatConfig, currentState: State): boolean =>
     agent.gameLevel === currentState.level &&
     agent.cumulativeRoundCount === currentState.cumulativeRoundCount &&
     (agent.levelTurnCount ?? 0) !== currentState.turnCount
@@ -168,9 +168,9 @@ export function handleAgentTurnLoop({
   // patching one counter to match the other risks quietly feeding the model turn context assembled
   // from a different game output than the one it's reasoning about. A restart is the only response
   // that guarantees that never happens.
-  const resetAfterAgentStateMismatch = (agent: AgentApiConfig, currentState: State): void => {
+  const resetAfterAgentStateMismatch = (agent: AgentApiSeatConfig, currentState: State): void => {
     logTapooDiagnostic(runtime.controlModes.agentApi, "error", "Agent turn count mismatch; resetting game state.", {
-      agentId: agent.id,
+      seatId: agent.seatId,
       playerName: agent.playerName,
       stateTurnCount: currentState.turnCount,
       agentLevelTurnCount: agent.levelTurnCount ?? 0,
@@ -212,7 +212,7 @@ export function handleAgentTurnLoop({
   // notifyRoundCompletion invokes final-state callbacks only after score decay and replay metadata
   // have been committed, so diagnostics receive the same state the UI is about to show.
   const notifyRoundCompletion = (
-    agent: AgentApiConfig,
+    agent: AgentApiSeatConfig,
     playerStatus: AgentPlayerStatus,
     actionResult: MazeActionResult,
   ): void => {
@@ -242,7 +242,7 @@ export function handleAgentTurnLoop({
   }
 
   // playerStatusFor scopes traversal speed to the agent that just acted, never the whole team.
-  const playerStatusFor = (agent: AgentApiConfig, currentState: State): AgentPlayerStatus => {
+  const playerStatusFor = (agent: AgentApiSeatConfig, currentState: State): AgentPlayerStatus => {
     const { playerUniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(
       currentState.traversalHistory,
       agent,
@@ -255,7 +255,7 @@ export function handleAgentTurnLoop({
   }
 
   // recordAgentNetworkError disables failed agents and records the no-score-decay network state.
-  const recordAgentNetworkError = (agent: AgentApiConfig | null): void => {
+  const recordAgentNetworkError = (agent: AgentApiSeatConfig | null): void => {
     if (!agent) {
       return
     }
@@ -280,7 +280,7 @@ export function handleAgentTurnLoop({
   // with the next turn count before committing so a terminal turn's summary can use that post-turn
   // agent status immediately.
   const recordRejectedAgentResponse = (
-    agent: AgentApiConfig,
+    agent: AgentApiSeatConfig,
     lastMoveStatus: RejectedAgentResponseReason,
   ): void => {
     const chargedMovesCount = agentMalformedPenaltyDecayUnits
@@ -317,7 +317,7 @@ export function handleAgentTurnLoop({
   // No stateSnapshot here: neither branch reads it (recordRejectedAgentResponse reads live state
   // itself, after committing — see its own comment for why).
   const applyPredictionFailureConsequence = (
-    agent: AgentApiConfig,
+    agent: AgentApiSeatConfig,
     failure: AgentPredictionFailure,
   ): void => {
     if (failure.reason === "caller-abort") {
@@ -337,7 +337,7 @@ export function handleAgentTurnLoop({
   // connection-error retry to log the failure up front while the consequence waits on the retry's
   // outcome; that consequence is then applied later via applyPredictionFailureConsequence directly.
   const recordPredictionFailure = (
-    agent: AgentApiConfig,
+    agent: AgentApiSeatConfig,
     failure: AgentPredictionFailure,
     deferConsequence = false,
   ): void => {
@@ -395,7 +395,7 @@ export function handleAgentTurnLoop({
   // later attempt a different view than the one the turn started with, even though nothing about
   // the outcome of a failed attempt should have changed it.
   const requestAgentPrediction = (
-    agent: AgentApiConfig,
+    agent: AgentApiSeatConfig,
     stateSnapshot: AgentStateSnapshot,
     encodedMazeForLevelStart: EncodedMazeForLevelStart | null,
   ): Promise<AgentPredictionResult> => {
@@ -424,7 +424,7 @@ export function handleAgentTurnLoop({
   // malformed-response and caller-abort are never retried either: a malformed response is the
   // model's own mistake, and a caller-abort means polling already stopped.
   const requestAgentPredictionWithRetry = async (
-    agent: AgentApiConfig,
+    agent: AgentApiSeatConfig,
     stateSnapshot: AgentStateSnapshot,
     encodedMazeForLevelStart: EncodedMazeForLevelStart | null,
   ): Promise<AgentPredictionResult> => {
@@ -481,12 +481,12 @@ export function handleAgentTurnLoop({
       }
 
       // Agent selection stays in this loop so the roster can update before the request starts.
-      const selectedAgent = nextAgent()
-      if (!selectedAgent) {
+      const storedAgent = nextAgent()
+      if (!storedAgent) {
         awaitAgent()
         return
       }
-      nextDelayMs = agentRequestIntervalMs(selectedAgent)
+      nextDelayMs = agentRequestIntervalMs(storedAgent)
 
       // The turn's one and only live read, taken fresh on every call to this function (i.e. once
       // per turn). The mismatch gate below reads it directly, live — see agentTurnCountMismatch's
@@ -498,6 +498,12 @@ export function handleAgentTurnLoop({
       // actually succeed do the same (see __commitAgentTurn below and notifyRoundCompletion) — by
       // design, to track whatever just changed rather than what this turn started with.
       const currentState = __readState()
+      const selectedAgent = agentForCurrentRound(
+        storedAgent,
+        currentState.level,
+        currentState.cumulativeRoundCount,
+        currentState.turnCount,
+      )
       if (agentTurnCountMismatch(selectedAgent, currentState)) {
         resetAfterAgentStateMismatch(selectedAgent, currentState)
         return
@@ -525,7 +531,7 @@ export function handleAgentTurnLoop({
       let invalidMovesPenalty = 0
 
       for (const move of submittedMoves) {
-        const replayState = __dispatchAgentAction({ type: move }, __dispatch, selectedAgent)
+        const replayState = __dispatchAgentAction({ type: move }, __dispatch, selectedAgent.playerName)
         lastReplayResult = replayState
         const status = replayState.lastMoveStatus
 

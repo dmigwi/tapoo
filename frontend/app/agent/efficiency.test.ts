@@ -10,13 +10,14 @@ import {
   traversalSpeedUnitsToDisplay,
 } from "./efficiency"
 import { CONFIG } from "../config"
-import type { AgentApiConfig, TraversalHistoryEntry } from "../types"
+import type { AgentApiSeatConfig, TraversalHistoryEntry } from "../types"
 
 const traversalSpeedDisplayDecimals = String(CONFIG.scoring.traversalSpeedScaleUnits).length - 1
 
-function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
+function createAgent(overrides: Partial<AgentApiSeatConfig> = {}): AgentApiSeatConfig {
   return {
-    id: 1,
+    seatId: 1,
+    sessionId: 1_700_000_000_000,
     playerName: "Blue",
     model: "qwen3.6:27b",
     endpoint: new URL("https://agents.example/chat"),

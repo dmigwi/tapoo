@@ -15,6 +15,10 @@ type AgentConfigValidationInput = {
   extraHeaders: string
 }
 
+type AgentRequestIntervalInput = {
+  requestIntervalSeconds?: number
+}
+
 // EXTRA_HEADER_NAME_PATTERN matches a valid HTTP header field name per RFC 7230's token grammar:
 // visible ASCII, no whitespace, none of the separator characters a real header name never
 // contains. Catches a typo (a stray space, a colon typed into the key itself) at submit time
@@ -61,6 +65,15 @@ export function defaultAgentApiRequestIntervalSeconds(): number {
   return CONFIG.timing.defaultAgentApiRequestIntervalSeconds
 }
 
+// hasValidAgentPlayerName enforces the compact player-name range shared by the config form and
+// storage normalization, so a name rejected at submit time is the same one rejected on load.
+export function hasValidAgentPlayerName(playerName: string): boolean {
+  return (
+    playerName.length >= agentConfig.playerNameMinLength &&
+    playerName.length <= agentConfig.playerNameMaxLength
+  )
+}
+
 export function parseAgentRequestIntervalSeconds(value: string): number | null {
   const trimmedValue = value.trim()
   if (!/^\d+$/.test(trimmedValue)) {
@@ -74,12 +87,12 @@ export function parseAgentRequestIntervalSeconds(value: string): number | null {
       : null
 }
 
-export function agentRequestIntervalSeconds(agent: AgentApiConfig): number {
-  return agent.requestIntervalSeconds ?? defaultAgentApiRequestIntervalSeconds()
+export function agentRequestIntervalSeconds(input: AgentRequestIntervalInput): number {
+  return input.requestIntervalSeconds ?? defaultAgentApiRequestIntervalSeconds()
 }
 
-export function agentRequestIntervalMs(agent: AgentApiConfig): number {
-  return agentRequestIntervalSeconds(agent) * 1_000
+export function agentRequestIntervalMs(input: AgentRequestIntervalInput): number {
+  return agentRequestIntervalSeconds(input) * 1_000
 }
 
 // describeProviderHttpFailure augments a raw HTTP status with the small amount of agent-provider
@@ -179,10 +192,7 @@ export function agentConfigValidationError({
     return agentConfig.invalidApiMessage
   }
 
-  if (
-    playerName.length < agentConfig.playerNameMinLength ||
-    playerName.length > agentConfig.playerNameMaxLength
-  ) {
+  if (!hasValidAgentPlayerName(playerName)) {
     return agentConfig.playerNameLengthMessage
   }
 

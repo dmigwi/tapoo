@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { CONFIG } from "./config"
 import { isAgentApiMode } from "./status"
 import type {
-  AgentApiConfig,
+  AgentApiSeatConfig,
   Elements,
   GameRuntime,
   MazeActionControl,
@@ -28,9 +28,10 @@ function setVisualViewportScale(scale: number): void {
   })
 }
 
-function enabledAgentConfig(): AgentApiConfig {
+function enabledAgentConfig(): AgentApiSeatConfig {
   return {
-    id: 1,
+    seatId: 1,
+    sessionId: 1_700_000_000_000,
     playerName: "Blue",
     model: "llama3.2",
     endpoint: new URL("https://agents.example/blue/move"),
@@ -384,7 +385,7 @@ async function bootstrapHarness({
   mode = CONFIG.runtime.controlModes.interactive,
   terminalSizes = [{ numCols: 20, numRows: 20 }],
 }: {
-  agentConfigs?: AgentApiConfig[]
+  agentConfigs?: AgentApiSeatConfig[]
   dimensionsResults?: DimensionsResult[]
   isSpaceFound?: (cell: string) => boolean
   persistedSnapshots?: Array<{
@@ -486,8 +487,9 @@ async function bootstrapHarness({
     clearPersistedSnapshot,
     clearPersistedRound,
     clearStaleStorageVersions: vi.fn(),
+    agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
     disableAgentApiConfigForNetworkError: vi.fn(),
-    loadPersistedAgentApiConfigs: vi.fn(() => agentConfigs),
+    loadAgentApiSeatConfigs: vi.fn(() => agentConfigs),
     loadPersistedSnapshot,
     resetAgentRoundStats: vi.fn(),
     saveGameProgress,
@@ -582,8 +584,9 @@ describe("bootstrapGame", () => {
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       clearStaleStorageVersions: vi.fn(),
+      agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
-      loadPersistedAgentApiConfigs: vi.fn(() => []),
+      loadAgentApiSeatConfigs: vi.fn(() => []),
       loadPersistedSnapshot,
       resetAgentRoundStats: vi.fn(),
       saveGameProgress: vi.fn(),
@@ -654,8 +657,9 @@ describe("bootstrapGame", () => {
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       clearStaleStorageVersions: vi.fn(),
+      agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
-      loadPersistedAgentApiConfigs: vi.fn(() => []),
+      loadAgentApiSeatConfigs: vi.fn(() => []),
       loadPersistedSnapshot: vi.fn(() => ({
         preferences: { level: 1, wallWeight: 1 },
         round: null,
@@ -711,8 +715,9 @@ describe("bootstrapGame", () => {
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       clearStaleStorageVersions: vi.fn(),
+      agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
-      loadPersistedAgentApiConfigs: vi.fn(() => []),
+      loadAgentApiSeatConfigs: vi.fn(() => []),
       loadPersistedSnapshot,
       resetAgentRoundStats: vi.fn(),
       saveGameProgress: vi.fn(),
@@ -772,8 +777,9 @@ describe("bootstrapGame", () => {
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
       clearStaleStorageVersions: vi.fn(),
+      agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
-      loadPersistedAgentApiConfigs: vi.fn(() => []),
+      loadAgentApiSeatConfigs: vi.fn(() => []),
       loadPersistedSnapshot: vi.fn(() => ({
         preferences: { level: 1, wallWeight: 1 },
         round: null,

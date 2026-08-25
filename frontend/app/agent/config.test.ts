@@ -21,13 +21,13 @@ const baseValidationInput = {
 
 function agent(playerName: string): AgentApiConfig {
   return {
-    id: 1,
+    seatId: 1,
+    sessionId: 1_700_000_000_000,
     playerName,
     model: "llama3.2",
     endpoint: new URL("https://agents.example/move"),
     api: "ollama",
     requestIntervalSeconds: CONFIG.timing.defaultAgentApiRequestIntervalSeconds,
-    enabled: true,
   }
 }
 

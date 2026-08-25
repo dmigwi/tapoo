@@ -1,5 +1,5 @@
 import { CONFIG } from "../config"
-import type { AgentApiConfig, AgentPlayerStatus, TraversalHistoryEntry } from "../types"
+import type { AgentApiSeatConfig, AgentPlayerStatus, TraversalHistoryEntry } from "../types"
 
 const { scoring } = CONFIG
 const traversalSpeedDisplayDecimals = String(scoring.traversalSpeedScaleUnits).length - 1
@@ -35,7 +35,7 @@ export type BatchEfficiencyMetrics = {
 // progress, not a raw move count.
 function countDistinctCellsForAgent(
   traversalHistory: readonly TraversalHistoryEntry[],
-  agent: AgentApiConfig,
+  agent: AgentApiSeatConfig,
 ): number {
   return traversalHistory.filter((entry) => entry.playerName === agent.playerName).length
 }
@@ -43,7 +43,7 @@ function countDistinctCellsForAgent(
 // getBatchEfficiencyMetrics returns the raw counts behind the rate.
 export function getBatchEfficiencyMetrics(
   traversalHistory: readonly TraversalHistoryEntry[],
-  agent: AgentApiConfig,
+  agent: AgentApiSeatConfig,
 ): BatchEfficiencyMetrics {
   return {
     playerUniqueCellsVisited: countDistinctCellsForAgent(traversalHistory, agent),
@@ -78,7 +78,7 @@ export function resolveStatusSpeedClass(uniqueCellsVisited: number, decayUnitsCh
 // classification, everywhere one is shown or sent.
 export function resolveBatchEfficiencyClass(
   traversalHistory: readonly TraversalHistoryEntry[],
-  agent: AgentApiConfig,
+  agent: AgentApiSeatConfig,
 ): BatchEfficiencyClass {
   const { playerUniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(traversalHistory, agent)
   return resolveStatusSpeedClass(playerUniqueCellsVisited, decayUnitsCharged)
@@ -159,7 +159,7 @@ export function nameWithSpeedClass(playerName: string, speedClass: BatchEfficien
 // agentDisplayName names the agent after its current speed classification everywhere the UI shows
 // it — tooltips, dialog titles — so the classification the model is working from stays visible to
 // a human observer too, e.g. "Kora the Trailblazer".
-export function agentDisplayName(agent: AgentApiConfig, traversalHistory: readonly TraversalHistoryEntry[]): string {
+export function agentDisplayName(agent: AgentApiSeatConfig, traversalHistory: readonly TraversalHistoryEntry[]): string {
   return nameWithSpeedClass(agent.playerName, resolveBatchEfficiencyClass(traversalHistory, agent))
 }
 

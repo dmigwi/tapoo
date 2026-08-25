@@ -13,7 +13,7 @@ import type { BatchEfficiencyClass } from "./efficiency"
 import type { AgentStateSnapshot } from "./state-snapshot"
 import type {
   AgentChatMessage,
-  AgentApiConfig,
+  AgentApiSeatConfig,
   AgentExpectedResponseSchema,
   AgentSubmittedMovesSchema,
   AgentToolCall,
@@ -235,6 +235,7 @@ const mazeStructureTool: AgentToolDefinition = {
       "can lead to new ground; backtracking means all exits have been used and this direction cannot lead to the",
       "destination, so do not choose it; oscillating means the cell has been visited more often than its exit count — a",
       "confirmed waste signal from crossing back into exhausted ground.",
+      "An exit counts as used once it has served as the passage into that cell.",
       "A dead-end reads as backtracking from its first visit, because nothing lies beyond a single exit.",
       "cellType is precomputed so you never need to count exits yourself: start-cell (the traversal start), target-cell",
       "(the destination), dead-end (one exit), corridor (two exits), or junction (three or more). cellType and",
@@ -277,9 +278,10 @@ const predictionRulesTool: AgentToolDefinition = {
       "counts as progress. Higher traversal speed means more progress per decay unit, increasing the chance of reaching",
       "the target before score runs out.",
       "batchEfficiencyClass is set to backtracker when the speed is below 1.0000, navigator at 1.0000, or trailblazer above 1.0000.",
-      "Backtracker rates prediction efficiency, while get_maze_structure's backtracking visitStatus marks one cell as a",
-      "spent direction. Both are independent: a player can classify as backtracker without ever entering a backtracking cell,",
-      "and crossing such cells does not by itself lower the class. Retrace-only batching can save turns but cannot",
+      "Backtracker is a live game metric rating prediction efficiency class, while get_maze_structure's",
+      "backtracking visitStatus marks one cell as a spent direction. The two are independent: a player can classify as",
+      "backtracker without ever entering a backtracking cell, and crossing such cells costs no decay beyond the turn's",
+      "own charge. Retrace-only batching can save turns but cannot",
       "create new-cell progress, so trailblazer is evidence that forward prediction into unvisited cells succeeded.",
       "allUniqueCellsVisited is every cell any player has reached this level, not just your own — compare it",
       "against mazeDimensions.totalMazeCells to know how much of the maze the team has collectively explored so far;",
@@ -442,7 +444,7 @@ function isWithinManhattanDistance(
 export function buildAgentToolHandlers(
   snapshot: AgentStateSnapshot,
   lastActionResult: MazeActionResult | null,
-  agent: AgentApiConfig,
+  agent: AgentApiSeatConfig,
 ): AgentToolHandlers {
   return {
     get_prediction_rules() {

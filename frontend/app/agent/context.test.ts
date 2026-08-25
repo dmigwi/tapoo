@@ -14,7 +14,7 @@ import {
   buildMazeActionResult,
 } from "../control"
 import type {
-  AgentApiConfig,
+  AgentApiSeatConfig,
   AgentExpectedResponseSchema,
   State,
   TraversalHistoryEntry,
@@ -39,9 +39,10 @@ function agentVisit(
   return { playerName, row, col, openMoves, visitCount }
 }
 
-function createAgent(overrides: Partial<AgentApiConfig> = {}): AgentApiConfig {
+function createAgent(overrides: Partial<AgentApiSeatConfig> = {}): AgentApiSeatConfig {
   return {
-    id: 1,
+    seatId: 1,
+    sessionId: 1_700_000_000_000,
     playerName: "Blue",
     model: "qwen3.6:27b",
     endpoint: new URL("https://agents.example/chat"),

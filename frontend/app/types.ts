@@ -1,5 +1,7 @@
 import type { GameClock } from "./clock"
 
+// --Browser Storage Types--
+
 // PersistedGameStatus lists only round states that are safe to restore from browser storage.
 export type PersistedGameStatus =
   | "running"
@@ -7,6 +9,160 @@ export type PersistedGameStatus =
   | "won"
   | "lost"
   | "await-agent"
+
+// --localStorage Types--
+// Shared by every same-origin tab, and deliberately so: these are the records two games running
+// side by side are meant to compare themselves against. Anything belonging to one tab's own run
+// lives under the sessionStorage banner below instead.
+
+// PersistedGameSetup stores the progress fields usually loaded together before a round starts.
+export type PersistedGameSetup = {
+  level: number
+  wallWeight: WallWeight
+}
+
+// PersistedWinMetrics stores the completed-round metrics that survive level progression.
+export type PersistedWinMetrics = {
+  lastAttemptRetentionUnits: number | null
+  bestWinRetentionUnits: number | null
+  lastWinTraversalSpeedUnits: number | null
+  bestWinTraversalSpeedUnits: number | null
+}
+
+// PersistedPreferences combines setup with optional metrics because old/missing storage can lack either bucket.
+export type PersistedPreferences = PersistedGameSetup & Partial<PersistedWinMetrics>
+
+// AgentApiProvider selects which wire format an agent's endpoint speaks. Always present on a live
+// config — normalizeAgentApiConfig (storage.ts) defaults a persisted record lacking it to "ollama"
+// rather than rejecting the record, so this being required here never risks dropping an old agent.
+export type AgentApiProvider = "ollama" | "openai" | "anthropic"
+
+// AgentReasoningEffort is a shared vocabulary across all three providers, even though each
+// provider only recognizes a subset of it (agentConfig.reasoningEffortOptions, config.ts) and maps
+// it onto a completely different wire mechanism: Ollama's boolean think, OpenAI-compatible's
+// qualitative reasoning_effort string, Anthropic's numeric thinking.budget_tokens. Anthropic has no
+// "none" — it always reasons at some level once thinking is enabled.
+export type AgentReasoningEffort = "none" | "low" | "medium" | "high" | "max"
+
+// AgentApiConfig stores one HTTP-controlled agent that can join the shared agent-api maze.
+export type AgentApiConfig = {
+  // seatId is the fixed roster slot this agent occupies (isAgentSeatId), not a unique agent
+  // identity — deleting a seat frees the value for the next occupant. Pair it with sessionId
+  // below whenever an agent instance has to be identified rather than merely located.
+  seatId: number
+  // sessionId stamps when this seat's current occupant was created. id alone cannot identify an
+  // agent across tabs: ids are fixed roster seats (isAgentSeatId), so deleting a seat frees its id
+  // for the next occupant. Another tab never sees that delete — its sessionStorage still holds a
+  // metrics row filed under the same id — so the stamp is what tells the two apart. A session row
+  // is only honoured when its sessionId matches the config's; otherwise it belonged to a previous
+  // occupant and is discarded rather than inherited. Backfilled by normalizeAgentApiConfig
+  // (storage.ts) for records saved before this field existed, the same way api is.
+  sessionId: number
+  playerName: string
+  model: string
+  endpoint: URL
+  api: AgentApiProvider
+  // reasoningEffort picks how hard the model reasons before replying, filtered to the options its
+  // provider actually supports (agentConfig.reasoningEffortOptions). Optional here purely to avoid
+  // forcing every existing AgentApiConfig test fixture to specify it — normalizeAgentApiConfig
+  // (storage.ts) always coerces a persisted record to a concrete, provider-valid value, the same way
+  // it already does for api, so a genuinely absent value should never reach a provider adapter.
+  reasoningEffort?: AgentReasoningEffort
+  // credential is one stored value behind two labels: "Bearer Token" for ollama/openai, "API Key"
+  // for anthropic. The header it becomes is decided by the provider adapter, not by this field.
+  credential?: string
+  // extraHeaders is raw multi-line "Key: Value" user input, provider-agnostic — appended directly
+  // onto every request this agent sends. Covers cases a dedicated field would need re-shipping to
+  // support: anthropic-version (Anthropic's API evolves independently of Tapoo), X-Wait-For-Model
+  // (Hugging Face's router, to dodge cold-start read timeouts), or anything else a given endpoint
+  // needs. Parsed once by parseExtraHeaders (agent/protocol.ts) before reaching a provider adapter.
+  extraHeaders?: string
+  // echoBackReasoning controls whether a provider-returned reasoning is echoed back on
+  // the next request's assistant message. Off by default because model guidance conflicts: some
+  // reasoning models (e.g. Kimi K3) require it echoed back verbatim across a turn's tool-calling
+  // rounds or they lose the analysis they already did, while others (e.g. Gemma) explicitly
+  // require it withheld from multi-turn context. See the on-form tooltip that asks the user to
+  // confirm their model's own guidance before turning this on.
+  echoBackReasoning?: boolean
+  // requestIntervalSeconds stores the same whole-second value the user edits in the form. It is
+  // converted to milliseconds only at the timer/request boundary.
+  // Optional only for old stored entries; storage normalization backfills the configured default
+  // when the field is absent, but preserves explicit valid values unchanged.
+  requestIntervalSeconds?: number
+}
+
+// --sessionStorage Types--
+
+// PersistedRound captures the active or finished round state restored across reloads.
+export type PersistedRound = {
+  level: number
+  mazeDimensions: MazeDimensions
+  maze: string[][]
+  startCell: CellCoordinate
+  traversalHistory: TraversalHistoryEntry[]
+  startPosition: RenderGridPoint
+  playerPosition: RenderGridPoint
+  finalPosition: RenderGridPoint
+  wallWeight: WallWeight
+  status: PersistedGameStatus
+  score: number
+  lastRoundScore: number
+  remainingMs: number
+  winSummary?: string
+  scoreDecayUnits?: number
+  turnCount?: number
+  cumulativeRoundCount?: number
+}
+
+// AgentApiSessionMetrics is sessionStorage-only state for one browser tab's current agent-api round.
+// gameLevel and cumulativeRoundCount identify the round where the counters below were last synced.
+// localStorage is shared by same-origin tabs, so these fields must never be part of AgentApiConfig.
+export type AgentApiSessionMetrics = {
+  seatId: number
+  // sessionId must equal the AgentApiConfig.sessionId of the seat's current occupant for this row
+  // to apply — see that field for why an id on its own is not enough.
+  sessionId: number
+  // enabled is deliberately session-scoped rather than durable: a tab starts every agent switched
+  // off, so opening a new tab or reopening the browser never resumes spending against a remote
+  // provider on its own. Turning an agent on is always a fresh, explicit act in that tab.
+  enabled: boolean
+  disabledReason?: "network-error"
+  lastErrorAt?: number
+
+  // gameLevel and cumulativeRoundCount identify the round where the counters below were last synced.
+  // levelTurnCount must match State.turnCount for that round; a mismatch means the stored view is
+  // contradictory and the agent-api runtime resets before asking any model for another prediction.
+  // Level alone can't tell a retry of the same level apart from continuing it, hence
+  // cumulativeRoundCount. See recordAgentTurnStats (storage.ts) for why neither half is redundant.
+  gameLevel?: number
+  cumulativeRoundCount?: number
+  // levelTurnCount mirrors State.turnCount (every seat gets the same value on every commit) purely
+  // as the staleness signal above — it is not a per-agent count and must not be read as one.
+  levelTurnCount?: number
+  // turnCount is this agent's own tally of turns it has personally taken this round, incremented
+  // only when this agent is the one who just played. decayUnitsCharged is this agent's own share of
+  // the round's score decay, and is what its traversal speed is measured against. state.scoreDecayUnits
+  // cannot serve here: it is shared by every seat, so it attributes no spend to any individual agent.
+  turnCount?: number
+  decayUnitsCharged?: number
+}
+
+// --Storage Aggregate/Runtime View Types--
+
+// PersistedSnapshot bundles long-lived preferences with the short-lived round snapshot.
+export type PersistedSnapshot = {
+  preferences: PersistedPreferences
+  round: PersistedRound | null
+}
+
+// AgentApiSeatConfig is the fully resolved occupant of one seat: its durable localStorage config
+// plus this tab's sessionStorage availability and round counters. AgentSeat is the slot itself and
+// can be empty; this is what fills one. Everything that renders a seat or asks its agent to predict
+// works from this type, never from AgentApiConfig alone — that half cannot say whether the agent is
+// even switched on in this tab.
+export type AgentApiSeatConfig = AgentApiConfig & AgentApiSessionMetrics
+
+// --Shared Runtime Types--
 
 // Shared runtime types live here so rendering, control, storage, and generation stay aligned.
 export type GameStatus = PersistedGameStatus | "boot" | "too-small"
@@ -183,50 +339,6 @@ export type RoundState = {
   finalPosition: RenderGridPoint
 }
 
-// PersistedRound captures the active or finished round state restored across reloads.
-export type PersistedRound = {
-  level: number
-  mazeDimensions: MazeDimensions
-  maze: string[][]
-  startCell: CellCoordinate
-  traversalHistory: TraversalHistoryEntry[]
-  startPosition: RenderGridPoint
-  playerPosition: RenderGridPoint
-  finalPosition: RenderGridPoint
-  wallWeight: WallWeight
-  status: PersistedGameStatus
-  score: number
-  lastRoundScore: number
-  remainingMs: number
-  winSummary?: string
-  scoreDecayUnits?: number
-  turnCount?: number
-  cumulativeRoundCount?: number
-}
-
-// PersistedGameSetup stores the progress fields usually loaded together before a round starts.
-export type PersistedGameSetup = {
-  level: number
-  wallWeight: WallWeight
-}
-
-// PersistedWinMetrics stores the completed-round metrics that survive level progression.
-export type PersistedWinMetrics = {
-  lastAttemptRetentionUnits: number | null
-  bestWinRetentionUnits: number | null
-  lastWinTraversalSpeedUnits: number | null
-  bestWinTraversalSpeedUnits: number | null
-}
-
-// PersistedPreferences combines setup with optional metrics because old/missing storage can lack either bucket.
-export type PersistedPreferences = PersistedGameSetup & Partial<PersistedWinMetrics>
-
-// PersistedSnapshot bundles long-lived preferences with the short-lived round snapshot.
-export type PersistedSnapshot = {
-  preferences: PersistedPreferences
-  round: PersistedRound | null
-}
-
 // AgentExpectedResponseSchema documents the one supported prediction payload using JSON Schema.
 export type AgentExpectedResponseSchema = {
   type: "object"
@@ -365,76 +477,14 @@ export type AgentPredictionRequest = {
   promise: Promise<AgentPredictionResult>
 }
 
-// AgentApiProvider selects which wire format an agent's endpoint speaks. Always present on a live
-// config — normalizeAgentApiConfig (storage.ts) defaults a persisted record lacking it to "ollama"
-// rather than rejecting the record, so this being required here never risks dropping an old agent.
-export type AgentApiProvider = "ollama" | "openai" | "anthropic"
-
-// AgentReasoningEffort is a shared vocabulary across all three providers, even though each
-// provider only recognizes a subset of it (agentConfig.reasoningEffortOptions, config.ts) and maps
-// it onto a completely different wire mechanism: Ollama's boolean think, OpenAI-compatible's
-// qualitative reasoning_effort string, Anthropic's numeric thinking.budget_tokens. Anthropic has no
-// "none" — it always reasons at some level once thinking is enabled.
-export type AgentReasoningEffort = "none" | "low" | "medium" | "high" | "max"
-
-// AgentApiConfig stores one HTTP-controlled agent that can join the shared agent-api maze.
-export type AgentApiConfig = {
-  id: number
-  playerName: string
-  model: string
-  endpoint: URL
-  api: AgentApiProvider
-  // reasoningEffort picks how hard the model reasons before replying, filtered to the options its
-  // provider actually supports (agentConfig.reasoningEffortOptions). Optional here purely to avoid
-  // forcing every existing AgentApiConfig test fixture to specify it — normalizeAgentApiConfig
-  // (storage.ts) always coerces a persisted record to a concrete, provider-valid value, the same way
-  // it already does for api, so a genuinely absent value should never reach a provider adapter.
-  reasoningEffort?: AgentReasoningEffort
-  // credential is one stored value behind two labels: "Bearer Token" for ollama/openai, "API Key"
-  // for anthropic. The header it becomes is decided by the provider adapter, not by this field.
-  credential?: string
-  // extraHeaders is raw multi-line "Key: Value" user input, provider-agnostic — appended directly
-  // onto every request this agent sends. Covers cases a dedicated field would need re-shipping to
-  // support: anthropic-version (Anthropic's API evolves independently of Tapoo), X-Wait-For-Model
-  // (Hugging Face's router, to dodge cold-start read timeouts), or anything else a given endpoint
-  // needs. Parsed once by parseExtraHeaders (agent/protocol.ts) before reaching a provider adapter.
-  extraHeaders?: string
-  // echoBackReasoning controls whether a provider-returned reasoning is echoed back on
-  // the next request's assistant message. Off by default because model guidance conflicts: some
-  // reasoning models (e.g. Kimi K3) require it echoed back verbatim across a turn's tool-calling
-  // rounds or they lose the analysis they already did, while others (e.g. Gemma) explicitly
-  // require it withheld from multi-turn context. See the on-form tooltip that asks the user to
-  // confirm their model's own guidance before turning this on.
-  echoBackReasoning?: boolean
-  // requestIntervalSeconds stores the same whole-second value the user edits in the form. It is
-  // converted to milliseconds only at the timer/request boundary.
-  // Optional only for old stored entries; storage normalization backfills the configured default
-  // when the field is absent, but preserves explicit valid values unchanged.
-  requestIntervalSeconds?: number
-  enabled: boolean
-  disabledReason?: "network-error"
-  lastErrorAt?: number
-  // gameLevel and cumulativeRoundCount identify the round where the counters below were last synced.
-  // levelTurnCount must match State.turnCount for that round; a mismatch means the stored agent view
-  // is contradictory and the agent-api runtime resets before asking any model for another prediction.
-  // Level alone can't tell a retry of the same level apart from continuing it, hence cumulativeRoundCount.
-  gameLevel?: number
-  cumulativeRoundCount?: number
-  // levelTurnCount mirrors State.turnCount (every seat gets the same value on every commit) purely
-  // as the staleness signal above — it is not a per-agent count and must not be read as one.
-  levelTurnCount?: number
-  // turnCount is this agent's own tally of turns it has personally taken this round, incremented
-  // only when this agent is the one who just played. decayUnitsCharged is this agent's own share of
-  // the round's score decay, and is what its traversal speed is measured against. state.scoreDecayUnits
-  // cannot serve here: it is shared by every seat, so it attributes no spend to any individual agent.
-  turnCount?: number
-  decayUnitsCharged?: number
-}
-
 // AgentSeat represents one fixed roster slot; null means the seat is empty.
+// Both fields are readonly because a seat is a snapshot, not a handle: buildAgentSeats rebuilds the
+// whole roster from the current configs on every render, so reseating an agent means changing what
+// that function reads. A write here would be discarded on the next build while looking like it had
+// taken effect. seatId matches AgentApiSeatConfig.seatId — the same fixed slot, named the same way.
 export type AgentSeat = {
-  id: number
-  agent: AgentApiConfig | null
+  readonly seatId: number
+  readonly agent: AgentApiSeatConfig | null
 }
 
 // MazeActionResult stores only the previous command/replay outcome; live maze facts stay in State.
@@ -860,6 +910,7 @@ export type AppConfig = {
         agentConfigs: string
         gameSetup: string
         winMetrics: string
+        sessionMetrics: string
         tapooLog: string
       }
     }

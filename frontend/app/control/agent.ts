@@ -1,6 +1,7 @@
 import type {
   Elements,
   AgentApiConfig,
+  AgentApiSeatConfig,
   AgentApiProvider,
   AgentReasoningEffort,
   MazeAction,
@@ -43,9 +44,12 @@ import {
   sessionActionFromKeyboardEvent,
 } from "./session-actions"
 import {
+  clearAgentSessionMetrics,
   disableAgentApiConfigForNetworkError,
-  loadPersistedAgentApiConfigs,
+  loadAgentApiSeatConfigs,
+  resetAgentSessionAvailability,
   savePersistedAgentApiConfigs,
+  updateAgentSessionAvailability,
 } from "../storage"
 import { CONFIG } from "../config"
 import {
@@ -77,7 +81,7 @@ function logAgentRoundCompletion({ __state, __agent, __playerStatus }: AgentRoun
   logTapooDiagnostic(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
     outcome,
     agent: {
-      id: __agent.id,
+      seatId: __agent.seatId,
       playerName: __agent.playerName,
       model: __agent.model,
       enabled: __agent.enabled,
@@ -97,7 +101,7 @@ function logAgentRoundCompletion({ __state, __agent, __playerStatus }: AgentRoun
 // createAgentMode builds the agent-api MazeActionControl while transport wiring is still pending.
 export function createAgentMode(
   elements: Elements,
-  readAgentConfigs: () => AgentApiConfig[] = loadPersistedAgentApiConfigs,
+  readAgentConfigs: () => AgentApiSeatConfig[] = loadAgentApiSeatConfigs,
   disableAgentAfterNetworkError: (agent: AgentApiConfig) => void = (agent) => {
     disableAgentApiConfigForNetworkError(agent)
   },
@@ -254,11 +258,11 @@ export function createAgentMode(
       const dispatchAgentAction = (
         action: MazeAction,
         nextDispatch: MazeActionDispatch,
-        agent: AgentApiConfig,
+        agentName: string,
       ): MazeActionResult => {
         const actionResult = nextDispatch(action, {
           wantFeedback: true,
-          playerName: agent.playerName,
+          playerName: agentName,
         })
         if (!actionResult) {
           throw new Error("agent move dispatch must return feedback")
@@ -277,7 +281,7 @@ export function createAgentMode(
         __elements: elements,
         __onActionResult: recordLastActionResult,
         __onActiveAgentChange: (agent) => {
-          activeAgentId = agent?.id ?? null
+          activeAgentId = agent?.seatId ?? null
           renderAgentRoster()
         },
         __onRoundOutcome: logAgentRoundCompletion,
@@ -682,8 +686,8 @@ export function createAgentMode(
 
       // openAgentManageDialog pauses an active round and opens the manage overlay for the chosen seat.
       const openAgentManageDialog = (seatId: number): void => {
-        const agent = readAgentConfigs().find((config) => config.id === seatId)
-        if (!agent || agent.id === currentPlayingAgentId() || !elements.agentManageDialog) {
+        const agent = readAgentConfigs().find((config) => config.seatId === seatId)
+        if (!agent || agent.seatId === currentPlayingAgentId() || !elements.agentManageDialog) {
           return
         }
 
@@ -890,7 +894,7 @@ export function createAgentMode(
             return
           }
 
-          if (existingAgents.some((agent) => agent.id === selectedSeatId)) {
+          if (existingAgents.some((agent) => agent.seatId === selectedSeatId)) {
             closeAgentConfigForm()
             renderAgentRoster()
             return
@@ -909,7 +913,11 @@ export function createAgentMode(
           }
 
           const nextAgent: AgentApiConfig = {
-            id: selectedSeatId,
+            seatId: selectedSeatId,
+            // Stamped once, here, at the only point a seat gains a new occupant. Every session
+            // metrics row this agent ever earns is filed against this value, which is how another
+            // tab tells it apart from whoever held the same seat id before.
+            sessionId: Date.now(),
             playerName,
             model,
             endpoint: normalizedEndpoint,
@@ -919,10 +927,10 @@ export function createAgentMode(
             ...(credential ? { credential } : {}),
             ...(extraHeaders ? { extraHeaders } : {}),
             ...(echoBackReasoning ? { echoBackReasoning } : {}),
-            enabled,
           }
 
           savePersistedAgentApiConfigs([...existingAgents, nextAgent])
+          resetAgentSessionAvailability(nextAgent, enabled)
           closeAgentConfigForm()
           renderAgentRoster()
           syncCurrentPoller()
@@ -1006,7 +1014,8 @@ export function createAgentMode(
             elements.agentManageRequestInterval?.value ?? "",
           )
           if (shouldDelete) {
-            savePersistedAgentApiConfigs(readAgentConfigs().filter((agent) => agent.id !== manageSeatId))
+            savePersistedAgentApiConfigs(readAgentConfigs().filter((agent) => agent.seatId !== manageSeatId))
+            clearAgentSessionMetrics(manageSeatId)
             closeAgentManageDialog()
             renderAgentRoster()
             syncCurrentPoller()
@@ -1018,7 +1027,7 @@ export function createAgentMode(
             return
           }
           const nextAgents = readAgentConfigs().map((agent) => {
-            if (agent.id !== manageSeatId) {
+            if (agent.seatId !== manageSeatId) {
               return agent
             }
 
@@ -1035,7 +1044,6 @@ export function createAgentMode(
             // a meaningful, provider-valid level in effect, never a meaningful "absent".
             const nextAgent: AgentApiConfig = {
               ...agent,
-              enabled,
               reasoningEffort,
               requestIntervalSeconds,
             }
@@ -1046,6 +1054,12 @@ export function createAgentMode(
             return nextAgent
           })
           savePersistedAgentApiConfigs(nextAgents)
+          // Editing never re-stamps sessionId, so the seat keeps the counters it has already
+          // earned this round. A seat that vanished mid-edit simply has no row to update.
+          const managedAgent = nextAgents.find((agent) => agent.seatId === manageSeatId)
+          if (managedAgent) {
+            updateAgentSessionAvailability(managedAgent, enabled)
+          }
           closeAgentManageDialog()
           renderAgentRoster()
           syncCurrentPoller()
@@ -1167,7 +1181,7 @@ export function createAgentMode(
         return null
       }
 
-      const agent = readAgentConfigs().find((config) => config.id === activeAgentId)
+      const agent = readAgentConfigs().find((config) => config.seatId === activeAgentId)
       if (!agent) {
         return null
       }

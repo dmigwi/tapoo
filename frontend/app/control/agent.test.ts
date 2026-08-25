@@ -4,12 +4,14 @@ import { createAgentMode } from "./agent"
 import { CONFIG } from "../config"
 import { logTapooDiagnostic, tapooResetLogs } from "../logs"
 import {
+  loadAgentApiSeatConfigs,
   loadTapooLog,
   loadPersistedAgentApiConfigs,
+  resetAgentSessionAvailability,
   savePersistedAgentApiConfigs,
 } from "../storage"
 import type {
-  AgentApiConfig,
+  AgentApiSeatConfig,
   AgentElements,
   Elements,
   MazeAction,
@@ -20,10 +22,11 @@ import type {
   TraversalHistoryEntry,
 } from "../types"
 
-function enabledAgentConfigs(): AgentApiConfig[] {
+function enabledAgentConfigs(): AgentApiSeatConfig[] {
   return [
     {
-      id: 1,
+      seatId: 1,
+      sessionId: 1_700_000_000_001,
       playerName: "Blue",
       model: "llama3.2",
       endpoint: new URL("https://agents.example/blue/move"),
@@ -361,11 +364,13 @@ describe("agent control mode", () => {
   beforeEach(() => {
     vi.stubGlobal("localStorage", createMemoryStorage())
     window.localStorage.clear()
+    window.sessionStorage.clear()
     vi.useFakeTimers()
   })
 
   afterEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     tapooResetLogs("agent-api")
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -594,6 +599,7 @@ describe("agent control mode", () => {
   it("logs final round payload from the same finalized score the UI uses", async () => {
     const elements = createAgentFormElements()
     savePersistedAgentApiConfigs(enabledAgentConfigs())
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -665,6 +671,7 @@ describe("agent control mode", () => {
   it("logs final round payload when the round is lost", async () => {
     const elements = createAgentFormElements()
     savePersistedAgentApiConfigs(enabledAgentConfigs())
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -1148,9 +1155,10 @@ describe("agent control mode", () => {
     // rejecting, so the retry fails the same way before the agent is finally disabled.
     await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiConnectionErrorRetryDelayMs)
 
-    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(
-      enabledAgentConfigs()[0],
-    )
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(expect.objectContaining({
+      seatId: enabledAgentConfigs()[0].seatId,
+      playerName: "Blue",
+    }))
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         lastMoveStatus: "network-error",
@@ -1162,22 +1170,24 @@ describe("agent control mode", () => {
   it("renders compact seats for configured and empty agent slots", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Grey",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/grey/move"),
         api: "ollama",
-        enabled: false,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    resetAgentSessionAvailability({ seatId: 2, sessionId: 1_700_000_000_002 }, false)
     const elements = createAgentFormElements()
     vi.stubGlobal("fetch", vi.fn())
 
@@ -1275,15 +1285,16 @@ describe("agent control mode", () => {
   it("opens delete confirmation for an inactive occupied seat, forcing disabled toggles off", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
@@ -1291,9 +1302,10 @@ describe("agent control mode", () => {
         reasoningEffort: "max",
         requestIntervalSeconds: 42,
         echoBackReasoning: true,
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    resetAgentSessionAvailability({ seatId: 2, sessionId: 1_700_000_000_002 }, true)
     const elements = createAgentFormElements()
     const dispatch = vi.fn()
     vi.stubGlobal("fetch", vi.fn())
@@ -1354,16 +1366,17 @@ describe("agent control mode", () => {
   it("locks echo-back-reasoning off in the manage dialog when reasoning effort is none", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
         reasoningEffort: "max",
         echoBackReasoning: true,
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
     const elements = createAgentFormElements()
     vi.stubGlobal("fetch", vi.fn())
 
@@ -1390,7 +1403,7 @@ describe("agent control mode", () => {
 
     elements.agentManageApply?.click()
     expect(loadPersistedAgentApiConfigs()).toEqual([
-      expect.objectContaining({ id: 1, reasoningEffort: "none" }),
+      expect.objectContaining({ seatId: 1, reasoningEffort: "none" }),
     ])
     expect(loadPersistedAgentApiConfigs()[0]).not.toHaveProperty("echoBackReasoning")
   })
@@ -1398,22 +1411,24 @@ describe("agent control mode", () => {
   it("deletes only the selected non-current agent after confirmation", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
         api: "ollama",
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    resetAgentSessionAvailability({ seatId: 2, sessionId: 1_700_000_000_002 }, true)
     const elements = createAgentFormElements()
     vi.stubGlobal("fetch", vi.fn())
 
@@ -1429,22 +1444,41 @@ describe("agent control mode", () => {
     elements.agentManageApply?.click()
 
     expect(loadPersistedAgentApiConfigs()).toEqual([
-      expect.objectContaining({ id: 1, playerName: "Blue" }),
+      expect.objectContaining({ seatId: 1, playerName: "Blue" }),
     ])
+    expect(loadAgentApiSeatConfigs().map((agent) => agent.seatId)).toEqual([1])
+
+    savePersistedAgentApiConfigs([
+      ...loadPersistedAgentApiConfigs(),
+      {
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
+        playerName: "NewRed",
+        model: "qwen3",
+        endpoint: new URL("https://agents.example/agents/new-red/move"),
+        api: "ollama",
+      },
+    ])
+    expect(loadAgentApiSeatConfigs().find((agent) => agent.seatId === 2)).toMatchObject({
+      seatId: 2,
+      sessionId: 1_700_000_000_002,
+      enabled: false,
+    })
     expect(elements.agentSeatRoster?.querySelector('[data-agent-seat-add="2"]')).not.toBeNull()
   })
 
   it("updates an occupied agent enabled state from the manage dialog", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: false,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, false)
     const elements = createAgentFormElements()
     vi.stubGlobal("fetch", vi.fn())
 
@@ -1468,8 +1502,8 @@ describe("agent control mode", () => {
     )
     elements.agentManageApply?.click()
 
-    expect(loadPersistedAgentApiConfigs()).toEqual([
-      expect.objectContaining({ id: 1, enabled: true }),
+    expect(loadAgentApiSeatConfigs()).toEqual([
+      expect.objectContaining({ seatId: 1, enabled: true }),
     ])
     expect(elements.agentManageDialog?.hidden).toBe(true)
     expect(
@@ -1482,22 +1516,24 @@ describe("agent control mode", () => {
   it("marks the currently playing agent seat and disables direct deletion", async () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
         api: "ollama",
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    resetAgentSessionAvailability({ seatId: 2, sessionId: 1_700_000_000_002 }, true)
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
@@ -1533,14 +1569,15 @@ describe("agent control mode", () => {
   it("clears the active agent seat when the maze stops running", async () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
@@ -1709,14 +1746,15 @@ describe("agent control mode", () => {
     // session shortcut, regardless of which element type currently holds focus.
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
     const elements = createAgentFormElements()
     const dispatch = vi.fn()
     vi.stubGlobal("fetch", vi.fn())
@@ -1816,7 +1854,7 @@ describe("agent control mode", () => {
 
   it("persists a newly configured agent from an empty seat", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn(loadPersistedAgentApiConfigs)
+    const readAgentConfigs = vi.fn(loadAgentApiSeatConfigs)
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
     elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
@@ -1836,14 +1874,16 @@ describe("agent control mode", () => {
 
     expect(loadPersistedAgentApiConfigs()).toEqual([
       expect.objectContaining({
-        id: 1,
+        seatId: 1,
+        // Stamped from the clock the moment the seat was filled, so only its shape is assertable.
+        sessionId: expect.any(Number) as number,
         playerName: "Scout",
         model: "gemma4",
         endpoint: new URL("http://localhost:5000/api/chat"),
         api: "ollama",
-        enabled: true,
       }),
     ])
+    expect(loadAgentApiSeatConfigs()[0]).toMatchObject({ seatId: 1, enabled: true })
     expect(elements.agentConfigForm.hidden).toBe(true)
     expect(elements.agentConfigStatus.textContent).toBe("")
     expect(
@@ -1956,7 +1996,7 @@ describe("agent control mode", () => {
 
   it("collects multiple header rows into one Key: Value per line string, skipping blank keys", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn(loadPersistedAgentApiConfigs)
+    const readAgentConfigs = vi.fn(loadAgentApiSeatConfigs)
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
     elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
@@ -2009,7 +2049,7 @@ describe("agent control mode", () => {
 
   it("rejects a bare host:port endpoint that carries no request path", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
     // No path at all — this must not be silently defaulted to a provider's conventional route;
@@ -2036,7 +2076,7 @@ describe("agent control mode", () => {
 
   it("rejects submission when a typed extra header key isn't a valid HTTP header name", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
     elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
@@ -2070,7 +2110,7 @@ describe("agent control mode", () => {
 
   it("shows required-field errors at the bottom of the agent form", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = ""
     elements.agentConfigEndpoint.value = "https://agents.example/scout/move"
@@ -2101,7 +2141,7 @@ describe("agent control mode", () => {
 
   it("shows required-field errors when every agent input is empty", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     vi.stubGlobal("fetch", vi.fn())
 
     const mode = createAgentMode(elements, readAgentConfigs)
@@ -2129,7 +2169,7 @@ describe("agent control mode", () => {
 
   it("rejects agent endpoints that are not http or https URLs", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
     elements.agentConfigEndpoint.value = "/agents/scout/move"
@@ -2160,7 +2200,7 @@ describe("agent control mode", () => {
 
   it("shows player-name length errors outside the compact label range", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "TooLongName"
     elements.agentConfigModel.value = "gemma4"
     elements.agentConfigEndpoint.value = "https://agents.example/long/move"
@@ -2191,9 +2231,10 @@ describe("agent control mode", () => {
 
   it("shows a player-name error when the configured player already exists", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Scout",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/scout/move"),
@@ -2231,7 +2272,7 @@ describe("agent control mode", () => {
 
   it("persists a disabled agent when the form toggle is off", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "Observer"
     elements.agentConfigModel.value = "llama3.2"
     elements.agentConfigEndpoint.value = "https://agents.example/observer/move"
@@ -2253,9 +2294,9 @@ describe("agent control mode", () => {
     expect(loadPersistedAgentApiConfigs()).toEqual([
       expect.objectContaining({
         playerName: "Observer",
-        enabled: false,
       }),
     ])
+    expect(loadAgentApiSeatConfigs()[0]).toMatchObject({ playerName: "Observer", enabled: false })
     expect(elements.agentConfigEnabled.checked).toBe(true)
   })
 

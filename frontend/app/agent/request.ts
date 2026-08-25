@@ -28,7 +28,7 @@ import {
 } from "./efficiency"
 import type {
   AgentChatMessage,
-  AgentApiConfig,
+  AgentApiSeatConfig,
   AgentPredictionFailure,
   AgentPredictionRequest,
   AgentPredictionResult,
@@ -60,7 +60,7 @@ type RequestAgentPredictionInput = {
   // the same provider-facing request interval used between agent turns, keeping one rate-limit
   // policy for both fresh turns and tool-call follow-up requests.
   requestIntervalMs: number
-  agent: AgentApiConfig
+  agent: AgentApiSeatConfig
   lastActionResult: MazeActionResult | null
 }
 
@@ -141,7 +141,7 @@ async function buildToolResultMessages(
 // requestChatTurn sends one provider-compatible chat request while keeping wire details local —
 // the actual body/headers/response shape is entirely the chosen provider adapter's concern.
 async function requestChatTurn(
-  agent: AgentApiConfig,
+  agent: AgentApiSeatConfig,
   messages: AgentChatMessage[],
   tools: AgentToolDefinition[],
   signal: AbortSignal,

@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CONFIG } from "../config"
 import { tapooResetLogs } from "../logs"
-import { loadPersistedAgentApiConfigs, loadTapooLog, savePersistedAgentApiConfigs } from "../storage"
+import { loadAgentApiSeatConfigs, loadTapooLog, savePersistedAgentApiConfigs } from "../storage"
 import type {
   AgentApiConfig,
+  AgentApiSeatConfig,
   MazeAction,
   MazeActionDispatch,
   MazeActionResult,
@@ -65,10 +66,11 @@ function createActionResult(
   }
 }
 
-function enabledAgentConfigs(): AgentApiConfig[] {
+function enabledAgentConfigs(): AgentApiSeatConfig[] {
   return [
     {
-      id: 1,
+      seatId: 1,
+      sessionId: 1_700_000_000_001,
       playerName: "Blue",
       model: "llama3.2",
       endpoint: new URL("https://agents.example/move"),
@@ -80,7 +82,7 @@ function enabledAgentConfigs(): AgentApiConfig[] {
 }
 
 function createDisableAgentAfterNetworkError() {
-  return vi.fn((agent: AgentApiConfig) => {
+  return vi.fn((agent: AgentApiSeatConfig) => {
     agent.enabled = false
   })
 }
@@ -201,7 +203,12 @@ describe("agent api turn loop", () => {
 
     const agentConfigs = enabledAgentConfigs()
     const dispatch = vi.fn() as MazeActionDispatch
-    const disableAgentAfterNetworkError = createDisableAgentAfterNetworkError()
+    const disableAgentAfterNetworkError = vi.fn((failedAgent: AgentApiConfig) => {
+      const storedAgent = agentConfigs.find((agent) => agent.seatId === failedAgent.seatId)
+      if (storedAgent) {
+        storedAgent.enabled = false
+      }
+    })
 
     const poller = handleAgentTurnLoop({
       __elements: { body: document.createElement("div") },
@@ -219,7 +226,10 @@ describe("agent api turn loop", () => {
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
     await flushConnectionErrorRetry()
-    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(expect.objectContaining({
+      seatId: agentConfigs[0].seatId,
+      playerName: "Blue",
+    }))
     expect(dispatch).toHaveBeenCalledWith({ type: "await-agent" }, { playerName: "Blue" })
   })
 
@@ -228,7 +238,7 @@ describe("agent api turn loop", () => {
     vi.stubGlobal("fetch", fetchMock)
     const dispatch = vi.fn() as MazeActionDispatch
     const currentState = createState({ cumulativeRoundCount: 8, level: 3, turnCount: 2 })
-    const staleAgent: AgentApiConfig = {
+    const staleAgent: AgentApiSeatConfig = {
       ...enabledAgentConfigs()[0],
       cumulativeRoundCount: 8,
       gameLevel: 3,
@@ -306,19 +316,19 @@ describe("agent api turn loop", () => {
       1,
       { type: "MoveRight" },
       dispatch,
-      expect.objectContaining({ model: "llama3.2", playerName: "Blue" }),
+      "Blue",
     )
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       2,
       { type: "MoveDown" },
       dispatch,
-      expect.objectContaining({ model: "llama3.2", playerName: "Blue" }),
+      "Blue",
     )
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       3,
       { type: "MoveLeft" },
       dispatch,
-      expect.objectContaining({ model: "llama3.2", playerName: "Blue" }),
+      "Blue",
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(2, expect.any(Number))
     expect(onActionResult).toHaveBeenCalledWith(
@@ -540,9 +550,10 @@ describe("agent api turn loop", () => {
   })
 
   it("rotates through enabled agents configured for the shared maze", async () => {
-    const agentConfigs: AgentApiConfig[] = [
+    const agentConfigs: AgentApiSeatConfig[] = [
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/api/agents/a/move"),
@@ -552,7 +563,8 @@ describe("agent api turn loop", () => {
         enabled: true,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Agent B",
         model: "gemma4",
         endpoint: new URL("https://agents.example/api/agents/b/move"),
@@ -562,7 +574,8 @@ describe("agent api turn loop", () => {
         enabled: true,
       },
       {
-        id: 3,
+        seatId: 3,
+        sessionId: 1_700_000_000_003,
         playerName: "Disabled Agent",
         model: "disabled-model",
         endpoint: new URL("https://agents.example/api/agents/disabled/move"),
@@ -570,7 +583,8 @@ describe("agent api turn loop", () => {
         enabled: false,
       },
       {
-        id: 4,
+        seatId: 4,
+        sessionId: 1_700_000_000_004,
         playerName: "Agent C",
         model: "qwen3",
         endpoint: new URL("https://agents.example/api/agents/c/move"),
@@ -672,26 +686,35 @@ describe("agent api turn loop", () => {
       1,
       { type: "MoveRight" },
       dispatch,
-      expect.objectContaining({ model: "llama3.2", playerName: "Agent A" }),
+      "Agent A",
     )
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       2,
       { type: "MoveRight" },
       dispatch,
-      expect.objectContaining({ model: "gemma4", playerName: "Agent B" }),
+      "Agent B",
     )
     expect(dispatchAgentAction).toHaveBeenNthCalledWith(
       3,
       { type: "MoveRight" },
       dispatch,
-      expect.objectContaining({ model: "qwen3", playerName: "Agent C" }),
+      "Agent C",
     )
     expect(onActionResult).toHaveBeenLastCalledWith(
       expect.objectContaining({ lastPlayerName: "Agent C" }),
     )
-    expect(onActiveAgentChange).toHaveBeenNthCalledWith(1, agentConfigs[0])
-    expect(onActiveAgentChange).toHaveBeenNthCalledWith(2, agentConfigs[1])
-    expect(onActiveAgentChange).toHaveBeenNthCalledWith(3, agentConfigs[3])
+    expect(onActiveAgentChange).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      seatId: agentConfigs[0].seatId,
+      playerName: "Agent A",
+    }))
+    expect(onActiveAgentChange).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      seatId: agentConfigs[1].seatId,
+      playerName: "Agent B",
+    }))
+    expect(onActiveAgentChange).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      seatId: agentConfigs[3].seatId,
+      playerName: "Agent C",
+    }))
   })
 
   it("stops replaying predictions after the destination is reached", async () => {
@@ -801,7 +824,7 @@ describe("agent api turn loop", () => {
     vi.stubGlobal("localStorage", createMemoryStorage())
     const state = createState({ level: 2, cumulativeRoundCount: 0, turnCount: 3 })
     savePersistedAgentApiConfigs([
-      { ...enabledAgentConfigs()[0], gameLevel: 2, cumulativeRoundCount: 0, levelTurnCount: 3 },
+      enabledAgentConfigs()[0],
     ])
 
     vi.stubGlobal(
@@ -833,8 +856,8 @@ describe("agent api turn loop", () => {
     await flushImmediateAgentTurn()
 
     expect(state.turnCount).toBe(4)
-    const [persistedAgent] = loadPersistedAgentApiConfigs()
-    expect(persistedAgent.levelTurnCount).toBe(4)
+    const [runtimeAgent] = loadAgentApiSeatConfigs()
+    expect(runtimeAgent.levelTurnCount).toBe(4)
   })
 
   it("clears stale replay details on a malformed response instead of carrying over the previous turn's", async () => {
@@ -929,7 +952,10 @@ describe("agent api turn loop", () => {
     await vi.advanceTimersByTimeAsync(testAgentResponseTimeoutMs)
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
-    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(expect.objectContaining({
+      seatId: agentConfigs[0].seatId,
+      playerName: "Blue",
+    }))
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         chargedMovesCount: 0,
@@ -969,10 +995,16 @@ describe("agent api turn loop", () => {
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
     await flushConnectionErrorRetry()
-    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(expect.objectContaining({
+      seatId: agentConfigs[0].seatId,
+      playerName: "Blue",
+    }))
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
-    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(expect.objectContaining({
+      seatId: agentConfigs[0].seatId,
+      playerName: "Blue",
+    }))
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         chargedMovesCount: 0,
@@ -1063,10 +1095,16 @@ describe("agent api turn loop", () => {
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
     await flushImmediateAgentTurn()
     await flushConnectionErrorRetry()
-    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(expect.objectContaining({
+      seatId: agentConfigs[0].seatId,
+      playerName: "Blue",
+    }))
 
     expect(commitAgentTurn).not.toHaveBeenCalled()
-    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(agentConfigs[0])
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(expect.objectContaining({
+      seatId: agentConfigs[0].seatId,
+      playerName: "Blue",
+    }))
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         chargedMovesCount: 0,
@@ -1135,7 +1173,7 @@ describe("agent api turn loop", () => {
     expect(dispatchAgentAction).toHaveBeenCalledWith(
       { type: "MoveRight" },
       dispatch,
-      expect.objectContaining({ playerName: "Blue" }),
+      "Blue",
     )
     expect(commitAgentTurn).toHaveBeenCalled()
 
@@ -1209,7 +1247,7 @@ describe("agent api turn loop", () => {
     expect(dispatchAgentAction).toHaveBeenCalledWith(
       { type: "MoveRight" },
       dispatch,
-      expect.objectContaining({ playerName: "Blue" }),
+      "Blue",
     )
     expect(commitAgentTurn).toHaveBeenCalledWith(CONFIG.scoring.agentBaseDecayUnits, expect.any(Number))
 
