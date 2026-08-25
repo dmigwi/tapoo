@@ -122,6 +122,12 @@ body {
   white-space: nowrap;
 }
 
+/* Each run stays whole; a wrap, where one is allowed at all, falls between them. Without this the
+   age breaks at its own space, giving "(119" / "mins ago)". */
+.page-footer__part {
+  white-space: nowrap;
+}
+
 .top-bar {
   position: sticky;
   top: 0;
@@ -517,6 +523,15 @@ body {
 }
 
 @media (max-width: 480px) {
+  /* A safety net, not the normal case: the footer copy is sized to hold one line at 375px at every
+     age it can report (see the width-budget test in page-chrome.test.ts), so this releases nowrap
+     only for the narrower viewports below that, where clipping would otherwise lose the tail.
+     .page-footer__part above confines any break to the single space between the two runs. */
+  .page-footer__copy {
+    white-space: normal;
+    text-align: center;
+  }
+
   .placeholder-art {
     width: min(100%, 180px);
     max-height: 72svh;

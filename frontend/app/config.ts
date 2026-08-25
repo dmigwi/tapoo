@@ -6,6 +6,7 @@ import type {
 } from "./types"
 
 declare const __TAPOO_BUILD_YEAR__: number
+declare const __TAPOO_BUILD_DATE__: string
 
 // NAVIGATION_FRIENDLY_PROFILE defines the easiest, least-branching settings for small mazes.
 const NAVIGATION_FRIENDLY_PROFILE: NavigationProfile = {
@@ -37,6 +38,15 @@ const BUILD_YEAR =
     ? __TAPOO_BUILD_YEAR__
     : new Date().getFullYear()
 
+// BUILD_DATE is the deployment instant, injected by esbuild from the same value build-html.mjs
+// stamps into JSON-LD's dateModified, so the footer and the structured data always name one
+// moment. The footer shows only the date half; the time is what keeps two deploys on the same day
+// distinguishable in structured data.
+const BUILD_DATE =
+  typeof __TAPOO_BUILD_DATE__ === "string"
+    ? __TAPOO_BUILD_DATE__
+    : new Date().toISOString()
+
 // CONFIG centralizes browser-facing copy together with generation and layout constants.
 export const CONFIG: AppConfig = {
   // Shared branding used by both HTML pages and the footer version tag.
@@ -44,6 +54,13 @@ export const CONFIG: AppConfig = {
     appName: "Tapoo",
     appSubtitle: "maze runner (hide & seek)",
     pageVersionTemplate: "v{version} © {year} Tapoo",
+    // The footer shows how long ago this build went out, not when. At 375px there are only ~37
+    // characters for the whole line, and the word "updated" alone costs a fifth of them — it is
+    // carried by pageUpdatedTitleTemplate below instead, where it costs nothing.
+    pageUpdatedTemplate: "({updated} ago)",
+    // Shown on hover and read out to assistive tech, so the exact instant stays reachable from the
+    // page rather than only from its structured data.
+    pageUpdatedTitleTemplate: "Last updated {updated}",
     contactLabel: "Contact",
     privacyLabel: "Privacy",
   },
@@ -472,6 +489,30 @@ export const INFO_GATE_NOTICES = {
 export const PAGE_COPYRIGHT_TEXT = CONFIG.chrome.pageVersionTemplate
   .replace("{version}", APP_VERSION)
   .replace("{year}", String(BUILD_YEAR))
+
+// PAGE_UPDATED_TEXT names the deployment this page was built from, to the minute — enough to tell
+// two same-day deploys apart, which a calendar day alone cannot. Seconds are dropped: they do not
+// settle any question a footer is read to answer, and JSON-LD's dateModified keeps the full
+// timestamp for anything that needs the exact instant.
+//
+// Reformatted out of BUILD_DATE's ISO form (2026-08-25T15:01:37Z) by slicing rather than by
+// rebuilding a Date, so what is shown is literally part of the same string stamped into the
+// structured data — no timezone conversion can drift between the two. UTC is stated explicitly
+// because the reader's timezone is unknown and an unlabelled wall-clock time invites a wrong guess.
+// PAGE_UPDATED_TEMPLATE is left unresolved because its value is not fixed at build time: the
+// footer states an age, which only the reader's clock can settle, so page-chrome.ts fills it on
+// every page load.
+export const PAGE_UPDATED_TEMPLATE = CONFIG.chrome.pageUpdatedTemplate
+
+// PAGE_UPDATED_AT is the deployment instant in full ISO form, for <time datetime> — the same
+// string JSON-LD's dateModified carries, so the machine-readable value on the page and in the
+// structured data cannot drift apart.
+export const PAGE_UPDATED_AT = BUILD_DATE
+
+// PAGE_UPDATED_TITLE spells the instant out for hover and assistive tech. Minutes, not seconds:
+// enough to separate two same-day deploys, which is the only question the exact time answers here.
+export const PAGE_UPDATED_TITLE = CONFIG.chrome.pageUpdatedTitleTemplate
+  .replace("{updated}", `${BUILD_DATE.slice(0, 16).replace("T", " ")} UTC`)
 
 // WALL_WEIGHTS keeps wall-style iteration ordered and type-safe for traversal helpers.
 export const WALL_WEIGHTS = Object.keys(CONFIG.maze.walls)

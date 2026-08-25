@@ -3,10 +3,12 @@ import { defineConfig } from "vitest/config"
 const frontendCoverageDirectory =
   process.env.VITEST_COVERAGE_DIR ?? ".tmp/frontend-coverage"
 const tapooBuildYear = new Date().getFullYear()
+const tapooBuildDate = new Date().toISOString()
 
 export default defineConfig({
   define: {
     __TAPOO_BUILD_YEAR__: String(tapooBuildYear),
+    __TAPOO_BUILD_DATE__: JSON.stringify(tapooBuildDate),
   },
   test: {
     environment: "jsdom",

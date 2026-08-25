@@ -732,6 +732,8 @@ export type AppConfig = {
     appName: string
     appSubtitle: string
     pageVersionTemplate: string
+    pageUpdatedTemplate: string
+    pageUpdatedTitleTemplate: string
     contactLabel: string
     privacyLabel: string
   }

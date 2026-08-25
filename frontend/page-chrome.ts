@@ -1,4 +1,10 @@
-import { CONFIG, PAGE_COPYRIGHT_TEXT } from "./app/config"
+import {
+  CONFIG,
+  PAGE_COPYRIGHT_TEXT,
+  PAGE_UPDATED_AT,
+  PAGE_UPDATED_TEMPLATE,
+  PAGE_UPDATED_TITLE,
+} from "./app/config"
 import {
   compactChromeClass,
   isCompactViewport,
@@ -100,12 +106,71 @@ function applyDocumentTitle(): void {
   document.title = value
 }
 
+// RELATIVE_AGE_UNITS runs largest first. A unit is only used once its count reaches 2, so "1 min"
+// and "1 mon" never appear — the age is spelled in the smaller unit instead ("90 secs", not
+// "1 min"). That rule, not the unit list, is what sets the footer's worst case: a unit starting at
+// 2 means the one below it must run to 119, making "119 secs" and "119 mins" the longest strings
+// this can produce. The footer is sized for those, never for a short example like "11 mons".
+//
+// Months and years are the usual approximations (30 and 365 days). Nothing here needs calendar
+// accuracy — the exact instant is in the title and the datetime attribute.
+const RELATIVE_AGE_UNITS: ReadonlyArray<{ label: string; seconds: number }> = [
+  { label: "yrs", seconds: 365 * 24 * 60 * 60 },
+  { label: "mons", seconds: 30 * 24 * 60 * 60 },
+  { label: "days", seconds: 24 * 60 * 60 },
+  { label: "hrs", seconds: 60 * 60 },
+  { label: "mins", seconds: 60 },
+]
+
+// relativeAge describes how long ago sinceMs was, in the compact units the footer has room for.
+export function relativeAge(sinceMs: number, nowMs: number): string {
+  // A clock behind the build's own timestamp would otherwise read as a negative age. Clamping to
+  // zero is the honest answer: this build cannot be from the future.
+  const elapsedSeconds = Math.max(0, Math.floor((nowMs - sinceMs) / 1000))
+
+  for (const { label, seconds } of RELATIVE_AGE_UNITS) {
+    const count = Math.floor(elapsedSeconds / seconds)
+    if (count >= 2) {
+      return `${count} ${label}`
+    }
+  }
+
+  return `${elapsedSeconds} ${elapsedSeconds === 1 ? "sec" : "secs"}`
+}
+
 // applyPageVersion keeps shared page chrome in sync with the configured copyright text.
 export function applyPageVersion(): void {
+  const updatedText = PAGE_UPDATED_TEMPLATE.replace(
+    "{updated}",
+    relativeAge(Date.parse(PAGE_UPDATED_AT), Date.now()),
+  )
+
   const versionCopies = document.querySelectorAll<HTMLElement>("[data-page-version]")
   for (const element of versionCopies) {
-    element.textContent = PAGE_COPYRIGHT_TEXT
+    // Fresh nodes per element: a Node can only live at one place in the document.
+    element.replaceChildren(footerPart(PAGE_COPYRIGHT_TEXT), " ", updatedTime(updatedText))
   }
+}
+
+// footerPart wraps one unbreakable run of footer copy. Rendering the footer as separate runs keeps
+// any wrap between them rather than inside one — a single string breaks wherever it happens to fit.
+function footerPart(text: string): HTMLSpanElement {
+  const part = document.createElement("span")
+  part.className = "page-footer__part"
+  part.textContent = text
+  return part
+}
+
+// updatedTime renders the age as a <time>, so the precise instant the visible text approximates
+// stays available to crawlers, to assistive tech, and on hover — none of which costs footer width.
+function updatedTime(text: string): HTMLTimeElement {
+  const element = document.createElement("time")
+  element.className = "page-footer__part"
+  element.dateTime = PAGE_UPDATED_AT
+  element.title = PAGE_UPDATED_TITLE
+  element.setAttribute("aria-label", PAGE_UPDATED_TITLE)
+  element.textContent = text
+  return element
 }
 
 // applyPageText hydrates shared static copy such as labels and meta descriptions.

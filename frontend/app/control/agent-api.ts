@@ -135,12 +135,17 @@ export function handleAgentTurnLoop({
   }
 
   // awaitAgent immediately moves the game into its no-agent state without spending score.
-  const awaitAgent = (): boolean => {
+  const awaitAgent = (logTransition = true): boolean => {
     if (hasEnabledAgents()) {
       return false
     }
   
     __onActiveAgentChange?.(null)
+    if (logTransition) {
+      logTapooDiagnostic(runtime.controlModes.agentApi, "warn", "Agent API awaiting an enabled seat.", {
+        configuredSeats: __readAgentConfigs().length,
+      })
+    }
     __dispatch(
       { type: "await-agent" },
       { playerName: activeActionResult()?.lastPlayerName ?? runtime.interactivePlayerName },
@@ -261,6 +266,13 @@ export function handleAgentTurnLoop({
     }
 
     __onActiveAgentChange?.(null)
+    logTapooDiagnostic(runtime.controlModes.agentApi, "error", "Agent disabled after network error.", {
+      seatId: agent.seatId,
+      sessionId: agent.sessionId,
+      playerName: agent.playerName,
+      model: agent.model,
+      endpoint: `${agent.endpoint.origin}${agent.endpoint.pathname}`,
+    })
     __disableAgentAfterNetworkError(agent)
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
@@ -271,7 +283,7 @@ export function handleAgentTurnLoop({
 
     lastActionResult = nextResult
     __onActionResult(nextResult)
-    awaitAgent()
+    awaitAgent(false)
   }
 
   // recordRejectedAgentResponse spends the fixed mistake decay without replaying any move. The

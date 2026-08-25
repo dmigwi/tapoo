@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
@@ -46,17 +45,6 @@ function escapeHtml(value) {
 
 function indentHtml(html, indent) {
   return html.trimEnd().replaceAll("\n", `\n${indent}`)
-}
-
-// lastCommitDate returns the ISO timestamp of the most recent commit touching any of the given
-// paths (relative to rootDirectory), so JSON-LD's dateModified reflects real content history
-// rather than a build-time stamp that would change on every rebuild regardless of whether
-// anything the page actually shows changed.
-function lastCommitDate(...paths) {
-  return execFileSync("git", ["log", "-1", "--format=%cI", "--", ...paths], {
-    cwd: rootDirectory,
-    encoding: "utf8",
-  }).trim()
 }
 
 // Byte offsets within the 32-byte digest — one contiguous run: 4 timestamp bytes, then the
@@ -298,19 +286,18 @@ const agentsUrl = `${urlPath}agents.html`
 const promptsUrl = `${urlPath}prompts.html`
 const privacyUrl = `${urlPath}privacy.html`
 
-// dateModified per page: the layout and frontend/app/config.ts affect every page's rendered
-// content and copy, so both are included in every call; each page's own content template is
-// added on top, plus prompt-preview.ts for prompts.html since renderPromptSections derives that
-// page's body from it directly.
-const sharedContentPaths = ["frontend/templates/_main-template.html", "frontend/app/config.ts"]
-const gameDateModified = lastCommitDate(...sharedContentPaths, "frontend/templates/terminal-section.html")
-const agentsDateModified = gameDateModified
-const promptsDateModified = lastCommitDate(
-  ...sharedContentPaths,
-  "frontend/templates/prompts-section.html",
-  "frontend/app/prompt-preview.ts",
-)
-const privacyDateModified = lastCommitDate(...sharedContentPaths, "frontend/templates/privacy-section.html")
+// dateModified is the deployment instant, one value for every page, supplied by build-frontend.sh
+// so the footer's "updated" date and this stamp name the same moment. It deliberately replaces the
+// previous per-page git-history derivation: what a reader wants from a deployed page is when this
+// build went live, and a page whose own template did not change can still render differently after
+// a config or dependency change that git-per-path attribution never saw.
+const buildDate = process.env.TAPOO_BUILD_DATE ?? new Date().toISOString()
+
+// softwareVersion carries the revision as semver build metadata (2.4.6+01279f4), so the app version
+// and the exact commit that produced it stay one identifier. The hash is absent when the build has
+// no git and no GITHUB_SHA, in which case the plain version is still correct.
+const commitHash = process.env.TAPOO_COMMIT_HASH ?? ""
+const softwareVersion = commitHash ? `${APP_VERSION}+${commitHash}` : APP_VERSION
 
 await Promise.all([
   buildPage(layout, sharedPartials, {
@@ -334,8 +321,8 @@ await Promise.all([
           applicationCategory: "AI Agent Behavior Profiler Tool",
           operatingSystem: "Any",
           browserRequirements: "Requires JavaScript",
-          softwareVersion: APP_VERSION,
-          dateModified: gameDateModified,
+          softwareVersion,
+          dateModified: buildDate,
         },
       }),
       "      ",
@@ -365,8 +352,8 @@ await Promise.all([
           applicationCategory: "AI Agent Behavior Profiler Tool",
           operatingSystem: "Any",
           browserRequirements: "Requires JavaScript",
-          softwareVersion: APP_VERSION,
-          dateModified: agentsDateModified,
+          softwareVersion,
+          dateModified: buildDate,
         },
       }),
       "      ",
@@ -397,7 +384,7 @@ await Promise.all([
         name: promptsTitle,
         description: promptsDescription,
         url: promptsUrl,
-        extra: { dateModified: promptsDateModified },
+        extra: { dateModified: buildDate },
       }),
       "      ",
     ),
@@ -425,7 +412,7 @@ await Promise.all([
         name: privacyTitle,
         description: privacyDescription,
         url: privacyUrl,
-        extra: { dateModified: privacyDateModified },
+        extra: { dateModified: buildDate },
       }),
       "      ",
     ),
