@@ -142,14 +142,14 @@ describe("bench report helpers", () => {
   it("formats speed ceiling rows with derived traversal ceilings", () => {
     expect(speedCeilingRows(summaries).area70_10x7).toEqual({
       "Conservative (Speed)": "0.9871",
-      "Retrace-only (Speed)": "1.0015",
+      "Retrace-only (Speed)": "0.9967",
     })
   })
 
-  it("uses gameplay-compatible fixed-point precision for speed ceilings near 1.0000", () => {
+  it("uses continuous retrace cost so retrace-only ceilings do not cross 1.0000 by rounding", () => {
     expect(speedCeilingRows(summaries).area100_10x10).toEqual({
       "Conservative (Speed)": "0.9900",
-      "Retrace-only (Speed)": "1.0001",
+      "Retrace-only (Speed)": "0.9974",
     })
   })
 

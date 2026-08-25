@@ -647,7 +647,11 @@ export function recordAgentTurnStats(
     const isSameAttempt = isSameAgentRoundAttempt(agent, level, cumulativeRoundCount)
     const priorDecayUnitsCharged = isSameAttempt ? (agent.decayUnitsCharged ?? 0) : 0
     const priorTurnCount = isSameAttempt ? (agent.turnCount ?? 0) : 0
-    const isTurnAgent = agent.seatId === turnAgent.seatId
+    // Both halves of the identity, matching every other writer here. seatId alone would credit a
+    // turn to whoever occupies the seat now: a seat deleted and refilled while this turn's request
+    // was in flight leaves a same-seatId, different-sessionId agent, and the finishing turn would
+    // charge its counters to the newcomer.
+    const isTurnAgent = agent.seatId === turnAgent.seatId && agent.sessionId === turnAgent.sessionId
     const nextAgent = {
       ...agent,
       gameLevel: level,

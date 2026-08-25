@@ -82,6 +82,7 @@ function setupTerminalDom(): void {
     <span id="agent-manage-echo-back-reasoning-label"></span>
     <button id="agent-manage-apply"></button>
     <input id="agent-delete-confirm" />
+    <p id="agent-manage-status"></p>
     <button id="agent-manage-close"></button>
   `
 }

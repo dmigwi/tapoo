@@ -346,13 +346,20 @@ export function createAgentMode(
         syncCurrentPoller()
       }
 
-      // clearAgentConfigStatus wipes any previous validation message before the next submission attempt.
-      const clearAgentConfigStatus = (): void => {
-        if (elements.agentConfigStatus) {
-          elements.agentConfigStatus.textContent = ""
-          elements.agentConfigStatus.classList.remove("agent-config-form__status--error")
+      const clearFormStatus = (status: HTMLElement | undefined): void => {
+        if (!status) {
+          return
         }
+
+        status.textContent = ""
+        status.classList.remove("agent-config-form__status--error")
       }
+
+      // clearAgentConfigStatus wipes any previous add-form validation message before submission.
+      const clearAgentConfigStatus = (): void => { clearFormStatus(elements.agentConfigStatus) }
+
+      // clearAgentManageStatus keeps manage-dialog validation scoped to the dialog that raised it.
+      const clearAgentManageStatus = (): void => { clearFormStatus(elements.agentManageStatus) }
 
       // syncToggleState keeps a toggle's label and CSS state aligned with its checkbox value, and
       // now also owns locking it from user interaction: every caller that needs to disable a toggle
@@ -612,15 +619,20 @@ export function createAgentMode(
         clearAgentConfigStatus()
       }
 
-      // setAgentConfigError surfaces a validation failure inside the form without a separate modal.
-      const setAgentConfigError = (message: string): void => {
-        if (!elements.agentConfigStatus) {
+      const setFormError = (status: HTMLElement | undefined, message: string): void => {
+        if (!status) {
           return
         }
 
-        elements.agentConfigStatus.textContent = message
-        elements.agentConfigStatus.classList.add("agent-config-form__status--error")
+        status.textContent = message
+        status.classList.add("agent-config-form__status--error")
       }
+
+      // setAgentConfigError surfaces add-form validation failures without a separate modal.
+      const setAgentConfigError = (message: string): void => { setFormError(elements.agentConfigStatus, message) }
+
+      // setAgentManageError surfaces manage-dialog validation failures in the active dialog.
+      const setAgentManageError = (message: string): void => { setFormError(elements.agentManageStatus, message) }
 
       // closeAgentConfigForm hides the form, resets its state, and restores the overlay class.
       const closeAgentConfigForm = (): void => {
@@ -639,12 +651,7 @@ export function createAgentMode(
           return
         }
 
-        // Both overlays share one screen position, so leaving the other open would render them
-        // superimposed rather than merely stacked.
-        if (isAgentManageDialogOpen()) {
-          closeAgentManageDialog()
-        }
-
+        closeOtherOverlays("agentConfig")
         pauseIfRunning()
         selectedSeatId = seatId
         if (elements.agentConfigTitle) {
@@ -666,6 +673,7 @@ export function createAgentMode(
 
         elements.agentManageDialog.hidden = true
         manageSeatId = null
+        clearAgentManageStatus()
         syncOverlayState()
       }
 
@@ -699,14 +707,10 @@ export function createAgentMode(
           return
         }
 
-        // Both overlays share one screen position, so leaving the other open would render them
-        // superimposed rather than merely stacked.
-        if (isAgentConfigFormOpen()) {
-          closeAgentConfigForm()
-        }
-
+        closeOtherOverlays("agentManage")
         pauseIfRunning()
         manageSeatId = seatId
+        clearAgentManageStatus()
         if (elements.agentManageTitle) {
           elements.agentManageTitle.textContent = agentSeatManageLabel(agent, readState().traversalHistory)
         }
@@ -778,24 +782,39 @@ export function createAgentMode(
         renderAgentRoster()
       }
 
+      // clearSystemSettingsStatus wipes any previous message and its error styling, so a rejected
+      // value never greets the next open still coloured as a failure.
+      const clearSystemSettingsStatus = (): void => {
+        if (elements.systemSettingsStatus) {
+          elements.systemSettingsStatus.textContent = ""
+          elements.systemSettingsStatus.classList.remove("agent-config-form__status--error")
+        }
+      }
+
+      // setSystemSettingsError surfaces a validation failure in the same red the agent forms use;
+      // the base .agent-config-form__status colour is the faint one meant for neutral text, so a
+      // message written without this modifier reads as ordinary status rather than a rejection.
+      const setSystemSettingsError = (message: string): void => {
+        if (elements.systemSettingsStatus) {
+          elements.systemSettingsStatus.textContent = message
+          elements.systemSettingsStatus.classList.add("agent-config-form__status--error")
+        }
+      }
+
       // closeSystemSettings hides the settings overlay and clears any message it was showing, so
       // a stale error never greets the next open.
       const closeSystemSettings = (): void => {
         if (elements.systemSettingsDialog) {
           elements.systemSettingsDialog.hidden = true
         }
-        if (elements.systemSettingsStatus) {
-          elements.systemSettingsStatus.textContent = ""
-        }
+        clearSystemSettingsStatus()
         syncOverlayState()
       }
 
       // openSystemSettings shows the overlay with the live restart level already filled in, so
       // Apply with no edit is a no-op rather than a surprise.
       const openSystemSettings = (): void => {
-        // One overlay at a time, the same rule openAgentConfigForm and openAgentManageDialog keep.
-        closeAgentConfigForm()
-        closeAgentManageDialog()
+        closeOtherOverlays("systemSettings")
         // Named per mode rather than statically, so a setting that only governs this mode's play
         // is never mistaken for a global one. Read from live state so the dialog stays correct if
         // the palette is ever shown in interactive mode too.
@@ -811,15 +830,36 @@ export function createAgentMode(
         if (elements.systemSettingsRestartLevel) {
           elements.systemSettingsRestartLevel.value = String(readState().restartLevel)
         }
-        if (elements.systemSettingsStatus) {
-          elements.systemSettingsStatus.textContent = ""
-        }
+        clearSystemSettingsStatus()
         if (elements.systemSettingsDialog) {
           elements.systemSettingsDialog.hidden = false
         }
         // Dims the terminal behind the overlay, the same as the agent dialogs do.
         syncOverlayState()
         elements.systemSettingsRestartLevel?.focus()
+      }
+
+      // closeOtherOverlays drops every overlay except the one about to show. They share one screen
+      // position, so leaving another open renders them superimposed rather than merely stacked —
+      // and the one left behind still holds focus and keeps the terminal dimmed.
+      //
+      // One list, rather than a pairwise check inside each open*: adding an overlay then means
+      // adding it here once, instead of remembering to close it from every other overlay's open
+      // path. Pairwise checks are why the settings dialog was invisible to both agent forms —
+      // each knew only about the overlays that existed when it was written.
+      //
+      // Excluding the caller matters: closeAgentConfigForm resets the form, so an overlay closing
+      // itself on the way up would wipe fields the caller is about to populate.
+      const closeOtherOverlays = (opening: "agentConfig" | "agentManage" | "systemSettings"): void => {
+        if (opening !== "agentConfig") {
+          closeAgentConfigForm()
+        }
+        if (opening !== "agentManage") {
+          closeAgentManageDialog()
+        }
+        if (opening !== "systemSettings") {
+          closeSystemSettings()
+        }
       }
 
       // bindSystemSettingsDialog wires the palette's gear to the settings overlay and its Apply.
@@ -850,10 +890,7 @@ export function createAgentMode(
             // a high one would be inventing a limit the game does not have.
             const restartLevel = Number(elements.systemSettingsRestartLevel?.value ?? "")
             if (!Number.isInteger(restartLevel) || restartLevel < 1) {
-              if (elements.systemSettingsStatus) {
-                elements.systemSettingsStatus.textContent =
-                  systemSettings.invalidRestartLevelMessage
-              }
+              setSystemSettingsError(systemSettings.invalidRestartLevelMessage)
               return
             }
 
@@ -1088,7 +1125,8 @@ export function createAgentMode(
           !elements.agentManageEchoBackReasoning ||
           !elements.agentManageEchoBackReasoningLabel ||
           !elements.agentManageApply ||
-          !elements.agentDeleteConfirm
+          !elements.agentDeleteConfirm ||
+          !elements.agentManageStatus
         ) {
           return
         }
@@ -1100,6 +1138,7 @@ export function createAgentMode(
         agentManageReasoningEffortChangeHandler = syncAgentManageOptions
         agentManageApplyHandler = (): void => {
           // Delete wins over enable/disable/echo-back-reasoning edits because the seat becomes empty.
+          clearAgentManageStatus()
           if (!manageSeatId) {
             closeAgentManageDialog()
             return
@@ -1121,7 +1160,7 @@ export function createAgentMode(
           }
 
           if (requestIntervalSeconds === null) {
-            setAgentConfigError(invalidRequestIntervalMessage())
+            setAgentManageError(invalidRequestIntervalMessage())
             return
           }
           const nextAgents = readAgentConfigs().map((agent) => {

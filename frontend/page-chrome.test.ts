@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+
+import type * as PageConfig from "./app/config"
 
 import { CONFIG, PAGE_COPYRIGHT_TEXT, PAGE_UPDATED_AT, PAGE_UPDATED_TEMPLATE } from "./app/config"
 import { applyPageText, applyPageVersion, relativeAge } from "./page-chrome"
@@ -112,10 +114,52 @@ describe("relativeAge", () => {
     expect(age(2 * SECOND)).toBe("2 secs")
   })
 
+  // Every consumer treats the build stamp as a real instant. A non-finite one must not reach the
+  // footer as "NaN secs" — config.ts rejects an unparseable define, and this is the second line of
+  // defence for any other caller of the exported helper.
+  it("reads zero rather than NaN when handed a non-instant", () => {
+    const now = Date.parse("2026-08-25T12:00:00Z")
+    expect(relativeAge(Date.parse("not-a-date"), now)).toBe("0 secs")
+    expect(relativeAge(now, Number.NaN)).toBe("0 secs")
+  })
+
   // A machine whose clock trails the build would otherwise show a negative age.
   it("reads zero rather than negative when the reader's clock is behind", () => {
     const now = Date.parse("2026-08-25T12:00:00Z")
     expect(relativeAge(now + DAY, now)).toBe("0 secs")
+  })
+})
+
+describe("applyPageVersion updated segment", () => {
+  beforeEach(() => {
+    document.body.innerHTML = ""
+  })
+
+  // The <time> element publishes a real datetime. Rendering it around a template that no longer
+  // asks for the age would claim a timestamp the visible text never shows.
+  // The module snapshots PAGE_UPDATED_TEMPLATE at import time, so the template has to be replaced
+  // before page-chrome loads — mutating CONFIG afterwards cannot reach the captured constant.
+  it("omits the time element when the template has no {updated} slot", async () => {
+    const host = document.createElement("small")
+    host.setAttribute("data-page-version", "")
+    document.body.append(host)
+
+    vi.resetModules()
+    vi.doMock("./app/config", async () => {
+      const actual = await vi.importActual<typeof PageConfig>("./app/config")
+      return { ...actual, PAGE_UPDATED_TEMPLATE: "(no slot here)" }
+    })
+
+    try {
+      const { applyPageVersion: applyWithoutSlot } = await import("./page-chrome")
+      applyWithoutSlot()
+    } finally {
+      vi.doUnmock("./app/config")
+      vi.resetModules()
+    }
+
+    expect(host.querySelector("time")).toBeNull()
+    expect(host.textContent).toBe(PAGE_COPYRIGHT_TEXT)
   })
 })
 

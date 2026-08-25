@@ -1193,6 +1193,12 @@ body {
     inset 0 0 28px rgba(72, 198, 62, 0.035);
   color: var(--text);
   display: grid;
+  /* minmax(0, 1fr) rather than the implicit auto track. An auto track's minimum is the largest
+     min-content contribution among its items, and a form control reports its intrinsic character
+     width there — so the column can size itself wider than the panel and every field overflows
+     together. Capping the minimum at 0 lets the track follow the panel, and the items inside
+     (which carry their own min-width: 0) follow the track. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   padding: 18px;
 }
@@ -1249,9 +1255,26 @@ body {
   font-size: 0.85em;
 }
 
+/* min-width: 0 opts these grid items out of the automatic minimum size. A grid or flex item
+   defaults to min-width: auto, meaning it will not shrink below its content's min-content width —
+   and Safari derives a text input's min-content width from its intrinsic size (roughly 20
+   characters) rather than treating it as shrinkable. The field track then refuses to narrow, and
+   the control overflows the panel's fixed 520px. Chrome reports a near-zero min-content width for
+   the same input, which is why this only shows in Safari, and only once zoomed out far enough for
+   20 characters to exceed the panel. width: 100% then sizes each control to its track instead of
+   to its character count. */
 .agent-config-form__field {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+
+/* Direct children only: an input nested inside .agent-config-form__unit-input is a flex item with
+   its own flex-basis, and must keep it. */
+.agent-config-form__field > input,
+.agent-config-form__field > select {
+  min-width: 0;
+  width: 100%;
 }
 
 /* Pairs the reasoning-effort dropdown with the echo-back-reasoning toggle horizontally, 1:2 —
@@ -1260,16 +1283,15 @@ body {
    side instead of stacked with the rest of the form's fields. */
 .agent-config-form__row {
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  /* minmax(0, …) for the same reason as the form's own track: a bare 1fr is minmax(auto, 1fr), so
+     each column still refuses to go below its content's min-content width and the pair overflows
+     together. The --equal variant below already spelled this out; the default row did not. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   gap: 16px;
 }
 
 .agent-config-form__row--equal {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.agent-config-form__row > .agent-config-form__field {
-  min-width: 0;
 }
 
 .agent-config-form__unit-input {
@@ -1388,16 +1410,22 @@ body {
   box-shadow: 0 0 0 2px rgba(72, 198, 62, 0.12);
 }
 
+/* Both carry min-width: 0 for the same reason the fields above do. The row's inputs already shrink
+   (flex: 1 below), but that only helps once their containers can: a grid or flex item defaults to
+   min-width: auto, so either wrapper would hold the pair of inputs plus the add button at their
+   combined intrinsic width and push the whole field past the panel. */
 .agent-config-form__header-rows {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .agent-config-form__header-row {
   display: flex;
   gap: 8px;
   align-items: center;
+  min-width: 0;
 }
 
 .agent-config-form__header-row input {

@@ -124,6 +124,12 @@ const RELATIVE_AGE_UNITS: ReadonlyArray<{ label: string; seconds: number }> = [
 
 // relativeAge describes how long ago sinceMs was, in the compact units the footer has room for.
 export function relativeAge(sinceMs: number, nowMs: number): string {
+  // Exported, so callers other than applyPageVersion can reach it. A non-finite input would
+  // otherwise propagate through every branch below and render as "NaN secs".
+  if (!Number.isFinite(sinceMs) || !Number.isFinite(nowMs)) {
+    return "0 secs"
+  }
+
   // A clock behind the build's own timestamp would otherwise read as a negative age. Clamping to
   // zero is the honest answer: this build cannot be from the future.
   const elapsedSeconds = Math.max(0, Math.floor((nowMs - sinceMs) / 1000))
@@ -140,6 +146,10 @@ export function relativeAge(sinceMs: number, nowMs: number): string {
 
 // applyPageVersion keeps shared page chrome in sync with the configured copyright text.
 export function applyPageVersion(): void {
+  // The age only renders where the template asked for it. A template edited to drop {updated}
+  // would otherwise show its own literal text in a <time> element that still carries a real
+  // datetime — a timestamp claimed but not shown. Dropping the run keeps the two honest.
+  const hasUpdatedSlot = PAGE_UPDATED_TEMPLATE.includes("{updated}")
   const updatedText = PAGE_UPDATED_TEMPLATE.replace(
     "{updated}",
     relativeAge(Date.parse(PAGE_UPDATED_AT), Date.now()),
@@ -148,7 +158,10 @@ export function applyPageVersion(): void {
   const versionCopies = document.querySelectorAll<HTMLElement>("[data-page-version]")
   for (const element of versionCopies) {
     // Fresh nodes per element: a Node can only live at one place in the document.
-    element.replaceChildren(footerPart(PAGE_COPYRIGHT_TEXT), " ", updatedTime(updatedText))
+    element.replaceChildren(
+      footerPart(PAGE_COPYRIGHT_TEXT),
+      ...(hasUpdatedSlot ? [" ", updatedTime(updatedText)] : []),
+    )
   }
 }
 

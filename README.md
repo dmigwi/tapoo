@@ -173,7 +173,7 @@ make ci
 
 ### Benchmarks
 
-Go and TypeScript carve mazes independently from different random sources, so [scripts/bench-report.mjs](/scripts/bench-report.mjs) runs both ports' benchmark suites ([maze/bench](/maze/bench) and [frontend/bench](/frontend/bench)) and statistically checks that the two generators still produce equivalent-distribution mazes rather than merely eyeballing the numbers. A flagged case means a reproducible behavioral gap between the ports, not just run-to-run noise.
+Go and TypeScript carve mazes independently from different random sources, so [parity-harness/bench-report.mjs](/parity-harness/bench-report.mjs) runs both ports' benchmark suites ([maze/bench](/maze/bench) and [frontend/bench](/frontend/bench)) and checks that the two generators produce identical per-sample maze structures rather than merely eyeballing the numbers. A flagged case means a reproducible behavioral gap between the ports, not just run-to-run noise.
 
 ```bash
 make go-bench        # Go maze generation only
@@ -181,7 +181,7 @@ make frontend-bench  # TypeScript maze generation only
 make ci-bench        # both, with the cross-port parity check
 ```
 
-Each run also writes `bench-report.json` with the full comparison.
+Each run also writes `parity-harness/bench-report.json` with the full comparison and SVG charts.
 
 </details>
 

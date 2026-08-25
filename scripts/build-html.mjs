@@ -286,12 +286,22 @@ const agentsUrl = `${urlPath}agents.html`
 const promptsUrl = `${urlPath}prompts.html`
 const privacyUrl = `${urlPath}privacy.html`
 
+// validTimestamp returns value only when it names a real instant, so callers can fall back with ??.
+function validTimestamp(value) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : undefined
+}
+
 // dateModified is the deployment instant, one value for every page, supplied by build-frontend.sh
 // so the footer's "updated" date and this stamp name the same moment. It deliberately replaces the
 // previous per-page git-history derivation: what a reader wants from a deployed page is when this
 // build went live, and a page whose own template did not change can still render differently after
 // a config or dependency change that git-per-path attribution never saw.
-const buildDate = process.env.TAPOO_BUILD_DATE ?? new Date().toISOString()
+//
+// Parsed, not merely defaulted: ?? only replaces an absent value, so a malformed TAPOO_BUILD_DATE
+// would publish straight into dateModified on every page — a field crawlers read and no human is
+// likely to check. config.ts screens the same env var the same way before it reaches the footer;
+// one variable feeding two consumers should not have two ideas of what counts as usable.
+const buildDate = validTimestamp(process.env.TAPOO_BUILD_DATE) ?? new Date().toISOString()
 
 // softwareVersion carries the revision as semver build metadata (2.4.6+01279f4), so the app version
 // and the exact commit that produced it stay one identifier. The hash is absent when the build has

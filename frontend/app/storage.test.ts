@@ -255,6 +255,41 @@ describe("storage", () => {
     expect(refilledSeat.turnCount).toBeUndefined()
   })
 
+  // The write-path counterpart to the read-path guard above: a turn that finishes after its seat
+  // was deleted and refilled must not charge its counters to the newcomer.
+  it("never credits a finishing turn to a seat's new occupant", () => {
+    const previousOccupant = {
+      seatId: 1,
+      sessionId: 1_700_000_000_001,
+      playerName: "Blue",
+      model: "llama3.2",
+      endpoint: endpoint("/api/agents/blue/move"),
+      api: "ollama" as const,
+    }
+    // The seat is now held by a different agent — same seatId, new stamp.
+    const newOccupant = { ...previousOccupant, sessionId: 1_700_000_000_999, playerName: "Red" }
+    savePersistedAgentApiConfigs([newOccupant])
+    resetAgentSessionAvailability(newOccupant, true)
+
+    // Blue's turn resolves late, still carrying its own identity.
+    const updatedAgent = recordAgentTurnStats(
+      { ...previousOccupant, enabled: true },
+      3,
+      7,
+      4,
+      1,
+    )
+
+    // Red's stored row is untouched: no turn, no decay charged against it.
+    const storedRed = loadAgentApiSeatConfigs()[0]
+    expect(storedRed.playerName).toBe("Red")
+    expect(storedRed.turnCount ?? 0).toBe(0)
+    expect(storedRed.decayUnitsCharged ?? 0).toBe(0)
+
+    // Blue's own counters still come back so the turn can finish reporting against them.
+    expect(updatedAgent).toMatchObject({ playerName: "Blue", turnCount: 1, decayUnitsCharged: 4 })
+  })
+
   it("keeps volatile session fields out of the durable localStorage record", () => {
     // Seat configs are saved straight from the merged runtime view at every call site in
     // control/agent.ts, so normalizeAgentApiConfig's explicit field list is the only thing keeping

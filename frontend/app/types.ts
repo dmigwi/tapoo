@@ -557,6 +557,15 @@ export type State = {
   // is, and the two move apart the moment a game progresses past it. Seeded from
   // CONFIG.runtime.defaultRestartLevel and editable while the game runs, so a playtest can open
   // deep in the level curve without a code change.
+  //
+  // Carried inside PersistedRound rather than under a key of its own, so one sessionStorage
+  // snapshot holds a tab's whole play state and two tabs keep independent floors.
+  //
+  // A floor no round can be drawn at is dropped on purpose, not by oversight: a viewport too small
+  // for it yields a "too-small" round, which is unpersistable, so the snapshot carrying the floor
+  // goes with it. Keeping it would close both ways out at once — reloading would re-enter the same
+  // undrawable level, and Reset Progress, the one control meant to recover a broken game, reopens
+  // at this very floor (see restartGame). Losing it is what leaves a reload something playable.
   restartLevel: number
   status: GameStatus
 
@@ -683,6 +692,7 @@ export type AgentElements = {
   agentManageEchoBackReasoningLabel?: HTMLElement
   agentManageApply?: HTMLButtonElement
   agentDeleteConfirm?: HTMLInputElement
+  agentManageStatus?: HTMLElement
   agentManageClose?: HTMLButtonElement
 }
 

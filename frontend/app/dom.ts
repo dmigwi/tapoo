@@ -94,6 +94,7 @@ export function getGameElements(): Elements | null {
     agentManageEchoBackReasoningLabel: mustElement<HTMLElement>("agent-manage-echo-back-reasoning-label"),
     agentManageApply: mustElement<HTMLButtonElement>("agent-manage-apply"),
     agentDeleteConfirm: mustElement<HTMLInputElement>("agent-delete-confirm"),
+    agentManageStatus: mustElement<HTMLElement>("agent-manage-status"),
     agentManageClose: mustElement<HTMLButtonElement>("agent-manage-close"),
   }
 }

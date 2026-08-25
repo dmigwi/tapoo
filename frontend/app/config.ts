@@ -42,8 +42,12 @@ const BUILD_YEAR =
 // stamps into JSON-LD's dateModified, so the footer and the structured data always name one
 // moment. The footer shows only the date half; the time is what keeps two deploys on the same day
 // distinguishable in structured data.
+// Parsed, not merely type-checked: everything downstream treats this as a real instant — the
+// footer subtracts it from now, <time datetime> publishes it, and JSON-LD's dateModified mirrors
+// it. A string that is not a date would surface as "NaN secs ago" rather than as a build error,
+// so an unparseable value is discarded here and never reaches any of them.
 const BUILD_DATE =
-  typeof __TAPOO_BUILD_DATE__ === "string"
+  typeof __TAPOO_BUILD_DATE__ === "string" && Number.isFinite(Date.parse(__TAPOO_BUILD_DATE__))
     ? __TAPOO_BUILD_DATE__
     : new Date().toISOString()
 

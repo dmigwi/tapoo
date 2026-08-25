@@ -139,6 +139,7 @@ function createAgentFormElements(): AgentFormElements {
   const agentManageEchoBackReasoningText = document.createElement("span")
   const agentManageApply = document.createElement("button")
   const agentDeleteConfirm = document.createElement("input")
+  const agentManageStatus = document.createElement("p")
   const agentManageClose = document.createElement("button")
 
   agentSeatRoster.hidden = true
@@ -221,6 +222,7 @@ function createAgentFormElements(): AgentFormElements {
     agentManageEchoBackReasoningLabel,
     agentManageApply,
     agentDeleteConfirm,
+    agentManageStatus,
     agentManageClose,
   )
   const systemSettings = document.createElement("button")
@@ -298,6 +300,7 @@ function createAgentFormElements(): AgentFormElements {
     agentManageEchoBackReasoningLabel: agentManageEchoBackReasoningText,
     agentManageApply,
     agentDeleteConfirm,
+    agentManageStatus,
     agentManageClose,
   }
 }
@@ -1611,6 +1614,49 @@ describe("agent control mode", () => {
     ).toBe(false)
   })
 
+  it("shows invalid manage request interval errors inside the manage dialog", () => {
+    savePersistedAgentApiConfigs([
+      {
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
+      },
+    ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+      testGameControls(),
+    )
+
+    clickDeleteSeat(elements, "1")
+    elements.agentConfigStatus.textContent = "add form message"
+    if (elements.agentManageRequestInterval) {
+      elements.agentManageRequestInterval.value = String(CONFIG.agentConfig.requestIntervalMaxSeconds + 1)
+    }
+    elements.agentManageApply?.click()
+
+    expect(elements.agentManageDialog?.hidden).toBe(false)
+    expect(elements.agentManageStatus?.textContent).toBe(
+      CONFIG.agentConfig.invalidRequestIntervalTemplate
+        .replace("{min}", String(CONFIG.agentConfig.requestIntervalMinSeconds))
+        .replace("{max}", String(CONFIG.agentConfig.requestIntervalMaxSeconds)),
+    )
+    expect(
+      elements.agentManageStatus?.classList.contains("agent-config-form__status--error"),
+    ).toBe(true)
+    expect(elements.agentConfigStatus.textContent).toBe("add form message")
+    expect(loadPersistedAgentApiConfigs()[0].playerName).toBe("Blue")
+  })
+
   it("marks the currently playing agent seat and disables direct deletion", async () => {
     savePersistedAgentApiConfigs([
       {
@@ -2582,6 +2628,33 @@ describe("system settings dialog", () => {
     expect(elements.body.classList.contains("terminal-body--agent-form-active")).toBe(false)
   })
 
+  // Overlays share one screen position, so an open one left behind renders superimposed and keeps
+  // hold of focus. Every open path has to drop the others, not just the ones that existed when it
+  // was written.
+  it("is dropped when an agent overlay opens over it", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    expect(elements.systemSettingsDialog?.hidden).toBe(false)
+
+    clickAddSeat(elements, "2")
+
+    expect(elements.systemSettingsDialog?.hidden).toBe(true)
+    expect(elements.agentConfigForm?.hidden).toBe(false)
+  })
+
+  it("drops an open agent overlay when it opens", () => {
+    const { elements } = bindSettings(1)
+
+    clickAddSeat(elements, "2")
+    expect(elements.agentConfigForm?.hidden).toBe(false)
+
+    elements.systemSettings?.click()
+
+    expect(elements.agentConfigForm?.hidden).toBe(true)
+    expect(elements.systemSettingsDialog?.hidden).toBe(false)
+  })
+
   it("closes on Escape, like the agent overlays", () => {
     const { elements } = bindSettings(1)
 
@@ -2621,6 +2694,11 @@ describe("system settings dialog", () => {
     expect(elements.systemSettingsStatus?.textContent).toBe(
       CONFIG.systemSettings.invalidRestartLevelMessage,
     )
+    // The same error styling the agent forms use. Without the modifier the message inherits the
+    // faint neutral colour and reads as ordinary status rather than a rejection.
+    expect(
+      elements.systemSettingsStatus?.classList.contains("agent-config-form__status--error"),
+    ).toBe(true)
   })
 
   it("accepts any level at or above the minimum", () => {
@@ -2646,6 +2724,10 @@ describe("system settings dialog", () => {
     elements.systemSettings?.click()
 
     expect(elements.systemSettingsStatus?.textContent).toBe("")
+    // The colour has to clear with the text, or the next open shows an empty red line.
+    expect(
+      elements.systemSettingsStatus?.classList.contains("agent-config-form__status--error"),
+    ).toBe(false)
     expect(elements.systemSettingsDialog?.hidden).toBe(false)
   })
 })

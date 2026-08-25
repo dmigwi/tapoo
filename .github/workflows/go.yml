@@ -206,6 +206,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: maze-benchmark-report-${{ github.sha }}
-          path: bench-report.json
+          path: |
+            parity-harness/bench-report.json
+            parity-harness/bench-report.charts.svg
+            parity-harness/bench-report.preferred.charts.svg
           if-no-files-found: error
           retention-days: 90

@@ -240,13 +240,18 @@ function worstBranchPercent(summary) {
 }
 
 function batchingTraversalBudget(summary) {
+  const batching = batchingTraversalCost(summary)
+  return Number.isFinite(batching) ? Math.round(batching) : ""
+}
+
+function batchingTraversalCost(summary) {
   const pathLength = Number(summary.PathLen)
   const errorMargin = Number(summary.Headroom)
   if (![pathLength, errorMargin].every(Number.isFinite)) {
-    return ""
+    return Number.NaN
   }
 
-  return Math.round(pathLength + 1.25 * (errorMargin / 2))
+  return pathLength + 1.25 * (errorMargin / 2)
 }
 
 function errorBudgetTurns(summary) {
@@ -313,7 +318,7 @@ function conservativeSpeedCeiling(summary) {
 
 function retraceOnlySpeedCeiling(summary) {
   const uniqueCells = uniqueCellsCeiling(summary)
-  const batching = batchingTraversalBudget(summary)
+  const batching = batchingTraversalCost(summary)
   if (![uniqueCells, batching].every(Number.isFinite) || batching <= 0) {
     return ""
   }
@@ -793,8 +798,8 @@ function printLegend() {
   printLegendEntry(
     "Derivation:",
     "U = (Path Length + Budget)/2, the unique cells visited by an agent exploring half the off-path " +
-      "space. Conservative speed = U/Budget; Retrace-only speed = U/Batching. Derived from Tables " +
-      "3a and 3b, not measured.",
+      "space. Conservative speed = U/Budget; Retrace-only speed = U divided by the continuous " +
+      "retrace-batching cost, before whole-turn rounding. Derived from Tables 3a and 3b, not measured.",
   )
   printLegendEntry(
     "Formatting:",
@@ -887,7 +892,8 @@ function printDerivedFormulaLegend() {
   printLegendEntry(
     "Speed ceilings:",
     "U = (Path Length (Cells) + Budget (Decay))/2. Conservative (Speed) = U / Budget (Decay). " +
-      "Retrace-only (Speed) = U / Batching (Turns). Values above 1.00 require forward batching " +
+      "Retrace-only (Speed) = U / continuous retrace-batching cost, before Table 3b's whole-turn " +
+      "rounding. Values above 1.00 require forward batching " +
       "into unexplored structure.",
   )
   printLegendEntry(
@@ -1169,7 +1175,7 @@ function printSpeedCeilingNote() {
     "Table 3c note:",
     "Speed ceilings are derived, not measured: U = (Path Length (Cells) + Budget (Decay))/2 assumes an agent explores " +
       "half the off-path space before finding the route. Conservative speed is U / Budget (Decay). Retrace-only " +
-      "speed is U / Batching (Turns). Retracing produces no new cells, so it can lower the denominator but " +
+      "speed is U / continuous retrace-batching cost, before Table 3b's whole-turn rounding. Retracing produces no new cells, so it can lower the denominator but " +
       "does not prove forward deduction. Conservative play reaches exactly 1.00 only when Error " +
       "Margin is zero; otherwise it is structurally below Trailblazer. Trailblazer is therefore a " +
       "forward-deduction test: exceeding 1.00 requires batching into unexplored structure.",
