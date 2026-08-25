@@ -112,6 +112,10 @@ export type PersistedRound = {
   scoreDecayUnits?: number
   turnCount?: number
   cumulativeRoundCount?: number
+  // Optional so snapshots written before this field existed still validate rather than being
+  // discarded. Absent restores as CONFIG.runtime.defaultRestartLevel, the same value a session
+  // that never set one uses.
+  restartLevel?: number
 }
 
 // AgentApiSessionMetrics is sessionStorage-only state for one browser tab's current agent-api round.
@@ -545,7 +549,7 @@ export interface MazeActionControl {
   readCurrentPlayer?: () => string | null
 }
 
-// State is the browser runtime's single source of truth for one session.
+// State is the browser runtime's (in-memory) single source of truth for one session.
 export type State = {
   controlMode: MazeControlModeName
   level: number
@@ -553,10 +557,6 @@ export type State = {
   // is, and the two move apart the moment a game progresses past it. Seeded from
   // CONFIG.runtime.defaultRestartLevel and editable while the game runs, so a playtest can open
   // deep in the level curve without a code change.
-  //
-  // Deliberately not persisted: it is a live choice for the page in front of you, and every load
-  // starts again from the configured default rather than inheriting a floor nobody remembers
-  // setting. Changing it stops the round in progress first — see setRestartLevel in game.ts.
   restartLevel: number
   status: GameStatus
 

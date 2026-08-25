@@ -919,6 +919,65 @@ describe("bootstrapGame", () => {
     expect(harness.runtime.readRestartLevel()).toBe(84)
   })
 
+  // The floor rides inside the round snapshot, so choosing one has to write that snapshot. Without
+  // this persist the new value sits in memory until something else happens to save, and a reload
+  // before then loses it.
+  //
+  // Asserted as "a save happened", not by inspecting the saved argument: saveActiveRoundSnapshot is
+  // mocked with (mode, state), so the argument is the live State object and carries restartLevel
+  // whether or not buildRoundSnapshot copies it across. That the snapshot itself contains the field
+  // is storage.test.ts's round-trip assertion.
+  it("persists the round when the restart level changes with nothing running", async () => {
+    // A finished round on purpose. While one is running, stopActiveRound's own persist would save
+    // anyway and mask whether setRestartLevel writes at all — which is exactly the case where the
+    // value would be lost on the next reload.
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        { preferences: { level: 3, wallWeight: 1 }, round: createPersistedWonRound() },
+      ],
+    })
+    const savesBefore = harness.saveActiveRoundSnapshot.mock.calls.length
+
+    expect(harness.runtime.setRestartLevel(84)).toBe(true)
+
+    expect(harness.saveActiveRoundSnapshot.mock.calls.length).toBeGreaterThan(savesBefore)
+  })
+
+  it("restores a stored restart level and applies it as the floor", async () => {
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        {
+          preferences: { level: 3, wallWeight: 1 },
+          round: { ...createPersistedWonRound(), restartLevel: 84 },
+        },
+      ],
+    })
+
+    expect(harness.runtime.readRestartLevel()).toBe(84)
+    // Advancing would ask for level 4; the restored floor lifts it to 84.
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(84, { numCols: 20, numRows: 20 })
+  })
+
+  // startRound raises every round to this floor, so a corrupt stored value would make the game
+  // unplayable rather than merely wrong — it must not reach state.
+  it.each([
+    ["zero", 0],
+    ["negative", -5],
+    ["fractional", 2.5],
+  ])("ignores a %s stored restart level and falls back to the default", async (_label, stored) => {
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        {
+          preferences: { level: 3, wallWeight: 1 },
+          round: { ...createPersistedWonRound(), restartLevel: stored },
+        },
+      ],
+    })
+
+    expect(harness.runtime.readRestartLevel()).toBe(CONFIG.runtime.defaultRestartLevel)
+  })
+
   it("rejects a restart level gameplay could not use, keeping the last good one", async () => {
     const harness = await bootstrapHarness({})
 

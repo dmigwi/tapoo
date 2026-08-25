@@ -904,6 +904,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     lastRoundScore: state.lastRoundScore,
     remainingMs,
     winSummary: state.winSummary,
+    restartLevel: state.restartLevel,
     scoreDecayUnits: state.scoreDecayUnits,
     turnCount: state.turnCount,
     cumulativeRoundCount: state.cumulativeRoundCount,

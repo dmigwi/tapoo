@@ -301,8 +301,22 @@ function noValidRoundExists(snapshot: PersistedRound | null): boolean {
   return false
 }
 
+// restoredRestartLevel keeps a corrupt or absent stored floor from reaching state. It is validated
+// here rather than in isValidPersistedRound because a bad value must not discard an otherwise good
+// round — and because startRound raises every round to this floor, so an implausible one would make
+// the game unplayable rather than merely wrong.
+function restoredRestartLevel(level: number | undefined): number {
+  return typeof level === "number" && Number.isInteger(level) && level >= 1
+    ? level
+    : runtime.defaultRestartLevel
+}
+
 // restoreValidPersistedRound rebuilds runtime state from a snapshot that already passed validation.
 function restoreValidPersistedRound(snapshot: PersistedRound): void {
+  // Ahead of the viewport bail-out below: the floor applies to whatever round opens next, including
+  // the one a too-small viewport will ask for.
+  state.restartLevel = restoredRestartLevel(snapshot.restartLevel)
+
   if (!persistedRoundFitsViewport(snapshot)) {
     applyTooSmallState(snapshot.level)
     state.wallWeight = snapshot.wallWeight
@@ -494,6 +508,10 @@ function setRestartLevel(level: number): boolean {
 
   stopActiveRound()
   state.restartLevel = level
+  // After the assignment, not before: stopActiveRound's own persist ran while the old value was
+  // still in state. "round" rather than "state" because only the round snapshot carries this —
+  // rewriting durable progress here would be a side effect nobody asked for.
+  persistNow("round")
   return true
 }
 

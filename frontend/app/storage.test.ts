@@ -699,6 +699,8 @@ describe("storage", () => {
       score: 1200,
       lastRoundScore: 700,
       winSummary: "",
+      // The floor travels inside the round snapshot rather than under a key of its own.
+      restartLevel: 1,
       remainingMs: 25_000,
       scoreDecayUnits: 0,
       turnCount: 0,
