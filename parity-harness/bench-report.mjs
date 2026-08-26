@@ -175,16 +175,15 @@ export function routeGeometryRows(summaries) {
     realSummaries(summaries).map((summary) => [
       summary.Case,
       {
-        "Area (Cells)": summary.Budget,
-        "Path Length (Cells)": summary.PathLen,
+        "Path Len (Cells)": summary.PathLen,
         "Path P5 (Cells)": summary["Path-p5"],
         "Path P95 (Cells)": summary["Path-p95"],
         "Path (%)": summary["Path%"],
-        "Worst Branch (Depth)": summary.WorstBranch,
-        "Branch P5 (Depth)": summary["WorstBranch-p5"],
-        "Branch P95 (Depth)": summary["WorstBranch-p95"],
+        "W-Branch (Depth)": summary.WorstBranch,
+        "W-Branch P5 (Depth)": summary["WorstBranch-p5"],
+        "W-Branch P95 (Depth)": summary["WorstBranch-p95"],
         "Error Margin (Cells)": summary.Headroom,
-        "Worst Branch (% of Margin)": worstBranchPercentOfMargin(summary),
+        "W-Branch (% of Margin)": worstBranchPercentOfMargin(summary),
       },
     ]),
   )
@@ -199,7 +198,7 @@ export function costModelRows(summaries) {
         "Batching (Turns)": batchingTraversalBudget(summary),
         "Error Budget (Turns)": errorBudgetTurns(summary),
         "Error Budget (%)": percentOfBudget(errorBudgetTurns(summary), summary.Budget, 1),
-        "Worst Branch Cost (Turns)": costProjectionExpression(summary.WorstBranch),
+        "W-Branch Cost (Turns)": costProjectionExpression(summary.WorstBranch),
         "Explore-All Cost (Turns)": costProjectionExpression(summary.Headroom),
       },
     ]),
@@ -738,7 +737,7 @@ function printLegend() {
   printLegendSection("Table 3a — Route geometry")
 
   printLegendEntry(
-    "Path Length, Path P5/P95:",
+    "Path Len, Path P5/P95:",
     "Cells on the unique start-to-destination route: the mean, with the 5th and 95th percentiles in " +
       "their own columns. The unavoidable ideal path, not any route an agent found. Every maze is a " +
       "spanning tree, so exactly one route exists between any two cells. The spread matters as much as the " +
@@ -746,16 +745,16 @@ function printLegend() {
   )
   printLegendEntry(
     "Path (%):",
-    "Path Length as a percentage share of area. Low levels are near-pure corridors; higher levels are more " +
+    "Path Len as a percentage share of area. Low levels are near-pure corridors; higher levels are more " +
       "heavily branched.",
   )
   printLegendEntry(
     "Error Margin:",
-    "Area minus Path Length — every cell off the winning route. It is 1 - Path (%) restated as a " +
+    "Area minus Path Len — every cell off the winning route. It is 1 - Path (%) restated as a " +
       "count, and it is the space an agent must search through and pay to leave.",
   )
   printLegendEntry(
-    "Worst Branch, Branch P5/P95:",
+    "W-Branch, W-Branch P5/P95:",
     "Depth of the deepest single off-path branch, counted in cells from the route: the mean, with " +
       "percentiles in their own columns. Depth, not size — a branch that forks holds more cells " +
       "than its depth, so 2L below is the cost of walking that deepest line in and back out, and a " +
@@ -763,8 +762,8 @@ function printLegend() {
       "turn is therefore at least this, not exactly this.",
   )
   printLegendEntry(
-    "Worst Branch (% of Margin):",
-    "Worst Branch over Error Margin. Shown against margin rather than area because that is the " +
+    "W-Branch (% of Margin):",
+    "W-Branch over Error Margin. Shown against margin rather than area because that is the " +
       "decision-relevant denominator. At low levels the entire off-path space can be one branch, so " +
       "the maze poses one binary decision; at high levels it fragments into several branches, so " +
       "outcomes average out. Clamped at 100 to guard rounding when both averages are near zero.",
@@ -827,8 +826,8 @@ function printLegend() {
       "agent in relative terms, because there is more waste to eliminate.",
   )
   printLegendEntry(
-    "Worst Branch Cost, Explore-All Cost:",
-    "Projected turns as floor(1.25L) - floor(2L), where L is Worst Branch and Error Margin " +
+    "W-Branch Cost, Explore-All Cost:",
+    "Projected turns as floor(1.25L) - floor(2L), where L is W-Branch and Error Margin " +
       "respectively. Explore-All Cost exceeds the available margin in every row under both " +
       "strategies — exhaustive exploration is never affordable at any level. Small averaged margins " +
       "can display 0 - 0 even when individual samples had a short branch.",
@@ -909,18 +908,18 @@ function printDerivedFormulaLegend() {
     "Spread columns:",
     "Mean, P5, and P95 columns report the sample mean plus the 5th and 95th percentile for that " +
       "same metric. P5/P95 (Junctions/Cell) and stddev (Junctions/Cell) are computed over " +
-      "per-sample junctions/cell values; Path P5/P95 are cell counts and Branch P5/P95 are depths.",
+      "per-sample junctions/cell values; Path P5/P95 are cell counts and W-Branch P5/P95 are depths.",
   )
   printLegendEntry(
     "Route percentages:",
-    "Path (%) = 100*Path Length (Cells) / Area (Cells). Error Margin (Cells) = Area (Cells) - " +
-      "Path Length (Cells). Worst Branch (% of Margin) = min(100, 100*Worst Branch (Depth) / " +
+    "Path (%) = 100*Path Len (Cells) / Area (Cells). Error Margin (Cells) = Area (Cells) - " +
+      "Path Len (Cells). W-Branch (% of Margin) = min(100, 100*W-Branch (Depth) / " +
       "Error Margin (Cells)) — a depth over a cell count, so read it as how far the worst branch " +
       "reaches into the off-path space rather than what share of it that branch holds.",
   )
   printLegendEntry(
     "Cost model:",
-    "Batching (Turns) = round(Path Length (Cells) + 1.25*(Error Margin (Cells)/2)). " +
+    "Batching (Turns) = round(Path Len (Cells) + 1.25*(Error Margin (Cells)/2)). " +
       "Error Budget (Turns) = Budget (Decay) - Batching (Turns). Error Budget (%) = " +
       "100*Error Budget (Turns) / Budget (Decay).",
   )
@@ -1005,7 +1004,7 @@ function printDifficultyCalibration() {
   )
   printLegendEntry(
     "Luck exposure:",
-    "Worst Branch can be the whole margin at low levels and only a fraction of it at high levels. " +
+    "W-Branch can be the whole margin at low levels and only a fraction of it at high levels. " +
       "Low levels are closer to one binary decision; high levels average over several.",
   )
   printWrapped(
@@ -1217,8 +1216,8 @@ function printRouteGeometryNote() {
   printLegendEntry(
     "Table 3a note:",
     "Route geometry contains only maze structure, not agent assumptions. P5/P95 columns are split " +
-      "out as numeric cells so console.table keeps them unquoted and right-aligned. Error Margin " +
-      "(Cells) = area - Path Length (Cells), or 1 - Path (%) restated as a count. Worst Branch " +
+      "out as numeric cells so console.table keeps them unquoted and right-aligned. W-Branch means Worst Branch. " +
+      "Error Margin (Cells) = area - Path Len (Cells), or 1 - Path (%) restated as a count. W-Branch " +
       "(% of Margin) is clamped at 100 to guard rounding artifacts when both averaged values " +
       "are near zero.",
   )
@@ -1231,7 +1230,7 @@ function printCostModelNote() {
       "P + 1.25*(M/2), rounded to a whole turn count, and Error Budget is the batching agent's " +
       "entire tolerance for wrong turns. Explore-All Cost is the projected cost of walking every off-path cell. " +
       "Cost columns display floor(1.25L) - floor(2L) as projected whole-turn counts, where L is " +
-      "Worst Branch (Depth) for Worst Branch Cost and Error Margin (Cells) for Explore-All Cost. " +
+      "W-Branch (Worst Branch) Depth for W-Branch Cost and Error Margin (Cells) for Explore-All Cost. " +
       "The two Ls are different quantities: a depth for one, a cell count for the other. " +
       "Small averaged margins can therefore display 0 - 0 even when a few individual samples had a " +
       "short off-path branch. " +
@@ -1559,7 +1558,7 @@ export function renderBenchmarkCharts(report, options = {}) {
   ]
   const navigationCharts = [
     ["Path (%)", "Path%"],
-    ["Worst Branch (%)", (summary) => percentOfBudget(summary.WorstBranch, summary.Budget)],
+    ["W-Branch (%)", (summary) => percentOfBudget(summary.WorstBranch, summary.Budget)],
     ["Error Margin / Cell", errorMarginPerCell],
     ["Conservative (No Batching) Min Win Speed", conservativeMinWinSpeedRatio],
   ]
@@ -1572,13 +1571,13 @@ export function renderBenchmarkCharts(report, options = {}) {
       "junctions/cell",
     ],
     [
-      "Junctions/Cell vs Worst Branch (%)",
+      "Junctions/Cell vs W-Branch (%)",
       worstBranchPercent,
       (summary) => summary["Junctions/cell"],
       "junctions/cell",
     ],
     [
-      "Degree-4 (%) vs Worst Branch (%)",
+      "Degree-4 (%) vs W-Branch (%)",
       worstBranchPercent,
       (summary) => summary["%Deg4"],
       "degree-4 (%)",

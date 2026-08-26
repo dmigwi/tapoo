@@ -116,16 +116,15 @@ describe("bench report helpers", () => {
 
   it("formats route geometry rows with structural route metrics", () => {
     expect(routeGeometryRows(summaries).area70_10x7).toEqual({
-      "Area (Cells)": 70,
-      "Path Length (Cells)": 68.2,
+      "Path Len (Cells)": 68.2,
       "Path P5 (Cells)": 65,
       "Path P95 (Cells)": 70,
       "Path (%)": 97.43,
-      "Worst Branch (Depth)": 1.2,
-      "Branch P5 (Depth)": 0,
-      "Branch P95 (Depth)": 4,
+      "W-Branch (Depth)": 1.2,
+      "W-Branch P5 (Depth)": 0,
+      "W-Branch P95 (Depth)": 4,
       "Error Margin (Cells)": 1.8,
-      "Worst Branch (% of Margin)": 66.67,
+      "W-Branch (% of Margin)": 66.67,
     })
   })
 
@@ -135,7 +134,7 @@ describe("bench report helpers", () => {
       "Batching (Turns)": 69,
       "Error Budget (Turns)": 1,
       "Error Budget (%)": 1.4,
-      "Worst Branch Cost (Turns)": "1 - 2",
+      "W-Branch Cost (Turns)": "1 - 2",
       "Explore-All Cost (Turns)": "2 - 3",
     })
   })
