@@ -344,6 +344,10 @@ export const CONFIG: AppConfig = {
     playerNoteTemplate:
       "Shown for placeholder player '{player}'; each configured agent sees its own name in place of it.",
     systemHeading: "System message",
+    // The persona is the system message's opening paragraph, not a message of its own, so the
+    // heading says which form is attached above rather than presenting this as a separate send.
+    personaHeading: "Agent persona (the system message above opens with the default; all four forms follow)",
+    personaDefaultLabel: "Default — first turn, before any prediction is measured",
     userHeading: "User message",
     toolsHeading: "Tool definitions",
     schemaHeading: "Required response format",

@@ -839,6 +839,10 @@ export type AppConfig = {
     intro: string
     playerNoteTemplate: string
     systemHeading: string
+    // The persona is the system message's opening paragraph rather than a separate message; these
+    // two label the section that publishes every form it can take.
+    personaHeading: string
+    personaDefaultLabel: string
     userHeading: string
     toolsHeading: string
     schemaHeading: string

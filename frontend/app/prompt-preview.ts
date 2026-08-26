@@ -2,9 +2,12 @@ import {
   AGENT_CONTEXT_TOOLS,
   EXPECTED_RESPONSE_SCHEMA,
   buildAgentMessages,
+  buildAgentPersonaPrompt,
   buildDuplicateToolCallMessage,
   buildTokenLimitExhaustionPrompt,
 } from "./agent/context"
+import { capitalize } from "./agent/efficiency"
+import type { BatchEfficiencyClass } from "./agent/efficiency"
 import { CONFIG } from "./config"
 
 const { promptPreview, agentConfig, runtime } = CONFIG
@@ -38,6 +41,28 @@ export function previewPlayerNote(): string {
 // round rather than what every request carries. The classification is the one every level opens on:
 // trailblazer with nothing charged, which renders the "no turn charged yet" wording an agent
 // actually sees on its first turn rather than the measured-trailblazer wording it does not.
+// MEASURED_PERSONA_CLASSES lists the classifications an agent can be shown once its own turns have
+// been measured, ordered by rate from the top down. The default opening is rendered separately: it
+// is not a fourth classification but the same trailblazer label handed out before any measurement,
+// which is exactly why its wording differs.
+const MEASURED_PERSONA_CLASSES: BatchEfficiencyClass[] = ["trailblazer", "navigator", "backtracker"]
+
+// buildPersonaVariants renders every form the system message can open with, each under the label a
+// reader needs to tell them apart. Built from buildAgentPersonaPrompt rather than transcribed, so a
+// reworded branch changes the published page in the same edit.
+function buildPersonaVariants(): string {
+  const player = agentConfig.playerNamePlaceholder
+  const variants = [
+    `${promptPreview.personaDefaultLabel}\n\n${buildAgentPersonaPrompt(player, "trailblazer", true)}`,
+    ...MEASURED_PERSONA_CLASSES.map(
+      (speedClass) =>
+        `${capitalize(speedClass)}\n\n${buildAgentPersonaPrompt(player, speedClass, false)}`,
+    ),
+  ]
+
+  return variants.join("\n\n")
+}
+
 export function buildPreviewSections(): { heading: string; body: string }[] {
   const [system, user] = buildAgentMessages(agentConfig.playerNamePlaceholder, "trailblazer", true)
 
@@ -49,6 +74,7 @@ export function buildPreviewSections(): { heading: string; body: string }[] {
   const tokenLimitExhaustionWarning = buildTokenLimitExhaustionPrompt(runtime.modelConfig.maxTokens)
 
   return [
+    { heading: promptPreview.personaHeading, body: buildPersonaVariants() },
     { heading: promptPreview.systemHeading, body: system.content ?? "" },
     { heading: promptPreview.userHeading, body: user.content ?? "" },
     { heading: promptPreview.toolsHeading, body: tools },
