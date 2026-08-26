@@ -53,12 +53,7 @@ describe("tapoo entrypoint", () => {
   })
 
   it("boots the game on import", async () => {
-    const runtime = {
-      dispatch: vi.fn(),
-      mode: "interactive",
-      persistSnapshot: vi.fn(),
-    }
-    const bootstrapGame = vi.fn(() => runtime)
+    const bootstrapGame = vi.fn()
     const getGameElements = vi.fn(() => ({ app: {} }))
     const showPlaceholderArt = vi.fn()
     const prepareTerminalAppForBootstrap = vi.fn()
@@ -129,11 +124,7 @@ describe("tapoo entrypoint", () => {
       infoGateProceed,
     }
 
-    const bootstrapGame = vi.fn(() => ({
-      dispatch: vi.fn(),
-      mode: "interactive",
-      persistSnapshot: vi.fn(),
-    }))
+    const bootstrapGame = vi.fn()
     const initTapooLogs = vi.fn()
     const prepareTerminalAppForBootstrap = vi.fn()
     const interactiveMode = {
@@ -197,11 +188,7 @@ describe("tapoo entrypoint", () => {
   })
 
   it("uses the agent-api page mode when configured in html", async () => {
-    const bootstrapGame = vi.fn(() => ({
-      dispatch: vi.fn(),
-      mode: "agent-api",
-      persistSnapshot: vi.fn(),
-    }))
+    const bootstrapGame = vi.fn()
     const elements = { app: {} }
     const showPlaceholderArt = vi.fn()
     const agentMode = {
@@ -314,13 +301,8 @@ describe("tapoo entrypoint", () => {
     expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
   })
 
-  it("does not persist the active runtime after a later invariant failure", async () => {
+  it("reports a later invariant failure through the placeholder art", async () => {
     const failure = new Error("agent move dispatch must return feedback")
-    const runtime = {
-      dispatch: vi.fn(),
-      mode: "agent-api",
-      persistSnapshot: vi.fn(),
-    }
     const showPlaceholderArt = vi.fn()
 
     vi.doMock("./app/dom", () => ({
@@ -339,7 +321,7 @@ describe("tapoo entrypoint", () => {
       })),
     }))
     vi.doMock("./app/game", () => ({
-      bootstrapGame: vi.fn(() => runtime),
+      bootstrapGame: vi.fn(),
     }))
 
     document.body.dataset.tapooControlMode = "agent-api"
@@ -347,7 +329,6 @@ describe("tapoo entrypoint", () => {
     await import("./tapoo")
     window.dispatchEvent(new ErrorEvent("error", { error: failure }))
 
-    expect(runtime.persistSnapshot).not.toHaveBeenCalled()
     expect(showPlaceholderArt).toHaveBeenCalledWith("agent-api", failure)
   })
 })

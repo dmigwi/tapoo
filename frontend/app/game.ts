@@ -59,7 +59,6 @@ import {
 import type { ResolvedPlayerMove } from "./traversal"
 import type {
   Elements,
-  GameRuntime,
   LevelDimensions,
   MazeAction,
   MazeActionControl,
@@ -685,7 +684,7 @@ export function bootstrapGame(
   // controlMode is the page-selected MazeActionControl that supplies the active input behavior.
   controlMode: MazeActionControl,
   elements: Elements,
-): GameRuntime {
+): void {
   runtimeElements = elements
   activeControlMode = controlMode
   state.controlMode = controlMode.name
@@ -752,18 +751,5 @@ export function bootstrapGame(
   controlMode.bindActionDispatch(dispatchControl, readState, commitTurn, { setRestartLevel })
   if (isInteractiveMode(controlMode.name)) {
     runtimeElements.app.focus()
-  }
-
-  return {
-    mode: controlMode.name,
-    dispatch: dispatchControl,
-    persistSnapshot: () => {
-      persistNow("state")
-    },
-    // Exposed on the runtime rather than as a MazeAction because MazeAction carries no payload —
-    // every action is a bare type tag. Giving one a level value is a change to that whole union,
-    // and belongs with the UI work rather than ahead of it.
-    setRestartLevel,
-    readRestartLevel: () => state.restartLevel,
   }
 }

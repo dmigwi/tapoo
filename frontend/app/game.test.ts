@@ -5,8 +5,8 @@ import { isAgentApiMode } from "./status"
 import type {
   AgentApiSeatConfig,
   Elements,
-  GameRuntime,
   MazeActionControl,
+  MazeActionDispatch,
   MazeControlModeName,
   PersistedPreferences,
   PersistedRound,
@@ -368,13 +368,55 @@ type GameHarness = {
   mode: MazeActionControl
   render: ReturnType<typeof vi.fn<(elements: Elements, state: State) => void>>
   reweightMaze: ReturnType<typeof vi.fn>
-  runtime: GameRuntime
+  runtime: CapturedRuntime
   saveGameProgress: ReturnType<typeof vi.fn>
   saveActiveRoundSnapshot: ReturnType<typeof vi.fn>
   savedRoundStates: Array<{
     mazeDimensions: State["mazeDimensions"]
     status: State["status"]
   }>
+}
+
+// CapturedRuntime is the set of handles bootstrapGame passes to the control mode. It is declared
+// here, in the test, rather than returned by bootstrapGame: production never needs it, and a return
+// value only tests read is free to keep compiling long after the channel the app actually uses has
+// changed underneath it.
+type CapturedRuntime = {
+  dispatch: MazeActionDispatch
+  setRestartLevel: (level: number) => boolean
+  readRestartLevel: () => number
+}
+
+// captureRuntimeHandles wraps a real control mode and records what bindActionDispatch is handed,
+// then forwards the call untouched. Tests therefore drive the same dispatch and gameControls the
+// settings dialog drives in the browser — if that wiring is ever dropped, these tests stop working
+// instead of passing against a parallel seam.
+function captureRuntimeHandles(realMode: MazeActionControl): {
+  controlMode: MazeActionControl
+  readRuntime: () => CapturedRuntime
+} {
+  let captured: CapturedRuntime | null = null
+
+  return {
+    controlMode: {
+      ...realMode,
+      bindActionDispatch: (dispatch, readState, commitTurn, gameControls) => {
+        captured = {
+          dispatch,
+          setRestartLevel: gameControls.setRestartLevel,
+          readRestartLevel: () => readState().restartLevel,
+        }
+        realMode.bindActionDispatch(dispatch, readState, commitTurn, gameControls)
+      },
+    },
+    readRuntime: () => {
+      if (!captured) {
+        throw new Error("bootstrapGame never called bindActionDispatch")
+      }
+
+      return captured
+    },
+  }
 }
 
 // bootstrapHarness wires a mocked runtime so high-level browser game flows stay testable.
@@ -519,9 +561,11 @@ async function bootstrapHarness({
   const { createAgentMode } = await import("./control/agent")
   const { createInteractiveMode } = await import("./control/interactive")
   const { bootstrapGame } = await import("./game")
-  const controlMode =
+  const realMode =
     isAgentApiMode(mode) ? createAgentMode(elements) : createInteractiveMode(elements)
-  const runtime = bootstrapGame(controlMode, elements)
+  const { controlMode, readRuntime } = captureRuntimeHandles(realMode)
+  bootstrapGame(controlMode, elements)
+  const runtime = readRuntime()
 
   return {
     appendTapooLogEntry,
@@ -794,8 +838,9 @@ describe("bootstrapGame", () => {
     const { createInteractiveMode } = await import("./control/interactive")
     const { bootstrapGame } = await import("./game")
 
-    const runtime = bootstrapGame(createInteractiveMode(elements), elements)
-    expect(runtime.setRestartLevel(84)).toBe(true)
+    const { controlMode, readRuntime } = captureRuntimeHandles(createInteractiveMode(elements))
+    bootstrapGame(controlMode, elements)
+    expect(readRuntime().setRestartLevel(84)).toBe(true)
 
     // Advancing from the restored level-3 win would ask for level 4, which is below the floor.
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))

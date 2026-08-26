@@ -603,18 +603,6 @@ export type State = {
   clock: GameClock | null
 }
 
-// GameRuntime exposes the active mode plus a direct dispatch hook for tests and integrations.
-export type GameRuntime = {
-  mode: MazeControlModeName
-  dispatch: MazeActionDispatch
-  persistSnapshot: () => void
-  // setRestartLevel chooses where fresh and restarted games begin for the rest of this session,
-  // returning whether anything changed. A round already running is left alone: the new level
-  // applies at the next restart, so this is safe to call mid-game.
-  setRestartLevel: (level: number) => boolean
-  readRestartLevel: () => number
-}
-
 // ScreenLine is the renderer's normalized line model before HTML generation.
 export type ScreenLine = {
   kind: "text" | "maze"
