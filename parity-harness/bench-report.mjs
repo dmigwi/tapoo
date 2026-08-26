@@ -22,7 +22,7 @@ const traversalSpeedScaleUnits = configuredTraversalSpeedScaleUnits()
 const traversalSpeedDisplayDecimals = String(traversalSpeedScaleUnits).length - 1
 const routeGeometryTableTitle = "Table 3a — Route geometry"
 const costModelTableTitle = "Table 3b — Cost model"
-const speedCeilingTableTitle = "Table 3c — Achievable speed ceilings"
+const minWinSpeedTableTitle = "Table 3c — Minimum winning speed"
 
 const reportOutputPath = process.env.TAPOO_BENCH_OUT ?? "parity-harness/bench-report.json"
 const chartOutputPath = chartPathForReport(reportOutputPath)
@@ -206,37 +206,32 @@ export function costModelRows(summaries) {
   )
 }
 
-export function speedCeilingRows(summaries) {
+export function minWinSpeedRows(summaries) {
   return Object.fromEntries(
     realSummaries(summaries).map((summary) => [
       summary.Case,
       {
-        "Conservative (Speed)": conservativeSpeedCeiling(summary),
-        "Retrace-only (Speed)": retraceOnlySpeedCeiling(summary),
+        "Conservative (No Batching) Min Win Speed": conservativeMinWinSpeed(summary),
       },
     ]),
   )
 }
 
-// speedCeilingNumbers is the JSON counterpart of speedCeilingRows. The table's values are strings
+// minWinSpeedNumbers is the JSON counterpart of minWinSpeedRows. The table's values are strings
 // by necessity — the 4dp directional rounding exists so a displayed figure can never contradict its
 // classification, and that is a formatting decision — but a consumer should never have to parse
 // them back. These are the raw quotients, unrounded and unformatted: same inputs, no presentation.
-export function speedCeilingNumbers(summaries) {
+export function minWinSpeedNumbers(summaries) {
   return Object.fromEntries(
     realSummaries(summaries).map((summary) => {
       const uniqueCells = uniqueCellsCeiling(summary)
-      const budget = Number(summary.Budget)
-      const batching = batchingTraversalCost(summary)
+      const conservativeSpeed = conservativeMinWinSpeedRatio(summary)
 
       return [
         summary.Case,
         {
           uniqueCellsCeiling: Number.isFinite(uniqueCells) ? uniqueCells : null,
-          conservativeSpeed:
-            Number.isFinite(uniqueCells) && budget > 0 ? uniqueCells / budget : null,
-          retraceOnlySpeed:
-            Number.isFinite(uniqueCells) && batching > 0 ? uniqueCells / batching : null,
+          conservativeSpeed: Number.isFinite(conservativeSpeed) ? conservativeSpeed : null,
         },
       ]
     }),
@@ -332,7 +327,17 @@ function uniqueCellsCeiling(summary) {
   return (pathLength + budget) / 2
 }
 
-function conservativeSpeedCeiling(summary) {
+function conservativeMinWinSpeedRatio(summary) {
+  const uniqueCells = uniqueCellsCeiling(summary)
+  const budget = Number(summary.Budget)
+  if (![uniqueCells, budget].every(Number.isFinite) || budget <= 0) {
+    return Number.NaN
+  }
+
+  return uniqueCells / budget
+}
+
+function conservativeMinWinSpeed(summary) {
   const uniqueCells = uniqueCellsCeiling(summary)
   const budget = Number(summary.Budget)
   if (![uniqueCells, budget].every(Number.isFinite) || budget <= 0) {
@@ -340,16 +345,6 @@ function conservativeSpeedCeiling(summary) {
   }
 
   return traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(uniqueCells, budget))
-}
-
-function retraceOnlySpeedCeiling(summary) {
-  const uniqueCells = uniqueCellsCeiling(summary)
-  const batching = batchingTraversalCost(summary)
-  if (![uniqueCells, batching].every(Number.isFinite) || batching <= 0) {
-    return ""
-  }
-
-  return traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(uniqueCells, batching))
 }
 
 // Mirrors frontend/app/agent/efficiency.ts calculateTraversalSpeedUnits().
@@ -839,13 +834,17 @@ function printLegend() {
       "can display 0 - 0 even when individual samples had a short branch.",
   )
 
-  printLegendSection("Table 3c — Achievable speed ceilings")
+  printLegendSection("Table 3c — Minimum winning speed")
 
   printLegendEntry(
-    "Derivation:",
-    "U = (Path Length + Budget)/2, the unique cells visited by an agent exploring half the off-path " +
-      "space. Conservative speed = U/Budget; Retrace-only speed = U divided by the continuous " +
-      "retrace-batching cost, before whole-turn rounding. Derived from Tables 3a and 3b, not measured.",
+    "Min Win Speed:",
+    "s_min = (P + M/2) / Budget, where P is Path Length and M is Error Margin. " +
+      "Equivalently U/Budget with U = (P + Budget)/2, the unique cells a conservative " +
+      "agent has visited at break-even — the whole path plus half the off-path space, " +
+      "typically 70-80% of the maze, not half of anything a reader would count. Cannot " +
+      "exceed 1.0000: one turn, one decay unit, at most one new cell, so U <= D always. " +
+      "Reaches exactly 1.0000 only when Error Margin is zero, so conservative play is " +
+      "always Backtracker.",
   )
   printLegendEntry(
     "Formatting:",
@@ -853,24 +852,13 @@ function printLegend() {
       "Classification is computed from the raw ratio, not the rendered string.",
   )
   printLegendEntry(
-    "Conservative:",
-    "Ceiling for one-move-per-turn play. Cannot exceed 1.0000: one turn, one decay unit, at most one " +
-      "new cell, so U <= D always. Reaches exactly 1.0000 only in a maze with zero junctions; any " +
-      "branching puts it below. Conservative play is therefore always Backtracker.",
-  )
-  printLegendEntry(
-    "Retrace-only:",
-    "Ceiling for an agent that batches only on the way out of dead ends. Retracing visits no new " +
-      "cells, so it lowers the denominator without raising the numerator and also cannot reach 1.0000.",
-  )
-  printLegendEntry(
     "What this means:",
     "Exceeding 1.0000 requires more than one new cell per turn, which requires batching forward, into " +
       "cells never visited. The Trailblazer threshold is therefore a forward-deduction test, and a " +
       "Backtracker classification at high levels may be a structural ceiling rather than poor play. " +
-      "Both ceilings sit below 1.0000 in every case measured, so a Ceiling Class column would read " +
-      "Backtracker in every row and a Trailblazer Needs column would read \"forward batching\" in " +
-      "every row. Those are global facts, stated here once, rather than columns repeating themselves.",
+      "Perfect retrace batching can approach 1.0000 from below, but cannot cross it: retracing " +
+      "saves denominator while adding no new cells. That limit is a global fact, stated here once, " +
+      "rather than a column sitting at one arbitrary batch depth.",
   )
 
   printDerivedFormulaLegend()
@@ -937,23 +925,24 @@ function printDerivedFormulaLegend() {
       "100*Error Budget (Turns) / Budget (Decay).",
   )
   printLegendEntry(
-    "Speed ceilings:",
-    "U = (Path Length (Cells) + Budget (Decay))/2. Conservative (Speed) = U / Budget (Decay). " +
-      "Retrace-only (Speed) = U / continuous retrace-batching cost, before Table 3b's whole-turn " +
-      "rounding. Values above 1.0000 require forward batching " +
-      "into unexplored structure.",
+    "Min win speed:",
+    "s_min = (Path Length + Error Margin/2) / Budget, the final traversal speed of a " +
+      "single-move agent that exactly exhausts its budget. Generalises to " +
+      "s_min(c) = (P + M/c) / Budget for a strategy with round-trip multiplier c; " +
+      "c = 2 is printed, c = 1 gives exactly 1.0000.",
   )
   printLegendEntry(
     "Redundancies:",
     "Dead Ends/Maze = Degree-3/Maze + 2*Degree-4/Maze + 2. Error Budget (Turns) = " +
-      "0.375 * Error Margin (Cells), before whole-turn rounding. Error Margin (Cells) = " +
-      "Area * (1 - Path (%)/100). These are identities, not independent measurements. They are " +
-      "printed because a visible identity that must hold is a free correctness check.",
+      "0.375 * Error Margin (Cells), before whole-turn rounding, given the depth-4 Batching column. " +
+      "Error Margin (Cells) = Area * (1 - Path (%)/100). These are identities, not independent " +
+      "measurements. They are printed because a visible identity that must hold is a free correctness check.",
   )
   printLegendEntry(
     "Failure threshold:",
-    "An agent fails when it explores more than 1/c of the off-path space, where c is 2.00 " +
-      "conservative or 1.25 batching. Independent of area, path length and margin.",
+    "An agent fails when it explores more than 1/c of the off-path space. c = 2.00 for " +
+      "single-move play. Batching lowers c — 1.25 at depth 4, less at greater depth — so " +
+      "the threshold rises with batch depth. Independent of area, path length and margin.",
   )
   printLegendEntry(
     "Speed display:",
@@ -984,11 +973,16 @@ function printDifficultyCalibration() {
   )
   printLegendEntry(
     "Retrace batching:",
-    "c = 1.25; fails above 80% exploration.",
+    "c <= 1.25 at batch depth 4, and lower at greater depth. At c = 1.25 the threshold is " +
+      "80% exploration; deeper batching raises it further. 1.25 is the depth-4 case, not " +
+      "a property of batching.",
   )
   printLegendEntry(
-    "Forward batching:",
-    "c = 0.75; cannot fail under this simplified cost model.",
+    "Forward deduction:",
+    "does not change c. Because the destination is known, deduction identifies branches the route " +
+      "cannot use, so it lowers f — the fraction of off-path space entered — rather than the cost " +
+      "of traversing a branch once entered. An agent that could prove a branch dead and entered " +
+      "anyway has committed a context-disregard violation, not paid a cheaper price.",
   )
   printWrapped(
     console.info,
@@ -1057,15 +1051,17 @@ function printReportReadingGuide() {
   console.info("")
   printWrapped(
     console.info,
-    "* Cost model assumption.",
+    "* Where the cost model comes from.",
   )
   console.info("")
   printWrapped(
     console.info,
-    "Tables 3b and 3c assume an agent explores half the off-path space before " +
-      "finding the route. This is neutral, not empirical — a strong pruner explores less, a weak " +
-      "one more. Sensitivity: at 30% the batching agent's Error Budget falls to 0.225 x Error " +
-      "Margin; at 70% it rises to 0.525 x Error Margin.",
+    "Tables 3b and 3c describe two agent archetypes at the point where each exactly exhausts " +
+      "its budget. Nothing about real agent behaviour is assumed: the exploration fraction is " +
+      "derived from the strategy, not guessed. Single-move play pays 2 turns per off-path cell, " +
+      "so it breaks even having entered half of them; batching pays less per cell, so it breaks " +
+      "even having entered more. Both figures are thresholds, not predictions — an agent below " +
+      "its line has already lost.",
   )
   console.info("")
   printWrapped(
@@ -1077,8 +1073,8 @@ function printReportReadingGuide() {
     console.info,
     "Speeds show four decimal places here and in gameplay output, rounded " +
       "away from 1.0000 so that a displayed value never contradicts its " +
-      "classification. Benchmark speeds are derived under the assumption " +
-      "above; gameplay speeds are measured from actual cells and decay. " +
+      "classification. Benchmark speeds are derived from route geometry; gameplay speeds " +
+      "are measured from actual cells and decay. " +
       "Same format, different status — do not compare one against the other as though they were " +
       "the same kind of number.",
   )
@@ -1252,18 +1248,21 @@ function printCostModelNote() {
   )
 }
 
-function printSpeedCeilingNote() {
+function printMinWinSpeedNote() {
   printLegendEntry(
     "Table 3c note:",
-    "Values here are 4dp strings, rounded away from 1.0000 so a figure never contradicts its class; " +
-      "the JSON carries the same ratios unrounded under speedCeilings, which is what downstream " +
-      "analysis should read. " +
-      "Speed ceilings are derived, not measured: U = (Path Length (Cells) + Budget (Decay))/2 assumes an agent explores " +
-      "half the off-path space before finding the route. Conservative speed is U / Budget (Decay). Retrace-only " +
-      "speed is U / continuous retrace-batching cost, before Table 3b's whole-turn rounding. Retracing produces no new cells, so it can lower the denominator but " +
-      "does not prove forward deduction. Conservative play reaches exactly 1.0000 only when Error " +
-      "Margin is zero; otherwise it is structurally below Trailblazer. Trailblazer is therefore a " +
-      "forward-deduction test: exceeding 1.0000 requires batching into unexplored structure.",
+    "The final traversal speed of a single-move agent that exactly exhausts its budget: " +
+      "s_min = (P + M/2) / Budget. Below this line a conservative agent has already explored " +
+      "more than half the off-path space and cannot finish; at or above it, it can. The half " +
+      "is derived from the strategy — single-move play pays 2 turns per off-path cell — not " +
+      "assumed from behaviour. s_min rises as batching improves, reaching exactly 1.0000 in " +
+      "the limit of perfect retrace batching, and never exceeding it: retracing visits no new " +
+      "cells, so it lowers the denominator without raising the numerator. Exceeding 1.0000 " +
+      "therefore requires batching forward into cells never visited, at any batch depth. " +
+      "Trailblazer is a forward-deduction test. Values are 4dp strings rounded away from " +
+      "1.0000 so a figure never contradicts its class; the JSON carries the same ratios " +
+      "unrounded under minWinSpeeds, which is what downstream analysis should read. Derived " +
+      "from Table 3a, not measured.",
   )
 }
 
@@ -1276,9 +1275,9 @@ function printNavigationTables(summaries, suffix = "") {
   printCostModelNote()
   printCaseTable(costModelRows(summaries))
 
-  console.info(`\n${speedCeilingTableTitle}${suffix}`)
-  printSpeedCeilingNote()
-  printCaseTable(speedCeilingRows(summaries))
+  console.info(`\n${minWinSpeedTableTitle}${suffix}`)
+  printMinWinSpeedNote()
+  printCaseTable(minWinSpeedRows(summaries))
 }
 
 // printHashComparisonTable is the actual equality check made legible in one place: a single
@@ -1327,21 +1326,19 @@ function printCaseTable(rows) {
 function printReportHeader(metadata) {
   console.info("Tapoo maze structure & difficulty report")
   console.info("──────────────────────────────────────────────────────────────")
-  // Labels are padded to one column width. "Viewport used:" is the widest, so every other label
-  // here is spaced to match it — a label longer than the rest would otherwise push one value out
-  // of the column and make the block read as two lists.
+  console.info(`commit:         ${metadata.commit}`)
   if (metadata.worktree === "dirty") {
-    console.info("warning:        dirty worktree — commit SHA does not fully describe the code that produced this report.")
-  } else {
-    console.info(`commit:         ${metadata.commit}`)
+    console.info("* warning:       dirty worktree — commit SHA does not fully describe the code that produced this report.")
   }
-  console.info(`seed:           ${benchmarkSeed}  => pin via TAPOO_BENCH_SEED`)
-  console.info(`samples:        ${metadata.sampleLine}`)
-  console.info(`hash:           ${metadata.hashSpec}`)
   console.info(`go:             ${metadata.goVersion}`)
   console.info(`node:           ${metadata.nodeVersion}`)
   console.info(`cpu:            ${metadata.cpu}`)
+  console.info("")
+  console.info(`seed:           ${benchmarkSeed}  => pin via TAPOO_BENCH_SEED`)
+  console.info(`hashing:        ${metadata.hashSpec}`)
   console.info(`viewport:       ${baseDisplayLine()}`)
+  console.info(`samples:        ${metadata.sampleLine}`)
+  console.info("")
   console.info(`json:           ${metadata.outputPath}`)
   console.info(`charts:         ${metadata.chartPath}`)
   console.info(`preferred:      ${metadata.preferredChartPath}`)
@@ -1449,7 +1446,7 @@ function printShapeFitParity(goReport, frontendReport) {
   const preferredByCase = (report) =>
     new Map(
       [...report.groups.values()].flatMap((group) =>
-        group.summaries.map((summary) => [summary.Case, summary.Preferred]),
+        realSummaries(group.summaries).map((summary) => [summary.Case, summary.Preferred]),
       ),
     )
 
@@ -1544,7 +1541,7 @@ function writeJsonReport(
   console.info(`Wrote ${preferredChartsPath}`)
 }
 
-function renderBenchmarkCharts(report, options = {}) {
+export function renderBenchmarkCharts(report, options = {}) {
   const firstGroup = report?.groups.values().next().value
   const summaries = realSummaries(firstGroup?.summaries ?? []).filter(
     options.summaryFilter ?? (() => true),
@@ -1564,6 +1561,7 @@ function renderBenchmarkCharts(report, options = {}) {
     ["Path (%)", "Path%"],
     ["Worst Branch (%)", (summary) => percentOfBudget(summary.WorstBranch, summary.Budget)],
     ["Error Margin / Cell", errorMarginPerCell],
+    ["Conservative (No Batching) Min Win Speed", conservativeMinWinSpeedRatio],
   ]
   const relationshipCharts = [
     ["Skew vs Error Margin / Cell", errorMarginPerCell, summarySkew, "skew"],
@@ -1789,7 +1787,7 @@ function serializeGroups(report) {
         summaries: group.summaries,
         // Table 3c renders these as directionally-rounded strings; downstream work gets the raw
         // quotients here so it never has to parse a display value back into a number.
-        speedCeilings: speedCeilingNumbers(group.summaries),
+        minWinSpeeds: minWinSpeedNumbers(group.summaries),
         validationByCase: Object.fromEntries(report.validationByCase),
       },
     ]),

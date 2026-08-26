@@ -4,10 +4,11 @@ import {
   branchingDistributionRows,
   caseDefinitionRows,
   costModelRows,
+  minWinSpeedRows,
   realSummaries,
+  renderBenchmarkCharts,
   routeGeometryRows,
   sensitivityCaseName,
-  speedCeilingRows,
   validationSummary,
 } from "../../parity-harness/bench-report.mjs"
 
@@ -110,7 +111,7 @@ describe("bench report helpers", () => {
     expect(Object.keys(branchingDistributionRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(routeGeometryRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(costModelRows(summaries))).toEqual(realCaseNames)
-    expect(Object.keys(speedCeilingRows(summaries))).toEqual(realCaseNames)
+    expect(Object.keys(minWinSpeedRows(summaries))).toEqual(realCaseNames)
   })
 
   it("formats route geometry rows with structural route metrics", () => {
@@ -139,18 +140,24 @@ describe("bench report helpers", () => {
     })
   })
 
-  it("formats speed ceiling rows with derived traversal ceilings", () => {
-    expect(speedCeilingRows(summaries).area70_10x7).toEqual({
-      "Conservative (Speed)": "0.9871",
-      "Retrace-only (Speed)": "0.9967",
+  it("formats minimum winning speed rows with conservative break-even speed", () => {
+    expect(minWinSpeedRows(summaries).area70_10x7).toEqual({
+      "Conservative (No Batching) Min Win Speed": "0.9871",
     })
   })
 
-  it("uses continuous retrace cost so retrace-only ceilings do not cross 1.0000 by rounding", () => {
-    expect(speedCeilingRows(summaries).area100_10x10).toEqual({
-      "Conservative (Speed)": "0.9900",
-      "Retrace-only (Speed)": "0.9974",
+  it("reports only the conservative minimum winning speed reference line", () => {
+    expect(minWinSpeedRows(summaries).area100_10x10).toEqual({
+      "Conservative (No Batching) Min Win Speed": "0.9900",
     })
+  })
+
+  it("renders the conservative minimum winning speed chart", () => {
+    const svg = renderBenchmarkCharts({
+      groups: new Map([["BenchmarkMazeBranching", { summaries }]]),
+    })
+
+    expect(svg).toContain("Conservative (No Batching) Min Win Speed")
   })
 
   it("formats case definitions separately from branching results", () => {
