@@ -12,7 +12,7 @@ const (
 	versionMajor = 1
 
 	// versionMinor is the semantic minor version for the Go terminal runtime.
-	versionMinor = 2
+	versionMinor = 3
 
 	// versionPatch is the semantic patch version for the Go terminal runtime.
 	versionPatch = 0

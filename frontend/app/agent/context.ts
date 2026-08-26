@@ -350,7 +350,7 @@ const predictionRulesTool: AgentToolDefinition = {
       "prediction response per turn. Use the local map to extract moves you are most confident about. Batching accuracy",
       "drops sharply the further out a prediction reaches, so lean toward min rather than max whenever you are unsure.",
       "When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current",
-      "traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. When",
+      "traversal speed, the progress per decay unit spent, which batchEfficiencyClass groups into bands. When",
       "decayUnitsCharged is 0, batchEfficiencyClass defaults to trailblazer. Only a cell's first visit",
       "counts as progress. Higher traversal speed means more progress per decay unit, increasing the chance of reaching",
       "the target before score runs out.",

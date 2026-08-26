@@ -137,6 +137,7 @@ func branchingShapes() []branchingCase {
 		{name: "area750_30x25", cols: 30, rows: 25},
 
 		{name: "area900_30x30", cols: 30, rows: 30},
+		{name: "area900_45x20", cols: 45, rows: 20},
 		{name: "area900_60x15", cols: 60, rows: 15},
 		{name: "area900_90x10", cols: 90, rows: 10},
 		{name: "area900_150x6", cols: 150, rows: 6},
@@ -195,28 +196,82 @@ func levelForArea(area int) int {
 	return 0
 }
 
-// roomyViewport is large enough that GetMazeDimensions is never constrained by screen room, so what
-// it returns is the shape the selector prefers on merit rather than the best that happened to fit.
-func roomyViewport() maze.Dimensions {
-	return maze.Dimensions{NumCols: 500, NumRows: 500}
+// Shape-fit statuses reported as the "preferred" metric. Encoded as numbers because b.ReportMetric
+// carries float64s; parity-harness/bench-report.mjs maps them back to the labels the table prints.
+const (
+	shapeTooBig     = -1.0
+	shapeFits       = 0.0
+	shapeIsSelected = 1.0
+)
+
+// baseViewport is the maze-cell grid both ports measure their Preferred column against: 70x45,
+// 3150 cells. It is a fixed baseline for the report, not something this port measures — the Go game
+// takes its viewport from UI.ViewportSize, which returns termbox character cells directly and never
+// sees a pixel.
+//
+// The number comes from the browser port, where a real display can be named. A 16-inch screen of
+// 3456x2234 physical pixels reduces like this:
+//   - at devicePixelRatio 2, 3456x2234 physical px is 1728x1117 CSS px;
+//   - measured on the page, ten PT Mono sample characters span about 60 CSS px (so 6px per
+//     character) and one text row is about 11 CSS px, giving 288 character columns by 101 rows;
+//   - getTerminalSize then applies the same insets and scales GetTerminalSize applies here —
+//     (288-5)/4 columns and (101-10)/2 rows.
+//
+// Only the last step is shared. The pixel arithmetic above it is the browser's alone, and this
+// package joins the derivation at its output: a character-cell viewport, which is exactly what
+// termbox hands the real game. Adopting the browser's figure is what lets both ports put the same
+// question to their own selectors; deriving one here from a display this binary cannot observe
+// would be inventing a measurement.
+//
+// An earlier version passed a deliberately huge 500x500 viewport so the selector was never
+// constrained. That answered "what would be chosen on merit" rather than what a real screen gets,
+// which is the question a reader actually has.
+//
+// Every level this sweep covers fits 3150 cells by area, so a too-big row is a statement about the
+// row's aspect ratio rather than its size: 400x4 needs 400 columns where 70 exist, while 40x40 of
+// the same area is playable.
+func baseViewport() maze.Dimensions {
+	return maze.Dimensions{NumCols: 70, NumRows: 45}
 }
 
-// isPreferredShape asks the production selector whether this is the grid a level would actually be
-// given. It is answered here, in Go, rather than by restating the squarest-fit rule in the report:
-// a third copy of that rule would keep agreeing with itself after this one changed.
-func isPreferredShape(config maze.Dimensions) bool {
+// shapeFitStatus asks the production selector what baseViewport would do with this grid's level. It
+// is answered here, in Go, rather than by restating the squarest-fit rule in the report: a third
+// copy of that rule would keep agreeing with itself after this one changed.
+//
+// Three outcomes, because two could not distinguish them: the level does not fit this display at
+// all, it fits but the selector picks a different shape for it, or it is the shape the selector
+// picks. A row can be unselected while the shape the selector *would* pick is absent from the sweep
+// — the sweep is a geometry ladder, not a catalogue of production choices — so an area with no
+// selected row is expected rather than a gap to fill.
+func shapeFitStatus(config maze.Dimensions) float64 {
 	level := levelForArea(config.NumCols * config.NumRows)
 	if level == 0 {
-		return false
+		return shapeFits
 	}
 
-	selected, err := maze.GetMazeDimensions(level, roomyViewport())
+	selected, err := maze.GetMazeDimensions(level, baseViewport())
 	if err != nil {
-		return false
+		return shapeTooBig
 	}
 
-	return (selected.NumCols == config.NumCols && selected.NumRows == config.NumRows) ||
-		(selected.NumCols == config.NumRows && selected.NumRows == config.NumCols)
+	// Orientation is part of the answer, not noise to normalise away. Accepting a rotation here
+	// marked both 10x7 and 7x10 as selected for area 70, which contradicts the column's own claim to
+	// name the shape the selector picks — one shape, not a pair. baseViewport is landscape, so the
+	// selector's aspect-mismatch scoring has a definite preference between the two; deferring to it
+	// is what makes the tiebreak defined rather than restated here.
+	if selected.NumCols == config.NumCols && selected.NumRows == config.NumRows {
+		return shapeIsSelected
+	}
+
+	// The level fits, but this particular grid may still be wider or taller than the display even
+	// when a different arrangement of the same area is playable.
+	fits := (config.NumCols <= baseViewport().NumCols && config.NumRows <= baseViewport().NumRows) ||
+		(config.NumRows <= baseViewport().NumCols && config.NumCols <= baseViewport().NumRows)
+	if !fits {
+		return shapeTooBig
+	}
+
+	return shapeFits
 }
 
 // branchingSample is one generated maze reduced to the two densities the sweep reports, plus its
@@ -397,11 +452,7 @@ func measureBranching(b *testing.B, caseName string, config maze.Dimensions, pro
 	)
 
 	b.ReportMetric(float64(levelForArea(totalCells)), "level")
-	preferred := 0.0
-	if isPreferredShape(config) {
-		preferred = 1
-	}
-	b.ReportMetric(preferred, "preferred")
+	b.ReportMetric(shapeFitStatus(config), "preferred")
 	b.ReportMetric(float64(profile.LeastNeighborsBias), "bias")
 	b.ReportMetric(float64(profile.MaxCorridorLength), "maxCorridor")
 	b.ReportMetric(junctionsPerMaze.mean, "junctions/maze")

@@ -120,9 +120,9 @@ describe("bench report helpers", () => {
       "Path P5 (Cells)": 65,
       "Path P95 (Cells)": 70,
       "Path (%)": 97.43,
-      "Worst Branch (Cells)": 1.2,
-      "Branch P5 (Cells)": 0,
-      "Branch P95 (Cells)": 4,
+      "Worst Branch (Depth)": 1.2,
+      "Branch P5 (Depth)": 0,
+      "Branch P95 (Depth)": 4,
       "Error Margin (Cells)": 1.8,
       "Worst Branch (% of Margin)": 66.67,
     })

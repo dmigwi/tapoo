@@ -108,7 +108,7 @@ func (ui *fakeUI) PollEvent() termbox.Event {
 	}
 }
 
-func (ui *fakeUI) Size() (int, int) {
+func (ui *fakeUI) ViewportSize() (int, int) {
 	return ui.height, ui.width
 }
 

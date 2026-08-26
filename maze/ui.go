@@ -12,7 +12,7 @@ type UI interface {
 	StorePath() string
 	SetInputMode(mode termbox.InputMode)
 	PollEvent() termbox.Event
-	Size() (int, int)
+	ViewportSize() (int, int)
 	Clear(foreground, background termbox.Attribute) error
 	SetCell(x, y int, char rune, foreground, background termbox.Attribute)
 	Flush() error
@@ -65,8 +65,11 @@ func (TermboxUI) PollEvent() termbox.Event {
 	return termbox.PollEvent()
 }
 
-// Size reports the current termbox terminal dimensions.
-func (TermboxUI) Size() (int, int) {
+// ViewportSize reports the drawable area termbox currently offers, in character cells. Named for
+// what it returns rather than mirroring termbox.Size, whose bare name says nothing about which
+// surface is being measured or in what units — the maze runtime asks this to find out how much room
+// it has to draw in, and cells are the only unit a terminal has.
+func (TermboxUI) ViewportSize() (int, int) {
 	return termbox.Size()
 }
 

@@ -103,6 +103,7 @@ function main() {
     printSensitivityCaseResult(sensitivityCheck)
   }
   printStructuralValidation(structuralValidation)
+  printShapeFitParity(goReport, frontendReport)
   writeJsonReport(goReport, frontendReport, hashCheck, sensitivityCheck, structuralValidation, reportMetadata)
 }
 
@@ -140,7 +141,7 @@ export function caseDefinitionRows(summaries) {
           "Grid": parsed ? `${parsed.cols}x${parsed.rows}` : "",
           "Area (Cells)": parsed?.area ?? "",
           "Skew (Ratio)": parsed ? formatNumber(parsed.skew) : "",
-          "Preferred": summary.Preferred === "yes" ? "yes" : "-",
+          "Preferred": summary.Preferred,
           "Bias (%)": summary["Bias (%)"],
           "Max Corridor (Cells)": summary["Max corridor"],
         },
@@ -179,9 +180,9 @@ export function routeGeometryRows(summaries) {
         "Path P5 (Cells)": summary["Path-p5"],
         "Path P95 (Cells)": summary["Path-p95"],
         "Path (%)": summary["Path%"],
-        "Worst Branch (Cells)": summary.WorstBranch,
-        "Branch P5 (Cells)": summary["WorstBranch-p5"],
-        "Branch P95 (Cells)": summary["WorstBranch-p95"],
+        "Worst Branch (Depth)": summary.WorstBranch,
+        "Branch P5 (Depth)": summary["WorstBranch-p5"],
+        "Branch P95 (Depth)": summary["WorstBranch-p95"],
         "Error Margin (Cells)": summary.Headroom,
         "Worst Branch (% of Margin)": worstBranchPercentOfMargin(summary),
       },
@@ -214,6 +215,31 @@ export function speedCeilingRows(summaries) {
         "Retrace-only (Speed)": retraceOnlySpeedCeiling(summary),
       },
     ]),
+  )
+}
+
+// speedCeilingNumbers is the JSON counterpart of speedCeilingRows. The table's values are strings
+// by necessity — the 4dp directional rounding exists so a displayed figure can never contradict its
+// classification, and that is a formatting decision — but a consumer should never have to parse
+// them back. These are the raw quotients, unrounded and unformatted: same inputs, no presentation.
+export function speedCeilingNumbers(summaries) {
+  return Object.fromEntries(
+    realSummaries(summaries).map((summary) => {
+      const uniqueCells = uniqueCellsCeiling(summary)
+      const budget = Number(summary.Budget)
+      const batching = batchingTraversalCost(summary)
+
+      return [
+        summary.Case,
+        {
+          uniqueCellsCeiling: Number.isFinite(uniqueCells) ? uniqueCells : null,
+          conservativeSpeed:
+            Number.isFinite(uniqueCells) && budget > 0 ? uniqueCells / budget : null,
+          retraceOnlySpeed:
+            Number.isFinite(uniqueCells) && batching > 0 ? uniqueCells / batching : null,
+        },
+      ]
+    }),
   )
 }
 
@@ -409,8 +435,11 @@ function printSensitivityCaseResult(result) {
   )
 
   if (!result.matched) {
+    // Keyed by the real case name, matching the first-diff detail below it. The row used to read
+    // offset_seed, which named the mutation a second time while disagreeing with every other
+    // reference to this case.
     printCaseTable({
-      offset_seed: {
+      [sensitivityCaseName]: {
         "Mutation": "different PRNG seed",
         "Detected": "yes",
         "First diff": `#${result.firstMismatch.index}`,
@@ -432,7 +461,7 @@ function printSensitivityCaseResult(result) {
   }
 
   printCaseTable({
-    offset_seed: {
+    [sensitivityCaseName]: {
       "Mutation": "different PRNG seed",
       "Detected": "no",
       "First diff": "-",
@@ -649,13 +678,18 @@ function printLegend() {
   printLegendEntry(
     "Skew (Ratio):",
     "max(rows, cols) / min(rows, cols). 1 is square; larger is flatter or taller. Compare rows " +
-      "sharing a level to see how viewport-driven shape affects the same maze area. The dimensions "+
-      "with the smallest skew at the given area is the preferred maze shape at that level.",
+      "sharing a level to see how shape affects the same maze area. The dimensions with the " +
+      "smallest skew that still fits the display is the shape the selector picks at that level.",
   )
   printLegendEntry(
     "Preferred:",
-    "yes marks the shape normally chosen when screen room allows; '-' marks a fallback for " +
-      "constrained viewports.",
+    "how each row fares on the viewport named on the report's 'Viewport used:' line (derived in " +
+      "baseViewport, maze/bench). " +
+      "'yes' is the shape that display's selector picks for the level; '-' fits it but is not the " +
+      "shape picked; 'too-big' does not fit at all — and since every level fits by area, too-big " +
+      "always means the ratio is too extreme rather than the maze too large. An area can have no " +
+      "'yes' row: the sweep is a geometry ladder, so the shape the selector would pick is not " +
+      "always one of the rows.",
   )
   printLegendEntry(
     "Bias (%), Max Corridor:",
@@ -727,8 +761,11 @@ function printLegend() {
   )
   printLegendEntry(
     "Worst Branch, Branch P5/P95:",
-    "Deepest single off-path branch: the mean, with percentiles in their own columns. The most " +
-      "expensive single wrong turn available.",
+    "Depth of the deepest single off-path branch, counted in cells from the route: the mean, with " +
+      "percentiles in their own columns. Depth, not size — a branch that forks holds more cells " +
+      "than its depth, so 2L below is the cost of walking that deepest line in and back out, and a " +
+      "branch that must be explored in full costs more than that. The most expensive single wrong " +
+      "turn is therefore at least this, not exactly this.",
   )
   printLegendEntry(
     "Worst Branch (% of Margin):",
@@ -753,14 +790,22 @@ function printLegend() {
   )
   printLegendEntry(
     "Batching:",
-    "Cost of the same journey retracing at up to 4 cells per turn: P + 1.25*(M/2).",
+    "Cost of the same journey retracing at 4 cells per turn: P + 1.25*(M/2). 4 is the top of " +
+      "suggestedMovesPerTurn, which is guidance rather than a limit — observed agents submit longer " +
+      "batches over known ground and they apply — so this is an upper bound on batching cost, not " +
+      "an expected value.",
   )
   printLegendEntry(
     "Why 1.25 and 2:",
     "A dead end is knowable only on arrival, and an unvisited cell's exits are unknown until you " +
       "land there, so the inbound leg is normally one cell per turn. The outbound leg retraces " +
-      "cells already in filteredTraversalHistory and batches at up to 4. Conservative play pays " +
-      "L in + L out = 2L; batching pays L in + L/4 out = 1.25L. Forward deduction does not appear " +
+      "cells already in filteredTraversalHistory, and 4 is where suggestedMovesPerTurn tops out rather " +
+      "than where batching does. Conservative play pays " +
+      "L in + L out = 2L; batching pays L in + L/4 out = 1.25L. Nothing caps a batch at 4: " +
+      "suggestedMovesPerTurn only suggests it, and batch depth is really limited by how far the " +
+      "next moves can be deduced — over fully mapped ground that can be the whole retrace. 1.25L " +
+      "is therefore a ceiling on what batching costs, so Error Budget below understates the " +
+      "tolerance a good batcher actually has. Forward deduction does not appear " +
       "here as a lower cost per branch. Because the destination is known, deduction mainly identifies " +
       "which branches the route cannot use — so it shows up as fewer branches entered, not cheaper " +
       "traversal of the ones entered. Entering a branch that could have been proven dead is a " +
@@ -778,7 +823,8 @@ function printLegend() {
       "margin is cells of off-path space in Table 3a; this is decay units of tolerance. They are " +
       "joined by Error Budget = 0.375 * Error Margin, so this column is a scaled restatement rather " +
       "than independent evidence. The constant is 1 - 5/8, the batcher's per-cell saving (1/2 " +
-      "inbound plus 1/8 outbound, against 1).",
+      "inbound plus 1/8 outbound, against 1). Because 1.25L bounds batching cost from above, this " +
+      "column is a floor on the batcher's tolerance rather than an estimate of it.",
   )
   printLegendEntry(
     "Error Budget (%):",
@@ -875,13 +921,14 @@ function printDerivedFormulaLegend() {
     "Spread columns:",
     "Mean, P5, and P95 columns report the sample mean plus the 5th and 95th percentile for that " +
       "same metric. P5/P95 (Junctions/Cell) and stddev (Junctions/Cell) are computed over " +
-      "per-sample junctions/cell values; Path P5/P95 and Branch P5/P95 use cell counts.",
+      "per-sample junctions/cell values; Path P5/P95 are cell counts and Branch P5/P95 are depths.",
   )
   printLegendEntry(
     "Route percentages:",
     "Path (%) = 100*Path Length (Cells) / Area (Cells). Error Margin (Cells) = Area (Cells) - " +
-      "Path Length (Cells). Worst Branch (% of Margin) = min(100, 100*Worst Branch (Cells) / " +
-      "Error Margin (Cells)).",
+      "Path Length (Cells). Worst Branch (% of Margin) = min(100, 100*Worst Branch (Depth) / " +
+      "Error Margin (Cells)) — a depth over a cell count, so read it as how far the worst branch " +
+      "reaches into the off-path space rather than what share of it that branch holds.",
   )
   printLegendEntry(
     "Cost model:",
@@ -1074,6 +1121,30 @@ function wrapWords(text, width) {
   return lines
 }
 
+// baseDisplayLine describes the display the Preferred column is measured against, printed with the
+// other run parameters because that is what it is: a measurement condition, not a result. The
+// derivation lives in baseViewport (maze/bench), which is where the selector is actually consulted;
+// this is a summary of it and has to be updated alongside it.
+//
+// A function rather than a const for the same reason groupCaveat is one: the header prints before
+// this point in the file, where a const is still in its temporal dead zone.
+function baseDisplayLine() {
+  return "16-inch, 3456x2234 px @dpr2 => 1728x1117 CSS px => 288x101 chars => 70x45 cells (3150)"
+}
+
+// shapeFitLabel turns the numeric "preferred" metric into the label the table prints. The encoding
+// lives in maze/bench (shapeTooBig/shapeFits/shapeIsSelected) because that is where the production
+// selector is consulted; this only renders it. Anything unrecognised reads as a plain non-selection
+// rather than inventing a fourth state.
+function shapeFitLabel(metric) {
+  const value = Number(metric)
+  if (value === 1) {
+    return "yes"
+  }
+
+  return value === -1 ? "too-big" : "-"
+}
+
 // printLegendEntry wraps one entry to legendLineWidth via wrapWords, hanging the continuation under
 // the text rather than the label.
 function printLegendEntry(label, text) {
@@ -1104,10 +1175,18 @@ function groupCaveat(groupName) {
     groupName === "BenchmarkMazeBranching" ||
     groupName === "BenchmarkMazeBranchingByShape"
   ) {
+    // The rows are a geometry ladder, not a device model: grids are written down directly, and the
+    // widest (400x4, 160x10) are ratios no viewport would ever produce. That is deliberate — it is
+    // what lets a row isolate shape. Which of them a real screen could actually play is a separate
+    // question, and it is the Preferred column that answers it.
     return (
-      "Shape sweep: compare rows sharing a level to see whether viewport-driven shape changes alter " +
-      "branching. Area and bias are dependent at a given level, so rows with the same area keep the " +
-      "same bias and max corridor."
+      "Shape sweep: compare rows sharing a level to see whether the grid's aspect ratio alone alters " +
+      "branching. Grids are written down directly rather than derived from a screen, and the widest " +
+      "ladders are ratios no display would produce, so a row isolates geometry. Area and bias are " +
+      "dependent at a given level, so rows with the same area keep the same bias and max corridor. " +
+      "The Preferred column measures each row against the report's 'Viewport used:' line — a 70x45 " +
+      "cell grid, which every level below fits by area, so a too-big row is always a statement " +
+      "about its ratio rather than its size."
     )
   }
 
@@ -1156,13 +1235,16 @@ function printCostModelNote() {
       "P + 1.25*(M/2), rounded to a whole turn count, and Error Budget is the batching agent's " +
       "entire tolerance for wrong turns. Explore-All Cost is the projected cost of walking every off-path cell. " +
       "Cost columns display floor(1.25L) - floor(2L) as projected whole-turn counts, where L is " +
-      "Worst Branch (Cells) for Worst Branch Cost and Error Margin (Cells) for Explore-All Cost. " +
+      "Worst Branch (Depth) for Worst Branch Cost and Error Margin (Cells) for Explore-All Cost. " +
+      "The two Ls are different quantities: a depth for one, a cell count for the other. " +
       "Small averaged margins can therefore display 0 - 0 even when a few individual samples had a " +
       "short off-path branch. " +
       "A dead-end is only knowable on arrival, and an unvisited cell's exits are unknown until " +
       "landing there, so the inbound leg is normally one cell per turn. Conservative traversal pays " +
       "L in + L out = 2L; batching traversal pays L in + L/4 out = 1.25L because the outbound leg " +
-      "retraces cells already in filteredTraversalHistory and can batch up to 4 cells. Forward " +
+      "retraces cells already in filteredTraversalHistory, where 4 is suggestedMovesPerTurn's top " +
+      "end rather than a cap — real batches run longer over known ground, so 1.25L bounds the cost " +
+      "from above. Forward " +
       "deduction shows up as fewer branches entered, not cheaper traversal of an entered branch. " +
       "A mapped branch exposes cellType: dead-end in shared history, so entering it again is a " +
       "context-disregard violation. Turns map to decay units only when nothing goes wrong; " +
@@ -1173,7 +1255,10 @@ function printCostModelNote() {
 function printSpeedCeilingNote() {
   printLegendEntry(
     "Table 3c note:",
-    "Speed ceilings are derived, not measured: U = (Path Length (Cells) + Budget (Decay))/2 assumes an agent explores " +
+    "Values here are 4dp strings, rounded away from 1.0000 so a figure never contradicts its class; " +
+      "the JSON carries the same ratios unrounded under speedCeilings, which is what downstream " +
+      "analysis should read. " +
+      "Speed ceilings are derived, not measured: U = (Path Length (Cells) + Budget (Decay))/2 assumes an agent explores " +
       "half the off-path space before finding the route. Conservative speed is U / Budget (Decay). Retrace-only " +
       "speed is U / continuous retrace-batching cost, before Table 3b's whole-turn rounding. Retracing produces no new cells, so it can lower the denominator but " +
       "does not prove forward deduction. Conservative play reaches exactly 1.0000 only when Error " +
@@ -1242,19 +1327,24 @@ function printCaseTable(rows) {
 function printReportHeader(metadata) {
   console.info("Tapoo maze structure & difficulty report")
   console.info("──────────────────────────────────────────────────────────────")
-  console.info(`commit:    ${metadata.commit}             worktree: ${metadata.worktree}`)
+  // Labels are padded to one column width. "Viewport used:" is the widest, so every other label
+  // here is spaced to match it — a label longer than the rest would otherwise push one value out
+  // of the column and make the block read as two lists.
   if (metadata.worktree === "dirty") {
-    console.info("warning:   dirty worktree — commit SHA does not fully describe the code that produced this report.")
+    console.info("warning:        dirty worktree — commit SHA does not fully describe the code that produced this report.")
+  } else {
+    console.info(`commit:         ${metadata.commit}`)
   }
-  console.info(`seed:      ${benchmarkSeed}  => pin via TAPOO_BENCH_SEED`)
-  console.info(`samples:   ${metadata.sampleLine}`)
-  console.info(`hash:      ${metadata.hashSpec}`)
-  console.info(`go:        ${metadata.goVersion}`)
-  console.info(`node:      ${metadata.nodeVersion}`)
-  console.info(`cpu:       ${metadata.cpu}`)
-  console.info(`json:      ${metadata.outputPath}`)
-  console.info(`charts:    ${metadata.chartPath}`)
-  console.info(`preferred: ${metadata.preferredChartPath}`)
+  console.info(`seed:           ${benchmarkSeed}  => pin via TAPOO_BENCH_SEED`)
+  console.info(`samples:        ${metadata.sampleLine}`)
+  console.info(`hash:           ${metadata.hashSpec}`)
+  console.info(`go:             ${metadata.goVersion}`)
+  console.info(`node:           ${metadata.nodeVersion}`)
+  console.info(`cpu:            ${metadata.cpu}`)
+  console.info(`viewport:       ${baseDisplayLine()}`)
+  console.info(`json:           ${metadata.outputPath}`)
+  console.info(`charts:         ${metadata.chartPath}`)
+  console.info(`preferred:      ${metadata.preferredChartPath}`)
 }
 
 function printStandaloneReport(title, report, metadata) {
@@ -1340,6 +1430,49 @@ function printHashCheckResult(hashCheck) {
   for (const [caseName, { mismatches, total }] of hashCheck.mismatchByCase) {
     console.error(`  ${caseName}: ${mismatches}/${total} samples mismatched`)
   }
+}
+
+// printShapeFitParity asserts the two ports agree on every Preferred value. Each port answers by
+// calling its own selector — Go's GetMazeDimensions, TypeScript's getMazeDimensions — so this is a
+// real comparison of two implementations rather than of one value copied twice, and it is the only
+// check in this report that exercises dimension *selection*. The hash parity above compares mazes
+// carved into dimensions the benchmark hands both ports, so it cannot see a selector disagreement
+// at all.
+//
+// This is how the last divergence surfaced: the ports were on different viewports and produced
+// 13 selected shapes against 12, visible only to someone diffing two tables by eye.
+function printShapeFitParity(goReport, frontendReport) {
+  if (!goReport || !frontendReport) {
+    return
+  }
+
+  const preferredByCase = (report) =>
+    new Map(
+      [...report.groups.values()].flatMap((group) =>
+        group.summaries.map((summary) => [summary.Case, summary.Preferred]),
+      ),
+    )
+
+  const goPreferred = preferredByCase(goReport)
+  const frontendPreferred = preferredByCase(frontendReport)
+  const disagreements = [...goPreferred.entries()]
+    .filter(([caseName, value]) => frontendPreferred.get(caseName) !== value)
+    .map(([caseName, value]) => `${caseName}: Go ${value} != TypeScript ${frontendPreferred.get(caseName)}`)
+
+  console.info("")
+  if (disagreements.length === 0) {
+    console.info(
+      `Shape selection parity: PASS\n  ${goPreferred.size} cases — both selectors agree on every ` +
+        "Preferred value.",
+    )
+    return
+  }
+
+  console.error(
+    `Shape selection parity: FAIL\n  ${disagreements.length} case(s) disagree:\n    ` +
+      disagreements.join("\n    "),
+  )
+  process.exit(1)
 }
 
 function printStructuralValidation(result) {
@@ -1654,6 +1787,9 @@ function serializeGroups(report) {
         hashesByCase: Object.fromEntries(report.hashesByCase),
         iterations: group.iterations,
         summaries: group.summaries,
+        // Table 3c renders these as directionally-rounded strings; downstream work gets the raw
+        // quotients here so it never has to parse a display value back into a number.
+        speedCeilings: speedCeilingNumbers(group.summaries),
         validationByCase: Object.fromEntries(report.validationByCase),
       },
     ]),
@@ -1684,7 +1820,7 @@ function parseGoBenchmarkLine(line) {
     summary: {
       "Case": name,
       "Level": formatNumber(metrics.level),
-      "Preferred": Number(metrics.preferred) === 1 ? "yes" : "",
+      "Preferred": shapeFitLabel(metrics.preferred),
       "Bias (%)": formatNumber(metrics.bias),
       "Max corridor": formatNumber(metrics.maxCorridor),
       "Junctions/maze": formatNumber(metrics["junctions/maze"]),
@@ -1732,7 +1868,8 @@ function normalizeSummary(summary) {
   return {
     "Case": summary.Case,
     "Level": formatNumber(summary.Level),
-    "Preferred": summary.Preferred,
+    // Both ports emit the numeric encoding; the label is applied here so it exists once.
+    "Preferred": shapeFitLabel(summary.Preferred),
     "Bias (%)": formatNumber(summary.Bias),
     "Max corridor": formatNumber(summary["Max corridor"]),
     "Junctions/maze": formatNumber(summary["Junctions/maze"]),

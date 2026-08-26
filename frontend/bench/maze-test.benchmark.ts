@@ -56,7 +56,8 @@ type BranchingSample = {
 type BranchingSummary = {
   "Case": string
   "Level": number
-  "Preferred": string
+  // Numeric shape-fit encoding shared with maze/bench; bench-report.mjs renders the label.
+  "Preferred": number
   "Bias": number
   "Max corridor": number
   "Junctions/maze": string
@@ -166,6 +167,7 @@ function branchingShapes(): BranchingCase[] {
     { name: "area750_30x25", numCols: 30, numRows: 25 },
 
     { name: "area900_30x30", numCols: 30, numRows: 30 },
+    { name: "area900_45x20", numCols: 45, numRows: 20 },
     { name: "area900_60x15", numCols: 60, numRows: 15 },
     { name: "area900_90x10", numCols: 90, numRows: 10 },
     { name: "area900_150x6", numCols: 150, numRows: 6 },
@@ -209,28 +211,50 @@ function levelForArea(area: number): number {
   return 0
 }
 
-// roomyViewport is large enough that getMazeDimensions is never constrained by screen room, so what
-// it returns is the shape the selector prefers on merit rather than the best that happened to fit.
-const roomyViewport = { numCols: 500, numRows: 500 }
+// Shape-fit statuses, mirroring the constants of the same names in maze/bench. Numbers rather than
+// labels because Go can only report float64 metrics, and one shared encoding means the labels are
+// spelled once, in bench-report.mjs's shapeFitLabel, instead of once per port.
+const SHAPE_TOO_BIG = -1
+const SHAPE_FITS = 0
+const SHAPE_IS_SELECTED = 1
 
-// isPreferredShape asks the production selector whether this is the grid a level would actually be
-// given. It is answered here, in TypeScript, rather than by restating the squarest-fit rule in the
-// report: a third copy of that rule would keep agreeing with itself after this one changed.
-function isPreferredShape(numCols: number, numRows: number): boolean {
+// baseViewport mirrors baseViewport in maze/bench: a 16-inch display, 3456x2234 physical px, at
+// devicePixelRatio 2 and the page's measured PT Mono metrics (ten characters about 60 CSS px, one
+// text row about 11 CSS px), reduced through the terminal's insets and scales to a cell grid. The
+// two ports must name the same display or their Preferred columns describe different machines.
+const baseViewport = { numCols: 70, numRows: 45 }
+
+// shapeFitStatus asks the production selector what baseViewport would do with this grid's level,
+// rather than restating the squarest-fit rule in the report: a third copy of that rule would keep
+// agreeing with itself after this one changed. Three outcomes — the level does not fit this
+// display, it fits but the selector picks a different shape, or it is the shape the selector picks.
+// Orientation counts: accepting a rotation marked both 10x7 and 7x10 as selected for area 70, which
+// contradicts the column naming one shape.
+//
+// Kept branch-for-branch identical to shapeFitStatus in maze/bench, including the order the checks
+// run in, so that any disagreement between the two Preferred columns comes from the selectors
+// themselves rather than from the two benchmarks asking different questions. The parity run asserts
+// they agree per case.
+function shapeFitStatus(numCols: number, numRows: number): number {
   const level = levelForArea(numCols * numRows)
   if (level === 0) {
-    return false
+    return SHAPE_FITS
   }
 
-  const selected = getMazeDimensions(level, roomyViewport)
+  const selected = getMazeDimensions(level, baseViewport)
   if (!selected) {
-    return false
+    return SHAPE_TOO_BIG
   }
 
-  return (
-    (selected.numCols === numCols && selected.numRows === numRows) ||
-    (selected.numCols === numRows && selected.numRows === numCols)
-  )
+  if (selected.numCols === numCols && selected.numRows === numRows) {
+    return SHAPE_IS_SELECTED
+  }
+
+  const fits =
+    (numCols <= baseViewport.numCols && numRows <= baseViewport.numRows) ||
+    (numRows <= baseViewport.numCols && numCols <= baseViewport.numRows)
+
+  return fits ? SHAPE_FITS : SHAPE_TOO_BIG
 }
 
 function createLevelDimensions(level: number, dimensions: BaseDimensions): LevelDimensions {
@@ -347,7 +371,9 @@ function runBranchingCase(
     summary: {
       "Case": name,
       "Level": levelForArea(dimensions.area),
-      "Preferred": isPreferredShape(dimensions.numCols, dimensions.numRows) ? "yes" : "",
+      // The raw encoding, exactly as Go reports it. bench-report.mjs turns it into a label for both
+      // ports in one place, so neither port can spell a status differently from the other.
+      "Preferred": shapeFitStatus(dimensions.numCols, dimensions.numRows),
       "Bias": profile.__leastNeighborsBias,
       "Max corridor": profile.__maxCorridorLength,
       "Junctions/maze": formatMetric(junctionCounts.mean),
