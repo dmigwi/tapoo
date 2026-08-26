@@ -5,6 +5,7 @@ import {
   getNavigationProfile,
   getMazeDimensions,
 } from "./maze"
+import { encodeMazeForLog } from "./logs"
 import type { PRNGGenerator } from "./maze"
 import { createMazeDimensions, openMovesFromCell } from "./traversal"
 import type { BaseDimensions, LevelDimensions } from "./types"
@@ -204,13 +205,17 @@ describe("maze", () => {
       createXorshift128Generator(1),
     )
 
-    expect(round).toMatchSnapshot()
+    expect(encodeMazeForLog(round.maze)).toEqual({
+      index_chars: ["|", "---", "-", "   ", " ", "\n"],
+      structure_checksum: "0xa5a0320f868645a2",
+      structure:
+        "01212101210503434303430501230103030503430343030503210301030503434303430501212103210503434303430503210301230503430343430501210121210",
+    })
+
     expect(round.startPosition).not.toEqual(round.finalPosition)
-    expect(round.maze[round.startPosition.y][round.startPosition.x]).toBe(
-      "   ",
-    )
-    expect(round.maze[round.finalPosition.y][round.finalPosition.x]).toBe(
-      "   ",
-    )
+    expect(round.startPosition).toEqual({ x: 3, y: 9 })
+    expect(round.finalPosition).toEqual({ x: 1, y: 1 })
+    expect(round.maze[round.startPosition.y][round.startPosition.x]).toBe("   ")
+    expect(round.maze[round.finalPosition.y][round.finalPosition.x]).toBe("   ")
   })
 })
