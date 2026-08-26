@@ -80,6 +80,12 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
 // Grounded rather than motivational: every claim it makes is one the agent could check against
 // get_prediction_rules, which reports the same classification from the same counts. A stance the
 // agent can catch being untrue is worse than no stance at all.
+//
+// Stated as spend efficiency, never as acquisition. Traversal speed is first visits over decay
+// units spent — the same ratio get_prediction_rules calls "the progress per decay unit spent" — so
+// a high speed means units bought more ground, not that anything was gained. Nothing in this game
+// credits an agent for a cell: score only decays. Language like "gaining" or "worth" invents a
+// return side the scoring has none of.
 export function buildAgentPersonaPrompt(
   playerName: string,
   speedClass: BatchEfficiencyClass,
@@ -97,16 +103,24 @@ export function buildAgentPersonaPrompt(
   if (isOpeningTurn) { // trailblazer
     return [
       `You are ${playerName}, and you start this level primed for success: your traversal speed`,
-      "opens at trailblazer before your first prediction. Earn it by batching several moves you can",
+      "opens at trailblazer before your first prediction. Justify it by batching several moves you can",
       "prove will apply, rather than stepping one cell at a time.",
     ].join(" ")
   }
 
+  // "Hold that standard" is what this used to say, and it read as permission to coast. The class is
+  // a step function — resolveStatusSpeedClass returns trailblazer for any rate above 1.0000 — so an
+  // instruction to maintain it saturates the moment the threshold is crossed. Observed in play:
+  // aggressive batching while below trailblazer, then near-none once it was reached at the minimum
+  // rate, which drops back out on the first costly turn and oscillates between classes. The branch
+  // now names the class as a cleared floor with a margin that widens as the rate climbs, so the
+  // instruction keeps pointing the same way at 1.0001 as it does at 3.0000.
   if (speedClass === "trailblazer") { // trailblazer
     return [
       `You are ${playerName} and your traversal speed currently classifies as trailblazer.`,
-      "Your predictions have been gaining more than 1.0000 new cells per decay unit, which is what",
-      "forward deduction into unexplored structure looks like. Hold that standard.",
+      "Your predictions have been reaching more than 1.0000 new cells for every decay unit spent. Your current speed",
+      "is a floor you have cleared, not a target to settle on: one costly turn drops you back out of it, and the",
+      "closer the rate sits to 1.0000, the smaller that margin is. Keep raising it with every batch you can prove.",
     ].join(" ")
   }
 
@@ -116,16 +130,24 @@ export function buildAgentPersonaPrompt(
   if (speedClass === "backtracker") { // backtracker
     return [
       `You are ${playerName} and your traversal speed currently classifies as backtracker.`,
-      "You are spending more decay units than the new cells you gain, below the 1.0000 baseline.",
+      "You are reaching fewer new cells than the decay units you spend, below the 1.0000 baseline.",
       "Climb back by batching moves that reach unvisited cells: a retrace-only turn costs the same",
       "decay as any other while adding no new-cell progress.",
     ].join(" ")
   }
 
+  // "That may be the best this maze allows" used to sit here, and it handed the agent a structural
+  // excuse for its own single-cell turns — the same coasting trap "Hold that standard" set for
+  // trailblazer, entered from below. It is also close to false: a turn whose moves all land is
+  // charged the base unit whether it reached one new cell or six, so maze shape does not pin the
+  // rate at the baseline. Dead ends do drag the average, but a retreat batched into one turn is
+  // charged once, which is the answer to that drag rather than a reason to accept it.
   return [ // navigator
     `You are ${playerName} and your traversal speed currently classifies as navigator.`,
-    "You are holding the 1.0000 baseline, one new cell per decay unit. That may be the best this",
-    "maze allows, but rising above it requires forward batching into unvisited cells.",
+    "You are holding the 1.0000 baseline: reaching exactly one new cell for every decay unit spent. Nothing in the maze",
+    "pins you there — a turn whose moves all land is charged one unit whether it reached one new cell or",
+    "several cells, and even a forced retreat can be batched into a single turn. Raise the rate by batching longer",
+    "predictions into unvisited cells, as far as you can prove the moves will apply.",
   ].join(" ")
 }
 
@@ -176,16 +198,22 @@ export function buildMazeActionPrompt(
     "Those charges are what spend decayUnitsRemaining, and every turn spends at least one of them, so it caps how many",
     "turns you have left — fewer than that whenever a turn takes a penalty. get_last_prediction_outcome reports its",
     "current value and what running out of it means.",
-    "One way to sustain a traversal speed above 1.0000, keeping your classification at trailblazer, is to build a",
-    "picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
+    // "sustain ... keeping your classification at trailblazer" stood here and set the same coasting
+    // trap the persona branch had: the class is a step function, so an instruction to maintain it
+    // stops asking for anything the moment 1.0000 is crossed. Both sentences now name the rate,
+    // which keeps climbing, rather than the label, which does not.
+    "One way to raise a traversal speed above 1.0000 is to build a picture of the maze around your current cell",
+    "using filteredTraversalHistory and the static maze dimensions.",
     "The openMoves in the filteredTraversalHistory entry matching currentCell are a natural place to start when",
     "extracting high-confidence multi-move predictions.",
     "With enough of that picture assembled, you can often find several consecutive moves that are all certain to",
-    "apply without producing an invalid-move. You could also invent a better way to sustain that classification.",
-    "get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in",
-    "order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
-    "Because the charge above is per turn rather than per move, a longer prediction whose moves all land can cover more",
-    "new cells for the same decay. get_prediction_rules explains the live traversal-speed metrics and classification.",
+    "apply without producing an invalid-move. You could also invent a better way to keep raising it.",
+    // Two further "get_prediction_rules provides/explains ..." sentences sat here, both subsumed by
+    // the tool-call sequence near the top of this prompt, which already names everything that tool
+    // returns. The per-turn-charge sentence went with them: the persona branch a few lines above
+    // states the same thing more precisely, conditioned on the moves actually landing.
+    "Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision",
+    "or out-of-bounds step) is hit.",
     "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
   ].join(" ")
 }
@@ -318,10 +346,9 @@ const predictionRulesTool: AgentToolDefinition = {
   function: {
     name: "get_prediction_rules",
     description: [
-      "Get move response rules. suggestedMovesPerTurn is a min/max range for how many moves to include in your",
-      "prediction response per turn: submit min moves when you are only confident about the immediate next cell or two,",
-      "and go up to max only when the local map supports a longer high-confidence run. Batching accuracy drops sharply the",
-      "further out a prediction reaches, so lean toward min rather than max whenever you are unsure.",
+      "Get move response rules. suggestedMovesPerTurn is a min/max range for how many moves you can include in your",
+      "prediction response per turn. Use the local map to extract moves you are most confident about. Batching accuracy",
+      "drops sharply the further out a prediction reaches, so lean toward min rather than max whenever you are unsure.",
       "When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current",
       "traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. When",
       "decayUnitsCharged is 0, batchEfficiencyClass defaults to trailblazer. Only a cell's first visit",

@@ -57,7 +57,7 @@ function createAgent(overrides: Partial<AgentApiSeatConfig> = {}): AgentApiSeatC
 }
 
 const expectedAgentPrompt = [
-  "You are Blue and your traversal speed currently classifies as navigator. You are holding the 1.0000 baseline, one new cell per decay unit. That may be the best this maze allows, but rising above it requires forward batching into unvisited cells.",
+  "You are Blue and your traversal speed currently classifies as navigator. You are holding the 1.0000 baseline: reaching exactly one new cell for every decay unit spent. Nothing in the maze pins you there — a turn whose moves all land is charged one unit whether it reached one new cell or several cells, and even a forced retreat can be batched into a single turn. Raise the rate by batching longer predictions into unvisited cells, as far as you can prove the moves will apply.",
   "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, decayUnitsRemaining, and the previous prediction outcome.",
   "The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated.",
   `When present in filteredTraversalHistory, playerName ${CONFIG.runtime.interactivePlayerName} marks the start cell.`,
@@ -67,10 +67,9 @@ const expectedAgentPrompt = [
   "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome.",
   "A turn with any valid moves costs a constant 1-unit decay charge regardless of how many submitted moves apply. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all.",
   "Those charges are what spend decayUnitsRemaining, and every turn spends at least one of them, so it caps how many turns you have left — fewer than that whenever a turn takes a penalty. get_last_prediction_outcome reports its current value and what running out of it means.",
-  "One way to sustain a traversal speed above 1.0000, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
-  "The openMoves in the filteredTraversalHistory entry matching currentCell are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to sustain that classification.",
-  "get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
-  "Because the charge above is per turn rather than per move, a longer prediction whose moves all land can cover more new cells for the same decay. get_prediction_rules explains the live traversal-speed metrics and classification.",
+  "One way to raise a traversal speed above 1.0000 is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
+  "The openMoves in the filteredTraversalHistory entry matching currentCell are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to keep raising it.",
+  "Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
   "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
 ].join(" ")
 
@@ -436,7 +435,7 @@ describe("buildAgentPersonaPrompt", () => {
     expect(description).toContain("start this level primed for success")
     expect(description).toContain("opens at trailblazer before your first prediction")
     // The claim that made the first turn false: no prediction has been measured yet.
-    expect(description).not.toContain("have been gaining")
+    expect(description).not.toContain("have been reaching")
   })
 
   it("states that trailblazer means forward deduction happened", () => {
@@ -444,10 +443,17 @@ describe("buildAgentPersonaPrompt", () => {
 
     expect(description).toContain("You are Blue")
     expect(description).toContain("currently classifies as trailblazer")
-    expect(description).toContain("have been gaining more than 1.0000 new cells per decay unit")
-    expect(description).toContain("forward deduction into unexplored structure")
-    // The stance: a standard to keep, not just a label.
-    expect(description).toContain("Hold that standard")
+    expect(description).toContain("have been reaching more than 1.0000 new cells for every decay unit spent")
+    // The stance: keep climbing, not keep the label. Reaching trailblazer at the minimum rate and
+    // then coasting is what produced observed oscillation between classes, because any rate above
+    // 1.0000 reads as trailblazer and the margin at the edge is one costly turn wide.
+    expect(description).toContain("Your current speed is a floor you have cleared, not a target to settle on")
+    expect(description).toContain("the closer the rate sits to 1.0000, the smaller that margin is")
+    expect(description).toContain("Keep raising it with every batch you can prove")
+    expect(description).not.toContain("Hold that standard")
+    // The toContain assertions above span the array-element boundaries on purpose. Each branch is
+    // one .join(" ") over elements, so a stray "+" between two of them fuses the adjoining words
+    // ("speedis a floor") — matching across the seam is what catches that.
   })
 
   // backtracker is below the baseline, navigator sits on it. One shared message told an agent
@@ -456,20 +462,54 @@ describe("buildAgentPersonaPrompt", () => {
     const description = buildAgentPersonaPrompt("Blue", "backtracker", false)
 
     expect(description).toContain("currently classifies as backtracker")
-    expect(description).toContain("spending more decay units than the new cells you gain")
+    expect(description).toContain("reaching fewer new cells than the decay units you spend")
     expect(description).toContain("below the 1.0000 baseline")
     expect(description).toContain("Climb back")
-    expect(description).not.toContain("may be the best")
+    // Not the navigator's message: this agent is below the baseline, not holding it.
+    expect(description).not.toContain("holding the 1.0000 baseline")
   })
 
-  it("tells a navigator it is holding the baseline, which may be the maze's ceiling", () => {
+  // Traversal speed is first visits over decay units spent — a spend-efficiency ratio, and one that
+  // says nothing authoritative about "gaining" anything. Nothing in this game credits an agent for
+  // a cell: score only decays (scoring.ts subtracts units from maxScore). Every branch therefore
+  // states the measured ratio and stops there, rather than describing a return.
+  for (const [speedClass, isOpeningTurn] of [
+    ["trailblazer", true], ["trailblazer", false], ["backtracker", false], ["navigator", false],
+  ] as const) {
+    it(`states ${speedClass} as spend efficiency, never as acquisition (opening: ${isOpeningTurn})`, () => {
+      const description = buildAgentPersonaPrompt("Blue", speedClass, isOpeningTurn)
+
+      // Case-insensitive: an earlier version of this guard checked lowercase "earn" and passed
+      // vacuously against the branch's own capitalised "Earn it".
+      const lowered = description.toLowerCase()
+      // Narrow form on purpose: a bare "gain" also matches "again" elsewhere in the prompt.
+      expect(lowered).not.toContain("gaining")
+      expect(lowered).not.toContain("you gain")
+      expect(lowered).not.toContain("is worth")
+      expect(lowered).not.toContain("earn")
+    })
+  }
+
+  // The branch must not offer the maze as an explanation for sitting at the baseline. "That may be
+  // the best this maze allows" did exactly that, and reads as licence to stop trying: a turn whose
+  // moves all land is charged the base unit however many new cells it reached, so the rate is set
+  // by how much a turn commits to, not by maze shape.
+  it("tells a navigator the baseline is not the maze's ceiling", () => {
     const description = buildAgentPersonaPrompt("Blue", "navigator", false)
 
     expect(description).toContain("currently classifies as navigator")
     expect(description).toContain("holding the 1.0000 baseline")
-    expect(description).toContain("may be the best")
-    expect(description).toContain("rising above it requires forward batching into unvisited cells")
-    expect(description).not.toContain("spending more decay")
+    expect(description).toContain("Nothing in the maze pins you there")
+    expect(description).toContain("charged one unit whether it reached one new cell or several")
+    expect(description).toContain("a forced retreat can be batched into a single turn")
+    expect(description).toContain("Raise the rate by batching longer predictions into unvisited cells")
+    // The qualifier is what stops "batch longer" from reading as "batch further than you can
+    // verify". An unproven extra move that hits a wall takes the partial-invalid penalty, which
+    // lowers the very rate this branch is telling the agent to raise.
+    expect(description).toContain("as far as you can prove the moves will apply")
+    expect(description).not.toContain("may be the best")
+    expect(description).not.toContain("this maze allows")
+    expect(description).not.toContain("reaching fewer new cells")
   })
 
   // Every branch states the threshold the same way get_prediction_rules does.
