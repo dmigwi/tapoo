@@ -16,7 +16,7 @@ const bodyOf = (heading: string): string =>
 
 describe("prompt preview content", () => {
   it("publishes the real system prompt rather than a transcribed copy", () => {
-    const [system] = buildAgentMessages(agentConfig.playerNamePlaceholder, "trailblazer")
+    const [system] = buildAgentMessages(agentConfig.playerNamePlaceholder, "trailblazer", true)
 
     // Comparing against the builder's own output is what guarantees the published page cannot
     // drift: any prompt edit changes both sides together, or this fails.

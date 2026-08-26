@@ -71,37 +71,77 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
 // --- 1. Messages ---
 // System and user messages are the first content the model receives each turn.
 
-// describeAgentSpeedClassification states the agent's current traversal-speed classification as a
-// factual diagnosis, not motivational pressure. Trailblazer is evidence of forward deduction into
-// unvisited structure; lower classes can be the structural ceiling for conservative play.
-export function describeAgentSpeedClassification(
+// buildAgentPersonaPrompt opens every turn's system prompt, and is where the agent is given the
+// standard it plays to: who it is, where its traversal speed currently stands, and whether the job
+// this turn is to hold that or climb out of it. Each classification gets its own stance — the two
+// below the top are not interchangeable, since one is holding the baseline and the other is losing
+// ground against it.
+//
+// Grounded rather than motivational: every claim it makes is one the agent could check against
+// get_prediction_rules, which reports the same classification from the same counts. A stance the
+// agent can catch being untrue is worse than no stance at all.
+export function buildAgentPersonaPrompt(
   playerName: string,
   speedClass: BatchEfficiencyClass,
+  isOpeningTurn: boolean,
 ): string {
-  if (speedClass === "trailblazer") {
+  // This is where the agent's stance for the turn is set, not a status readout: each branch tells
+  // it where it stands and whether the job is to hold that or climb out of it. The classification
+  // is stated the same way get_prediction_rules reports it, so the two never disagree.
+
+  // isOpeningTurn is this agent's own first prediction of the level, decided entirely by its own
+  // counters — never by the round's shared turn count. In a multi-agent round the seats play in
+  // rotation, so every agent after the first opens on a nonzero State.turnCount; gating on that
+  // would hand the opening framing to whichever seat happened to move first and deny it to the
+  // rest, who are equally unmeasured and equally entitled to it. See request.ts for the checks.
+  if (isOpeningTurn) { // trailblazer
     return [
-      `You are ${playerName} and your traversal speed classifies as trailblazer.`,
-      "That means your previous predictions created more than one new-cell visit per decay unit,",
-      "which requires forward deduction into unexplored structure.",
+      `You are ${playerName}, and you start this level primed for success: your traversal speed`,
+      "opens at trailblazer before your first prediction. Earn it by batching several moves you can",
+      "prove will apply, rather than stepping one cell at a time.",
     ].join(" ")
   }
 
-  return [
-    `You are ${playerName} and your traversal speed currently classifies as ${speedClass}.`,
-    "Conservative play and retrace-only batching can be structurally capped below trailblazer;",
-    "exceeding 1.0 requires forward batching into unvisited cells.",
+  if (speedClass === "trailblazer") { // trailblazer
+    return [
+      `You are ${playerName} and your traversal speed currently classifies as trailblazer.`,
+      "Your predictions have been gaining more than 1.0000 new cells per decay unit, which is what",
+      "forward deduction into unexplored structure looks like. Hold that standard.",
+    ].join(" ")
+  }
+
+  // backtracker and navigator shared one message until it had to serve both, and it could not: one
+  // is below the baseline and the other is holding it. The shared "capped below trailblazer" line
+  // reassured an agent that was actively losing ground.
+  if (speedClass === "backtracker") { // backtracker
+    return [
+      `You are ${playerName} and your traversal speed currently classifies as backtracker.`,
+      "You are spending more decay units than the new cells you gain, below the 1.0000 baseline.",
+      "Climb back by batching moves that reach unvisited cells: a retrace-only turn costs the same",
+      "decay as any other while adding no new-cell progress.",
+    ].join(" ")
+  }
+
+  return [ // navigator
+    `You are ${playerName} and your traversal speed currently classifies as navigator.`,
+    "You are holding the 1.0000 baseline, one new cell per decay unit. That may be the best this",
+    "maze allows, but rising above it requires forward batching into unvisited cells.",
   ].join(" ")
 }
 
 // buildMazeActionPrompt keeps request guidance compact while naming the active player.
-export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: BatchEfficiencyClass): string {
+export function buildMazeActionPrompt(
+  playerName: string,
+  batchEfficiencyClass: BatchEfficiencyClass,
+  isOpeningTurn: boolean,
+): string {
   const partialInvalidTurnCost = agentBaseDecayUnits + agentPartialInvalidPenaltyDecayUnits
   return [
-    describeAgentSpeedClassification(playerName, batchEfficiencyClass),
+    buildAgentPersonaPrompt(playerName, batchEfficiencyClass, isOpeningTurn),
     "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read",
     "currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response",
     "format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for",
-    "current status, score, and the previous prediction outcome.",
+    "current status, score, decayUnitsRemaining, and the previous prediction outcome.",
     "The maze is randomly generated at the start of each level with exactly one path to the destination. For the",
     "current level, maze dimensions and wall/open-exit structure are fixed once generated. When present in",
     `filteredTraversalHistory, playerName ${runtime.interactivePlayerName} marks the start cell. Use openMoves from`,
@@ -110,9 +150,8 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
     "at the start of each level, currentCell matches the start-cell.",
     "Your primary objective is to reach destinationCell, the level's fixed target position, with the highest traversal",
     "speed. cellType start-cell and target-cell label the start and destination cells respectively. Every openMoves",
-    "entry is a candidate direction and includes the reached cell's visitStatus as guidance for choosing that move:",
-    "unvisited means new ground, explored means already reached but still holding unused exits, backtracking means all",
-    "exits have been used, and oscillating means the cell has been over-visited. Each turn, prefer an unvisited",
+    "entry is a candidate direction and includes the reached cell's visitStatus as guidance for choosing that move;",
+    "get_maze_structure defines what each value means. Each turn, prefer an unvisited",
     "neighbor of currentCell before weighing distance to destinationCell; when none is adjacent, move through explored",
     "neighbors to reach one. Treat moves into cells whose visitStatus is backtracking or oscillating as the exhausted",
     "dead-end region to move away from; moves into cells with explored or unvisited status point back toward useful search.",
@@ -134,7 +173,10 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
     `at all — the turn instead costs a flat ${agentZeroProgressPenaltyDecayUnits}-unit decay charge. A malformed response`,
     `(invalid JSON, an unknown tool request, or ignoring a warning) costs a fixed ${agentMalformedPenaltyDecayUnits}`,
     `decay units with no moves applied — the costliest outcome of all.`,
-    "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a",
+    "Those charges are what spend decayUnitsRemaining, and every turn spends at least one of them, so it caps how many",
+    "turns you have left — fewer than that whenever a turn takes a penalty. get_last_prediction_outcome reports its",
+    "current value and what running out of it means.",
+    "One way to sustain a traversal speed above 1.0000, keeping your classification at trailblazer, is to build a",
     "picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
     "The openMoves in the filteredTraversalHistory entry matching currentCell are a natural place to start when",
     "extracting high-confidence multi-move predictions.",
@@ -149,15 +191,23 @@ export function buildMazeActionPrompt(playerName: string, batchEfficiencyClass: 
 }
 
 // buildAgentMessages separates durable behavior instructions from the current turn request.
-export function buildAgentMessages(playerName: string, batchEfficiencyClass: BatchEfficiencyClass): AgentChatMessage[] {
+export function buildAgentMessages(
+  playerName: string,
+  batchEfficiencyClass: BatchEfficiencyClass,
+  isOpeningTurn: boolean,
+): AgentChatMessage[] {
   return [
     {
       role: "system",
-      content: buildMazeActionPrompt(playerName, batchEfficiencyClass),
+      content: buildMazeActionPrompt(playerName, batchEfficiencyClass, isOpeningTurn),
     },
     {
       role: "user",
-      content: `It is ${playerName}'s turn to predict next moves. Use the available tools to see the maze state.`,
+      // "Use the available tools to see the maze state" said less than the system prompt requires —
+      // every tool once per turn, not just the one that shows the maze — and a model reading only
+      // the final message could take it as leave to stop after get_maze_structure. The ask now
+      // matches, and names the deliverable so the turn ends on what to return.
+      content: `It is ${playerName}'s turn to predict the next moves. Call every available tool once, then reply with only the moves JSON.`,
     },
   ]
 }
@@ -177,8 +227,8 @@ export function buildDuplicateToolCallMessage(duplicateToolCalls: AgentToolCall[
     role: "user",
     content:
       `${CONFIG.runtime.promptWarningPrefix} ${duplicateToolCalls.map(describeToolCall).join(", ")} won't yield any new information. ` +
-      "You may still call any tools you haven't used yet, or respond now with only the moves JSON. Requesting " +
-      "these tool call(s) once again will be treated as a malformed-response.",
+      "You may still call any tools you haven't used yet, or reply now with only the moves JSON. Requesting " +
+      "them again will be treated as a malformed-response.",
   }
 }
 
@@ -193,7 +243,7 @@ export function buildTokenLimitExhaustionPrompt(tokensUsage: number): AgentChatM
     role: "user",
     content:
       `${CONFIG.runtime.promptWarningPrefix} Your previous response had a token-limit-exhaustion error and used ${tokensUsage} `+
-      "tokens without returning a prediction. Try once more to return the correct prediction format output without overthinking. "+
+      "tokens without returning a prediction. Keep your reasoning brief this time and reply with only the moves JSON. "+
       "This retry is free, but on reaching the token limit again without a prediction you will be charged the same fixed penalty " +
       "as a malformed response.",
   }
@@ -217,30 +267,30 @@ const mazeStructureTool: AgentToolDefinition = {
     description: [
       "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down,",
       "col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col",
-      "by 1 and MoveRight increases it by 1. currentCell is the position you landed on after applying the valid moves",
-      "from the previous turn. filteredTraversalHistory includes only first-visit records within",
-      "historyWindowRadius of currentCell, ordered oldest-visited to most-recently-visited — currentCell's own",
-      "position in this list depends on when it was first visited, not on it being current, so it will not always",
-      "be last. Entries added before currentCell in this list were visited earlier; entries after it were visited more",
-      "recently. If currentCell is not last, every listed entry after it is a cell first reached after currentCell but",
+      "by 1 and MoveRight increases it by 1. currentCell is the position you landed on after applying the valid moves from",
+      "the previous turn or is the start position in turn 0. filteredTraversalHistory holds one record per visited cell,",
+      "created when that cell was first reached, for cells within historyWindowRadius of currentCell. It is ordered by",
+      "first visit, oldest first — currentCell's own position depends on when it was first visited, not on it being",
+      "current, so it will not always be the last. Order says nothing about recent activity: a cell listed early may",
+      "have been re-entered moments ago, and its visitStatus, not its position, is what reports that.",
+      "If currentCell is not last, every listed entry after it is a cell first reached after currentCell but",
       "before now, so the entry itself is charted ground. However, any move under that entry's openMoves that leads",
-      "to a cell with visitStatus unvisited still points at unexplored ground and remains a valid branch target.",
+      "to a cell with visitStatus set to unvisited still points at unexplored ground and remains a valid branch target.",
       "currentCell is always included because its distance is 0. historyWindowRadius is a fixed configured radius — the",
       "maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell — unrelated to how",
       "far destinationCell is; compute that yourself from currentCell and destinationCell's row/col if you need it.",
       "Each included entry's openMoves maps every fixed open exit from that cell to the neighboring cell reached",
       "by that move. openMoves are generated once and never change with visit counts. visitStatus gives direction",
-      "choice guidance for that move and is derived from the reached cell's visit count compared with its fixed open-exit count:",
-      "unvisited means zero visits and new ground to explore; explored means visited, but still with unused exits that",
-      "can lead to new ground; backtracking means all exits have been used and this direction cannot lead to the",
-      "destination, so do not choose it; oscillating means the cell has been visited more often than its exit count — a",
-      "confirmed waste signal from crossing back into exhausted ground.",
-      "An exit counts as used once it has served as the passage into that cell.",
+      "guidance by comparing that neighboring cell's visit count with its fixed open-exit count: unvisited=zero",
+      "visits and new ground to explore; explored=visited, but still has unused passages that can lead to",
+      "unexplored or destination cells; backtracking=all passages have been used, so this direction is exhausted;",
+      "oscillating=the cell has been visited more often than its exit count, proving this direction is wasting",
+      "limited moves. An exit counts as used once it has served as the passage into that cell.",
       "A dead-end reads as backtracking from its first visit, because nothing lies beyond a single exit.",
       "cellType is precomputed so you never need to count exits yourself: start-cell (the traversal start), target-cell",
-      "(the destination), dead-end (one exit), corridor (two exits), or junction (three or more). cellType and",
-      "visitStatus answer different questions and are meant to be read together: cellType is the cell's fixed structure,",
-      "visitStatus tells whether choosing the move toward that cell is useful for progress. start-cell and target-cell are special cells, not ordinary dead ends.",
+      "(the destination), dead-end (one exit), corridor (two exits), or junction (three or more). cellType and visitStatus",
+      "answer different questions, and help in extracting high-confidence moves: cellType is the cell's fixed structure, visitStatus",
+      "provides a sense of direction based on cell visit count. start-cell and target-cell are special cells, not ordinary dead ends.",
       "cellType is only set for a cell already in filteredTraversalHistory — an unvisited cell, including one that only",
       "appears as a neighbor inside another cell's openMoves, has no known cellType and must never be assumed to be of",
       "a specific cellType before visiting. The only way to learn an unvisited cell's own structure is to move there",

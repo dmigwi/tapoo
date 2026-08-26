@@ -803,26 +803,26 @@ function printLegend() {
   )
   printLegendEntry(
     "Formatting:",
-    "Four decimal places, rounded away from 1.00 so a displayed value never contradicts its class. " +
+    "Four decimal places, rounded away from 1.0000 so a displayed value never contradicts its class. " +
       "Classification is computed from the raw ratio, not the rendered string.",
   )
   printLegendEntry(
     "Conservative:",
-    "Ceiling for one-move-per-turn play. Cannot exceed 1.00: one turn, one decay unit, at most one " +
-      "new cell, so U <= D always. Reaches exactly 1.00 only in a maze with zero junctions; any " +
+    "Ceiling for one-move-per-turn play. Cannot exceed 1.0000: one turn, one decay unit, at most one " +
+      "new cell, so U <= D always. Reaches exactly 1.0000 only in a maze with zero junctions; any " +
       "branching puts it below. Conservative play is therefore always Backtracker.",
   )
   printLegendEntry(
     "Retrace-only:",
     "Ceiling for an agent that batches only on the way out of dead ends. Retracing visits no new " +
-      "cells, so it lowers the denominator without raising the numerator and also cannot reach 1.00.",
+      "cells, so it lowers the denominator without raising the numerator and also cannot reach 1.0000.",
   )
   printLegendEntry(
     "What this means:",
-    "Exceeding 1.00 requires more than one new cell per turn, which requires batching forward, into " +
+    "Exceeding 1.0000 requires more than one new cell per turn, which requires batching forward, into " +
       "cells never visited. The Trailblazer threshold is therefore a forward-deduction test, and a " +
       "Backtracker classification at high levels may be a structural ceiling rather than poor play. " +
-      "Both ceilings sit below 1.00 in every case measured, so a Ceiling Class column would read " +
+      "Both ceilings sit below 1.0000 in every case measured, so a Ceiling Class column would read " +
       "Backtracker in every row and a Trailblazer Needs column would read \"forward batching\" in " +
       "every row. Those are global facts, stated here once, rather than columns repeating themselves.",
   )
@@ -893,7 +893,7 @@ function printDerivedFormulaLegend() {
     "Speed ceilings:",
     "U = (Path Length (Cells) + Budget (Decay))/2. Conservative (Speed) = U / Budget (Decay). " +
       "Retrace-only (Speed) = U / continuous retrace-batching cost, before Table 3b's whole-turn " +
-      "rounding. Values above 1.00 require forward batching " +
+      "rounding. Values above 1.0000 require forward batching " +
       "into unexplored structure.",
   )
   printLegendEntry(
@@ -910,7 +910,7 @@ function printDerivedFormulaLegend() {
   )
   printLegendEntry(
     "Speed display:",
-    "Speeds render at 4dp, rounded away from 1.00. Class comes from comparing U against D directly, " +
+    "Speeds render at 4dp, rounded away from 1.0000. Class comes from comparing U against D directly, " +
       "so the number and the class cannot disagree.",
   )
 }
@@ -1176,9 +1176,9 @@ function printSpeedCeilingNote() {
     "Speed ceilings are derived, not measured: U = (Path Length (Cells) + Budget (Decay))/2 assumes an agent explores " +
       "half the off-path space before finding the route. Conservative speed is U / Budget (Decay). Retrace-only " +
       "speed is U / continuous retrace-batching cost, before Table 3b's whole-turn rounding. Retracing produces no new cells, so it can lower the denominator but " +
-      "does not prove forward deduction. Conservative play reaches exactly 1.00 only when Error " +
+      "does not prove forward deduction. Conservative play reaches exactly 1.0000 only when Error " +
       "Margin is zero; otherwise it is structurally below Trailblazer. Trailblazer is therefore a " +
-      "forward-deduction test: exceeding 1.00 requires batching into unexplored structure.",
+      "forward-deduction test: exceeding 1.0000 requires batching into unexplored structure.",
   )
 }
 

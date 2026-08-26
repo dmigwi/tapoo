@@ -22,16 +22,16 @@ import type {
 
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
-const prompt = buildMazeActionPrompt("Blue", "trailblazer")
+const prompt = buildMazeActionPrompt("Blue", "trailblazer", true)
 const developerMessage = prompt
-const userMessage = `It is Blue's turn to predict next moves. Use the available tools to see the maze state.`
+const userMessage = `It is Blue's turn to predict the next moves. Call every available tool once, then reply with only the moves JSON.`
 const agentContextTools = [
   {
     type: "function" as const,
     function: {
       name: "get_maze_structure",
       description:
-        "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. currentCell is the position you landed on after applying the valid moves from the previous turn. filteredTraversalHistory includes only first-visit records within historyWindowRadius of currentCell, ordered oldest-visited to most-recently-visited — currentCell's own position in this list depends on when it was first visited, not on it being current, so it will not always be last. Entries added before currentCell in this list were visited earlier; entries after it were visited more recently. If currentCell is not last, every listed entry after it is a cell first reached after currentCell but before now, so the entry itself is charted ground. However, any move under that entry's openMoves that leads to a cell with visitStatus unvisited still points at unexplored ground and remains a valid branch target. currentCell is always included because its distance is 0. historyWindowRadius is a fixed configured radius — the maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell — unrelated to how far destinationCell is; compute that yourself from currentCell and destinationCell's row/col if you need it. Each included entry's openMoves maps every fixed open exit from that cell to the neighboring cell reached by that move. openMoves are generated once and never change with visit counts. visitStatus gives direction choice guidance for that move and is derived from the reached cell's visit count compared with its fixed open-exit count: unvisited means zero visits and new ground to explore; explored means visited, but still with unused exits that can lead to new ground; backtracking means all exits have been used and this direction cannot lead to the destination, so do not choose it; oscillating means the cell has been visited more often than its exit count — a confirmed waste signal from crossing back into exhausted ground. An exit counts as used once it has served as the passage into that cell. A dead-end reads as backtracking from its first visit, because nothing lies beyond a single exit. cellType is precomputed so you never need to count exits yourself: start-cell (the traversal start), target-cell (the destination), dead-end (one exit), corridor (two exits), or junction (three or more). cellType and visitStatus answer different questions and are meant to be read together: cellType is the cell's fixed structure, visitStatus tells whether choosing the move toward that cell is useful for progress. start-cell and target-cell are special cells, not ordinary dead ends. cellType is only set for a cell already in filteredTraversalHistory — an unvisited cell, including one that only appears as a neighbor inside another cell's openMoves, has no known cellType and must never be assumed to be of a specific cellType before visiting. The only way to learn an unvisited cell's own structure is to move there and read its own entry on a later turn. currentCell or destinationCell being null means the game state is invalid or incomplete for planning, not a normal maze situation. Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null, \"historyWindowRadius\":number, \"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"cellType\":string, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visitStatus\":string}, ...}}]}.",
+        "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. currentCell is the position you landed on after applying the valid moves from the previous turn or is the start position in turn 0. filteredTraversalHistory holds one record per visited cell, created when that cell was first reached, for cells within historyWindowRadius of currentCell. It is ordered by first visit, oldest first — currentCell's own position depends on when it was first visited, not on it being current, so it will not always be the last. Order says nothing about recent activity: a cell listed early may have been re-entered moments ago, and its visitStatus, not its position, is what reports that. If currentCell is not last, every listed entry after it is a cell first reached after currentCell but before now, so the entry itself is charted ground. However, any move under that entry's openMoves that leads to a cell with visitStatus set to unvisited still points at unexplored ground and remains a valid branch target. currentCell is always included because its distance is 0. historyWindowRadius is a fixed configured radius — the maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell — unrelated to how far destinationCell is; compute that yourself from currentCell and destinationCell's row/col if you need it. Each included entry's openMoves maps every fixed open exit from that cell to the neighboring cell reached by that move. openMoves are generated once and never change with visit counts. visitStatus gives direction guidance by comparing that neighboring cell's visit count with its fixed open-exit count: unvisited=zero visits and new ground to explore; explored=visited, but still has unused passages that can lead to unexplored or destination cells; backtracking=all passages have been used, so this direction is exhausted; oscillating=the cell has been visited more often than its exit count, proving this direction is wasting limited moves. An exit counts as used once it has served as the passage into that cell. A dead-end reads as backtracking from its first visit, because nothing lies beyond a single exit. cellType is precomputed so you never need to count exits yourself: start-cell (the traversal start), target-cell (the destination), dead-end (one exit), corridor (two exits), or junction (three or more). cellType and visitStatus answer different questions, and help in extracting high-confidence moves: cellType is the cell's fixed structure, visitStatus provides a sense of direction based on cell visit count. start-cell and target-cell are special cells, not ordinary dead ends. cellType is only set for a cell already in filteredTraversalHistory — an unvisited cell, including one that only appears as a neighbor inside another cell's openMoves, has no known cellType and must never be assumed to be of a specific cellType before visiting. The only way to learn an unvisited cell's own structure is to move there and read its own entry on a later turn. currentCell or destinationCell being null means the game state is invalid or incomplete for planning, not a normal maze situation. Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null, \"historyWindowRadius\":number, \"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"cellType\":string, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visitStatus\":string}, ...}}]}.",
       parameters: {
         type: "object",
         properties: {},
@@ -682,6 +682,67 @@ describe("agent request service", () => {
       stream: false,
     })
   })
+
+  // The opening persona is decided per agent, not per round. In a multi-agent round the seats play
+  // in rotation, so the second and later agents make their own first prediction on a nonzero shared
+  // State.turnCount — they are still unmeasured, and must still be told they open at trailblazer.
+  it("primes an agent on its own first turn even when the round is already several turns in", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await requestPrediction({
+      ...requestInput({ turnCount: 3 }),
+      agent: { ...agent, turnCount: 0, decayUnitsCharged: 0 },
+    })
+
+    const requestBody = JSON.parse(
+      (fetchMock.mock.calls[0][1] as RequestInit).body as string,
+    ) as SerializedRequestBody
+    expect(requestBody.messages[0]).toEqual({ role: "system", content: developerMessage })
+    expect(developerMessage).toContain("primed for success")
+  })
+
+  // The contrast that makes the test above mean something, one counter at a time. Any single
+  // non-zero counter is enough to withdraw the opening framing: the three are checked together
+  // precisely so that no one of them can carry the claim on its own.
+  const playedAgentCases = [
+    {
+      name: "a turn of its own",
+      agentOverrides: { turnCount: 1 },
+      stateOverrides: {},
+    },
+    {
+      name: "decay units of its own",
+      agentOverrides: { decayUnitsCharged: 2 },
+      stateOverrides: {},
+    },
+    {
+      name: "a cell of its own on the board",
+      agentOverrides: {},
+      stateOverrides: {
+        traversalHistory: [{ playerName: "Blue", row: 0, col: 0, openMoves: [], visitCount: 1 }],
+      } satisfies Partial<State>,
+    },
+  ]
+
+  for (const { name, agentOverrides, stateOverrides } of playedAgentCases) {
+    it(`drops the opening framing once the agent has ${name}`, async () => {
+      const fetchMock = vi.fn().mockResolvedValue(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
+      vi.stubGlobal("fetch", fetchMock)
+
+      await requestPrediction({
+        ...requestInput({ turnCount: 3, ...stateOverrides }),
+        agent: { ...agent, turnCount: 0, decayUnitsCharged: 0, ...agentOverrides },
+      })
+
+      const requestBody = JSON.parse(
+        (fetchMock.mock.calls[0][1] as RequestInit).body as string,
+      ) as SerializedRequestBody
+      const systemMessage = requestBody.messages[0] as { role: string; content: string }
+      expect(systemMessage.content).not.toContain("primed for success")
+      expect(systemMessage.content).not.toBe(developerMessage)
+    })
+  }
 
   it("executes one tool-call round before reading the final prediction", async () => {
     const fetchMock = vi

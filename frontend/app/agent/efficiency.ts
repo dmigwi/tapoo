@@ -85,7 +85,7 @@ export function resolveBatchEfficiencyClass(
 }
 
 // resolveTraversalSpeedClass is the single place the rate thresholds live, comparing directly
-// against scoring.traversalSpeedScaleUnits — the fixed-point value equal to a 1.0 ratio — rather
+// against scoring.traversalSpeedScaleUnits — the fixed-point value equal to a 1.0000 ratio — rather
 // than dividing traversalSpeedUnits back down to a float first. Every caller already holds a
 // fixed-point value from calculateTraversalSpeedUnits (a persisted win record, a live
 // running-status rate, an agent's batch efficiency), so comparing units directly is both the only

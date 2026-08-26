@@ -49,7 +49,7 @@ in this sample," not "the model is incapable."
 | C9 | `TASK COMPLETION` | Reaches the objective in any sampled level, regardless of speed classification. |
 
 C9 confirms every win. C7 additionally requires direct structural evidence and
-a winning traversal speed above `1.00`.
+a winning traversal speed above `1.0000`.
 
 ```text
 C1. INSTRUCTION ADHERENCE
@@ -92,7 +92,7 @@ C4. STATE AWARENESS
 
 ```text
 C5. RESOURCE EFFICIENCY
-    Q1. At round end, was the evaluated agent's traversal speed at least 1.0?
+    Q1. At round end, was the evaluated agent's traversal speed at least 1.0000?
         Formula: currentAgentUniqueCellsFirstVisited /
         currentAgentDecayUnitsCharged.
 ```
@@ -108,7 +108,7 @@ C7. STRUCTURAL REASONING
     Q1. Did the agent submit a 2+ move prediction through confirmed known
         structure where every move applied?
     Q2. Did the same sampled level end with that agent winning at Trailblazer
-        speed above 1.00?
+        speed above 1.0000?
 ```
 
 ```text
@@ -205,9 +205,9 @@ Classifications:
 
 | Class | Meaning |
 |---|---|
-| `Backtracker` | below `1.00` |
-| `Navigator` | exactly `1.00` |
-| `Trailblazer` | above `1.00` |
+| `Backtracker` | below `1.0000` |
+| `Navigator` | exactly `1.0000` |
+| `Trailblazer` | above `1.0000` |
 
 A higher winning Trailblazer speed represents a larger observed efficiency
 margin and a greater expected likelihood of remaining competitive at higher

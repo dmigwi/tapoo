@@ -320,8 +320,9 @@ export function requestPredictionWithAbort({
       const toolHandlers = buildAgentToolHandlers(stateSnapshot, lastActionResult, agent)
       // The classification is computed once up front so it appears unconditionally in the system
       // prompt, not only when the model chooses to call get_prediction_rules.
-      const {playerUniqueCellsVisited, decayUnitsCharged} = getBatchEfficiencyMetrics(stateSnapshot.traversalHistory, agent)
-      const batchEfficiencyClass = resolveStatusSpeedClass(playerUniqueCellsVisited,decayUnitsCharged)
+      const {playerUniqueCellsVisited, decayUnitsCharged, playerTurnsTaken} =
+        getBatchEfficiencyMetrics(stateSnapshot.traversalHistory, agent)
+      const batchEfficiencyClass = resolveStatusSpeedClass(playerUniqueCellsVisited, decayUnitsCharged)
 
       const player = formatPlayerStatusLabel({
         playerName: agent.playerName,
@@ -329,7 +330,19 @@ export function requestPredictionWithAbort({
         decayUnitsCharged: decayUnitsCharged,
       }, batchEfficiencyClass)
 
-      let messages = buildAgentMessages(agent.playerName, batchEfficiencyClass)
+      // The opening persona claims two things — that traversal speed opens at trailblazer, and that
+      // no prediction has been made yet — so all three of this agent's own level counters must be
+      // clear before it is used. decayUnitsCharged alone was not enough: it is what
+      // resolveStatusSpeedClass defaults on, so on its own it cannot distinguish "nothing spent
+      // yet" from a state where cells or turns were somehow recorded without spend.
+      //
+      // Every check is scoped to this agent. stateSnapshot.turnCount is deliberately not among
+      // them: it counts every seat's turns together, so in a multi-agent round only the seat that
+      // happened to move first would ever see zero, and every other agent would be denied its own
+      // opening turn despite being just as unmeasured.
+      const isOpeningTurn = playerTurnsTaken === 0 && decayUnitsCharged === 0 && playerUniqueCellsVisited === 0
+
+      let messages = buildAgentMessages(agent.playerName, batchEfficiencyClass, isOpeningTurn)
       let requestCount = 0
 
       // Track which tools have already been called this turn so duplicate tool calls can be

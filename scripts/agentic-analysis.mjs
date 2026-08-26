@@ -388,7 +388,7 @@ function stateAwareness(context) {
 
 // C5. RESOURCE EFFICIENCY
 // Q1. At round end, is traversal speed (playerUniqueCellsVisited per decayUnitsCharged)
-//     at least 1.0 (Navigator)?
+//     at least 1.0000 (Navigator)?
 function resourceEfficiency(context) {
   const reading = context.speedReadings.at(-1)
   if (!reading) {
@@ -396,7 +396,7 @@ function resourceEfficiency(context) {
   }
 
   const [cells, decay] = reading
-  return { Q1: decay > 0 && cells / decay >= 1 }
+  return { Q1: decay > 0 && cells / decay >= 1.0000 }
 }
 
 // C6. MULTI-STEP EXECUTION
@@ -414,7 +414,7 @@ function multiStepExecution(context) {
 function structuralReasoning(context) {
   const batches = context.submissions.filter((entry) => entry.moves.length >= 2)
   const trailblazerWin = context.outcomes.some(
-    (outcome) => outcome.outcome === "won" && Number(outcome.traversalSpeed) > 1,
+    (outcome) => outcome.outcome === "won" && Number(outcome.traversalSpeed) > 1.0000,
   )
   return {
     // Q1. Was there a batch through confirmed branchless structure where every move applied?

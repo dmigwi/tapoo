@@ -86,7 +86,7 @@ describe("resolveBatchEfficiencyClass", () => {
 
   it("drops a single-stepping agent below the baseline once a mistake is charged", () => {
     // Four turns each advancing one cell, but one of them hit an invalid move: 4 new cells
-    // against 3 clean units + 3 for the mistake. Requests alone would still read exactly 1.0,
+    // against 3 clean units + 3 for the mistake. Requests alone would still read exactly 1.0000,
     // which is why the rate is charged against decay rather than request count.
     const agent = createAgent({ turnCount: 4, decayUnitsCharged: 6 })
     const traversalHistory = [
@@ -172,9 +172,9 @@ describe("calculateTraversalSpeedUnits", () => {
 
 describe("resolveTraversalSpeedClass", () => {
   it("classifies a fixed-point value produced by calculateTraversalSpeedUnits directly, with no un-scaling division", () => {
-    // calculateTraversalSpeedUnits(4, 2) is 20_000 (a raw ratio of 2.0000, above the 1.0 baseline).
+    // calculateTraversalSpeedUnits(4, 2) is 20_000 (a raw ratio of 2.0000, above the 1.0000 baseline).
     expect(resolveTraversalSpeedClass(calculateTraversalSpeedUnits(4, 2))).toBe("trailblazer")
-    // calculateTraversalSpeedUnits(5, 5) is 10_000 (a raw ratio of exactly 1.0, the baseline).
+    // calculateTraversalSpeedUnits(5, 5) is 10_000 (a raw ratio of exactly 1.0000, the baseline).
     expect(resolveTraversalSpeedClass(calculateTraversalSpeedUnits(5, 5))).toBe("navigator")
     // calculateTraversalSpeedUnits(3, 4) is 7_500 (a raw ratio of 0.7500, below the baseline).
     expect(resolveTraversalSpeedClass(calculateTraversalSpeedUnits(3, 4))).toBe("backtracker")

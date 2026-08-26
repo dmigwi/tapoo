@@ -1306,7 +1306,7 @@ describe("agent api turn loop", () => {
     const retryWarning = retryBody.messages.at(-1)
     expect(retryWarning?.role).toBe("user")
     expect(retryWarning?.content).toContain(
-      "Try once more to return the correct prediction format output without overthinking.",
+      "Keep your reasoning brief this time and reply with only the moves JSON.",
     )
     expect(dispatchAgentAction).toHaveBeenCalledWith(
       { type: "MoveRight" },

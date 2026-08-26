@@ -6,8 +6,9 @@ import {
   buildAgentMessages,
   buildAgentToolHandlers,
   buildDuplicateToolCallMessage,
+  buildMazeActionPrompt,
   buildTokenLimitExhaustionPrompt,
-  describeAgentSpeedClassification,
+  buildAgentPersonaPrompt,
 } from "./context"
 import { snapshotAgentState } from "./state-snapshot"
 import {
@@ -56,16 +57,17 @@ function createAgent(overrides: Partial<AgentApiSeatConfig> = {}): AgentApiSeatC
 }
 
 const expectedAgentPrompt = [
-  "You are Blue and your traversal speed currently classifies as navigator. Conservative play and retrace-only batching can be structurally capped below trailblazer; exceeding 1.0 requires forward batching into unvisited cells.",
-  "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, and the previous prediction outcome.",
+  "You are Blue and your traversal speed currently classifies as navigator. You are holding the 1.0000 baseline, one new cell per decay unit. That may be the best this maze allows, but rising above it requires forward batching into unvisited cells.",
+  "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, decayUnitsRemaining, and the previous prediction outcome.",
   "The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated.",
   `When present in filteredTraversalHistory, playerName ${CONFIG.runtime.interactivePlayerName} marks the start cell.`,
   "Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own. currentCell is the position you landed on after applying the valid moves from the previous turn; at the start of each level, currentCell matches the start-cell.",
-  "Your primary objective is to reach destinationCell, the level's fixed target position, with the highest traversal speed. cellType start-cell and target-cell label the start and destination cells respectively. Every openMoves entry is a candidate direction and includes the reached cell's visitStatus as guidance for choosing that move: unvisited means new ground, explored means already reached but still holding unused exits, backtracking means all exits have been used, and oscillating means the cell has been over-visited. Each turn, prefer an unvisited neighbor of currentCell before weighing distance to destinationCell; when none is adjacent, move through explored neighbors to reach one. Treat moves into cells whose visitStatus is backtracking or oscillating as the exhausted dead-end region to move away from; moves into cells with explored or unvisited status point back toward useful search.",
+  "Your primary objective is to reach destinationCell, the level's fixed target position, with the highest traversal speed. cellType start-cell and target-cell label the start and destination cells respectively. Every openMoves entry is a candidate direction and includes the reached cell's visitStatus as guidance for choosing that move; get_maze_structure defines what each value means. Each turn, prefer an unvisited neighbor of currentCell before weighing distance to destinationCell; when none is adjacent, move through explored neighbors to reach one. Treat moves into cells whose visitStatus is backtracking or oscillating as the exhausted dead-end region to move away from; moves into cells with explored or unvisited status point back toward useful search.",
   "Retreat cues are cells reached by openMoves whose visitStatus is backtracking or oscillating. A dead-end cell is set to backtracking visitStatus on first visit, then oscillating if revisited again. During deliberate retreat, revisiting a cell already in filteredTraversalHistory is not a mistake, although it adds no new-cell progress. Once a retreat cue appears, use filteredTraversalHistory to search earlier visited cells for an unexplored branch point, maybe within or beyond historyWindowRadius, so keep retreating through explored cells until a later turn's filteredTraversalHistory brings it into view. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined row and col differences for each candidate, not just one axis \u2014 a cell closer on one axis can be equally far or farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
   "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome.",
   "A turn with any valid moves costs a constant 1-unit decay charge regardless of how many submitted moves apply. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all.",
-  "One way to sustain a traversal speed above 1.0, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
+  "Those charges are what spend decayUnitsRemaining, and every turn spends at least one of them, so it caps how many turns you have left — fewer than that whenever a turn takes a penalty. get_last_prediction_outcome reports its current value and what running out of it means.",
+  "One way to sustain a traversal speed above 1.0000, keeping your classification at trailblazer, is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
   "The openMoves in the filteredTraversalHistory entry matching currentCell are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to sustain that classification.",
   "get_prediction_rules provides the required response format and move count guidance. Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
   "Because the charge above is per turn rather than per move, a longer prediction whose moves all land can cover more new cells for the same decay. get_prediction_rules explains the live traversal-speed metrics and classification.",
@@ -339,15 +341,39 @@ describe("agent context", () => {
     })
   })
 
+  // The costs block prices a turn; this line names what those charges draw down and points at the
+  // tool that reports the balance. Deliberately short — get_last_prediction_outcome already
+  // documents decayUnitsRemaining and the loss condition, so restating either here would only give
+  // the two places a chance to disagree.
+  //
+  // The negative assertions pin claims earlier drafts made and that must not return:
+  //   - that a turn's charge is independent of how many moves it carries (it tracks the outcome —
+  //     a batch stopped at a wall costs more than one that lands),
+  //   - that the budget should be weighed against the distance to destinationCell (reads as licence
+  //     to beeline, contradicting the retreat guidance in this same prompt),
+  //   - that a turn is "worth" the ground it covers (score is pure decay; a new cell never adds to
+  //     it, so value language makes exploration look self-financing).
+  it("names what the charges spend and points at the tool that reports it", () => {
+    const prompt = buildMazeActionPrompt("Blue", "navigator", false)
+
+    expect(prompt).toContain("every turn spends at least one of them")
+    expect(prompt).toContain("caps how many turns you have left")
+    expect(prompt).toContain("get_last_prediction_outcome reports its current value")
+    expect(prompt).not.toContain("costs no more than")
+    expect(prompt).not.toContain("difference between currentCell and destinationCell")
+    // Narrow on purpose: a bare "worth" also matches "trustworthy" elsewhere in the prompt.
+    expect(prompt).not.toContain("is worth")
+  })
+
   it("builds the initial agent chat message without embedding the full maze state", () => {
-    expect(buildAgentMessages("Blue", "navigator")).toEqual([
+    expect(buildAgentMessages("Blue", "navigator", false)).toEqual([
       {
         role: "system",
         content: expectedAgentPrompt,
       },
       {
         role: "user",
-        content: `It is Blue's turn to predict next moves. Use the available tools to see the maze state.`,
+        content: `It is Blue's turn to predict the next moves. Call every available tool once, then reply with only the moves JSON.`,
       },
     ])
   })
@@ -364,8 +390,8 @@ describe("buildDuplicateToolCallMessage", () => {
       role: "user",
       content:
         "Warning: get_last_prediction_outcome (call_2) won't yield any new information. " +
-        "You may still call any tools you haven't used yet, or respond now with only the moves JSON. " +
-        "Requesting these tool call(s) once again will be treated as a malformed-response.",
+        "You may still call any tools you haven't used yet, or reply now with only the moves JSON. " +
+        "Requesting them again will be treated as a malformed-response.",
     })
   })
 
@@ -393,102 +419,65 @@ describe("buildTokenLimitExhaustionPrompt", () => {
       role: "user",
       content:
         "Warning: Your previous response had a token-limit-exhaustion error and used 10000 tokens without returning a " +
-        "prediction. Try once more to return the correct prediction format output without overthinking. This retry is " +
+        "prediction. Keep your reasoning brief this time and reply with only the moves JSON. This retry is " +
         "free, but on reaching the token limit again without a prediction you will be charged the same fixed penalty " +
         "as a malformed response.",
     })
   })
 })
 
-describe("describeAgentSpeedClassification", () => {
+describe("buildAgentPersonaPrompt", () => {
+  // Nothing charged is its own branch. resolveStatusSpeedClass reports trailblazer here, so the
+  // wording must name that default without claiming a measurement that has not happened.
+  it("primes the agent for success without inventing a history", () => {
+    const description = buildAgentPersonaPrompt("Blue", "trailblazer", true)
+
+    expect(description).toContain("You are Blue")
+    expect(description).toContain("start this level primed for success")
+    expect(description).toContain("opens at trailblazer before your first prediction")
+    // The claim that made the first turn false: no prediction has been measured yet.
+    expect(description).not.toContain("have been gaining")
+  })
+
   it("states that trailblazer means forward deduction happened", () => {
-    const description = describeAgentSpeedClassification("Blue", "trailblazer")
+    const description = buildAgentPersonaPrompt("Blue", "trailblazer", false)
 
     expect(description).toContain("You are Blue")
-    expect(description).toContain("classifies as trailblazer")
-    expect(description).toContain("more than one new-cell visit per decay unit")
+    expect(description).toContain("currently classifies as trailblazer")
+    expect(description).toContain("have been gaining more than 1.0000 new cells per decay unit")
     expect(description).toContain("forward deduction into unexplored structure")
+    // The stance: a standard to keep, not just a label.
+    expect(description).toContain("Hold that standard")
   })
 
-  it("states that backtracker can be a structural ceiling without forward batching", () => {
-    const description = describeAgentSpeedClassification("Blue", "backtracker")
+  // backtracker is below the baseline, navigator sits on it. One shared message told an agent
+  // losing ground that it might simply be capped, so the two now read differently.
+  it("tells a backtracker it is losing ground, not merely capped", () => {
+    const description = buildAgentPersonaPrompt("Blue", "backtracker", false)
 
-    expect(description).toContain("You are Blue")
     expect(description).toContain("currently classifies as backtracker")
-    expect(description).toContain("structurally capped below trailblazer")
-    expect(description).toContain("forward batching into unvisited cells")
+    expect(description).toContain("spending more decay units than the new cells you gain")
+    expect(description).toContain("below the 1.0000 baseline")
+    expect(description).toContain("Climb back")
+    expect(description).not.toContain("may be the best")
   })
 
-  it("states that navigator can be a structural ceiling without forward batching", () => {
-    const description = describeAgentSpeedClassification("Blue", "navigator")
+  it("tells a navigator it is holding the baseline, which may be the maze's ceiling", () => {
+    const description = buildAgentPersonaPrompt("Blue", "navigator", false)
 
-    expect(description).toContain("You are Blue")
     expect(description).toContain("currently classifies as navigator")
-    expect(description).toContain("structurally capped below trailblazer")
-    expect(description).toContain("forward batching into unvisited cells")
-  })
-  it("derives visitStatus from visits against a cell's own exit count", () => {
-    // A 4-exit junction at (0,1) is the discriminating shape: it stays explored while unused exits
-    // remain and only flips once visits reach its exit count, so the boundary is exercised rather
-    // than assumed. (0,2) is never reached at all, and (0,0) is a one-exit cell already stood on.
-    const junction = agentVisit(0, 1, "Blue", ["MoveLeft", "MoveRight", "MoveUp", "MoveDown"], 3)
-    const state = createState({
-      mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
-      traversalHistory: [selfVisit(0, 0, ["MoveRight"]), junction],
-    })
-
-    const structure = buildAgentToolHandlers(snapshotAgentState(state), null, createAgent())
-      .get_maze_structure({}) as {
-        filteredTraversalHistory: { cell: { row: number; col: number }; openMoves: Record<string, { visitStatus: string }> }[]
-      }
-    const statusOf = (row: number, col: number, move: string) =>
-      structure.filteredTraversalHistory.find((entry) => entry.cell.row === row && entry.cell.col === col)
-        ?.openMoves[move]?.visitStatus
-
-    // 3 visits against 4 exits — a way out remains, so the direction is still live.
-    expect(statusOf(0, 0, "MoveRight")).toBe("explored")
-    // No entry at all for (0,2).
-    expect(statusOf(0, 1, "MoveRight")).toBe("unvisited")
-    // (0,0) has a single exit and one visit: 1 >= 1, so every way out of it has been taken.
-    expect(statusOf(0, 1, "MoveLeft")).toBe("backtracking")
-
-    // One more visit puts the junction at its exit count, which is the flip point.
-    junction.visitCount = 4
-    const exhausted = buildAgentToolHandlers(snapshotAgentState(state), null, createAgent())
-      .get_maze_structure({}) as {
-        filteredTraversalHistory: { cell: { row: number; col: number }; openMoves: Record<string, { visitStatus: string }> }[]
-      }
-    expect(
-      exhausted.filteredTraversalHistory.find((entry) => entry.cell.col === 0)
-        ?.openMoves.MoveRight.visitStatus,
-    ).toBe("backtracking")
-
-    // Past the exit count, the cell is no longer merely backtracking — it is over-revisiting.
-    junction.visitCount = 5
-    const oscillating = buildAgentToolHandlers(snapshotAgentState(state), null, createAgent())
-      .get_maze_structure({}) as {
-        filteredTraversalHistory: { cell: { row: number; col: number }; openMoves: Record<string, { visitStatus: string }> }[]
-      }
-    expect(
-      oscillating.filteredTraversalHistory.find((entry) => entry.cell.col === 0)
-        ?.openMoves.MoveRight.visitStatus,
-    ).toBe("oscillating")
+    expect(description).toContain("holding the 1.0000 baseline")
+    expect(description).toContain("may be the best")
+    expect(description).toContain("rising above it requires forward batching into unvisited cells")
+    expect(description).not.toContain("spending more decay")
   })
 
-  it("never exposes the raw visitCount to the model", () => {
-    // visitStatus is the model-facing preprocessing of visitCount; handing over the tally itself
-    // would invite the model to re-derive the threshold and get it wrong. get_maze_structure builds
-    // its entries from an explicit allowlist to prevent that, and this locks the guarantee in.
-    const state = createState({
-      traversalHistory: [selfVisit(0, 0, ["MoveRight"], 97), agentVisit(0, 1, "Blue", ["MoveRight"], 98)],
-    })
-
-    const structure = buildAgentToolHandlers(snapshotAgentState(state), null, createAgent())
-      .get_maze_structure({})
-
-    const serialized = JSON.stringify(structure)
-    expect(serialized).not.toContain("visitCount")
-    expect(serialized).not.toContain("97")
-    expect(serialized).not.toContain("98")
+  // Every branch states the threshold the same way get_prediction_rules does.
+  it("expresses the baseline as 1.0000 in every branch that names it", () => {
+    for (const speedClass of ["trailblazer", "backtracker", "navigator"] as const) {
+      const description = buildAgentPersonaPrompt("Blue", speedClass, false)
+      expect(description, speedClass).toContain("1.0000")
+      expect(description, speedClass).not.toMatch(/more than one new-cell/)
+    }
   })
 })

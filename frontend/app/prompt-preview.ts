@@ -35,10 +35,11 @@ export function previewPlayerNote(): string {
 // live mistake that would normally trigger it, using the same builders the request loop calls, so
 // neither warning's wording can drift from what an agent is actually shown. Tool *results* are
 // omitted because they depend on the live maze, so publishing them would describe one moment of one
-// round rather than what every request carries. The classification is the one every level opens on,
-// which get_prediction_rules documents as the state an agent starts from before anything is charged.
+// round rather than what every request carries. The classification is the one every level opens on:
+// trailblazer with nothing charged, which renders the "no turn charged yet" wording an agent
+// actually sees on its first turn rather than the measured-trailblazer wording it does not.
 export function buildPreviewSections(): { heading: string; body: string }[] {
-  const [system, user] = buildAgentMessages(agentConfig.playerNamePlaceholder, "trailblazer")
+  const [system, user] = buildAgentMessages(agentConfig.playerNamePlaceholder, "trailblazer", true)
 
   const tools = AGENT_CONTEXT_TOOLS.map(
     (tool) => `${tool.function.name}\n\n${tool.function.description}`,
