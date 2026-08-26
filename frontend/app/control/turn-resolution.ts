@@ -5,13 +5,16 @@ import {
   isInteractiveMode,
   isRunningStatus,
 } from "../status"
+import {
+  calculateScoreRetentionUnits,
+  resolveWinScore,
+} from "../scoring"
 import type { State } from "../types"
 
 type PersistenceScope = "round" | "state"
 
 type SharedResolutionDeps = {
   state: State
-  applyWinSummary: (totalCells: number) => void
   calculateRoundScore: (totalCells: number) => number
   persistNow: (scope: PersistenceScope) => void
   renderState: () => void
@@ -23,30 +26,72 @@ type InteractiveTurnResolutionDeps = SharedResolutionDeps & {
 
 type AgentApiTurnResolutionDeps = SharedResolutionDeps & {
   chargedMovesCount: number
+  traversalSpeedUnits?: number
 }
 
 type InProgressTurnResolutionDeps = Omit<SharedResolutionDeps, "persistNow" | "calculateRoundScore" | "renderState"> & {
+  traversalSpeedUnits?: number
   persistCompletedTurn: () => void
   persistInProgressTurn: () => void
   totalCells: number
 }
 
-type RunningRoundFrameRefreshDeps = Omit<SharedResolutionDeps, "applyWinSummary">
+type RunningRoundFrameRefreshDeps = SharedResolutionDeps
 
 const lastDestinationVisibleByState = new WeakMap<State, boolean>()
 let skipNextFrameRender = false
 
-// handleWin captures the completed-round score and win summary only when the current position has
-// reached the destination.
-function handleWin(state: State, totalCells: number, applyWinSummary: (totalCells: number) => void): boolean {
+// handleWin captures the completed-round score; agent-api also records its speed summary. Branches
+// on the actual control mode rather than on whether traversalSpeedUnits happens to be present,
+// since mode is the real signal — traversalSpeedUnits is only the data agent-api's branch needs to
+// act on it. Falls back to the interactive metrics if agent-api mode somehow reaches this without
+// it, the same way an unreachable-in-practice case is handled anywhere else in this file — a
+// mid-round throw is worse than a plain, recoverable fallback.
+function handleWin(state: State, totalCells: number, traversalSpeedUnits?: number): boolean {
   if (!hasReachedTarget(state)) {
     return false
   }
 
   state.lastRoundScore = state.score
-  applyWinSummary(totalCells)
+  if (isAgentApiMode(state.controlMode) && traversalSpeedUnits !== undefined) {
+    applyAgentWinSummary(state, totalCells, traversalSpeedUnits)
+  } else {
+    applyInteractiveWinMetrics(state, totalCells)
+  }
   state.status = "won"
   return true
+}
+
+// applyAgentWinSummary stores the agent-api traversal-speed summary after an agent reaches the
+// target. Takes the already-computed speed rather than the raw AgentPlayerStatus it's derived
+// from — that's the only part of it this ever needed.
+function applyAgentWinSummary(state: State, totalCells: number, traversalSpeedUnits: number): void {
+  const winScore = resolveWinScore({
+    bestWinRetentionUnits: state.bestWinRetentionUnits,
+    bestWinTraversalSpeedUnits: state.bestWinTraversalSpeedUnits,
+    controlMode: state.controlMode,
+    lastAttemptRetentionUnits: state.lastAttemptRetentionUnits,
+    lastWinTraversalSpeedUnits: state.lastWinTraversalSpeedUnits,
+    score: state.score,
+    totalCells,
+    traversalSpeedUnits,
+  })
+
+  state.winSummary = winScore.winSummary
+  state.lastAttemptRetentionUnits = winScore.lastAttemptRetentionUnits
+  state.bestWinRetentionUnits = winScore.bestWinRetentionUnits
+  state.lastWinTraversalSpeedUnits = winScore.lastWinTraversalSpeedUnits
+  state.bestWinTraversalSpeedUnits = winScore.bestWinTraversalSpeedUnits
+}
+
+// applyInteractiveWinMetrics stores retention records without producing an agent-api win summary.
+function applyInteractiveWinMetrics(state: State, totalCells: number): void {
+  const retentionUnits = calculateScoreRetentionUnits(totalCells, state.score)
+  state.lastAttemptRetentionUnits = retentionUnits
+  state.bestWinRetentionUnits = state.bestWinRetentionUnits === null
+    ? retentionUnits
+    : Math.max(state.bestWinRetentionUnits, retentionUnits)
+  state.winSummary = ""
 }
 
 // handleLoss captures the completed-round score only when score depletion has already been established.
@@ -67,13 +112,12 @@ function handleLoss(state: State, totalCells: number): boolean {
 function resolveScoredTurnOutcome({
   state,
   totalCells,
-  applyWinSummary,
   persistCompletedTurn,
   persistInProgressTurn,
+  traversalSpeedUnits,
 }: InProgressTurnResolutionDeps): void {
   const roundCompleted = (
-    handleWin(state, totalCells, applyWinSummary) ||
-    handleLoss(state, totalCells)
+    handleWin(state, totalCells, traversalSpeedUnits) || handleLoss(state, totalCells)
   )
 
   if (roundCompleted) {
@@ -171,13 +215,12 @@ export function refreshRunningRoundFrame({
 
 // commitInteractiveTurn is the interactive mode's single post-move resolution point: by the time
 // it runs, movement/traversal history have already been applied, so this function recalculates the
-// live elapsed-time score, checks whether the new position reached the destination, optionally
-// finalizes a win summary, falls through to shared loss handling if the score is now depleted, or
+// live elapsed-time score, checks whether the new position reached the destination, falls through
+// to shared loss handling if the score is now depleted, or
 // schedules normal round persistence for an in-progress turn. Keeping that branching here lets
 // movePlayer stay a pure state mutator.
 export function commitInteractiveTurn({
   state,
-  applyWinSummary,
   calculateRoundScore,
   persistNow,
   scheduleRoundPersistence,
@@ -195,7 +238,6 @@ export function commitInteractiveTurn({
   resolveScoredTurnOutcome({
     state,
     totalCells,
-    applyWinSummary,
     persistCompletedTurn: () => {
       persistNow("state")
     },
@@ -213,11 +255,11 @@ export function commitInteractiveTurn({
 // the still-running round once for the whole batch rather than incrementally per move.
 export function commitAgentApiTurn({
   state,
-  applyWinSummary,
   calculateRoundScore,
   persistNow,
   renderState,
   chargedMovesCount,
+  traversalSpeedUnits,
 }: AgentApiTurnResolutionDeps): void {
   const totalCells = state.mazeDimensions?.area ?? 0
   if (!isAgentApiMode(state.controlMode) || totalCells === 0) {
@@ -231,7 +273,7 @@ export function commitAgentApiTurn({
   resolveScoredTurnOutcome({
     state,
     totalCells,
-    applyWinSummary,
+    traversalSpeedUnits,
     persistCompletedTurn: () => {
       persistNow("state")
     },

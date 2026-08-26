@@ -16,12 +16,22 @@ import type {
 
 const { generation, maze: mazeConfig, scoring } = CONFIG
 
-// getRandomNo returns a bounded, cryptographically random index for maze generation. Using
+// PRNGGenerator is the shape getPRNGInt and any drop-in replacement must satisfy: a bounded random
+// integer in [0, limit). generateMaze/getStartPosition/chooseNextCell all default to getPRNGInt but
+// accept one of these explicitly so tests can substitute a seeded, deterministic generator (e.g. an
+// xorshift128 or PCG32 implementation living in the test file) instead of fighting crypto.getRandomValues
+// output directly. Production code must never pass one — the default is what keeps maze layouts
+// genuinely unpredictable there.
+export type PRNGGenerator = (limit: number) => number
+
+// getPRNGInt returns a bounded, cryptographically random integer in [0, limit) for maze generation
+// — callers use it as an array index, a probability threshold, or a cell number, depending on the
+// call site. Using
 // crypto.getRandomValues rather than Math.random keeps maze layouts genuinely unpredictable —
 // worthwhile even for a game, since a guessable layout would blunt the challenge, and it means
 // no swap is needed later if the project grows into a context where that unpredictability
 // becomes a real security property rather than just a gameplay one.
-function getRandomNo(limit: number): number {
+function getPRNGInt(limit: number): number {
   if (limit <= 0) {
     return 0
   }
@@ -483,6 +493,7 @@ function chooseNextCell(
   currentState: PathStep,
   profile: NavigationProfile,
   visited: boolean[],
+  generator: PRNGGenerator = getPRNGInt,
 ): PathStep {
   const allChoices: PathStep[] = []
   const withinLengthLimit: PathStep[] = []
@@ -507,7 +518,7 @@ function chooseNextCell(
   }
 
   const choices = withinLengthLimit.length > 0 ? withinLengthLimit : allChoices
-  if (choices.length > 1 && getRandomNo(scoring.percentScale) < profile.__leastNeighborsBias) {
+  if (choices.length > 1 && generator(scoring.percentScale) < profile.__leastNeighborsBias) {
     // Prefer the candidate with the fewest remaining unvisited neighbors of its own. A
     // low-neighbor-count cell gets "used up" cleanly by visiting it now, leaving nothing behind
     // for some later, unrelated branch to claim and retroactively turn this cell into a
@@ -525,16 +536,16 @@ function chooseNextCell(
         leastPopulated.push(choice)
       }
     }
-    return leastPopulated[getRandomNo(leastPopulated.length)]
+    return leastPopulated[generator(leastPopulated.length)]
   }
 
-  return choices[getRandomNo(choices.length)]
+  return choices[generator(choices.length)]
 }
 
 // getStartPosition prefers an edge cell so the opening feels less uniform.
-function getStartPosition(dimensions: MazeDimensions): number {
+function getStartPosition(dimensions: MazeDimensions, generator: PRNGGenerator = getPRNGInt): number {
   while (true) {
-    const randomCellNo = getRandomNo(dimensions.area) + 1
+    const randomCellNo = generator(dimensions.area) + 1
     if (countNeighbors(getCellNeighbors(dimensions, randomCellNo)) < 4) {
       return randomCellNo
     }
@@ -650,11 +661,12 @@ export function generateMaze(
   dimensions: LevelDimensions,
   weight: WallWeight,
   profileOverride?: NavigationProfile,
+  generator: PRNGGenerator = getPRNGInt,
 ): RoundState {
   const navigationProfile = profileOverride ?? getNavigationProfile(dimensions)
   const visited = new Array<boolean>(dimensions.area + 1).fill(false)
   const maze = createPlayingField(dimensions, weight)
-  const startCell = getStartPosition(dimensions)
+  const startCell = getStartPosition(dimensions, generator)
 
   let path: PathStep[] = [
     { __cellNo: startCell, __moveDirection: "none", __corridorLength: 0 },
@@ -678,6 +690,7 @@ export function generateMaze(
 
     const nextChoice = chooseNextCell(
       dimensions, backtrackedState.neighbors, path[path.length - 1], navigationProfile, visited,
+      generator,
     )
 
     if (visited[nextChoice.__cellNo]) {

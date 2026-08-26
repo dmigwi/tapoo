@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { CONFIG } from "./config"
 import { isAgentApiMode } from "./status"
 import type {
-  AgentApiConfig,
+  AgentApiSeatConfig,
   Elements,
-  GameRuntime,
   MazeActionControl,
+  MazeActionDispatch,
   MazeControlModeName,
   PersistedPreferences,
   PersistedRound,
@@ -15,8 +15,8 @@ import type {
   TraversalHistoryEntry,
 } from "./types"
 
-function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Self", row, col, openMoves: [] }
+function selfVisit(row: number, col: number, visitCount = 1): TraversalHistoryEntry {
+  return { playerName: "Self", row, col, openMoves: [], visitCount }
 }
 
 // setVisualViewportScale mutates the mocked window.visualViewport.scale — a direct assignment
@@ -28,9 +28,10 @@ function setVisualViewportScale(scale: number): void {
   })
 }
 
-function enabledAgentConfig(): AgentApiConfig {
+function enabledAgentConfig(): AgentApiSeatConfig {
   return {
-    id: 1,
+    seatId: 1,
+    sessionId: 1_700_000_000_000,
     playerName: "Blue",
     model: "llama3.2",
     endpoint: new URL("https://agents.example/blue/move"),
@@ -94,6 +95,11 @@ function createElements(): Elements {
     controls,
     touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     touchButtons,
   }
 }
@@ -143,13 +149,17 @@ function createTraversalMock({
     y: row * CONFIG.maze.renderCellStep + 1,
   })
   const mazeCellKey = ({ row, col }: { row: number; col: number }) => `${row}:${col}`
-  const traversalHistoryIncludes = (
+  const findTraversalHistoryEntry = (
     traversalHistory: TraversalHistoryEntry[],
     cell: { row: number; col: number },
   ) =>
-    traversalHistory.some(
+    traversalHistory.find(
       (visitedCell) => visitedCell.row === cell.row && visitedCell.col === cell.col,
     )
+  const traversalHistoryIncludes = (
+    traversalHistory: TraversalHistoryEntry[],
+    cell: { row: number; col: number },
+  ) => findTraversalHistoryEntry(traversalHistory, cell) !== undefined
   const cloneCellCoordinate = ({ row, col }: { row: number; col: number }) => ({
     row,
     col,
@@ -195,7 +205,9 @@ function createTraversalMock({
     cloneMazeRows: vi.fn((mazeRows: string[][]) => mazeRows.map((row) => [...row])),
     cloneRenderGridPoint: vi.fn(({ x, y }: { x: number; y: number }) => ({ x, y })),
     cloneTraversalHistory: vi.fn((history: TraversalHistoryEntry[]) =>
-      history.map(({ playerName, row, col, openMoves }) => ({ playerName, row, col, openMoves: [...openMoves] })),
+      history.map(({ playerName, row, col, openMoves, visitCount }) => ({
+        playerName, row, col, openMoves: [...openMoves], visitCount,
+      })),
     ),
     gridPointFromCellCoordinate: vi.fn(gridPointFromCellCoordinate),
     isMoveAction: vi.fn((action: { type: string }) =>
@@ -288,8 +300,10 @@ function createTraversalMock({
       ...cell,
       playerName,
       openMoves: [],
+      visitCount: 1,
     })),
     traversalHistoryIncludes: vi.fn(traversalHistoryIncludes),
+    findTraversalHistoryEntry: vi.fn(findTraversalHistoryEntry),
     startCellFromTraversalHistory: vi.fn((history: TraversalHistoryEntry[]) => {
       const [startCell] = history
       return startCell ? cloneCellCoordinate(startCell) : null
@@ -354,13 +368,55 @@ type GameHarness = {
   mode: MazeActionControl
   render: ReturnType<typeof vi.fn<(elements: Elements, state: State) => void>>
   reweightMaze: ReturnType<typeof vi.fn>
-  runtime: GameRuntime
+  runtime: CapturedRuntime
   saveGameProgress: ReturnType<typeof vi.fn>
   saveActiveRoundSnapshot: ReturnType<typeof vi.fn>
   savedRoundStates: Array<{
     mazeDimensions: State["mazeDimensions"]
     status: State["status"]
   }>
+}
+
+// CapturedRuntime is the set of handles bootstrapGame passes to the control mode. It is declared
+// here, in the test, rather than returned by bootstrapGame: production never needs it, and a return
+// value only tests read is free to keep compiling long after the channel the app actually uses has
+// changed underneath it.
+type CapturedRuntime = {
+  dispatch: MazeActionDispatch
+  setRestartLevel: (level: number) => boolean
+  readRestartLevel: () => number
+}
+
+// captureRuntimeHandles wraps a real control mode and records what bindActionDispatch is handed,
+// then forwards the call untouched. Tests therefore drive the same dispatch and gameControls the
+// settings dialog drives in the browser — if that wiring is ever dropped, these tests stop working
+// instead of passing against a parallel seam.
+function captureRuntimeHandles(realMode: MazeActionControl): {
+  controlMode: MazeActionControl
+  readRuntime: () => CapturedRuntime
+} {
+  let captured: CapturedRuntime | null = null
+
+  return {
+    controlMode: {
+      ...realMode,
+      bindActionDispatch: (dispatch, readState, commitTurn, gameControls) => {
+        captured = {
+          dispatch,
+          setRestartLevel: gameControls.setRestartLevel,
+          readRestartLevel: () => readState().restartLevel,
+        }
+        realMode.bindActionDispatch(dispatch, readState, commitTurn, gameControls)
+      },
+    },
+    readRuntime: () => {
+      if (!captured) {
+        throw new Error("bootstrapGame never called bindActionDispatch")
+      }
+
+      return captured
+    },
+  }
 }
 
 // bootstrapHarness wires a mocked runtime so high-level browser game flows stay testable.
@@ -376,7 +432,7 @@ async function bootstrapHarness({
   mode = CONFIG.runtime.controlModes.interactive,
   terminalSizes = [{ numCols: 20, numRows: 20 }],
 }: {
-  agentConfigs?: AgentApiConfig[]
+  agentConfigs?: AgentApiSeatConfig[]
   dimensionsResults?: DimensionsResult[]
   isSpaceFound?: (cell: string) => boolean
   persistedSnapshots?: Array<{
@@ -477,9 +533,9 @@ async function bootstrapHarness({
   vi.doMock("./storage", () => ({
     clearPersistedSnapshot,
     clearPersistedRound,
-    clearStaleStorageVersions: vi.fn(),
+    agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
     disableAgentApiConfigForNetworkError: vi.fn(),
-    loadPersistedAgentApiConfigs: vi.fn(() => agentConfigs),
+    loadAgentApiSeatConfigs: vi.fn(() => agentConfigs),
     loadPersistedSnapshot,
     resetAgentRoundStats: vi.fn(),
     saveGameProgress,
@@ -505,9 +561,11 @@ async function bootstrapHarness({
   const { createAgentMode } = await import("./control/agent")
   const { createInteractiveMode } = await import("./control/interactive")
   const { bootstrapGame } = await import("./game")
-  const controlMode =
+  const realMode =
     isAgentApiMode(mode) ? createAgentMode(elements) : createInteractiveMode(elements)
-  const runtime = bootstrapGame(controlMode, elements)
+  const { controlMode, readRuntime } = captureRuntimeHandles(realMode)
+  bootstrapGame(controlMode, elements)
+  const runtime = readRuntime()
 
   return {
     appendTapooLogEntry,
@@ -573,9 +631,9 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      clearStaleStorageVersions: vi.fn(),
+      agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
-      loadPersistedAgentApiConfigs: vi.fn(() => []),
+      loadAgentApiSeatConfigs: vi.fn(() => []),
       loadPersistedSnapshot,
       resetAgentRoundStats: vi.fn(),
       saveGameProgress: vi.fn(),
@@ -594,7 +652,7 @@ describe("bootstrapGame", () => {
 
     expect(loadPersistedSnapshot).toHaveBeenCalledWith(
       CONFIG.runtime.controlModes.interactive,
-      1,
+      CONFIG.runtime.defaultRestartLevel,
       1,
       expect.any(Function),
     )
@@ -645,9 +703,9 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      clearStaleStorageVersions: vi.fn(),
+      agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
-      loadPersistedAgentApiConfigs: vi.fn(() => []),
+      loadAgentApiSeatConfigs: vi.fn(() => []),
       loadPersistedSnapshot: vi.fn(() => ({
         preferences: { level: 1, wallWeight: 1 },
         round: null,
@@ -702,9 +760,9 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      clearStaleStorageVersions: vi.fn(),
+      agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
-      loadPersistedAgentApiConfigs: vi.fn(() => []),
+      loadAgentApiSeatConfigs: vi.fn(() => []),
       loadPersistedSnapshot,
       resetAgentRoundStats: vi.fn(),
       saveGameProgress: vi.fn(),
@@ -732,6 +790,63 @@ describe("bootstrapGame", () => {
       { level: 4, numCols: 1, numRows: 1 },
       1,
     )
+  })
+
+  // restartLevel is a floor on every round, not only on restarts: with it set above the level a
+  // player would advance into, the next round opens at the floor instead of below it.
+  it("lifts a round that would open below the restart level up to it", async () => {
+    const elements = createElements()
+    const render = vi.fn<(elements: Elements, state: State) => void>()
+    const loadPersistedSnapshot = vi.fn(() => ({
+      preferences: { level: 3, wallWeight: 1 },
+      round: createPersistedWonRound(),
+    }))
+    const getMazeDimensions = vi.fn((level: number) => ({ level, numCols: 1, numRows: 1 }))
+    const generateMaze = vi.fn(() => createRound())
+
+    vi.doMock("./dom", () => ({
+      elements,
+      getTerminalSize: vi.fn(() => ({ numCols: 20, numRows: 20 })),
+    }))
+    vi.doMock("./maze", () => ({
+      generateMaze,
+      getMazeDimensions,
+      getNavigationProfile: vi.fn(() => ({
+        __maxCorridorLength: 10,
+        __leastNeighborsBias: 100,
+      })),
+    }))
+    vi.doMock("./traversal", () => createTraversalMock())
+    vi.doMock("./render", () => ({ render }))
+    vi.doMock("./storage", () => ({
+      clearPersistedSnapshot: vi.fn(),
+      clearPersistedRound: vi.fn(),
+      agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
+      disableAgentApiConfigForNetworkError: vi.fn(),
+      loadAgentApiSeatConfigs: vi.fn(() => []),
+      loadPersistedSnapshot,
+      resetAgentRoundStats: vi.fn(),
+      saveGameProgress: vi.fn(),
+      saveActiveRoundSnapshot: vi.fn(),
+      loadTapooLog: vi.fn(() => []),
+      saveTapooLog: vi.fn(),
+      appendTapooLogEntry: vi.fn(),
+      clearTapooLog: vi.fn(),
+    }))
+    vi.spyOn(window, "setInterval").mockImplementation(() => 1)
+
+    const { createInteractiveMode } = await import("./control/interactive")
+    const { bootstrapGame } = await import("./game")
+
+    const { controlMode, readRuntime } = captureRuntimeHandles(createInteractiveMode(elements))
+    bootstrapGame(controlMode, elements)
+    expect(readRuntime().setRestartLevel(84)).toBe(true)
+
+    // Advancing from the restored level-3 win would ask for level 4, which is below the floor.
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+
+    expect(getMazeDimensions).toHaveBeenLastCalledWith(84, { numCols: 20, numRows: 20 })
+    expect(getMazeDimensions).not.toHaveBeenCalledWith(4, { numCols: 20, numRows: 20 })
   })
 
   it("cycles wall weight and reweights the live maze when Ctrl+B is pressed", async () => {
@@ -763,9 +878,9 @@ describe("bootstrapGame", () => {
     vi.doMock("./storage", () => ({
       clearPersistedSnapshot: vi.fn(),
       clearPersistedRound: vi.fn(),
-      clearStaleStorageVersions: vi.fn(),
+      agentForCurrentRound: vi.fn((agent: AgentApiSeatConfig): AgentApiSeatConfig => agent),
       disableAgentApiConfigForNetworkError: vi.fn(),
-      loadPersistedAgentApiConfigs: vi.fn(() => []),
+      loadAgentApiSeatConfigs: vi.fn(() => []),
       loadPersistedSnapshot: vi.fn(() => ({
         preferences: { level: 1, wallWeight: 1 },
         round: null,
@@ -799,7 +914,128 @@ describe("bootstrapGame", () => {
     expect(state.maze).toEqual(reweightedMaze)
   })
 
-  it("clears persisted browser state before restarting from level 1", async () => {
+  // The mechanics the UI will drive: a level chosen mid-session decides where the next restart
+  // lands, without disturbing the round already running.
+  it("restarts into a session-chosen level rather than the configured default", async () => {
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        { preferences: { level: 7, wallWeight: 3 }, round: null },
+      ],
+    })
+
+    // Bootstrap opened the stored level, not the restart level — the two are independent.
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(7, { numCols: 20, numRows: 20 })
+    expect(harness.runtime.readRestartLevel()).toBe(CONFIG.runtime.defaultRestartLevel)
+
+    expect(harness.runtime.setRestartLevel(84)).toBe(true)
+    // Choosing a level does not touch the round in progress; nothing is regenerated.
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(7, { numCols: 20, numRows: 20 })
+
+    harness.elements.controls[0].click()
+
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(84, { numCols: 20, numRows: 20 })
+  })
+
+  // Changing where games begin stops what is playing first, so the change lands at a moment the
+  // player chose rather than whenever something next happens to restart — and so the score stops
+  // decaying against a round they have already left.
+  it("stops an interactive round in progress before moving the floor", async () => {
+    const harness = await bootstrapHarness({})
+    expect(latestRenderedState(harness.render).status).toBe("running")
+
+    expect(harness.runtime.setRestartLevel(84)).toBe(true)
+
+    expect(latestRenderedState(harness.render).status).toBe("paused")
+    expect(harness.runtime.readRestartLevel()).toBe(84)
+  })
+
+  // Paused, not await-agent: that status means play has no enabled agent seat, which is untrue of
+  // a round an agent was mid-turn on.
+  it("pauses an agent-api round in progress before moving the floor", async () => {
+    const harness = await bootstrapHarness({
+      mode: CONFIG.runtime.controlModes.agentApi,
+      agentConfigs: [enabledAgentConfig()],
+    })
+    expect(latestRenderedState(harness.render).status).toBe("running")
+
+    expect(harness.runtime.setRestartLevel(84)).toBe(true)
+
+    expect(latestRenderedState(harness.render).status).toBe("paused")
+    expect(harness.runtime.readRestartLevel()).toBe(84)
+  })
+
+  // The floor rides inside the round snapshot, so choosing one has to write that snapshot. Without
+  // this persist the new value sits in memory until something else happens to save, and a reload
+  // before then loses it.
+  //
+  // Asserted as "a save happened", not by inspecting the saved argument: saveActiveRoundSnapshot is
+  // mocked with (mode, state), so the argument is the live State object and carries restartLevel
+  // whether or not buildRoundSnapshot copies it across. That the snapshot itself contains the field
+  // is storage.test.ts's round-trip assertion.
+  it("persists the round when the restart level changes with nothing running", async () => {
+    // A finished round on purpose. While one is running, stopActiveRound's own persist would save
+    // anyway and mask whether setRestartLevel writes at all — which is exactly the case where the
+    // value would be lost on the next reload.
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        { preferences: { level: 3, wallWeight: 1 }, round: createPersistedWonRound() },
+      ],
+    })
+    const savesBefore = harness.saveActiveRoundSnapshot.mock.calls.length
+
+    expect(harness.runtime.setRestartLevel(84)).toBe(true)
+
+    expect(harness.saveActiveRoundSnapshot.mock.calls.length).toBeGreaterThan(savesBefore)
+  })
+
+  it("restores a stored restart level and applies it as the floor", async () => {
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        {
+          preferences: { level: 3, wallWeight: 1 },
+          round: { ...createPersistedWonRound(), restartLevel: 84 },
+        },
+      ],
+    })
+
+    expect(harness.runtime.readRestartLevel()).toBe(84)
+    // Advancing would ask for level 4; the restored floor lifts it to 84.
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(84, { numCols: 20, numRows: 20 })
+  })
+
+  // startRound raises every round to this floor, so a corrupt stored value would make the game
+  // unplayable rather than merely wrong — it must not reach state.
+  it.each([
+    ["zero", 0],
+    ["negative", -5],
+    ["fractional", 2.5],
+  ])("ignores a %s stored restart level and falls back to the default", async (_label, stored) => {
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        {
+          preferences: { level: 3, wallWeight: 1 },
+          round: { ...createPersistedWonRound(), restartLevel: stored },
+        },
+      ],
+    })
+
+    expect(harness.runtime.readRestartLevel()).toBe(CONFIG.runtime.defaultRestartLevel)
+  })
+
+  it("rejects a restart level gameplay could not use, keeping the last good one", async () => {
+    const harness = await bootstrapHarness({})
+
+    expect(harness.runtime.setRestartLevel(12)).toBe(true)
+    for (const invalid of [0, -1, 2.5]) {
+      expect(harness.runtime.setRestartLevel(invalid)).toBe(false)
+    }
+    // A repeat of the current value is not a change either, so callers can set unconditionally.
+    expect(harness.runtime.setRestartLevel(12)).toBe(false)
+    expect(harness.runtime.readRestartLevel()).toBe(12)
+  })
+
+  it("clears persisted browser state before restarting from the configured opening level", async () => {
     const harness = await bootstrapHarness({
       persistedSnapshots: [
         {
@@ -818,7 +1054,10 @@ describe("bootstrapGame", () => {
 
     expect(harness.clearPersistedSnapshot).toHaveBeenCalledTimes(1)
     expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(1)
-    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(1, {
+    // Read from CONFIG rather than hardcoded, so raising defaultRestartLevel for a playtest deep
+    // in the level curve does not fail the suite — while still proving restartGame goes through
+    // that knob instead of a literal of its own.
+    expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(CONFIG.runtime.defaultRestartLevel, {
       numCols: 20,
       numRows: 20,
     })
@@ -940,11 +1179,11 @@ describe("bootstrapGame", () => {
     expect(state.lastRoundScore).toBe(200)
     expect(state.lastAttemptRetentionUnits).toBe(1_000_000)
     expect(state.bestWinRetentionUnits).toBe(1_000_000)
-    expect(state.winSummary).toBe("New scores retention record")
+    expect(state.winSummary).toBe("")
     expect(harness.saveActiveRoundSnapshot).toHaveBeenCalled()
   })
 
-  it("builds a browser win summary from persisted timing history", async () => {
+  it("updates browser retention metrics without creating an interactive win summary", async () => {
     const harness = await bootstrapHarness({
       dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }],
       round: createHorizontalRound(),
@@ -982,9 +1221,7 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("won")
     expect(state.lastAttemptRetentionUnits).toBe(600000)
     expect(state.bestWinRetentionUnits).toBe(1_000_000)
-    expect(state.winSummary).toBe(
-      "1.20s faster than previous (0.80s behind best)",
-    )
+    expect(state.winSummary).toBe("")
   })
 
   it("does not duplicate traversal history when the player backtracks", async () => {
@@ -1008,8 +1245,11 @@ describe("bootstrapGame", () => {
 
     const state = latestRenderedState(harness.render)
     expect(state.playerPosition).toEqual({ x: 1, y: 1 })
+    // The backtrack onto (0,0) bumps that cell's visitCount instead of appending a second entry, so
+    // the array stays a distinct-cell list while still recording how worked-over the cell is — which
+    // is what agent/context.ts reads to derive visitStatus.
     expect(state.traversalHistory).toEqual([
-      selfVisit(0, 0),
+      selfVisit(0, 0, 2),
       selfVisit(0, 1),
     ])
   })

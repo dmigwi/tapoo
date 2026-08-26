@@ -1,4 +1,5 @@
 import { logTapooDiagnostic, setTapooLogContext } from "../logs"
+import type { EncodedMazeForLog } from "../logs"
 import { CONFIG } from "../config"
 import { describeProviderHttpFailure } from "./config"
 import {
@@ -27,7 +28,7 @@ import {
 } from "./efficiency"
 import type {
   AgentChatMessage,
-  AgentApiConfig,
+  AgentApiSeatConfig,
   AgentPredictionFailure,
   AgentPredictionRequest,
   AgentPredictionResult,
@@ -35,6 +36,7 @@ import type {
   AgentToolDefinition,
   AgentToolHandlers,
   MazeActionResult,
+  MazeDimensions,
 } from "../types"
 
 // AgentChatResponse is the shape every provider adapter's readMessage normalizes its raw payload
@@ -50,18 +52,22 @@ type RequestAgentPredictionInput = {
   // backoff delay) — never rebuilt here, so every attempt sees the exact same frozen values no
   // matter how much wall-clock time passes between them. See snapshotAgentState.
   stateSnapshot: AgentStateSnapshot
+  // Pre-encoded static maze diagnostics for the level's first request. Kept separate from
+  // stateSnapshot because context tools do not need the raw or encoded maze grid.
+  encodedMazeForLevelStart: EncodedMazeForLevelStart | null
   timeoutMs: number
-  // Delay applied before each provider request after the first within one turn — a turn issuing
-  // several rounds while servicing tool calls otherwise fires them back to back with no gap at
-  // all, which can look like a burst to the upstream provider even when turns themselves are well
-  // paced. See agentApiTurnPollIntervalMs (config.ts) for the separate delay between turns — the
-  // two are close (30s vs 35s) rather than one clearly dwarfing the other, because a real model
-  // (Kimi K3) has been observed taking roughly 20s just to process one request; a shorter interval
-  // than that risks a provider seeing two overlapping in-flight requests as a burst and returning
-  // 429, so this is set close to that real processing floor, not to some fraction of the turn delay.
+  // Delay applied before each provider request after the first within one turn. The caller passes
+  // the same provider-facing request interval used between agent turns, keeping one rate-limit
+  // policy for both fresh turns and tool-call follow-up requests.
   requestIntervalMs: number
-  agent: AgentApiConfig
+  agent: AgentApiSeatConfig
   lastActionResult: MazeActionResult | null
+  // Live read of whether the round is still running — deliberately a callback, not a value off
+  // stateSnapshot, which is frozen at turn start and so can never report a round that stopped
+  // mid-turn. A turn can span several provider requests and minutes of wall clock; anything that
+  // halts the round in that window (a pause, a restart, a level change) must stop the remaining
+  // requests rather than let them land on a game that has moved on.
+  isRoundRunning: () => boolean
 }
 
 // sleep resolves after delayMs — used only to pace consecutive provider requests within one turn.
@@ -85,6 +91,25 @@ type ToolServicingResult =
 // "tools" offers remaining context tools, "predict" asks for moves after all tools were used,
 // and "warned" follows an all-duplicate tool-call response.
 type AgentMode = "predict" | "tools" | "warned"
+
+export type EncodedMazeForLevelStart = EncodedMazeForLog & {
+  dimensions: MazeDimensions
+}
+
+function logAgentLevelStarted(
+  stateSnapshot: AgentStateSnapshot,
+  encodedMazeForLogs: EncodedMazeForLevelStart,
+): void {
+  if (!stateSnapshot.startPosition || !stateSnapshot.finalPosition) {
+    return
+  }
+
+  logTapooDiagnostic(CONFIG.runtime.controlModes.agentApi, "info", "Agent level started.", {
+    startPosition: stateSnapshot.startPosition,
+    finalPosition: stateSnapshot.finalPosition,
+    maze: encodedMazeForLogs,
+  })
+}
 
 // buildToolResultMessages executes requested tools and converts their values into chat messages.
 async function buildToolResultMessages(
@@ -122,7 +147,7 @@ async function buildToolResultMessages(
 // requestChatTurn sends one provider-compatible chat request while keeping wire details local —
 // the actual body/headers/response shape is entirely the chosen provider adapter's concern.
 async function requestChatTurn(
-  agent: AgentApiConfig,
+  agent: AgentApiSeatConfig,
   messages: AgentChatMessage[],
   tools: AgentToolDefinition[],
   signal: AbortSignal,
@@ -219,13 +244,35 @@ async function requestChatTurn(
 export function requestPredictionWithAbort({
   lastActionResult,
   stateSnapshot,
+  encodedMazeForLevelStart,
   agent,
   timeoutMs,
   requestIntervalMs,
+  isRoundRunning,
 }: RequestAgentPredictionInput): AgentPredictionRequest {
   // Expected aborts are lifecycle cleanup; timeout aborts remain provider/network failures.
   let activeController: AbortController | null = null
   let wasExpectedAbort = false
+
+  // shouldStopRequesting answers the one question both in-loop checkpoints ask: is there any
+  // reason not to send another provider request? A caller abort and a round that stopped under us
+  // are the same situation — lifecycle cleanup, not a provider failure — so a stopped round is
+  // promoted to an expected abort here, cancelling anything in flight. That keeps every later
+  // check, including the catch below, on the single wasExpectedAbort flag.
+  const shouldStopRequesting = (): boolean => {
+    if (wasExpectedAbort) {
+      return true
+    }
+
+    if (isRoundRunning()) {
+      return false
+    }
+
+    wasExpectedAbort = true
+    activeController?.abort()
+    activeController = null
+    return true
+  }
 
   // A level's first agent-api turn is the only one that needs the full system/user prompt
   // and tool descriptions logged; later turns repeat that same static content.
@@ -273,8 +320,9 @@ export function requestPredictionWithAbort({
       const toolHandlers = buildAgentToolHandlers(stateSnapshot, lastActionResult, agent)
       // The classification is computed once up front so it appears unconditionally in the system
       // prompt, not only when the model chooses to call get_prediction_rules.
-      const {playerUniqueCellsVisited, decayUnitsCharged} = getBatchEfficiencyMetrics(stateSnapshot.traversalHistory, agent)
-      const batchEfficiencyClass = resolveStatusSpeedClass(playerUniqueCellsVisited,decayUnitsCharged)
+      const {playerUniqueCellsVisited, decayUnitsCharged, playerTurnsTaken} =
+        getBatchEfficiencyMetrics(stateSnapshot.traversalHistory, agent)
+      const batchEfficiencyClass = resolveStatusSpeedClass(playerUniqueCellsVisited, decayUnitsCharged)
 
       const player = formatPlayerStatusLabel({
         playerName: agent.playerName,
@@ -282,7 +330,19 @@ export function requestPredictionWithAbort({
         decayUnitsCharged: decayUnitsCharged,
       }, batchEfficiencyClass)
 
-      let messages = buildAgentMessages(agent.playerName, batchEfficiencyClass)
+      // The opening persona claims two things — that traversal speed opens at trailblazer, and that
+      // no prediction has been made yet — so all three of this agent's own level counters must be
+      // clear before it is used. decayUnitsCharged alone was not enough: it is what
+      // resolveStatusSpeedClass defaults on, so on its own it cannot distinguish "nothing spent
+      // yet" from a state where cells or turns were somehow recorded without spend.
+      //
+      // Every check is scoped to this agent. stateSnapshot.turnCount is deliberately not among
+      // them: it counts every seat's turns together, so in a multi-agent round only the seat that
+      // happened to move first would ever see zero, and every other agent would be denied its own
+      // opening turn despite being just as unmeasured.
+      const isOpeningTurn = playerTurnsTaken === 0 && decayUnitsCharged === 0 && playerUniqueCellsVisited === 0
+
+      let messages = buildAgentMessages(agent.playerName, batchEfficiencyClass, isOpeningTurn)
       let requestCount = 0
 
       // Track which tools have already been called this turn so duplicate tool calls can be
@@ -294,23 +354,28 @@ export function requestPredictionWithAbort({
       // otherwise a second warning-worthy response ends the turn instead of stacking warnings.
       let hasWarningBeenIssued = false
 
+      if (isFirstRequestOfLevel && encodedMazeForLevelStart) {
+        // Keep the static maze snapshot beside the first full request log. Positions come from
+        // stateSnapshot; only the encoded maze travels as a separate logging payload.
+        logAgentLevelStarted(stateSnapshot, encodedMazeForLevelStart)
+      }
+
       while (true) {
-        // Honor aborts that land between provider requests, when no active controller exists yet.
-        if (wasExpectedAbort) {
-          // Exit 1: caller aborted between provider requests.
+        // Honor aborts that land between provider requests, when no active controller exists yet,
+        // and stop just as promptly when the round itself is no longer running.
+        if (shouldStopRequesting()) {
+          // Exit 1: caller aborted, or the round stopped, between provider requests.
           return { ok: false, reason: "caller-abort" }
         }
 
         requestCount += 1
 
-        // Only the first request of a turn is paced by agentApiTurnPollIntervalMs (the caller
-        // schedules that before this function is even invoked) — every request after it within
-        // the same turn otherwise fires immediately back to back, which a provider's rate limiting
-        // can see as a burst even when turns themselves are well spaced.
+        // The first request is paced by the caller's turn scheduler. Follow-up requests inside the
+        // same tool-calling turn use the same request interval here.
         if (requestCount > 1) {
           await sleep(requestIntervalMs)
-          if (wasExpectedAbort) {
-            // Exit 1: caller aborted while this request was waiting to go out.
+          if (shouldStopRequesting()) {
+            // Exit 1: caller aborted, or the round stopped, while this request waited to go out.
             return { ok: false, reason: "caller-abort" }
           }
         }

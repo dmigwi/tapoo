@@ -27,7 +27,7 @@ help:
 ci: lint frontend-lint govulncheck test
 
 ci-bench: frontend-deps
-	node ./scripts/bench-report.mjs
+	node ./parity-harness/bench-report.mjs
 
 lint:
 	golangci-lint run
@@ -62,7 +62,7 @@ frontend-test:
 	CI=true $(PNPM) --config.confirmModulesPurge=false run test:frontend
 
 frontend-bench: frontend-deps
-	node ./scripts/bench-report.mjs --frontend-only
+	node ./parity-harness/bench-report.mjs --frontend-only
 
 frontend-quality: frontend-deps
 	CI=true $(PNPM) --config.confirmModulesPurge=false run quality:frontend
@@ -77,7 +77,7 @@ test: deps frontend-deps frontend-typecheck frontend-build frontend-test
 	rm -f $(COVERAGE_FILE)
 
 go-bench:
-	node ./scripts/bench-report.mjs --go-only
+	node ./parity-harness/bench-report.mjs --go-only
 
 # Answers docs/TAPOO_AGENTIC_BEHAVIOR_RUBRIC.md against exported agent-api logs. Needs no frontend
 # toolchain: the script only reads the JSON exports, so it runs before or without an install.

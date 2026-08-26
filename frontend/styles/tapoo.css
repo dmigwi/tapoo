@@ -122,6 +122,12 @@ body {
   white-space: nowrap;
 }
 
+/* Each run stays whole; a wrap, where one is allowed at all, falls between them. Without this the
+   age breaks at its own space, giving "(119" / "mins ago)". */
+.page-footer__part {
+  white-space: nowrap;
+}
+
 .top-bar {
   position: sticky;
   top: 0;
@@ -517,6 +523,15 @@ body {
 }
 
 @media (max-width: 480px) {
+  /* A safety net, not the normal case: the footer copy is sized to hold one line at 375px at every
+     age it can report (see the width-budget test in page-chrome.test.ts), so this releases nowrap
+     only for the narrower viewports below that, where clipping would otherwise lose the tail.
+     .page-footer__part above confines any break to the single space between the two runs. */
+  .page-footer__copy {
+    white-space: normal;
+    text-align: center;
+  }
+
   .placeholder-art {
     width: min(100%, 180px);
     max-height: 72svh;
@@ -747,20 +762,33 @@ body {
   pointer-events: none;
 }
 
-.agent-seats-body {
+/* The palette docks beside #terminal-body in both control modes. Three rows: settings, log
+   controls, then the roster shell, which takes the remaining height and is empty outside agent-api
+   mode. */
+.system-palette {
   flex: 0 0 auto;
   align-self: stretch;
   min-height: 0;
   display: grid;
-  grid-template-rows: max-content 1fr;
+  grid-template-rows: max-content max-content 1fr;
   gap: 6px;
   padding-inline-start: 4px;
   border-inline-start: 1px solid rgba(72, 198, 62, 0.34);
   pointer-events: auto;
 }
 
-.agent-seats-body[hidden] {
+.system-palette[hidden] {
   display: none;
+}
+
+/* Separated from the log controls below by a rule rather than spacing alone, so the settings entry
+   does not read as a third log action. */
+.system-palette__actions {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding-block-end: 6px;
+  border-block-end: 1px solid rgba(72, 198, 62, 0.18);
 }
 
 .tapoo-logs-controls {
@@ -1046,6 +1074,109 @@ body {
   outline: none;
 }
 
+/* The info gate (info-gate.ts) is the one overlay that cannot be dismissed, so unlike
+   .agent-config-form below it covers the terminal rather than floating over it: the scrim is what
+   makes everything beneath uninteractable while consent is pending. It stops at the terminal edge
+   on purpose — the top-bar nav stays usable, and the other page raises the same gate anyway. */
+.info-gate {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  /* Biased above centre, the same 44% .agent-config-form uses: a panel centred on the exact middle
+     reads as sitting low, because the eye takes the visual centre to be higher than the geometric
+     one. flex-start plus a percentage margin keeps the panel free to grow downward on a short
+     viewport, which a translate(-50%) would push off the top instead. */
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(2, 5, 2, 0.82);
+}
+
+.info-gate[hidden] {
+  display: none;
+}
+
+.info-gate__panel {
+  margin-block-start: min(18vh, 140px);
+  width: min(520px, 100%);
+  border: 1px solid rgba(72, 198, 62, 0.18);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(13, 19, 13, 0.94) 0%, rgba(5, 8, 5, 0.99) 100%);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.34),
+    inset 0 0 28px rgba(72, 198, 62, 0.035);
+  color: var(--text);
+  display: grid;
+  /* Roomier than the agent dialogs on purpose. Those are forms a returning user skims; this one
+     asks for consent to delete data, and the four parts — what happened, what it costs, what will
+     go, and the button that does it — each need to register separately rather than read as one
+     block of text. */
+  gap: 18px;
+  padding: 24px 22px 20px;
+}
+
+/* An h2 rather than a styled strong: this is the dialog's accessible name (aria-labelledby) and
+   the heading of its content, so it should carry that role natively. h2 rather than h1 because the
+   gate is transient — making a hidden element the page's only top-level heading would mean the
+   outline changed depending on whether stale data happened to exist. The margins and font-size a
+   heading brings are reset here; the panel's own grid gap owns the spacing. */
+.info-gate__title {
+  margin: 0;
+  color: var(--status);
+  font-size: 1.08rem;
+  line-height: 1.35;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.info-gate__message {
+  margin: 0;
+  line-height: 1.65;
+}
+
+.info-gate__detail {
+  margin: 0;
+  color: var(--status);
+  line-height: 1.65;
+}
+
+.info-gate__detail[hidden] {
+  display: none;
+}
+
+.info-gate__actions {
+  display: flex;
+  justify-content: flex-end;
+  /* A little extra above the only irreversible control here, so it is never the thing a fast
+     reader's cursor lands on next. */
+  margin-block-start: 6px;
+}
+
+.info-gate__proceed {
+  min-height: 46px;
+  border: 1px solid var(--top-bar-edge);
+  border-radius: var(--button-radius);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(72, 198, 62, 0.18) 0%,
+      rgba(72, 198, 62, 0.08) 55%,
+      rgba(72, 198, 62, 0.12) 100%
+    );
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 18px;
+}
+
+.info-gate__proceed:focus-visible,
+.info-gate__proceed:hover {
+  border-color: rgba(72, 198, 62, 0.52);
+  outline: none;
+}
+
 .agent-config-form {
   position: absolute;
   left: 50%;
@@ -1062,6 +1193,12 @@ body {
     inset 0 0 28px rgba(72, 198, 62, 0.035);
   color: var(--text);
   display: grid;
+  /* minmax(0, 1fr) rather than the implicit auto track. An auto track's minimum is the largest
+     min-content contribution among its items, and a form control reports its intrinsic character
+     width there — so the column can size itself wider than the panel and every field overflows
+     together. Capping the minimum at 0 lets the track follow the panel, and the items inside
+     (which carry their own min-width: 0) follow the track. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   padding: 18px;
 }
@@ -1118,9 +1255,26 @@ body {
   font-size: 0.85em;
 }
 
+/* min-width: 0 opts these grid items out of the automatic minimum size. A grid or flex item
+   defaults to min-width: auto, meaning it will not shrink below its content's min-content width —
+   and Safari derives a text input's min-content width from its intrinsic size (roughly 20
+   characters) rather than treating it as shrinkable. The field track then refuses to narrow, and
+   the control overflows the panel's fixed 520px. Chrome reports a near-zero min-content width for
+   the same input, which is why this only shows in Safari, and only once zoomed out far enough for
+   20 characters to exceed the panel. width: 100% then sizes each control to its track instead of
+   to its character count. */
 .agent-config-form__field {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+
+/* Direct children only: an input nested inside .agent-config-form__unit-input is a flex item with
+   its own flex-basis, and must keep it. */
+.agent-config-form__field > input,
+.agent-config-form__field > select {
+  min-width: 0;
+  width: 100%;
 }
 
 /* Pairs the reasoning-effort dropdown with the echo-back-reasoning toggle horizontally, 1:2 —
@@ -1129,12 +1283,39 @@ body {
    side instead of stacked with the rest of the form's fields. */
 .agent-config-form__row {
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  /* minmax(0, …) for the same reason as the form's own track: a bare 1fr is minmax(auto, 1fr), so
+     each column still refuses to go below its content's min-content width and the pair overflows
+     together. The --equal variant below already spelled this out; the default row did not. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   gap: 16px;
 }
 
-.agent-config-form__row > .agent-config-form__field {
+.agent-config-form__row--equal {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.agent-config-form__unit-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
+}
+
+.agent-config-form__unit-input input {
+  flex: 0 1 15ch;
+  min-width: 0;
+}
+
+.agent-config-form__unit {
+  flex: 0 0 auto;
+}
+
+.agent-config-form select:disabled,
+.agent-config-form input:disabled:not([type="checkbox"]) {
+  border-color: rgba(143, 148, 122, 0.42);
+  background: rgba(143, 148, 122, 0.08);
+  color: var(--disabled);
+  cursor: not-allowed;
 }
 
 .agent-config-form__required {
@@ -1206,6 +1387,11 @@ body {
   transform: translate(-50%, 0);
 }
 
+/* A level is a handful of digits; a full-width box invites the reader to expect something longer. */
+.system-settings__level-input {
+  max-width: 20ch;
+}
+
 .agent-config-form__field input,
 .agent-config-form__field select {
   min-height: 46px;
@@ -1224,16 +1410,22 @@ body {
   box-shadow: 0 0 0 2px rgba(72, 198, 62, 0.12);
 }
 
+/* Both carry min-width: 0 for the same reason the fields above do. The row's inputs already shrink
+   (flex: 1 below), but that only helps once their containers can: a grid or flex item defaults to
+   min-width: auto, so either wrapper would hold the pair of inputs plus the add button at their
+   combined intrinsic width and push the whole field past the panel. */
 .agent-config-form__header-rows {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .agent-config-form__header-row {
   display: flex;
   gap: 8px;
   align-items: center;
+  min-width: 0;
 }
 
 .agent-config-form__header-row input {

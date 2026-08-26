@@ -1,10 +1,12 @@
 import type {
   AppConfig,
+  InfoGateNotice,
   NavigationProfile,
   WallWeight,
 } from "./types"
 
 declare const __TAPOO_BUILD_YEAR__: number
+declare const __TAPOO_BUILD_DATE__: string
 
 // NAVIGATION_FRIENDLY_PROFILE defines the easiest, least-branching settings for small mazes.
 const NAVIGATION_FRIENDLY_PROFILE: NavigationProfile = {
@@ -25,7 +27,7 @@ const VERSION_MAJOR = 2
 const VERSION_MINOR = 4
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 1
+const VERSION_PATCH = 8
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -36,6 +38,19 @@ const BUILD_YEAR =
     ? __TAPOO_BUILD_YEAR__
     : new Date().getFullYear()
 
+// BUILD_DATE is the deployment instant, injected by esbuild from the same value build-html.mjs
+// stamps into JSON-LD's dateModified, so the footer and the structured data always name one
+// moment. The footer shows only the date half; the time is what keeps two deploys on the same day
+// distinguishable in structured data.
+// Parsed, not merely type-checked: everything downstream treats this as a real instant — the
+// footer subtracts it from now, <time datetime> publishes it, and JSON-LD's dateModified mirrors
+// it. A string that is not a date would surface as "NaN secs ago" rather than as a build error,
+// so an unparseable value is discarded here and never reaches any of them.
+const BUILD_DATE =
+  typeof __TAPOO_BUILD_DATE__ === "string" && Number.isFinite(Date.parse(__TAPOO_BUILD_DATE__))
+    ? __TAPOO_BUILD_DATE__
+    : new Date().toISOString()
+
 // CONFIG centralizes browser-facing copy together with generation and layout constants.
 export const CONFIG: AppConfig = {
   // Shared branding used by both HTML pages and the footer version tag.
@@ -43,6 +58,13 @@ export const CONFIG: AppConfig = {
     appName: "Tapoo",
     appSubtitle: "maze runner (hide & seek)",
     pageVersionTemplate: "v{version} © {year} Tapoo",
+    // The footer shows how long ago this build went out, not when. At 375px there are only ~37
+    // characters for the whole line, and the word "updated" alone costs a fifth of them — it is
+    // carried by pageUpdatedTitleTemplate below instead, where it costs nothing.
+    pageUpdatedTemplate: "({updated} ago)",
+    // Shown on hover and read out to assistive tech, so the exact instant stays reachable from the
+    // page rather than only from its structured data.
+    pageUpdatedTitleTemplate: "Last updated {updated}",
     contactLabel: "Contact",
     privacyLabel: "Privacy",
   },
@@ -51,7 +73,7 @@ export const CONFIG: AppConfig = {
     game: {
       documentTitle: "Tapoo Maze Runner | Game",
       description:
-        "Tapoo is an AI agent intelligence quantifier built as a maze runner hide-and-seek " +
+        "Tapoo is an AI agent behavior profiler built as a maze runner hide-and-seek " +
         "game — play it yourself in this browser-based terminal experience.",
       pageLabel: "Game",
       aiAgentsLabel: "AI Agents",
@@ -59,7 +81,7 @@ export const CONFIG: AppConfig = {
     agents: {
       documentTitle: "Tapoo Maze Runner | AI Agents",
       description:
-        "Tapoo quantifies AI agent intelligence: an HTTP-driven agent navigates a maze " +
+        "Tapoo profiles AI agent behavior: an HTTP-driven agent navigates a maze " +
         "runner under a standardized prompt with built-in uncertainty, with human session " +
         "controls.",
       pageLabel: "AI Agents",
@@ -68,7 +90,7 @@ export const CONFIG: AppConfig = {
     prompts: {
       documentTitle: "Tapoo Maze Runner | Agent Prompts",
       description:
-        "Tapoo, an AI agent intelligence quantifier, publishes the exact system prompt, " +
+        "Tapoo, an AI agent behavior profiler, publishes the exact system prompt, " +
         "user message, tool definitions and response format it sends to a configured AI " +
         "agent.",
       pageLabel: "Agent Prompts",
@@ -77,7 +99,7 @@ export const CONFIG: AppConfig = {
     privacy: {
       documentTitle: "Tapoo Maze Runner | Privacy",
       description:
-        "Privacy details for Tapoo, an AI agent intelligence quantifier, covering browser " +
+        "Privacy details for Tapoo, an AI agent behavior profiler, covering browser " +
         "storage and optional AI Agent API gameplay context.",
       pageLabel: "Privacy",
     },
@@ -130,7 +152,7 @@ export const CONFIG: AppConfig = {
     tooSmallActionMessage: "Make more screen room on zoom out.",
     tooSmallActionMessageWithReset: "Make screen room on zoom out, or Reset Progress.",
     runningStatus: {
-      wide: "Player: {player}   Level: {level}   Scores: {score}",
+      wide: "Player: {player}   Level: {level}   Turn: {turn}   Scores: {score}",
       compact: "Player: {player}   Level: {level}   Scores: {score}",
     },
     highScoreTemplate:
@@ -182,13 +204,26 @@ export const CONFIG: AppConfig = {
       resetProgressLabel: "Reset Progress",
     },
   },
+  // System settings copy, shown by the palette's settings dialog.
+  systemSettings: {
+    // Named for the mode it is opened from, so a setting that only governs this mode's play never
+    // reads as global. {mode} is filled from runtime.displayLabels at open time, not at build
+    // time — which is also why this title carries no data-config-key in the markup.
+    title: "{mode} System Settings Configuration",
+    restartLevelLabel: "Restart Level",
+    restartLevelTooltip:
+      "The level a fresh or restarted game opens on, and the lowest level any round can open " +
+      "at. Applies for this page only — reloading returns to the built-in default.",
+    applyLabel: "Apply",
+    invalidRestartLevelMessage: "Restart level must be a whole number of 1 or more.",
+  },
   // Agent configuration copy is only used by the agent-api overlay form.
   agentConfig: {
     title: "New Agent",
     newAgentLabel: "New Agent",
     agentEnabledLabel: "Agent is enabled.",
     agentDisabledLabel: "Agent is disabled.",
-    maxSeats: 6,
+    maxSeats: 5,
     maxModelDisplayLength: 18,
     playerNameMinLength: 3,
     playerNameMaxLength: 8,
@@ -197,6 +232,11 @@ export const CONFIG: AppConfig = {
     modelLabel: "Model",
     modelPlaceholder: "llama3.2",
     apiLabel: "API",
+    requestIntervalLabel: "Requests Interval",
+    requestIntervalUnitLabel: "seconds",
+    requestIntervalMinSeconds: 1,
+    requestIntervalMaxSeconds: 300,
+    requestIntervalStepSeconds: 1,
     requiredFieldNote: "* Required · Max output tokens:",
     extraHeadersLabel: "Extra Headers",
     extraHeadersTooltip: 
@@ -276,10 +316,11 @@ export const CONFIG: AppConfig = {
     echoBackReasoningOnLabel: "Reasoning will be sent back.",
     echoBackReasoningOffLabel: "Reasoning will not be sent back.",
     submitLabel: "Add Agent",
-    invalidMessage: "Fill in Player Name, Model and Endpoint.",
+    invalidMessage: "Fill in Player Name, Model, Endpoint and Request Interval.",
     invalidApiMessage: "This agent's API provider is not properly configured.",
     invalidEndpointMessage:
       "Endpoint must be a full http:// or https:// URL (or host:port) including the request path.",
+    invalidRequestIntervalTemplate: "Request Interval must be between {min} and {max} seconds.",
     invalidAnthropicCredentialsMessage: "Anthropic requires an API Key.",
     invalidExtraHeadersMessage: "One of the extra header names isn't a valid HTTP header name.",
     duplicatePlayerNameMessage: "This player name is already configured.",
@@ -303,6 +344,10 @@ export const CONFIG: AppConfig = {
     playerNoteTemplate:
       "Shown for placeholder player '{player}'; each configured agent sees its own name in place of it.",
     systemHeading: "System message",
+    // The persona is the system message's opening paragraph, not a message of its own, so the
+    // heading says which form is attached above rather than presenting this as a separate send.
+    personaHeading: "Agent persona (the system message above opens with the default; all four forms follow)",
+    personaDefaultLabel: "Default — first turn, before any prediction is measured",
     userHeading: "User message",
     toolsHeading: "Tool definitions",
     schemaHeading: "Required response format",
@@ -347,7 +392,7 @@ export const CONFIG: AppConfig = {
     agentPartialInvalidPenaltyDecayUnits: 1, // Added on top of the base charge when at least one move applied before an invalid move (total 2).
     agentZeroProgressPenaltyDecayUnits: 2,   // Flat charge when the very first submitted move was already invalid — no progress made.
     agentMalformedPenaltyDecayUnits: 3,      // Flat charge for a malformed/protocol-violation response — costlier than any gameplay mistake.
-    traversalSpeedScaleUnits: 100, // Scales the traversal speed ratio as its display precision.
+    traversalSpeedScaleUnits: 10_000, // 4dp Scales the traversal speed ratio as its display precision.
   },
   // Timing values drive UI redraws, persistence debounce, score decay, and slower agent-api pacing.
   timing: {
@@ -358,17 +403,9 @@ export const CONFIG: AppConfig = {
     // animation (see restoreClock's comment in game.ts) — agent-api score decay comes from
     // scoreDecayUnits, not this figure.
     interactiveDecayIntervalPerCellMs: 1_000, // Translates to 1sec
-    // The real wall-clock delay between agent turns, throttling how often a new turn's first
-    // request goes out. This sits above the scoring math so provider-facing pacing can be tuned
-    // independently when bursts of fresh turns would otherwise trigger transient 429/backpressure
-    // responses upstream.
-    agentApiTurnPollIntervalMs: 35_000,           // Translates to 35secs
-    // A turn issues several provider requests in a row while servicing tool calls (see the
-    // request-count derivation in agent/request.ts), with no gap between them otherwise — this is
-    // the delay applied before each request after the first within one turn, so even a single busy
-    // turn does not hit the provider as one immediate burst and provoke transient 429/backpressure
-    // responses.
-    agentApiRequestPollIntervalMs: 30_000,           // Translates to 30secs
+    // Default whole-second request interval shown in the agent form. Agent configs store this same
+    // second-level precision and convert to milliseconds only when scheduling timers.
+    defaultAgentApiRequestIntervalSeconds: 30,
     // Per provider request, not per turn: a turn issues several rounds, so a whole turn can take a
     // multiple of this (see the request-count derivation in agent/request.ts). Per-request by
     // design — a provider that stops responding is caught on the first round regardless.
@@ -402,11 +439,24 @@ export const CONFIG: AppConfig = {
       agentApi: "agent-api",
       interactive: "interactive",
     },
+    // Human-facing names for the control modes above, kept beside them rather than inside whichever
+    // feature happens to render one first. controlModes carries the wire/storage identifiers; these
+    // are what a person should read.
+    displayLabels: {
+      agentApi: "Agent-API",
+      interactive: "Interactive",
+    },
+    // The level a game opens on before anyone has chosen otherwise. It seeds State.restartLevel,
+    // which is what every entry point actually reads, so they can never disagree about where a
+    // game begins. State.restartLevel is memory-only, so this is also where each page load starts
+    // again — changing it moves the opening level for everyone.
+    defaultRestartLevel: 1,
     storage: {
-      version: 4.5,
+      version: 4.9,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",
+        sessionMetrics: "agentSessionMetrics",
         agentConfigs: "agentConfigs",
         tapooLog: "tapooLog",
       },
@@ -453,10 +503,52 @@ export const CONFIG: AppConfig = {
   },
 }
 
+// INFO_GATE_NOTICES collects every blocking acknowledgement Tapoo can raise, keyed by what it is
+// about. One entry today; the shape is a map so a second gate does not have to restructure this.
+export const INFO_GATE_NOTICES = {
+  // Shown before anything an older storage schema left behind is deleted.
+  staleStorage: {
+    title: "Incompatible old Tapoo data detected!",
+    acknowledgement:
+      "The current version of Tapoo uses an updated persistence format. "+
+      "Proceeding, removes all old data; including any saved agent " +
+      "configuration and game progress. This cannot be undone!",
+    // {versions} arrives carrying its own noun ("version (4.81)" / "versions (4.81, 4.82)"),
+    // because only the caller knows how many there are. Putting the word here instead duplicates
+    // it — the template cannot pluralise.
+    detailTemplate: "- {items} with storage {versions}.",
+    proceedLabel: "Proceed",
+  },
+} satisfies Record<string, InfoGateNotice>
+
 // PAGE_COPYRIGHT_TEXT is the fully composed footer text shared by static browser pages.
 export const PAGE_COPYRIGHT_TEXT = CONFIG.chrome.pageVersionTemplate
   .replace("{version}", APP_VERSION)
   .replace("{year}", String(BUILD_YEAR))
+
+// PAGE_UPDATED_TEXT names the deployment this page was built from, to the minute — enough to tell
+// two same-day deploys apart, which a calendar day alone cannot. Seconds are dropped: they do not
+// settle any question a footer is read to answer, and JSON-LD's dateModified keeps the full
+// timestamp for anything that needs the exact instant.
+//
+// Reformatted out of BUILD_DATE's ISO form (2026-08-25T15:01:37Z) by slicing rather than by
+// rebuilding a Date, so what is shown is literally part of the same string stamped into the
+// structured data — no timezone conversion can drift between the two. UTC is stated explicitly
+// because the reader's timezone is unknown and an unlabelled wall-clock time invites a wrong guess.
+// PAGE_UPDATED_TEMPLATE is left unresolved because its value is not fixed at build time: the
+// footer states an age, which only the reader's clock can settle, so page-chrome.ts fills it on
+// every page load.
+export const PAGE_UPDATED_TEMPLATE = CONFIG.chrome.pageUpdatedTemplate
+
+// PAGE_UPDATED_AT is the deployment instant in full ISO form, for <time datetime> — the same
+// string JSON-LD's dateModified carries, so the machine-readable value on the page and in the
+// structured data cannot drift apart.
+export const PAGE_UPDATED_AT = BUILD_DATE
+
+// PAGE_UPDATED_TITLE spells the instant out for hover and assistive tech. Minutes, not seconds:
+// enough to separate two same-day deploys, which is the only question the exact time answers here.
+export const PAGE_UPDATED_TITLE = CONFIG.chrome.pageUpdatedTitleTemplate
+  .replace("{updated}", `${BUILD_DATE.slice(0, 16).replace("T", " ")} UTC`)
 
 // WALL_WEIGHTS keeps wall-style iteration ordered and type-safe for traversal helpers.
 export const WALL_WEIGHTS = Object.keys(CONFIG.maze.walls)

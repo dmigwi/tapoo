@@ -1,7 +1,8 @@
 import { CONFIG } from "../config"
-import type { AgentApiConfig, AgentPlayerStatus, TraversalHistoryEntry } from "../types"
+import type { AgentApiSeatConfig, AgentPlayerStatus, TraversalHistoryEntry } from "../types"
 
 const { scoring } = CONFIG
+const traversalSpeedDisplayDecimals = String(scoring.traversalSpeedScaleUnits).length - 1
 
 // BatchEfficiencyClass names the traversal-speed group the rate falls into, not just a grade, so
 // the classification itself carries the corrective instruction: climb out of backtracker, sustain
@@ -34,7 +35,7 @@ export type BatchEfficiencyMetrics = {
 // progress, not a raw move count.
 function countDistinctCellsForAgent(
   traversalHistory: readonly TraversalHistoryEntry[],
-  agent: AgentApiConfig,
+  agent: AgentApiSeatConfig,
 ): number {
   return traversalHistory.filter((entry) => entry.playerName === agent.playerName).length
 }
@@ -42,7 +43,7 @@ function countDistinctCellsForAgent(
 // getBatchEfficiencyMetrics returns the raw counts behind the rate.
 export function getBatchEfficiencyMetrics(
   traversalHistory: readonly TraversalHistoryEntry[],
-  agent: AgentApiConfig,
+  agent: AgentApiSeatConfig,
 ): BatchEfficiencyMetrics {
   return {
     playerUniqueCellsVisited: countDistinctCellsForAgent(traversalHistory, agent),
@@ -55,35 +56,36 @@ export function getBatchEfficiencyMetrics(
 }
 
 // resolveStatusSpeedClass is the single source of truth for classifying any playerUniqueCellsVisited
-// / decayUnitsCharged pair — whether it comes from a persisted AgentApiConfig (resolveBatchEfficiencyClass)
-// or a live AgentPlayerStatus (formatPlayerStatusLabel). Nothing charged yet defaults to trailblazer —
-// not the neutral baseline — so play starts already primed to predict multi-move sequences, matching
-// the classification stated in an agent's very first prompt. That same guard keeps the rate below from
-// dividing by zero. traversalHistory only records the first visit to each cell, so oscillation between
-// known cells spends decay without growing the distinct-cell count, pulling the rate down. Routed
-// through calculateTraversalSpeedUnits/resolveTraversalSpeedClass rather than dividing directly, so
-// every speed classification — this one included — agrees with the exact fixed-point rate a caller
-// like formatPlayerStatusLabel displays alongside it; a raw, unrounded division here could disagree
-// with the rounded rate shown right next to it at a boundary.
+// / decayUnitsCharged pair. It compares the raw counts directly so formatting precision can never
+// turn a just-below-baseline Backtracker into Navigator or hide a just-above-baseline Trailblazer.
+// Nothing charged yet defaults to trailblazer — not the neutral baseline — so play starts already
+// primed to predict multi-move sequences, matching the classification stated in an agent's first
+// prompt. That same guard keeps the rate below from dividing by zero.
 export function resolveStatusSpeedClass(uniqueCellsVisited: number, decayUnitsCharged: number): BatchEfficiencyClass {
   if (!decayUnitsCharged) {
     return "trailblazer"
   }
-  return resolveTraversalSpeedClass(calculateTraversalSpeedUnits(uniqueCellsVisited, decayUnitsCharged))
+  if (uniqueCellsVisited < decayUnitsCharged) {
+    return "backtracker"
+  }
+  if (uniqueCellsVisited > decayUnitsCharged) {
+    return "trailblazer"
+  }
+  return "navigator"
 }
 
 // resolveBatchEfficiencyClass is the single source of truth for an agent's current speed
 // classification, everywhere one is shown or sent.
 export function resolveBatchEfficiencyClass(
   traversalHistory: readonly TraversalHistoryEntry[],
-  agent: AgentApiConfig,
+  agent: AgentApiSeatConfig,
 ): BatchEfficiencyClass {
   const { playerUniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(traversalHistory, agent)
   return resolveStatusSpeedClass(playerUniqueCellsVisited, decayUnitsCharged)
 }
 
 // resolveTraversalSpeedClass is the single place the rate thresholds live, comparing directly
-// against scoring.traversalSpeedScaleUnits — the fixed-point value equal to a 1.0 ratio — rather
+// against scoring.traversalSpeedScaleUnits — the fixed-point value equal to a 1.0000 ratio — rather
 // than dividing traversalSpeedUnits back down to a float first. Every caller already holds a
 // fixed-point value from calculateTraversalSpeedUnits (a persisted win record, a live
 // running-status rate, an agent's batch efficiency), so comparing units directly is both the only
@@ -106,26 +108,39 @@ export function resolveTraversalSpeedClass(traversalSpeedUnits: number): BatchEf
   return "navigator"
 }
 
-// calculateTraversalSpeedUnits normalizes one round's progress-per-decay-unit into fixed-point
-// units. This is the round's speed, not one agent's: every seat shares the same maze and the same
-// score, so the completed round is what a stored record can meaningfully compare against.
+// calculateTraversalSpeedUnits normalizes one agent's progress-per-decay-unit into fixed-point
+// units. The raw count comparison decides the rounding direction, so the displayed 4dp value cannot
+// cross the classification boundary: Backtracker floors, Navigator stays exact, Trailblazer ceils.
 export function calculateTraversalSpeedUnits(uniqueCellsVisited: number, scoreDecayUnits: number): number {
   if (scoreDecayUnits <= 0) {
     return 0
   }
 
-  const halfDecayRoundingOffset = Math.floor(scoreDecayUnits / 2)
-  const scaledSpeedUnits = uniqueCellsVisited * scoring.traversalSpeedScaleUnits + halfDecayRoundingOffset
-  return Math.max(0, Math.floor(scaledSpeedUnits / scoreDecayUnits))
+  if (uniqueCellsVisited === scoreDecayUnits) {
+    return scoring.traversalSpeedScaleUnits
+  }
+
+  const scaledSpeedUnits = uniqueCellsVisited * scoring.traversalSpeedScaleUnits
+  const roundedSpeedUnits = uniqueCellsVisited < scoreDecayUnits
+    ? Math.floor(scaledSpeedUnits / scoreDecayUnits)
+    : Math.floor((scaledSpeedUnits + scoreDecayUnits - 1) / scoreDecayUnits)
+
+  return Math.max(0, roundedSpeedUnits)
 }
 
 // traversalSpeedUnitsToDisplay renders fixed-point speed units as the plain ratio players read.
-// The decimal count matches traversalSpeedScaleUnits exactly, so display is lossless: two rounds
-// that stored different speeds can never render as the same number and look like a false match.
+// calculateTraversalSpeedUnits already selected the boundary-safe rounding direction, so this only
+// formats the stored fixed-point value.
 export function traversalSpeedUnitsToDisplay(traversalSpeedUnits: number): string {
-  return (traversalSpeedUnits / scoring.traversalSpeedScaleUnits).toFixed(
-    String(scoring.traversalSpeedScaleUnits).length - 1,
-  )
+  const efficiencyClass = resolveTraversalSpeedClass(traversalSpeedUnits)
+
+  if (efficiencyClass === "navigator") {
+    return (scoring.traversalSpeedScaleUnits / scoring.traversalSpeedScaleUnits)
+      .toFixed(traversalSpeedDisplayDecimals)
+  }
+
+  return (traversalSpeedUnits / scoring.traversalSpeedScaleUnits)
+    .toFixed(traversalSpeedDisplayDecimals)
 }
 
 // capitalize renders lowercase speed-classification identifiers (kept lowercase for model-facing
@@ -144,7 +159,7 @@ export function nameWithSpeedClass(playerName: string, speedClass: BatchEfficien
 // agentDisplayName names the agent after its current speed classification everywhere the UI shows
 // it — tooltips, dialog titles — so the classification the model is working from stays visible to
 // a human observer too, e.g. "Kora the Trailblazer".
-export function agentDisplayName(agent: AgentApiConfig, traversalHistory: readonly TraversalHistoryEntry[]): string {
+export function agentDisplayName(agent: AgentApiSeatConfig, traversalHistory: readonly TraversalHistoryEntry[]): string {
   return nameWithSpeedClass(agent.playerName, resolveBatchEfficiencyClass(traversalHistory, agent))
 }
 

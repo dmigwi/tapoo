@@ -3,7 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { GameClock } from "../clock"
 import { CONFIG } from "../config"
 import { createInteractiveMode } from "./interactive"
-import type { MazeActionResult, State, TraversalHistoryEntry } from "../types"
+import type { GameControls, MazeActionResult, State, TraversalHistoryEntry } from "../types"
+
+// testGameControls stands in for the game-owned mutations bindActionDispatch receives. vi.fn so a
+// test can assert what the UI drove, and a permissive default return so nothing depends on it.
+function testGameControls(): GameControls {
+  return { setRestartLevel: vi.fn(() => true) }
+}
+
 
 // createButton reproduces the data attributes used by keyboard and touch controls.
 function createButton({
@@ -48,6 +55,7 @@ function createState(overrides: Partial<State> = {}): State {
     lastRoundScore: 0,
     lastWinTraversalSpeedUnits: null,
     level: 1,
+    restartLevel: 1,
     maze: null,
     mazeDimensions: null,
     startPosition: null,
@@ -63,7 +71,7 @@ function createState(overrides: Partial<State> = {}): State {
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [], visitCount: 1 }
 }
 
 // These tests guard the interactive-mode translation layer and contract shape.
@@ -83,6 +91,11 @@ describe("interactive control mode", () => {
       touchButtons: [createButton({ move: "MoveRight" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
     const dispatch = vi.fn((action: { type: string }) => (
@@ -97,7 +110,7 @@ describe("interactive control mode", () => {
     expect(mode.name).toBe(CONFIG.runtime.controlModes.interactive)
     expect(mode.readLastActionResult()).toBeNull()
 
-    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), commitTurn)
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), commitTurn, testGameControls())
     elements.controls[0].click()
     elements.touchButtons[0].click()
     window.dispatchEvent(
@@ -141,13 +154,18 @@ describe("interactive control mode", () => {
       touchButtons: [],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
     const dispatch = vi.fn()
 
     const mode = createInteractiveMode(elements)
 
-    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn())
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn(), testGameControls())
     elements.controls[0].click()
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -169,6 +187,11 @@ describe("interactive control mode", () => {
       touchButtons: [createButton({ move: "MoveRight" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
     const dispatch = vi.fn(() => createActionResult({ lastMoveStatus: "invalid-move" }))
@@ -176,7 +199,7 @@ describe("interactive control mode", () => {
 
     const mode = createInteractiveMode(elements)
 
-    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), commitTurn)
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), commitTurn, testGameControls())
     elements.touchButtons[0].click()
 
     expect(dispatch).toHaveBeenCalledWith(
@@ -197,6 +220,11 @@ describe("interactive control mode", () => {
       touchButtons: [],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     const outsideInput = document.createElement("input")
     elements.app.tabIndex = 0
@@ -205,7 +233,7 @@ describe("interactive control mode", () => {
     const dispatch = vi.fn()
 
     const mode = createInteractiveMode(elements)
-    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn())
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn(), testGameControls())
 
     outsideInput.focus()
     window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
@@ -235,6 +263,11 @@ describe("interactive control mode", () => {
       touchButtons: [],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.tabIndex = 0
     elements.app.append(restartButton, nestedInput)
@@ -242,7 +275,7 @@ describe("interactive control mode", () => {
     const dispatch = vi.fn()
 
     const mode = createInteractiveMode(elements)
-    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn())
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn(), testGameControls())
 
     // Dispatch on the focused input itself (not window) so the event bubbles up with
     // event.target set to the input, matching real browser keydown delivery.
@@ -268,6 +301,11 @@ describe("interactive control mode", () => {
       touchButtons: [],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
     const firstDispatch = vi.fn()
@@ -277,8 +315,8 @@ describe("interactive control mode", () => {
 
     const readState = vi.fn(() => createState())
 
-    mode.bindActionDispatch(firstDispatch, readState, vi.fn())
-    mode.bindActionDispatch(secondDispatch, readState, vi.fn())
+    mode.bindActionDispatch(firstDispatch, readState, vi.fn(), testGameControls())
+    mode.bindActionDispatch(secondDispatch, readState, vi.fn(), testGameControls())
     elements.controls[0].click()
 
     expect(firstDispatch).not.toHaveBeenCalled()
@@ -295,13 +333,18 @@ describe("interactive control mode", () => {
       touchButtons: [],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
 
     const mode = createInteractiveMode(elements)
 
     expect(mode.readCurrentPlayer?.()).toBeNull()
 
-    mode.bindActionDispatch(vi.fn(), vi.fn(() => createState({ clock: null })), vi.fn())
+    mode.bindActionDispatch(vi.fn(), vi.fn(() => createState({ clock: null })), vi.fn(), testGameControls())
 
     expect(mode.readCurrentPlayer?.()).toBeNull()
   })
@@ -316,6 +359,11 @@ describe("interactive control mode", () => {
       touchButtons: [],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
 
     const clock = new GameClock(10_000)
@@ -327,7 +375,7 @@ describe("interactive control mode", () => {
     )
 
     const mode = createInteractiveMode(elements)
-    mode.bindActionDispatch(vi.fn(), readState, vi.fn())
+    mode.bindActionDispatch(vi.fn(), readState, vi.fn(), testGameControls())
 
     // Batch traversal-speed classification (Trailblazer/Navigator/Backtracker) does not apply to a
     // human moving one cell at a time, so this label carries no rate or class — just the name.

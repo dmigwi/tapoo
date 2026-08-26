@@ -1,7 +1,7 @@
 // Protocol helpers for the agent-api wire format: request sizing, response parsing, tool-call
 // argument/result marshalling, and the log previews applied to outbound payloads. Kept apart from
 // config.ts, which validates the agent records a human configures rather than anything on the wire.
-import { trimLoggedDescription } from "../logs"
+import { checksumLoggedDescription, trimLoggedDescription } from "../logs"
 import { isMoveAction } from "../traversal"
 import type {
   AgentChatMessage,
@@ -104,20 +104,35 @@ export function serializeToolResult(result: unknown): string {
   return typeof result === "string" ? result : JSON.stringify(result)
 }
 
-// previewLoggedMessage trims only static prompt messages; request-specific context stays intact.
-export function previewLoggedMessage(message: AgentChatMessage, keepFull: boolean): AgentChatMessage {
+// previewLoggedMessage trims only static prompt messages; request-specific context stays intact. The
+// checksum is computed from the original, untrimmed content, so it stays stable across both the
+// keepFull and preview cases and lets a downloaded log prove the content didn't drift mid-experiment
+// or between games.
+export function previewLoggedMessage(
+  message: AgentChatMessage,
+  keepFull: boolean,
+): AgentChatMessage & { content_checksum?: string } {
   if (message.role !== "system" && message.role !== "user") {
     return message
   }
 
-  return { ...message, content: trimLoggedDescription(message.content, keepFull) }
+  return {
+    ...message,
+    content_checksum: checksumLoggedDescription(message.content),
+    content: trimLoggedDescription(message.content, keepFull),
+  }
 }
 
-// previewLoggedTool trims repeated tool descriptions while preserving short tool names.
+// previewLoggedTool trims repeated tool descriptions while preserving short tool names. Same checksum
+// rationale as previewLoggedMessage above.
 export function previewLoggedTool(
   tool: object,
   keepFull: boolean,
-): { name: string; description: string | undefined } {
+): { name: string; description_checksum?: string; description: string | undefined } {
   const { function: fn } = tool as AgentToolDefinition
-  return { name: fn.name, description: trimLoggedDescription(fn.description, keepFull) }
+  return {
+    name: fn.name,
+    description_checksum: checksumLoggedDescription(fn.description),
+    description: trimLoggedDescription(fn.description, keepFull),
+  }
 }

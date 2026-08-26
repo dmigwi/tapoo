@@ -5,6 +5,7 @@ import {
   cellCoordinateFromGridPoint,
   cloneTraversalHistory,
   createMazeDimensions,
+  findTraversalHistoryEntry,
   gridPointFromCellCoordinate,
   isMoveAction,
   isSpaceFound,
@@ -55,13 +56,14 @@ const ALL_WALL_WEIGHTS = numericValuesOf<WallWeight>({
 })
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Self", row, col, openMoves: [] }
+  return { playerName: "Self", row, col, openMoves: [], visitCount: 1 }
 }
 
 function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.interactive,
     level: 1,
+    restartLevel: 1,
     maze: [
       ["|", "---", "-", "---", "|"],
       ["|", "   ", " ", "   ", "|"],
@@ -202,17 +204,33 @@ describe("traversal", () => {
     const currentVisit = traversalHistoryEntry({ row: 0, col: 1 }, "Blue", null)
     const history = [selfVisit(0, 0), currentVisit]
 
-    expect(currentVisit).toEqual({ playerName: "Blue", row: 0, col: 1, openMoves: [] })
+    expect(currentVisit).toEqual({ playerName: "Blue", row: 0, col: 1, openMoves: [], visitCount: 1 })
     expect(mazeCellKey(currentVisit)).toBe("0:1")
     expect(traversalHistoryIncludes(history, { row: 0, col: 1 })).toBe(true)
     expect(traversalHistoryIncludes(history, { row: 1, col: 0 })).toBe(false)
   })
 
+  it("finds the single entry recording a cell so callers can bump its visitCount", () => {
+    const revisited = { ...selfVisit(0, 1), visitCount: 3 }
+    const history = [selfVisit(0, 0), revisited]
+
+    // Returns the live entry, not a copy — game.ts mutates visitCount straight through it.
+    expect(findTraversalHistoryEntry(history, { row: 0, col: 1 })).toBe(revisited)
+    expect(findTraversalHistoryEntry(history, { row: 9, col: 9 })).toBeUndefined()
+  })
+
   it("clones only traversal histories that include the known start cell", () => {
-    const history = [selfVisit(0, 0), traversalHistoryEntry({ row: 0, col: 1 }, "Blue", null)]
+    // The first entry carries a visitCount above 1 deliberately: cloneTraversalHistory copies fields
+    // by explicit destructuring, so a clone that hardcoded or dropped the count would still pass
+    // against an all-ones fixture.
+    const history = [
+      { ...selfVisit(0, 0), visitCount: 4 },
+      traversalHistoryEntry({ row: 0, col: 1 }, "Blue", null),
+    ]
     const clone = cloneTraversalHistory(history)
 
     expect(clone).toEqual(history)
+    expect(clone[0].visitCount).toBe(4)
     expect(clone).not.toBe(history)
     expect(clone[0]).not.toBe(history[0])
     expect(() => cloneTraversalHistory([])).toThrow(
@@ -281,7 +299,7 @@ describe("traversal", () => {
     expect(
       isValidPersistedRound(
         createPersistedRound({
-          traversalHistory: [{ playerName: "Self", row: 0, col: 0, openMoves: ["MoveDown"] }],
+          traversalHistory: [{ playerName: "Self", row: 0, col: 0, openMoves: ["MoveDown"], visitCount: 1 }],
         }),
       ),
     ).toBe(false)
@@ -291,11 +309,29 @@ describe("traversal", () => {
     // Same prototype-pollution concern as isMoveAction: openMoves is restored from persisted or
     // agent-supplied data, so "constructor" must not be accepted as a valid move direction.
     expect(
-      isTraversalHistoryEntry({ playerName: "Self", row: 0, col: 0, openMoves: ["constructor"] }),
+      isTraversalHistoryEntry({
+        playerName: "Self", row: 0, col: 0, openMoves: ["constructor"], visitCount: 1,
+      }),
     ).toBe(false)
     expect(
-      isTraversalHistoryEntry({ playerName: "Self", row: 0, col: 0, openMoves: ["MoveRight"] }),
+      isTraversalHistoryEntry({
+        playerName: "Self", row: 0, col: 0, openMoves: ["MoveRight"], visitCount: 1,
+      }),
     ).toBe(true)
+  })
+
+  it("rejects a traversal history entry whose visitCount is missing or below one", () => {
+    // An entry only exists once its cell has been stood on, so anything under 1 is corrupt rather
+    // than merely unset — accepting it would understate how worked-over the cell is, which is
+    // exactly what agent/context.ts reads to derive visitStatus.
+    const validEntry = { playerName: "Self", row: 0, col: 0, openMoves: ["MoveRight"] }
+
+    expect(isTraversalHistoryEntry({ ...validEntry })).toBe(false)
+    expect(isTraversalHistoryEntry({ ...validEntry, visitCount: 0 })).toBe(false)
+    expect(isTraversalHistoryEntry({ ...validEntry, visitCount: -1 })).toBe(false)
+    expect(isTraversalHistoryEntry({ ...validEntry, visitCount: 1.5 })).toBe(false)
+    expect(isTraversalHistoryEntry({ ...validEntry, visitCount: "2" })).toBe(false)
+    expect(isTraversalHistoryEntry({ ...validEntry, visitCount: 3 })).toBe(true)
   })
 
   it("rejects persisted rounds with impossible dimensions or blocked positions", () => {

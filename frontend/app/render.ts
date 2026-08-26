@@ -102,6 +102,7 @@ function statusText(state: State, currentPlayerLabel: string | null): string {
   const [beforePlayer, afterPlayerRaw] = template.split("{player}")
   const afterPlayer = afterPlayerRaw
     .replace("{level}", String(state.level))
+    .replace("{turn}", String(state.turnCount))
     .replace("{score}", String(state.score))
 
   if (!currentPlayerLabel) {
@@ -475,13 +476,18 @@ function updateZoomPlaceholder(elements: Elements, state: State): void {
   // placeholder's own visibility the same way.
   elements.zoomPlaceholder.setAttribute("aria-hidden", String(!needsPlaceholder))
 
-  // The agent seats dock sits beside #terminal-body, not inside it (see .terminal-frame's flex
+  // The system palette sits beside #terminal-body, not inside it (see .terminal-frame's flex
   // layout), so the placeholder above — an overlay scoped to #terminal-body's own box — never
   // covers it on its own. Hide it explicitly while the placeholder is up: there's no usable game
-  // behind it to keep the seats dock relevant for. Only touched in agent-api mode, where
-  // control/agent.ts's own bind/unbind flow otherwise owns this element's visibility entirely.
-  if (elements.agentSeatsBody && isAgentApiMode(state.controlMode)) {
-    elements.agentSeatsBody.hidden = needsPlaceholder
+  // behind it to keep the palette relevant for.
+  //
+  // Agent-api only, for now: the palette is named for the wider role it is expected to grow into,
+  // but every control in it today exists for agent play. Interactive mode reaches it when a need
+  // there actually arises — showing it sooner would only narrow the maze, since the palette is a
+  // flex sibling of #terminal-body and takes width from it. control/agent.ts's bind/unbind owns
+  // this element's visibility otherwise.
+  if (elements.systemPalette && isAgentApiMode(state.controlMode)) {
+    elements.systemPalette.hidden = needsPlaceholder
   }
 }
 

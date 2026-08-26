@@ -1,12 +1,36 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
 import {
   generateMaze,
   getNavigationProfile,
   getMazeDimensions,
 } from "./maze"
+import { encodeMazeForLog } from "./logs"
+import type { PRNGGenerator } from "./maze"
 import { createMazeDimensions, openMovesFromCell } from "./traversal"
 import type { BaseDimensions, LevelDimensions } from "./types"
+
+// createXorshift128Generator is a small, deterministic PRNGGenerator for tests — a real varied
+// pseudorandom sequence, reproducible from a fixed seed, standing in for getPRNGInt. This replaces
+// mocking crypto.getRandomValues directly, which coupled tests to getPRNGInt's own internal
+// rejection-sampling/Uint32Array details rather than just the PRNGGenerator contract every caller
+// actually depends on.
+function createXorshift128Generator(seed: number): PRNGGenerator {
+  let [x, y, z, w] = [seed || 1, 362436069, 521288629, 88675123]
+
+  return (limit: number): number => {
+    if (limit <= 0) {
+      return 0
+    }
+
+    const t = x ^ (x << 11)
+    x = y
+    y = z
+    z = w
+    w = (w ^ (w >>> 19)) ^ (t ^ (t >>> 8))
+    return (w >>> 0) % limit
+  }
+}
 
 // This modeled terminal room approximates a 14-inch MacBook-class browser viewport:
 // physical panel 3024x1964px, CSS viewport about 1512x982px after device scaling,
@@ -20,10 +44,6 @@ function createLevelDimensions(level: number, dimensions: BaseDimensions): Level
 
 // These tests keep maze sizing, navigation tuning, and deterministic carving stable.
 describe("maze", () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
   it("returns the preferred maze dimensions for a fitting viewport", () => {
     expect(getMazeDimensions(1, { numCols: 20, numRows: 20 })).toEqual({
       level: 1,
@@ -178,22 +198,24 @@ describe("maze", () => {
   })
 
   it("generates a deterministic maze layout for a fixed random source", () => {
-    vi.spyOn(crypto, "getRandomValues").mockImplementation((array) => {
-      if (array instanceof Uint32Array) {
-        array.fill(0)
-      }
-      return array
+    const round = generateMaze(
+      createLevelDimensions(1, { numCols: 5, numRows: 5 }),
+      1,
+      undefined,
+      createXorshift128Generator(1),
+    )
+
+    expect(encodeMazeForLog(round.maze)).toEqual({
+      index_chars: ["|", "---", "-", "   ", " ", "\n"],
+      structure_checksum: "0xa5a0320f868645a2",
+      structure:
+        "01212101210503434303430501230103030503430343030503210301030503434303430501212103210503434303430503210301230503430343430501210121210",
     })
 
-    const round = generateMaze(createLevelDimensions(1, { numCols: 5, numRows: 5 }), 1)
-
-    expect(round).toMatchSnapshot()
     expect(round.startPosition).not.toEqual(round.finalPosition)
-    expect(round.maze[round.startPosition.y][round.startPosition.x]).toBe(
-      "   ",
-    )
-    expect(round.maze[round.finalPosition.y][round.finalPosition.x]).toBe(
-      "   ",
-    )
+    expect(round.startPosition).toEqual({ x: 3, y: 9 })
+    expect(round.finalPosition).toEqual({ x: 1, y: 1 })
+    expect(round.maze[round.startPosition.y][round.startPosition.x]).toBe("   ")
+    expect(round.maze[round.finalPosition.y][round.finalPosition.x]).toBe("   ")
   })
 })

@@ -9,6 +9,7 @@ import {
   previewLoggedTool,
   serializeToolResult,
 } from "./protocol"
+import { checksumLoggedDescription } from "../logs"
 import type { AgentChatMessage, AgentToolDefinition } from "../types"
 
 // Agent-config tests keep form validation separate from the larger agent control mode.
@@ -98,11 +99,17 @@ describe("agent protocol", () => {
       content: "This content stays complete.",
     }
 
+    const expectedChecksum = checksumLoggedDescription(staticMessage.content)
+
     expect(previewLoggedMessage(staticMessage, false)).toEqual({
       ...staticMessage,
+      content_checksum: expectedChecksum,
       content: `${staticMessage.content?.slice(0, 25)}...`,
     })
-    expect(previewLoggedMessage(staticMessage, true)).toEqual(staticMessage)
+    expect(previewLoggedMessage(staticMessage, true)).toEqual({
+      ...staticMessage,
+      content_checksum: expectedChecksum,
+    })
     expect(previewLoggedMessage(assistantMessage, false)).toEqual(assistantMessage)
   })
 
@@ -116,12 +123,16 @@ describe("agent protocol", () => {
       },
     }
 
+    const expectedChecksum = checksumLoggedDescription(tool.function.description)
+
     expect(previewLoggedTool(tool, false)).toEqual({
       name: "get_status",
+      description_checksum: expectedChecksum,
       description: `${tool.function.description.slice(0, 25)}...`,
     })
     expect(previewLoggedTool(tool, true)).toEqual({
       name: "get_status",
+      description_checksum: expectedChecksum,
       description: tool.function.description,
     })
   })

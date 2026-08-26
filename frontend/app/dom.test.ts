@@ -35,7 +35,19 @@ function setupTerminalDom(): void {
     <div id="terminal-measure"></div>
     <div id="touch-controls"></div>
     <div id="terminal-zoom-placeholder"></div>
-    <div id="agent-seats-body"></div>
+    <div id="info-gate" hidden></div>
+    <strong id="info-gate-title"></strong>
+    <p id="info-gate-message"></p>
+    <p id="info-gate-detail" hidden></p>
+    <button id="info-gate-proceed"></button>
+    <div id="system-palette"></div>
+    <button id="system-settings"></button>
+    <section id="system-settings-dialog" hidden></section>
+    <strong id="system-settings-title"></strong>
+    <input id="system-settings-restart-level" type="number" />
+    <span id="system-settings-status"></span>
+    <button id="system-settings-apply"></button>
+    <button id="system-settings-close"></button>
     <button id="tapoo-logs-reset"></button>
     <button id="tapoo-logs-download"></button>
     <div id="agent-seat-roster"></div>
@@ -44,6 +56,7 @@ function setupTerminalDom(): void {
     <input id="agent-config-player-name" />
     <input id="agent-config-model" />
     <select id="agent-config-api"></select>
+    <input id="agent-config-request-interval" />
     <input id="agent-config-endpoint" />
     <input id="agent-config-credential" />
     <span id="agent-config-credential-label"></span>
@@ -63,10 +76,13 @@ function setupTerminalDom(): void {
     <input id="agent-manage-enabled" />
     <span id="agent-manage-enabled-label"></span>
     <select id="agent-manage-reasoning-effort"></select>
+    <select id="agent-manage-api"></select>
+    <input id="agent-manage-request-interval" />
     <input id="agent-manage-echo-back-reasoning" />
     <span id="agent-manage-echo-back-reasoning-label"></span>
     <button id="agent-manage-apply"></button>
     <input id="agent-delete-confirm" />
+    <p id="agent-manage-status"></p>
     <button id="agent-manage-close"></button>
   `
 }

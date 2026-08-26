@@ -291,7 +291,14 @@ export function isTraversalHistoryEntry(value: unknown): value is TraversalHisto
     typeof value.playerName !== "string" ||
     value.playerName.length === 0 ||
     !("openMoves" in value) ||
-    !Array.isArray(value.openMoves)
+    !Array.isArray(value.openMoves) ||
+    // An entry only exists once its cell has been stood on, so any count below 1 is corrupt rather
+    // than merely unset — a restored round carrying one would silently understate how worked-over
+    // that cell is, which is exactly what visitStatus reads.
+    !("visitCount" in value) ||
+    typeof value.visitCount !== "number" ||
+    !Number.isInteger(value.visitCount) ||
+    value.visitCount < 1
   ) {
     return false
   }
@@ -308,7 +315,21 @@ export function traversalHistoryEntry(
     ...cell,
     playerName,
     openMoves: openMovesFromCell(mazeData, cell),
+    // Creating the entry is itself the first visit, so the count starts at 1 rather than 0.
+    visitCount: 1,
   }
+}
+
+// findTraversalHistoryEntry returns the single entry recording a cell, or undefined when the cell has
+// never been reached. One entry per cell is an invariant (see TraversalHistoryEntry), so callers that
+// need to bump visitCount can locate it here rather than scanning once to test membership and again
+// to mutate.
+export function findTraversalHistoryEntry(
+  traversalHistory: TraversalHistoryEntry[],
+  cell: CellCoordinate,
+): TraversalHistoryEntry | undefined {
+  const cellKey = mazeCellKey(cell)
+  return traversalHistory.find((visitedCell) => mazeCellKey(visitedCell) === cellKey)
 }
 
 // traversalHistoryIncludes reports whether the ordered visit history already contains a cell.
@@ -316,9 +337,7 @@ export function traversalHistoryIncludes(
   traversalHistory: TraversalHistoryEntry[],
   cell: CellCoordinate,
 ): boolean {
-  return traversalHistory.some(
-    (visitedCell) => mazeCellKey(visitedCell) === mazeCellKey(cell),
-  )
+  return findTraversalHistoryEntry(traversalHistory, cell) !== undefined
 }
 
 // cloneTraversalHistory preserves first-visit order while detaching callers from shared entries.
@@ -329,8 +348,8 @@ export function cloneTraversalHistory(
     throw new Error("traversalHistory must include the known start cell")
   }
 
-  return history.map(({ playerName, row, col, openMoves }) => ({ 
-    playerName, row, col, openMoves: [...openMoves] 
+  return history.map(({ playerName, row, col, openMoves, visitCount }) => ({
+    playerName, row, col, visitCount, openMoves: [...openMoves], 
   }))
 }
 

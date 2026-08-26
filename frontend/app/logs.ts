@@ -77,6 +77,71 @@ export function trimLoggedDescription(
   return `${description.slice(0, loggedDescriptionPreviewLength)}...`
 }
 
+// fnv1a64Checksum is the one checksum algorithm used consistently for every logged text field — not
+// a security control, just cheap proof a prompt/tool description didn't silently change
+// mid-experiment. 64-bit for lower collision odds than the 32-bit variant. Hashes UTF-8 bytes (via
+// TextEncoder, the same encoding any external tool reproducing this outside the app would use)
+// rather than JS's own UTF-16 code units, so a non-ASCII character (a curly quote, an em dash, an
+// arrow in a tool description) hashes identically here and in that external tool.
+// Implementation reference: https://www.ietf.org/archive/id/draft-eastlake-fnv-22.html
+export function fnv1a64Checksum(text: string): string {
+  const offsetBasis = 0xcbf29ce484222325n  // 14695981039346656037 - the fixed FNV-1a 64-bit offset from the spec.
+  const prime = 0x100000001b3n  // 1,099,511,628,211 - the fixed FNV-1a 64-bit prime from the spec.
+
+  let hash = offsetBasis
+  for (const byte of new TextEncoder().encode(text)) {
+    hash ^= BigInt(byte)
+    hash = BigInt.asUintN(64, hash * prime)
+  }
+  return `0x${hash.toString(16).padStart(16, "0")}`
+}
+
+// checksumLoggedDescription computes fnv1a64Checksum for a description/content field, or undefined when
+// there's nothing to hash — mirrors trimLoggedDescription's own undefined handling.
+export function checksumLoggedDescription(description: string | undefined): string | undefined {
+  return description === undefined ? undefined : fnv1a64Checksum(description)
+}
+
+// EncodedMazeForLog is fully self-contained: index_chars lists every distinct token the encoded maze
+// actually used, in first-seen order, with "\n" always appended last as the row separator. No
+// wallWeight or CONFIG lookup is needed to decode it — index_chars[Number(digit)] for every digit in
+// structure (including the separator digits) reconstructs the exact original printable maze text.
+export type EncodedMazeForLog = {
+  index_chars: string[]
+  // structure_checksum lets offline consumers verify the compact structure string arrived intact
+  // before expanding it with index_chars. Fnva1-64bit checksum hash.
+  structure_checksum: string
+  // structure's exact length is (2R+1)(2C+1) + 2R for an R x C logical maze (renderCellStep 2: one
+  // digit per rendered cell, plus one row-separator digit per row boundary) — for a roughly square
+  // maze (R ~ C ~ sqrt(area)), that's well estimated from mazeDimensions.area alone as
+  // 4*area + 6*sqrt(area) + 1.
+  structure: string
+}
+
+// encodeMazeForLog packs a maze grid into one compact, exactly reversible representation instead of
+// a nested rows array: each cell becomes the single digit naming its position in index_chars, discovered
+// dynamically from this maze's own content rather than assumed from wallWeight/CONFIG.
+export function encodeMazeForLog(maze: string[][]): EncodedMazeForLog {
+  const index_chars: string[] = []
+  const indexByToken = new Map<string, number>()
+  const codeFor = (token: string): number => {
+    const cached = indexByToken.get(token)
+    if (cached !== undefined) {
+      return cached
+    }
+
+    const index = index_chars.length
+    indexByToken.set(token, index)
+    index_chars.push(token)
+    return index
+  }
+
+  const rows = maze.map((row) => row.map(codeFor).join(""))
+  const rowSeparator = String(codeFor("\n"))
+  const structure = rows.join(rowSeparator)
+  return { index_chars, structure_checksum: fnv1a64Checksum(structure), structure }
+}
+
 // initTapooLogs seeds the in-memory log count from sessionStorage entries that survived a page
 // reload for the given mode. Call once at page startup after the control mode is resolved.
 export function initTapooLogs(modeName: MazeControlModeName): void {

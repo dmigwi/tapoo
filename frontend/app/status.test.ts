@@ -78,6 +78,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: "interactive",
     level: 1,
+    restartLevel: 1,
     status: "running",
     mazeDimensions: { numCols: 1, numRows: 1, area: 1 },
     maze: [
@@ -88,7 +89,7 @@ function createState(overrides: Partial<State> = {}): State {
     startPosition: { x: 1, y: 1 },
     playerPosition: { x: 1, y: 1 },
     finalPosition: { x: 1, y: 1 },
-    traversalHistory: [{ playerName: "Self", row: 0, col: 0, openMoves: [] }],
+    traversalHistory: [{ playerName: "Self", row: 0, col: 0, openMoves: [], visitCount: 1 }],
     score: 100,
     lastRoundScore: 0,
     lastAttemptRetentionUnits: null,

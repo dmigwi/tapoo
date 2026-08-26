@@ -3,7 +3,12 @@ import {
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
 } from "./config"
-import { isAgentApiProvider, isAgentReasoningEffort, normalizeAgentEndpoint } from "./agent/config"
+import {
+  hasValidAgentPlayerName,
+  isAgentApiProvider,
+  isAgentReasoningEffort,
+  normalizeAgentEndpoint,
+} from "./agent/config"
 import { isAgentSeatId } from "./agent/seats"
 import { canPersistRoundStatus, hasActiveRoundState } from "./status"
 import {
@@ -15,6 +20,8 @@ import {
 } from "./traversal"
 import type {
   AgentApiConfig,
+  AgentApiSeatConfig,
+  AgentApiSessionMetrics,
   MazeControlModeName,
   PersistedGameSetup,
   PersistedPreferences,
@@ -41,19 +48,80 @@ function storageKey(
   return `tapoo.v${storageConfig.version}.${modeName}.${suffix}`
 }
 
-// removeStaleStorageEntries clears old versioned Tapoo keys without touching current-version data.
-function removeStaleStorageEntries(storage: Storage): void {
+// StaleStorageSummary describes what an older schema version left behind, in the only terms that
+// can be established without reading it: how many keys exist and which versions wrote them.
+export type StaleStorageSummary = {
+  versions: string[]
+  itemCount: number
+}
+
+// STALE_STORAGE_KEY_VERSION captures the version segment of a Tapoo key. The version is itself
+// dotted (4.82), so the segment is matched as digits-and-dots up to the mode name rather than by
+// splitting on "." — which would read "tapoo.v4.82.agent-api.agentConfigs" as version "4".
+const STALE_STORAGE_KEY_VERSION = /^tapoo\.v(\d+(?:\.\d+)*)\./
+
+// staleStorageKeys lists the keys a previous schema version wrote, without touching their values.
+// Everything downstream — the count, the version list, the deletion — is derived from key names
+// alone: a payload written under an older schema must never be decoded by this build, because
+// interpreting it against current validators is the migration hazard the versioning exists to
+// avoid.
+function staleStorageKeys(storage: Storage): string[] {
   const currentPrefix = `tapoo.v${storageConfig.version}.`
+  const staleKeys: string[] = []
 
   for (let index = storage.length - 1; index >= 0; index -= 1) {
     const key = storage.key(index)
     if (key?.startsWith("tapoo.v") && !key.startsWith(currentPrefix)) {
-      storage.removeItem(key)
+      staleKeys.push(key)
     }
+  }
+
+  return staleKeys
+}
+
+// readStaleStorageKeys tolerates a storage object that throws on access at all, which is what a
+// browser in private mode or with site data blocked does — there, "no stale data" is the only
+// answer available, and the same best-effort posture the rest of this file takes.
+function readStaleStorageKeys(readStorage: () => Storage): string[] {
+  try {
+    return staleStorageKeys(readStorage())
+  } catch {
+    return []
   }
 }
 
-// clearStaleStorageVersions runs once during startup to discard obsolete browser storage versions.
+// staleStorageSummary reports what clearStaleStorageVersions would remove, so the user can be told
+// what they are agreeing to before it happens rather than after.
+export function staleStorageSummary(): StaleStorageSummary {
+  const staleKeys = [
+    ...readStaleStorageKeys(() => window.localStorage),
+    ...readStaleStorageKeys(() => window.sessionStorage),
+  ]
+
+  const versions = new Set<string>()
+  for (const key of staleKeys) {
+    const version = STALE_STORAGE_KEY_VERSION.exec(key)?.[1]
+    if (version) {
+      versions.add(version)
+    }
+  }
+
+  return {
+    versions: [...versions].sort(),
+    itemCount: staleKeys.length,
+  }
+}
+
+// removeStaleStorageEntries clears old versioned Tapoo keys without touching current-version data.
+function removeStaleStorageEntries(storage: Storage): void {
+  for (const key of staleStorageKeys(storage)) {
+    storage.removeItem(key)
+  }
+}
+
+// clearStaleStorageVersions discards obsolete browser storage versions. It is deliberately NOT
+// called during startup: deletion happens only after the user acknowledges it (see tapoo.ts), so
+// an upgrade can never silently destroy stored agent credentials or progress.
 export function clearStaleStorageVersions(): void {
   try {
     removeStaleStorageEntries(window.localStorage)
@@ -137,37 +205,20 @@ function decodeStoredPayload<T>(encodedPayload: string): T | null {
   }
 }
 
-// Agent API configuration persistence.
-
-// hasValidAgentPlayerName enforces the compact label range used by the roster.
-function hasValidAgentPlayerName(playerName: string): boolean {
-  return (
-    playerName.length >= agentConfig.playerNameMinLength &&
-    playerName.length <= agentConfig.playerNameMaxLength
-  )
-}
+// Agent API localStorage configuration persistence.
 
 // normalizeAgentApiConfig validates persisted data and restores endpoint as a URL object.
 function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   if (
     typeof value !== "object" ||
     value === null ||
-    !("id" in value) ||
     !("playerName" in value) ||
     !("model" in value) ||
-    !("endpoint" in value) ||
-    !("enabled" in value)
+    !("endpoint" in value)
   ) {
     return null
   }
 
-  const disabledReasonValue = "disabledReason" in value ? value.disabledReason : undefined
-  const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
-  const gameLevel = "gameLevel" in value ? value.gameLevel : undefined
-  const turnCount = "turnCount" in value ? value.turnCount : undefined
-  const levelTurnCount = "levelTurnCount" in value ? value.levelTurnCount : undefined
-  const decayUnitsCharged = "decayUnitsCharged" in value ? value.decayUnitsCharged : undefined
-  const cumulativeRoundCount = "cumulativeRoundCount" in value ? value.cumulativeRoundCount : undefined
   // api is deliberately not part of the required-key gate above: a record persisted before this
   // field existed must still load, not be dropped. An absent or unrecognized value coerces to
   // "ollama" (validAgentApiProvider), the same self-healing shape validWallWeightPreference uses —
@@ -183,9 +234,32 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   const reasoningEffort = isAgentReasoningEffort(reasoningEffortValue) && agentConfig.reasoningEffortOptions[api].includes(reasoningEffortValue)
       ? reasoningEffortValue
       : agentConfig.reasoningEffortDefaults[api]
+  // seatId was called id before agents needed an identity separate from the slot they sit in, and
+  // the storage version was deliberately not bumped (that would rotate the key and starve the
+  // legacy migration below of the very records it reads). So a record keyed the old way still
+  // loads under the old name and is rewritten under the new one by the next save.
+  const seatIdValue = "seatId" in value ? value.seatId : "id" in value ? value.id : undefined
+  // sessionId self-heals like api above rather than gating the record: a config saved before this
+  // field existed still loads, and gets stamped now. The stamp only has to be stable from this
+  // point on, which the write-back in loadPersistedAgentApiConfigs guarantees — its normalized
+  // output differs from what was decoded, so the backfilled value is persisted immediately.
+  const sessionIdValue = "sessionId" in value ? value.sessionId : undefined
+  const sessionId =
+    typeof sessionIdValue === "number" && Number.isFinite(sessionIdValue) && sessionIdValue > 0
+      ? sessionIdValue
+      : Date.now()
   const credentialValue = "credential" in value ? value.credential : undefined
   const extraHeadersValue = "extraHeaders" in value ? value.extraHeaders : undefined
   const echoBackReasoningValue = "echoBackReasoning" in value ? value.echoBackReasoning : undefined
+  const requestIntervalSecondsValue = "requestIntervalSeconds" in value ? value.requestIntervalSeconds : undefined
+  const requestIntervalSeconds: number | null =
+    requestIntervalSecondsValue === undefined
+      ? timing.defaultAgentApiRequestIntervalSeconds
+      : (typeof requestIntervalSecondsValue === "number" && Number.isInteger(requestIntervalSecondsValue) &&
+          requestIntervalSecondsValue >= agentConfig.requestIntervalMinSeconds && 
+          requestIntervalSecondsValue <= agentConfig.requestIntervalMaxSeconds)
+        ? requestIntervalSecondsValue
+        : null
   const endpointValue = value.endpoint
   const endpoint =
     endpointValue instanceof URL
@@ -195,45 +269,32 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
         : null
 
   if (
-    typeof value.id === "number" &&
-    Number.isInteger(value.id) && value.id >= 1 &&
+    typeof seatIdValue === "number" &&
+    Number.isInteger(seatIdValue) && seatIdValue >= 1 &&
     typeof value.playerName === "string" &&
     hasValidAgentPlayerName(value.playerName.trim()) &&
     typeof value.model === "string" && value.model.length > 0 &&
-    endpoint !== null && typeof value.enabled === "boolean" &&
-    (disabledReasonValue === undefined || disabledReasonValue === "network-error") &&
-    (lastErrorAt === undefined || (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt))) &&
-    (gameLevel === undefined || (typeof gameLevel === "number" && Number.isInteger(gameLevel) && gameLevel >= 0)) &&
-    (cumulativeRoundCount === undefined || (typeof cumulativeRoundCount === "number" && Number.isInteger(cumulativeRoundCount) && cumulativeRoundCount >= 0)) &&
-    (turnCount === undefined || (typeof turnCount === "number" && Number.isInteger(turnCount) && turnCount >= 0)) &&
-    (levelTurnCount === undefined || (typeof levelTurnCount === "number" && Number.isInteger(levelTurnCount) && levelTurnCount >= 0)) &&
-    (decayUnitsCharged === undefined || (typeof decayUnitsCharged === "number" && Number.isInteger(decayUnitsCharged) && decayUnitsCharged >= 0)) &&
+    requestIntervalSeconds !== null &&
+    endpoint !== null &&
     (credentialValue === undefined || typeof credentialValue === "string") &&
     (extraHeadersValue === undefined || typeof extraHeadersValue === "string") &&
     (echoBackReasoningValue === undefined || typeof echoBackReasoningValue === "boolean")
   ) {
-    const disabledReason = disabledReasonValue === "network-error" ? disabledReasonValue : undefined
     const credential = typeof credentialValue === "string" && credentialValue.length > 0 ? credentialValue : undefined
     const extraHeaders = typeof extraHeadersValue === "string" && extraHeadersValue.length > 0 ? extraHeadersValue : undefined
 
     return {
-      id: value.id,
+      seatId: seatIdValue,
+      sessionId,
       playerName: value.playerName.trim(),
       model: value.model,
       endpoint,
       api,
       reasoningEffort,
-      enabled: value.enabled,
-      ...(disabledReason ? { disabledReason } : {}),
+      requestIntervalSeconds,
       ...(credential ? { credential } : {}),
       ...(extraHeaders ? { extraHeaders } : {}),
       ...(echoBackReasoningValue === true ? { echoBackReasoning: true } : {}),
-      ...(typeof gameLevel === "number" ? { gameLevel } : {}),
-      ...(typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
-      ...(typeof turnCount === "number" ? { turnCount } : {}),
-      ...(typeof levelTurnCount === "number" ? { levelTurnCount } : {}),
-      ...(typeof decayUnitsCharged === "number" ? { decayUnitsCharged } : {}),
-      ...(typeof cumulativeRoundCount === "number" ? { cumulativeRoundCount } : {}),
     }
   }
 
@@ -254,8 +315,8 @@ function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
     const config = normalizeAgentApiConfig(rawConfig)
     if (
       !config ||
-      !isAgentSeatId(config.id) ||
-      seenIds.has(config.id)
+      !isAgentSeatId(config.seatId) ||
+      seenIds.has(config.seatId)
     ) {
       continue
     }
@@ -266,12 +327,12 @@ function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
       continue
     }
 
-    seenIds.add(config.id)
+    seenIds.add(config.seatId)
     seenPlayerNames.add(playerNameKey)
     normalizedConfigs.push({ ...config, playerName })
   }
 
-  return normalizedConfigs.sort((left, right) => left.id - right.id)
+  return normalizedConfigs.sort((left, right) => left.seatId - right.seatId)
 }
 
 // loadPersistedAgentApiConfigs restores the configurable HTTP agents for agent-api mode.
@@ -286,7 +347,11 @@ export function loadPersistedAgentApiConfigs(): AgentApiConfig[] {
 
     const decodedConfigs = decodeStoredPayload<unknown>(storedConfigs)
     const normalizedConfigs = normalizeAgentApiConfigs(decodedConfigs)
-
+    // The volatile counters an older build kept inside these records are deliberately not carried
+    // over. Tapoo resets mismatched state rather than migrating it, and lifting the old enabled
+    // flag would be the one path able to switch an agent on in a tab nobody switched it on in —
+    // exactly what AgentApiSessionMetrics.enabled promises never happens. They are dropped here by
+    // the save below, which rewrites each record through normalizeAgentApiConfig's field list.
     if (JSON.stringify(decodedConfigs) !== JSON.stringify(normalizedConfigs)) {
       savePersistedAgentApiConfigs(normalizedConfigs)
     }
@@ -309,27 +374,241 @@ export function savePersistedAgentApiConfigs(configs: AgentApiConfig[]): void {
   }
 }
 
-// disableAgentApiConfigForNetworkError marks one transport-failing agent ineligible for later turns.
-export function disableAgentApiConfigForNetworkError(
-  failedAgent: AgentApiConfig,
-): AgentApiConfig[] {
-  const nextConfigs = loadPersistedAgentApiConfigs().map((agent) => {
-    if (agent.id !== failedAgent.id) {
-      return agent
-    }
+// AgentSessionIdentity is the pair that names one concrete agent instance: which seat it sits in,
+// and which occupant of that seat it is. Every write into sessionStorage is keyed by both.
+type AgentSessionIdentity = Pick<AgentApiConfig, "seatId" | "sessionId">
 
-    const disabledAgent: AgentApiConfig = {
-      ...agent,
+// disableAgentApiConfigForNetworkError marks one transport-failing agent ineligible for this session.
+export function disableAgentApiConfigForNetworkError(failedAgent: AgentSessionIdentity): void {
+  savePersistedAgentSessionMetrics(
+    upsertAgentSessionMetric(loadPersistedAgentSessionMetrics(), failedAgent, (stat) => ({
+      ...stat,
       enabled: false,
-      disabledReason: "network-error",
+      disabledReason: "network-error" as const,
       lastErrorAt: Date.now(),
+    })),
+  )
+}
+
+// Agent API sessionStorage metric persistence.
+
+// upsertAgentSessionMetric applies edit to this seat's row, creating one if the seat has none.
+// Rows filed under the same seat id by a previous occupant are dropped rather than edited: they
+// describe an agent that no longer exists, and inheriting them is exactly the cross-tab leak
+// sessionId was added to close.
+function upsertAgentSessionMetric(
+  stats: AgentApiSessionMetrics[],
+  agent: AgentSessionIdentity,
+  edit: (stat: AgentApiSessionMetrics) => AgentApiSessionMetrics,
+): AgentApiSessionMetrics[] {
+  const ownStats = stats.filter((stat) => stat.seatId !== agent.seatId || stat.sessionId === agent.sessionId)
+  if (!ownStats.some((stat) => stat.seatId === agent.seatId)) {
+    return [...ownStats, edit({ seatId: agent.seatId, sessionId: agent.sessionId, enabled: false })]
+  }
+
+  return ownStats.map((stat) => (stat.seatId === agent.seatId ? edit(stat) : stat))
+}
+
+function normalizeAgentSessionMetric(value: unknown): AgentApiSessionMetrics | null {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("seatId" in value)
+  ) {
+    return null
+  }
+
+  const sessionIdValue = "sessionId" in value ? value.sessionId : undefined
+  const enabledValue = "enabled" in value ? value.enabled : false
+  const disabledReasonValue = "disabledReason" in value ? value.disabledReason : undefined
+  const lastErrorAt = "lastErrorAt" in value ? value.lastErrorAt : undefined
+  const gameLevel = "gameLevel" in value ? value.gameLevel : undefined
+  const cumulativeRoundCount = "cumulativeRoundCount" in value ? value.cumulativeRoundCount : undefined
+  const levelTurnCount = "levelTurnCount" in value ? value.levelTurnCount : undefined
+  const turnCount = "turnCount" in value ? value.turnCount : undefined
+  const decayUnitsCharged = "decayUnitsCharged" in value ? value.decayUnitsCharged : undefined
+
+  if (
+    typeof value.seatId === "number" &&
+    isAgentSeatId(value.seatId) &&
+    typeof sessionIdValue === "number" && Number.isFinite(sessionIdValue) && sessionIdValue > 0 &&
+    typeof enabledValue === "boolean" &&
+    (disabledReasonValue === undefined || disabledReasonValue === "network-error") &&
+    (lastErrorAt === undefined || (typeof lastErrorAt === "number" && Number.isFinite(lastErrorAt))) &&
+    (gameLevel === undefined || (typeof gameLevel === "number" && Number.isInteger(gameLevel) && gameLevel >= 0)) &&
+    (cumulativeRoundCount === undefined || (typeof cumulativeRoundCount === "number" && Number.isInteger(cumulativeRoundCount) && cumulativeRoundCount >= 0)) &&
+    (levelTurnCount === undefined || (typeof levelTurnCount === "number" && Number.isInteger(levelTurnCount) && levelTurnCount >= 0)) &&
+    (turnCount === undefined || (typeof turnCount === "number" && Number.isInteger(turnCount) && turnCount >= 0)) &&
+    (decayUnitsCharged === undefined || (typeof decayUnitsCharged === "number" && Number.isInteger(decayUnitsCharged) && decayUnitsCharged >= 0))
+  ) {
+    const disabledReason =
+      !enabledValue && disabledReasonValue === "network-error"
+        ? disabledReasonValue
+        : undefined
+    return {
+      seatId: value.seatId,
+      sessionId: sessionIdValue,
+      enabled: enabledValue,
+      ...(disabledReason ? { disabledReason } : {}),
+      ...(disabledReason && typeof lastErrorAt === "number" ? { lastErrorAt } : {}),
+      ...(typeof gameLevel === "number" ? { gameLevel } : {}),
+      ...(typeof cumulativeRoundCount === "number" ? { cumulativeRoundCount } : {}),
+      ...(typeof levelTurnCount === "number" ? { levelTurnCount } : {}),
+      ...(typeof turnCount === "number" ? { turnCount } : {}),
+      ...(typeof decayUnitsCharged === "number" ? { decayUnitsCharged } : {}),
+    }
+  }
+
+  return null
+}
+
+function normalizeAgentSessionMetrics(stats: unknown): AgentApiSessionMetrics[] {
+  if (!Array.isArray(stats)) {
+    return []
+  }
+
+  const seenIds = new Set<number>()
+  const normalizedStats: AgentApiSessionMetrics[] = []
+  for (const rawStat of stats) {
+    const stat = normalizeAgentSessionMetric(rawStat)
+    if (!stat || seenIds.has(stat.seatId)) {
+      continue
     }
 
-    return disabledAgent
+    seenIds.add(stat.seatId)
+    normalizedStats.push(stat)
+  }
+
+  return normalizedStats.sort((left, right) => left.seatId - right.seatId)
+}
+
+function loadPersistedAgentSessionMetrics(): AgentApiSessionMetrics[] {
+  try {
+    const storedStats = window.sessionStorage.getItem(
+      storageKey(agentApiModeName, storageConfig.suffixes.sessionMetrics),
+    )
+    if (!storedStats) {
+      return []
+    }
+
+    return normalizeAgentSessionMetrics(decodeStoredPayload<unknown>(storedStats))
+  } catch {
+    return []
+  }
+}
+
+function savePersistedAgentSessionMetrics(stats: AgentApiSessionMetrics[]): void {
+  try {
+    window.sessionStorage.setItem(
+      storageKey(agentApiModeName, storageConfig.suffixes.sessionMetrics),
+      encodeStoredPayload(normalizeAgentSessionMetrics(stats)),
+    )
+  } catch {
+    // Ignore storage failures so live agent stats remain best-effort only.
+  }
+}
+
+function agentSessionMetricsFromRuntimeConfigs(configs: AgentApiSeatConfig[]): AgentApiSessionMetrics[] {
+  return normalizeAgentSessionMetrics(configs)
+}
+
+function mergeAgentSessionMetrics(configs: AgentApiConfig[]): AgentApiSeatConfig[] {
+  const storedStats = loadPersistedAgentSessionMetrics()
+  const statsByAgentId = new Map(storedStats.map((stat) => [stat.seatId, stat] as const))
+  const runtimeConfigs = configs.map((config) => {
+    // A row applies only if it was filed against this exact occupant. A seat this tab never saw
+    // deleted and refilled still holds its predecessor's row under the same id; falling back to
+    // enabled: false there is what stops a brand-new agent from starting out live in this tab, or
+    // being scored against the turns and decay its predecessor ran up.
+    const stat = statsByAgentId.get(config.seatId)
+    return stat && stat.sessionId === config.sessionId
+      ? { ...config, ...stat }
+      : { ...config, enabled: false }
   })
 
-  savePersistedAgentApiConfigs(nextConfigs)
-  return nextConfigs
+  // Pruning belongs on this read path rather than at the delete: the tab that removed a seat
+  // clears only its own sessionStorage, so every other tab either notices the orphan here or
+  // carries it forever. The write settles after one pass — every surviving row then matches a
+  // live config, so the condition below stops firing.
+  const liveAgents = new Set(configs.map((config) => `${config.seatId}:${config.sessionId}`))
+  if (storedStats.some((stat) => !liveAgents.has(`${stat.seatId}:${stat.sessionId}`))) {
+    savePersistedAgentSessionMetrics(agentSessionMetricsFromRuntimeConfigs(runtimeConfigs))
+  }
+
+  return runtimeConfigs
+}
+
+// resetAgentSessionAvailability starts or replaces this tab's volatile state for one seat. It is
+// used when a user creates a fresh agent in a seat, so stale counters from an earlier occupant do
+// not leak into the new runtime view.
+export function resetAgentSessionAvailability(
+  agent: AgentSessionIdentity,
+  enabled: boolean,
+): void {
+  const existingStats = loadPersistedAgentSessionMetrics().filter((stat) => stat.seatId !== agent.seatId)
+  savePersistedAgentSessionMetrics([...existingStats, { seatId: agent.seatId, sessionId: agent.sessionId, enabled }])
+}
+
+// updateAgentSessionAvailability edits only this tab's enabled/disabled state while preserving any
+// current-round counters that belong to the same seat.
+export function updateAgentSessionAvailability(
+  agent: AgentSessionIdentity,
+  enabled: boolean,
+): void {
+  savePersistedAgentSessionMetrics(
+    upsertAgentSessionMetric(loadPersistedAgentSessionMetrics(), agent, (stat) => {
+      // A manual toggle clears any network-error disable, so re-enabling a burnt agent is enough to
+      // put it back in rotation without also wiping the round counters it has already earned.
+      const nextStat = { ...stat, enabled }
+      delete nextStat.disabledReason
+      delete nextStat.lastErrorAt
+      return nextStat
+    }),
+  )
+}
+
+// clearAgentSessionMetrics removes this tab's volatile state for a deleted seat, preventing a later
+// occupant of the same seat id from inheriting stale availability or round counters.
+export function clearAgentSessionMetrics(seatId: number): void {
+  savePersistedAgentSessionMetrics(
+    loadPersistedAgentSessionMetrics().filter((stat) => stat.seatId !== seatId),
+  )
+}
+
+// loadAgentApiSeatConfigs overlays this tab's session metrics onto durable agent configs.
+export function loadAgentApiSeatConfigs(): AgentApiSeatConfig[] {
+  return mergeAgentSessionMetrics(loadPersistedAgentApiConfigs())
+}
+
+function isSameAgentRoundAttempt(
+  agent: AgentApiSeatConfig,
+  level: number,
+  cumulativeRoundCount: number,
+): boolean {
+  return agent.gameLevel === level &&
+    agent.cumulativeRoundCount === cumulativeRoundCount
+}
+
+// agentForCurrentRound returns an agent view whose volatile counters belong to this tab/round.
+// It does not persist by itself; turn commits and fresh-round setup own those writes.
+export function agentForCurrentRound(
+  agent: AgentApiSeatConfig,
+  level: number,
+  cumulativeRoundCount: number,
+  levelTurnCount: number,
+): AgentApiSeatConfig {
+  if (isSameAgentRoundAttempt(agent, level, cumulativeRoundCount)) {
+    return agent
+  }
+
+  return {
+    ...agent,
+    gameLevel: level,
+    cumulativeRoundCount,
+    levelTurnCount,
+    turnCount: 0,
+    decayUnitsCharged: 0,
+  }
 }
 
 // recordAgentTurnStats persists one agent's post-turn counters. levelTurnCount is synchronized to
@@ -339,8 +618,8 @@ export function disableAgentApiConfigForNetworkError(
 // seat: the former counts every agent's turns together, the latter is shared spend with no
 // attribution to any individual agent.
 //
-// Both gameLevel and cumulativeRoundCount are required in the isSameAttempt check below — do
-// not simplify this to cumulativeRoundCount alone. Reasoning:
+// gameLevel and cumulativeRoundCount are required in the isSameAttempt check below — do not
+// simplify this to cumulativeRoundCount alone. Reasoning:
 //   - Level alone can't tell a retry of the same level apart from continuing it, hence
 //     cumulativeRoundCount.
 //   - cumulativeRoundCount alone looks sufficient (it's a strictly increasing, never-reused
@@ -355,19 +634,24 @@ export function disableAgentApiConfigForNetworkError(
 //     stale decayUnitsCharged from a prior session, corrupting the batchEfficiencyLevel an agent
 //     is scored against.
 export function recordAgentTurnStats(
-  turnAgent: AgentApiConfig,
+  turnAgent: AgentApiSeatConfig,
   level: number,
   cumulativeRoundCount: number,
   chargedDecayUnits: number,
   levelTurnCount: number,
-): AgentApiConfig {
-  let updatedAgent: AgentApiConfig = turnAgent
+): AgentApiSeatConfig {
+  let updatedAgent: AgentApiSeatConfig = turnAgent
+  let foundTurnAgent = false
 
-  const nextConfigs = loadPersistedAgentApiConfigs().map((agent) => {
-    const isSameAttempt = agent.gameLevel === level && agent.cumulativeRoundCount === cumulativeRoundCount
+  const nextConfigs = loadAgentApiSeatConfigs().map((agent) => {
+    const isSameAttempt = isSameAgentRoundAttempt(agent, level, cumulativeRoundCount)
     const priorDecayUnitsCharged = isSameAttempt ? (agent.decayUnitsCharged ?? 0) : 0
     const priorTurnCount = isSameAttempt ? (agent.turnCount ?? 0) : 0
-    const isTurnAgent = agent.id === turnAgent.id
+    // Both halves of the identity, matching every other writer here. seatId alone would credit a
+    // turn to whoever occupies the seat now: a seat deleted and refilled while this turn's request
+    // was in flight leaves a same-seatId, different-sessionId agent, and the finishing turn would
+    // charge its counters to the newcomer.
+    const isTurnAgent = agent.seatId === turnAgent.seatId && agent.sessionId === turnAgent.sessionId
     const nextAgent = {
       ...agent,
       gameLevel: level,
@@ -378,13 +662,30 @@ export function recordAgentTurnStats(
     }
 
     if (isTurnAgent) {
+      foundTurnAgent = true
       updatedAgent = nextAgent
     }
 
     return nextAgent
   })
 
-  savePersistedAgentApiConfigs(nextConfigs)
+  if (!foundTurnAgent) {
+    const isSameAttempt = isSameAgentRoundAttempt(turnAgent, level, cumulativeRoundCount)
+    updatedAgent = {
+      ...turnAgent,
+      gameLevel: level,
+      cumulativeRoundCount,
+      levelTurnCount,
+      turnCount: (isSameAttempt ? (turnAgent.turnCount ?? 0) : 0) + 1,
+      decayUnitsCharged: (isSameAttempt ? (turnAgent.decayUnitsCharged ?? 0) : 0) + chargedDecayUnits,
+    }
+  }
+
+  // A turn agent missing from the roster was deleted while its request was in flight. Its updated
+  // counters are still returned so this turn can finish reporting against them, but nothing is
+  // written back: persisting a row for an agent that no longer has a config would recreate the
+  // orphan mergeAgentSessionMetrics prunes, and hand it to whoever occupies the seat next.
+  savePersistedAgentSessionMetrics(agentSessionMetricsFromRuntimeConfigs(nextConfigs))
   return updatedAgent
 }
 
@@ -395,8 +696,8 @@ export function recordAgentTurnStats(
 export function resetAgentRoundStats(
   level: number,
   cumulativeRoundCount: number,
-): AgentApiConfig[] {
-  const nextConfigs = loadPersistedAgentApiConfigs().map((agent) => ({
+): AgentApiSeatConfig[] {
+  const nextConfigs = loadAgentApiSeatConfigs().map((agent) => ({
     ...agent,
     gameLevel: level,
     cumulativeRoundCount,
@@ -405,7 +706,7 @@ export function resetAgentRoundStats(
     decayUnitsCharged: 0,
   }))
 
-  savePersistedAgentApiConfigs(nextConfigs)
+  savePersistedAgentSessionMetrics(agentSessionMetricsFromRuntimeConfigs(nextConfigs))
   return nextConfigs
 }
 
@@ -556,6 +857,13 @@ function loadPreferences(
 }
 
 // saveGameProgress writes long-lived localStorage progress from the live game state.
+//
+// gameSetup and winMetrics stay in localStorage deliberately, and are the one part of a round that
+// tabs are meant to share. Agent availability and per-round counters moved to sessionStorage so two
+// tabs can run separate games at once (see AgentApiSessionMetrics), but moving progress there too
+// would isolate exactly what is worth comparing: the whole point of running a second game is to
+// measure it against the first, and a best retention or traversal speed locked inside the tab that
+// set it is a score nothing can be judged against.
 export function saveGameProgress(
   modeName: MazeControlModeName,
   state: PersistableProgressState,
@@ -600,6 +908,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     lastRoundScore: state.lastRoundScore,
     remainingMs,
     winSummary: state.winSummary,
+    restartLevel: state.restartLevel,
     scoreDecayUnits: state.scoreDecayUnits,
     turnCount: state.turnCount,
     cumulativeRoundCount: state.cumulativeRoundCount,
@@ -687,6 +996,23 @@ export function loadPersistedSnapshot(
   }
 }
 
+// clearPersistedSnapshot clears both long-lived preferences and the active round.
+export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
+  try {
+    window.localStorage.removeItem(
+      storageKey(modeName, storageConfig.suffixes.gameSetup),
+    )
+    window.localStorage.removeItem(
+      storageKey(modeName, storageConfig.suffixes.winMetrics),
+    )
+  } catch {
+    // Ignore storage failures so reset remains best-effort only.
+  }
+
+  clearPersistedRound(modeName)
+  clearTapooLog(modeName)
+}
+
 // Tapoo log persistence. Logs are scoped to the browser tab session: they survive page reloads
 // within the same tab but are discarded when the tab closes or tapooResetLogs is called.
 
@@ -731,21 +1057,4 @@ export function clearTapooLog(modeName: MazeControlModeName): void {
   } catch {
     // ignore
   }
-}
-
-// clearPersistedSnapshot clears both long-lived preferences and the active round.
-export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
-  try {
-    window.localStorage.removeItem(
-      storageKey(modeName, storageConfig.suffixes.gameSetup),
-    )
-    window.localStorage.removeItem(
-      storageKey(modeName, storageConfig.suffixes.winMetrics),
-    )
-  } catch {
-    // Ignore storage failures so reset remains best-effort only.
-  }
-
-  clearPersistedRound(modeName)
-  clearTapooLog(modeName)
 }

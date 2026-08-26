@@ -38,4 +38,6 @@ _DS*
 .vscode
 .claude
 # Benchmark report emitted by "make ci-bench"
-bench-report.json
+parity-harness/bench-report.json
+parity-harness/bench-report.charts.svg
+parity-harness/bench-report.preferred.charts.svg

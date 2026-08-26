@@ -1,6 +1,7 @@
 import type {
   Elements,
   AgentApiConfig,
+  AgentApiSeatConfig,
   AgentApiProvider,
   AgentReasoningEffort,
   MazeAction,
@@ -11,11 +12,20 @@ import type {
 } from "../types"
 import {
   agentConfigValidationError,
+  agentRequestIntervalSeconds,
+  defaultAgentApiRequestIntervalSeconds,
   isAgentApiProvider,
   isAgentReasoningEffort,
   normalizeAgentEndpoint,
+  parseAgentRequestIntervalSeconds,
 } from "../agent/config"
-import { formatPlayerStatusLabel, getBatchEfficiencyMetrics } from "../agent/efficiency"
+import {
+  calculateTraversalSpeedUnits,
+  formatPlayerStatusLabel,
+  getBatchEfficiencyMetrics,
+  resolveTraversalSpeedClass,
+  traversalSpeedUnitsToDisplay,
+} from "../agent/efficiency"
 import {
   handleAgentTurnLoop,
 } from "./agent-api"
@@ -34,9 +44,12 @@ import {
   sessionActionFromKeyboardEvent,
 } from "./session-actions"
 import {
+  clearAgentSessionMetrics,
   disableAgentApiConfigForNetworkError,
-  loadPersistedAgentApiConfigs,
+  loadAgentApiSeatConfigs,
+  resetAgentSessionAvailability,
   savePersistedAgentApiConfigs,
+  updateAgentSessionAvailability,
 } from "../storage"
 import { CONFIG } from "../config"
 import {
@@ -46,51 +59,49 @@ import {
   tapooLogCount,
   tapooResetLogs,
 } from "../logs"
-import { isRunningStatus } from "../status"
+import { isAgentApiMode, isRunningStatus } from "../status"
 
-const { agentConfig, runtime } = CONFIG
+const { agentConfig, runtime, systemSettings } = CONFIG
 
 type AgentButtonBinding = {
   __button: HTMLButtonElement
   __onClick: () => void
 }
 
-// logAgentRoundCompletion captures the final agent-api round state without serializing the live
-// clock or maze grid, keeping diagnostics useful while avoiding large circular-ish payloads.
-function logAgentRoundCompletion({ __state, __agent }: AgentRoundState): void {
+// logAgentRoundCompletion captures the round's outcome and the stats that evolved to reach it.
+// level/cumulativeRoundCount/startPosition/finalPosition/maze never change once a round starts, so
+// they're logged beside the first full agent request rather than repeated here.
+function logAgentRoundCompletion({ __state, __agent, __playerStatus }: AgentRoundState): void {
   const outcome = __state.status
+  const traversalSpeedUnits = calculateTraversalSpeedUnits(
+    __playerStatus.uniqueCellsVisited,
+    __playerStatus.decayUnitsCharged,
+  )
 
   logTapooDiagnostic(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
     outcome,
     agent: {
-      id: __agent.id,
+      seatId: __agent.seatId,
       playerName: __agent.playerName,
       model: __agent.model,
       enabled: __agent.enabled,
     },
-    level: __state.level,
-    // Round-end displays and persistence use lastRoundScore, which is finalized only after the
-    // current request's decay has been committed. Reusing it here keeps diagnostics aligned with
-    // the win/loss overlay instead of serializing a transient live score value.
     score: __state.lastRoundScore,
-    winSummary: __state.winSummary,
     turnCount: __state.turnCount,
-    cumulativeRoundCount: __state.cumulativeRoundCount,
-    mazeDimensions: __state.mazeDimensions,
-    startPosition: __state.startPosition,
     playerPosition: __state.playerPosition,
-    finalPosition: __state.finalPosition,
-    // Only the count: an entry per visited cell is the largest thing in State, and it grew again
-    // when openMoves became a resolved adjacency map. Paired with turnCount it still gives
-    // the cells-per-request efficiency these entries are read for.
-    uniqueCellsVisited: __state.traversalHistory.length,
+    allUniqueCellsVisited: __state.traversalHistory.length,
+    playerUniqueCellsVisited: __playerStatus.uniqueCellsVisited,
+    decayUnitsCharged: __playerStatus.decayUnitsCharged,
+    traversalSpeed: traversalSpeedUnitsToDisplay(traversalSpeedUnits),
+    traversalSpeedClass: resolveTraversalSpeedClass(traversalSpeedUnits),
+    winSummary: __state.winSummary,
   })
 }
 
 // createAgentMode builds the agent-api MazeActionControl while transport wiring is still pending.
 export function createAgentMode(
   elements: Elements,
-  readAgentConfigs: () => AgentApiConfig[] = loadPersistedAgentApiConfigs,
+  readAgentConfigs: () => AgentApiSeatConfig[] = loadAgentApiSeatConfigs,
   disableAgentAfterNetworkError: (agent: AgentApiConfig) => void = (agent) => {
     disableAgentApiConfigForNetworkError(agent)
   },
@@ -125,12 +136,19 @@ export function createAgentMode(
   // Open overlays temporarily own focus, so normal app refocus should pause until they close.
   const isAgentConfigFormOpen = (): boolean => elements.agentConfigForm?.hidden === false
   const isAgentManageDialogOpen = (): boolean => elements.agentManageDialog?.hidden === false
-  // At most one overlay is ever open (openAgentConfigForm/openAgentManageDialog each close the
-  // other before opening), but callers that only care whether the app should yield focus or dim
-  // don't need to know which — this is the shared "something is showing" check for those callers.
-  const isAnyAgentOverlayOpen = (): boolean => isAgentConfigFormOpen() || isAgentManageDialogOpen()
+  const isSystemSettingsOpen = (): boolean => elements.systemSettingsDialog?.hidden === false
+  // At most one overlay is ever open (each open* closes the others first), but callers that only
+  // care whether the app should yield focus or dim don't need to know which — this is the shared
+  // "something is showing" check for those callers.
+  //
+  // Every overlay must be listed here, including ones that are not about agents: an omission does
+  // not fail visibly, it steals focus. The terminal takes focus back on any click inside #terminal-app
+  // (see the focusCurrentApp listener below), so an overlay missing from this check cannot be typed
+  // into at all — clicking its input immediately hands focus to the terminal instead.
+  const isAnyOverlayOpen = (): boolean =>
+    isAgentConfigFormOpen() || isAgentManageDialogOpen() || isSystemSettingsOpen()
   const focusCurrentApp = (): void => {
-    if (isAnyAgentOverlayOpen()) {
+    if (isAnyOverlayOpen()) {
       return
     }
 
@@ -147,8 +165,8 @@ export function createAgentMode(
         agentMovePoller?.__setAttached(false)
         agentMovePoller?.__stopPolling()
         elements.body.classList.remove("terminal-body--agent-form-active")
-        if (elements.agentSeatsBody) {
-          elements.agentSeatsBody.hidden = true
+        if (elements.systemPalette) {
+          elements.systemPalette.hidden = true
         }
         releaseLogSubscription?.()
         releaseLogSubscription = null
@@ -233,6 +251,7 @@ export function createAgentMode(
       dispatch: MazeActionDispatch,
       readState,
       commitTurn,
+      gameControls,
     ) {
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
@@ -247,11 +266,11 @@ export function createAgentMode(
       const dispatchAgentAction = (
         action: MazeAction,
         nextDispatch: MazeActionDispatch,
-        agent: AgentApiConfig,
+        agentName: string,
       ): MazeActionResult => {
         const actionResult = nextDispatch(action, {
           wantFeedback: true,
-          playerName: agent.playerName,
+          playerName: agentName,
         })
         if (!actionResult) {
           throw new Error("agent move dispatch must return feedback")
@@ -270,7 +289,7 @@ export function createAgentMode(
         __elements: elements,
         __onActionResult: recordLastActionResult,
         __onActiveAgentChange: (agent) => {
-          activeAgentId = agent?.id ?? null
+          activeAgentId = agent?.seatId ?? null
           renderAgentRoster()
         },
         __onRoundOutcome: logAgentRoundCompletion,
@@ -284,8 +303,8 @@ export function createAgentMode(
 
       // renderAgentRoster repaints the seat list with the latest config and highlights the currently playing agent.
       const renderAgentRoster = (): void => {
-        if (elements.agentSeatsBody) {
-          elements.agentSeatsBody.hidden = false
+        if (elements.systemPalette) {
+          elements.systemPalette.hidden = false
         }
         renderAgentSeatRoster(
           elements.agentSeatRoster,
@@ -313,7 +332,7 @@ export function createAgentMode(
       const syncOverlayState = (): void => {
         elements.body.classList.toggle(
           "terminal-body--agent-form-active",
-          isAnyAgentOverlayOpen(),
+          isAnyOverlayOpen(),
         )
       }
 
@@ -327,13 +346,20 @@ export function createAgentMode(
         syncCurrentPoller()
       }
 
-      // clearAgentConfigStatus wipes any previous validation message before the next submission attempt.
-      const clearAgentConfigStatus = (): void => {
-        if (elements.agentConfigStatus) {
-          elements.agentConfigStatus.textContent = ""
-          elements.agentConfigStatus.classList.remove("agent-config-form__status--error")
+      const clearFormStatus = (status: HTMLElement | undefined): void => {
+        if (!status) {
+          return
         }
+
+        status.textContent = ""
+        status.classList.remove("agent-config-form__status--error")
       }
+
+      // clearAgentConfigStatus wipes any previous add-form validation message before submission.
+      const clearAgentConfigStatus = (): void => { clearFormStatus(elements.agentConfigStatus) }
+
+      // clearAgentManageStatus keeps manage-dialog validation scoped to the dialog that raised it.
+      const clearAgentManageStatus = (): void => { clearFormStatus(elements.agentManageStatus) }
 
       // syncToggleState keeps a toggle's label and CSS state aligned with its checkbox value, and
       // now also owns locking it from user interaction: every caller that needs to disable a toggle
@@ -392,6 +418,24 @@ export function createAgentMode(
           agentConfig.echoBackReasoningOffLabel,
         )
       }
+
+      const configureRequestIntervalInput = (input: HTMLInputElement | undefined): void => {
+        if (!input) {
+          return
+        }
+
+        input.min = String(agentConfig.requestIntervalMinSeconds)
+        input.max = String(agentConfig.requestIntervalMaxSeconds)
+        input.step = String(agentConfig.requestIntervalStepSeconds)
+      }
+
+      const requestIntervalSecondsFor = (agent: AgentApiConfig): string =>
+        String(agentRequestIntervalSeconds(agent))
+
+      const invalidRequestIntervalMessage = (): string =>
+        agentConfig.invalidRequestIntervalTemplate
+          .replace("{min}", String(agentConfig.requestIntervalMinSeconds))
+          .replace("{max}", String(agentConfig.requestIntervalMaxSeconds))
 
       // extraHeaderKeyInputs/extraHeaderValueInputs read the current set of header rows — however
       // many the user has added — rather than assuming just the one the form starts with.
@@ -561,6 +605,10 @@ export function createAgentMode(
         if (elements.agentConfigApi) {
           elements.agentConfigApi.value = "ollama"
         }
+        configureRequestIntervalInput(elements.agentConfigRequestInterval)
+        if (elements.agentConfigRequestInterval) {
+          elements.agentConfigRequestInterval.value = String(defaultAgentApiRequestIntervalSeconds())
+        }
         if (elements.agentConfigEchoBackReasoning) {
           elements.agentConfigEchoBackReasoning.checked = false
         }
@@ -571,15 +619,20 @@ export function createAgentMode(
         clearAgentConfigStatus()
       }
 
-      // setAgentConfigError surfaces a validation failure inside the form without a separate modal.
-      const setAgentConfigError = (message: string): void => {
-        if (!elements.agentConfigStatus) {
+      const setFormError = (status: HTMLElement | undefined, message: string): void => {
+        if (!status) {
           return
         }
 
-        elements.agentConfigStatus.textContent = message
-        elements.agentConfigStatus.classList.add("agent-config-form__status--error")
+        status.textContent = message
+        status.classList.add("agent-config-form__status--error")
       }
+
+      // setAgentConfigError surfaces add-form validation failures without a separate modal.
+      const setAgentConfigError = (message: string): void => { setFormError(elements.agentConfigStatus, message) }
+
+      // setAgentManageError surfaces manage-dialog validation failures in the active dialog.
+      const setAgentManageError = (message: string): void => { setFormError(elements.agentManageStatus, message) }
 
       // closeAgentConfigForm hides the form, resets its state, and restores the overlay class.
       const closeAgentConfigForm = (): void => {
@@ -598,12 +651,7 @@ export function createAgentMode(
           return
         }
 
-        // Both overlays share one screen position, so leaving the other open would render them
-        // superimposed rather than merely stacked.
-        if (isAgentManageDialogOpen()) {
-          closeAgentManageDialog()
-        }
-
+        closeOtherOverlays("agentConfig")
         pauseIfRunning()
         selectedSeatId = seatId
         if (elements.agentConfigTitle) {
@@ -625,6 +673,7 @@ export function createAgentMode(
 
         elements.agentManageDialog.hidden = true
         manageSeatId = null
+        clearAgentManageStatus()
         syncOverlayState()
       }
 
@@ -646,23 +695,22 @@ export function createAgentMode(
           agentConfig.echoBackReasoningOffLabel,
           shouldDelete || reasoningIsNone,
         )
+        if (elements.agentManageRequestInterval) {
+          elements.agentManageRequestInterval.disabled = shouldDelete
+        }
       }
 
       // openAgentManageDialog pauses an active round and opens the manage overlay for the chosen seat.
       const openAgentManageDialog = (seatId: number): void => {
-        const agent = readAgentConfigs().find((config) => config.id === seatId)
-        if (!agent || agent.id === currentPlayingAgentId() || !elements.agentManageDialog) {
+        const agent = readAgentConfigs().find((config) => config.seatId === seatId)
+        if (!agent || agent.seatId === currentPlayingAgentId() || !elements.agentManageDialog) {
           return
         }
 
-        // Both overlays share one screen position, so leaving the other open would render them
-        // superimposed rather than merely stacked.
-        if (isAgentConfigFormOpen()) {
-          closeAgentConfigForm()
-        }
-
+        closeOtherOverlays("agentManage")
         pauseIfRunning()
         manageSeatId = seatId
+        clearAgentManageStatus()
         if (elements.agentManageTitle) {
           elements.agentManageTitle.textContent = agentSeatManageLabel(agent, readState().traversalHistory)
         }
@@ -680,6 +728,14 @@ export function createAgentMode(
           syncReasoningEffortOptions(elements.agentManageReasoningEffort, agent.api)
           elements.agentManageReasoningEffort.value =
             agent.reasoningEffort ?? agentConfig.reasoningEffortDefaults[agent.api]
+        }
+        if (elements.agentManageApi) {
+          elements.agentManageApi.value = agent.api
+          elements.agentManageApi.disabled = true
+        }
+        configureRequestIntervalInput(elements.agentManageRequestInterval)
+        if (elements.agentManageRequestInterval) {
+          elements.agentManageRequestInterval.value = requestIntervalSecondsFor(agent)
         }
         if (elements.agentManageEchoBackReasoning) {
           elements.agentManageEchoBackReasoning.checked = agent.echoBackReasoning ?? false
@@ -724,6 +780,129 @@ export function createAgentMode(
 
         elements.agentSeatRoster.addEventListener("click", agentRosterClickHandler)
         renderAgentRoster()
+      }
+
+      // clearSystemSettingsStatus wipes any previous message and its error styling, so a rejected
+      // value never greets the next open still coloured as a failure.
+      const clearSystemSettingsStatus = (): void => {
+        if (elements.systemSettingsStatus) {
+          elements.systemSettingsStatus.textContent = ""
+          elements.systemSettingsStatus.classList.remove("agent-config-form__status--error")
+        }
+      }
+
+      // setSystemSettingsError surfaces a validation failure in the same red the agent forms use;
+      // the base .agent-config-form__status colour is the faint one meant for neutral text, so a
+      // message written without this modifier reads as ordinary status rather than a rejection.
+      const setSystemSettingsError = (message: string): void => {
+        if (elements.systemSettingsStatus) {
+          elements.systemSettingsStatus.textContent = message
+          elements.systemSettingsStatus.classList.add("agent-config-form__status--error")
+        }
+      }
+
+      // closeSystemSettings hides the settings overlay and clears any message it was showing, so
+      // a stale error never greets the next open.
+      const closeSystemSettings = (): void => {
+        if (elements.systemSettingsDialog) {
+          elements.systemSettingsDialog.hidden = true
+        }
+        clearSystemSettingsStatus()
+        syncOverlayState()
+      }
+
+      // openSystemSettings shows the overlay with the live restart level already filled in, so
+      // Apply with no edit is a no-op rather than a surprise.
+      const openSystemSettings = (): void => {
+        closeOtherOverlays("systemSettings")
+        // Named per mode rather than statically, so a setting that only governs this mode's play
+        // is never mistaken for a global one. Read from live state so the dialog stays correct if
+        // the palette is ever shown in interactive mode too.
+        if (elements.systemSettingsTitle) {
+          const { displayLabels } = runtime
+          elements.systemSettingsTitle.textContent = systemSettings.title.replace(
+            "{mode}",
+            isAgentApiMode(readState().controlMode)
+              ? displayLabels.agentApi
+              : displayLabels.interactive,
+          )
+        }
+        if (elements.systemSettingsRestartLevel) {
+          elements.systemSettingsRestartLevel.value = String(readState().restartLevel)
+        }
+        clearSystemSettingsStatus()
+        if (elements.systemSettingsDialog) {
+          elements.systemSettingsDialog.hidden = false
+        }
+        // Dims the terminal behind the overlay, the same as the agent dialogs do.
+        syncOverlayState()
+        elements.systemSettingsRestartLevel?.focus()
+      }
+
+      // closeOtherOverlays drops every overlay except the one about to show. They share one screen
+      // position, so leaving another open renders them superimposed rather than merely stacked —
+      // and the one left behind still holds focus and keeps the terminal dimmed.
+      //
+      // One list, rather than a pairwise check inside each open*: adding an overlay then means
+      // adding it here once, instead of remembering to close it from every other overlay's open
+      // path. Pairwise checks are why the settings dialog was invisible to both agent forms —
+      // each knew only about the overlays that existed when it was written.
+      //
+      // Excluding the caller matters: closeAgentConfigForm resets the form, so an overlay closing
+      // itself on the way up would wipe fields the caller is about to populate.
+      const closeOtherOverlays = (opening: "agentConfig" | "agentManage" | "systemSettings"): void => {
+        if (opening !== "agentConfig") {
+          closeAgentConfigForm()
+        }
+        if (opening !== "agentManage") {
+          closeAgentManageDialog()
+        }
+        if (opening !== "systemSettings") {
+          closeSystemSettings()
+        }
+      }
+
+      // bindSystemSettingsDialog wires the palette's gear to the settings overlay and its Apply.
+      const bindSystemSettingsDialog = (): void => {
+        const settingsButton = elements.systemSettings
+        if (settingsButton) {
+          const onClick = (): void => {
+            openSystemSettings()
+          }
+          buttonBindings.push({ __button: settingsButton, __onClick: onClick })
+          settingsButton.addEventListener("click", onClick)
+        }
+
+        const closeButton = elements.systemSettingsClose
+        if (closeButton) {
+          const onClick = (): void => {
+            closeSystemSettings()
+          }
+          buttonBindings.push({ __button: closeButton, __onClick: onClick })
+          closeButton.addEventListener("click", onClick)
+        }
+
+        const applyButton = elements.systemSettingsApply
+        if (applyButton) {
+          const onClick = (): void => {
+            // The input is the only value validated here: a whole number of 1 or more. Everything
+            // above that is allowed on purpose — there is no known ceiling to a level, so refusing
+            // a high one would be inventing a limit the game does not have.
+            const restartLevel = Number(elements.systemSettingsRestartLevel?.value ?? "")
+            if (!Number.isInteger(restartLevel) || restartLevel < 1) {
+              setSystemSettingsError(systemSettings.invalidRestartLevelMessage)
+              return
+            }
+
+            // setRestartLevel stops the round in progress, so the dialog closes onto a game that
+            // has already halted rather than one still decaying behind it.
+            gameControls.setRestartLevel(restartLevel)
+            closeSystemSettings()
+            renderAgentRoster()
+          }
+          buttonBindings.push({ __button: applyButton, __onClick: onClick })
+          applyButton.addEventListener("click", onClick)
+        }
       }
 
       // bindLogButtons wires the reset and download controls to the agent-api log store.
@@ -789,6 +968,7 @@ export function createAgentMode(
           !elements.agentConfigPlayerName ||
           !elements.agentConfigModel ||
           !elements.agentConfigApi ||
+          !elements.agentConfigRequestInterval ||
           !elements.agentConfigEndpoint ||
           !elements.agentConfigCredential ||
           !elements.agentConfigCredentialLabel ||
@@ -813,6 +993,7 @@ export function createAgentMode(
           const model = elements.agentConfigModel?.value.trim() ?? ""
           const playerName = elements.agentConfigPlayerName?.value.trim() ?? ""
           const endpoint = elements.agentConfigEndpoint?.value.trim() ?? ""
+          const requestIntervalSecondsValue = elements.agentConfigRequestInterval?.value.trim() ?? ""
           const selectedApi = elements.agentConfigApi?.value
           const api: AgentApiProvider = isAgentApiProvider(selectedApi) ? selectedApi : "ollama"
           const credential = elements.agentConfigCredential?.value.trim() ?? ""
@@ -838,6 +1019,7 @@ export function createAgentMode(
             model,
             playerName,
             api,
+            requestIntervalSeconds: requestIntervalSecondsValue,
             reasoningEffort,
             credential,
             extraHeaders,
@@ -847,7 +1029,7 @@ export function createAgentMode(
             return
           }
 
-          if (existingAgents.some((agent) => agent.id === selectedSeatId)) {
+          if (existingAgents.some((agent) => agent.seatId === selectedSeatId)) {
             closeAgentConfigForm()
             renderAgentRoster()
             return
@@ -859,20 +1041,31 @@ export function createAgentMode(
             return
           }
 
+          const requestIntervalSeconds = parseAgentRequestIntervalSeconds(requestIntervalSecondsValue)
+          if (requestIntervalSeconds === null) {
+            setAgentConfigError(invalidRequestIntervalMessage())
+            return
+          }
+
           const nextAgent: AgentApiConfig = {
-            id: selectedSeatId,
+            seatId: selectedSeatId,
+            // Stamped once, here, at the only point a seat gains a new occupant. Every session
+            // metrics row this agent ever earns is filed against this value, which is how another
+            // tab tells it apart from whoever held the same seat id before.
+            sessionId: Date.now(),
             playerName,
             model,
             endpoint: normalizedEndpoint,
             api,
+            requestIntervalSeconds,
             reasoningEffort,
             ...(credential ? { credential } : {}),
             ...(extraHeaders ? { extraHeaders } : {}),
             ...(echoBackReasoning ? { echoBackReasoning } : {}),
-            enabled,
           }
 
           savePersistedAgentApiConfigs([...existingAgents, nextAgent])
+          resetAgentSessionAvailability(nextAgent, enabled)
           closeAgentConfigForm()
           renderAgentRoster()
           syncCurrentPoller()
@@ -927,10 +1120,13 @@ export function createAgentMode(
           !elements.agentManageEnabled ||
           !elements.agentManageEnabledLabel ||
           !elements.agentManageReasoningEffort ||
+          !elements.agentManageApi ||
+          !elements.agentManageRequestInterval ||
           !elements.agentManageEchoBackReasoning ||
           !elements.agentManageEchoBackReasoningLabel ||
           !elements.agentManageApply ||
-          !elements.agentDeleteConfirm
+          !elements.agentDeleteConfirm ||
+          !elements.agentManageStatus
         ) {
           return
         }
@@ -942,6 +1138,7 @@ export function createAgentMode(
         agentManageReasoningEffortChangeHandler = syncAgentManageOptions
         agentManageApplyHandler = (): void => {
           // Delete wins over enable/disable/echo-back-reasoning edits because the seat becomes empty.
+          clearAgentManageStatus()
           if (!manageSeatId) {
             closeAgentManageDialog()
             return
@@ -950,32 +1147,56 @@ export function createAgentMode(
           const enabled = elements.agentManageEnabled?.checked ?? false
           const echoBackReasoning = elements.agentManageEchoBackReasoning?.checked ?? false
           const shouldDelete = elements.agentDeleteConfirm?.checked ?? false
-          const nextAgents = shouldDelete
-            ? readAgentConfigs().filter((agent) => agent.id !== manageSeatId)
-            : readAgentConfigs().map((agent) => {
-                if (agent.id !== manageSeatId) {
-                  return agent
-                }
+          const requestIntervalSeconds = parseAgentRequestIntervalSeconds(
+            elements.agentManageRequestInterval?.value ?? "",
+          )
+          if (shouldDelete) {
+            savePersistedAgentApiConfigs(readAgentConfigs().filter((agent) => agent.seatId !== manageSeatId))
+            clearAgentSessionMetrics(manageSeatId)
+            closeAgentManageDialog()
+            renderAgentRoster()
+            syncCurrentPoller()
+            return
+          }
 
-                const selectedReasoningEffort = elements.agentManageReasoningEffort?.value
-                const reasoningEffort: AgentReasoningEffort =
-                  isAgentReasoningEffort(selectedReasoningEffort) &&
-                  agentConfig.reasoningEffortOptions[agent.api].includes(selectedReasoningEffort)
-                    ? selectedReasoningEffort
-                    : agentConfig.reasoningEffortDefaults[agent.api]
+          if (requestIntervalSeconds === null) {
+            setAgentManageError(invalidRequestIntervalMessage())
+            return
+          }
+          const nextAgents = readAgentConfigs().map((agent) => {
+            if (agent.seatId !== manageSeatId) {
+              return agent
+            }
 
-                // Omit the key entirely rather than storing false, matching how the add form only
-                // ever persists this field when it is true (see agentFormSubmitHandler above).
-                // reasoningEffort is unconditionally set instead — unlike echo-back, there is always
-                // a meaningful, provider-valid level in effect, never a meaningful "absent".
-                const nextAgent: AgentApiConfig = { ...agent, enabled, reasoningEffort }
-                delete nextAgent.echoBackReasoning
-                if (echoBackReasoning) {
-                  nextAgent.echoBackReasoning = echoBackReasoning
-                }
-                return nextAgent
-              })
+            const selectedReasoningEffort = elements.agentManageReasoningEffort?.value
+            const reasoningEffort: AgentReasoningEffort =
+              isAgentReasoningEffort(selectedReasoningEffort) &&
+              agentConfig.reasoningEffortOptions[agent.api].includes(selectedReasoningEffort)
+                ? selectedReasoningEffort
+                : agentConfig.reasoningEffortDefaults[agent.api]
+
+            // Omit the key entirely rather than storing false, matching how the add form only
+            // ever persists this field when it is true (see agentFormSubmitHandler above).
+            // reasoningEffort is unconditionally set instead — unlike echo-back, there is always
+            // a meaningful, provider-valid level in effect, never a meaningful "absent".
+            const nextAgent: AgentApiConfig = {
+              ...agent,
+              reasoningEffort,
+              requestIntervalSeconds,
+            }
+            delete nextAgent.echoBackReasoning
+            if (echoBackReasoning) {
+              nextAgent.echoBackReasoning = echoBackReasoning
+            }
+            return nextAgent
+          })
           savePersistedAgentApiConfigs(nextAgents)
+          // Editing never re-stamps sessionId, so the seat keeps the counters it has already
+          // earned this round. A seat that vanished mid-edit simply has no row to update.
+          const managedAgent = nextAgents.find((agent) => agent.seatId === manageSeatId)
+          if (managedAgent) {
+            updateAgentSessionAvailability(managedAgent, enabled)
+          }
           closeAgentManageDialog()
           renderAgentRoster()
           syncCurrentPoller()
@@ -998,6 +1219,11 @@ export function createAgentMode(
 
         if (isAgentManageDialogOpen()) {
           closeAgentManageDialog()
+          return true
+        }
+
+        if (isSystemSettingsOpen()) {
+          closeSystemSettings()
           return true
         }
 
@@ -1035,6 +1261,7 @@ export function createAgentMode(
 
       bindSessionButtons(elements.controls)
       bindSessionButtons(elements.touchButtons)
+      bindSystemSettingsDialog()
       bindLogButtons()
       bindAgentRoster()
       bindAgentConfigForm()
@@ -1097,7 +1324,7 @@ export function createAgentMode(
         return null
       }
 
-      const agent = readAgentConfigs().find((config) => config.id === activeAgentId)
+      const agent = readAgentConfigs().find((config) => config.seatId === activeAgentId)
       if (!agent) {
         return null
       }

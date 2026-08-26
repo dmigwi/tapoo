@@ -4,14 +4,17 @@ import { createAgentMode } from "./agent"
 import { CONFIG } from "../config"
 import { logTapooDiagnostic, tapooResetLogs } from "../logs"
 import {
+  loadAgentApiSeatConfigs,
   loadTapooLog,
   loadPersistedAgentApiConfigs,
+  resetAgentSessionAvailability,
   savePersistedAgentApiConfigs,
 } from "../storage"
 import type {
-  AgentApiConfig,
+  AgentApiSeatConfig,
   AgentElements,
   Elements,
+  GameControls,
   MazeAction,
   MazeActionDispatchOptions,
   MazeActionResult,
@@ -20,10 +23,18 @@ import type {
   TraversalHistoryEntry,
 } from "../types"
 
-function enabledAgentConfigs(): AgentApiConfig[] {
+// testGameControls stands in for the game-owned mutations bindActionDispatch receives. vi.fn so a
+// test can assert what the UI drove, and a permissive default return so nothing depends on it.
+function testGameControls(): GameControls {
+  return { setRestartLevel: vi.fn(() => true) }
+}
+
+
+function enabledAgentConfigs(): AgentApiSeatConfig[] {
   return [
     {
-      id: 1,
+      seatId: 1,
+      sessionId: 1_700_000_000_001,
       playerName: "Blue",
       model: "llama3.2",
       endpoint: new URL("https://agents.example/blue/move"),
@@ -42,14 +53,12 @@ async function flushImmediateAgentTurn(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0)
 }
 
-const originalAgentApiRequestPollIntervalMs = CONFIG.timing.agentApiRequestPollIntervalMs
-
 function visit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: "Blue", row, col, openMoves: [] }
+  return { playerName: "Blue", row, col, openMoves: [], visitCount: 1 }
 }
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [], visitCount: 1 }
 }
 
 function createButton({
@@ -79,7 +88,7 @@ function createButton({
 type AgentFormElements = Elements & Required<AgentElements>
 
 function createAgentFormElements(): AgentFormElements {
-  const agentSeatsBody = document.createElement("div")
+  const systemPalette = document.createElement("div")
   const tapooLogsReset = document.createElement("button")
   const tapooLogsDownload = document.createElement("button")
   const agentSeatRoster = document.createElement("div")
@@ -88,6 +97,7 @@ function createAgentFormElements(): AgentFormElements {
   const agentConfigPlayerName = document.createElement("input")
   const agentConfigModel = document.createElement("input")
   const agentConfigApi = document.createElement("select")
+  const agentConfigRequestInterval = document.createElement("input")
   const agentConfigEndpoint = document.createElement("input")
   const agentConfigCredential = document.createElement("input")
   const agentConfigCredentialLabel = document.createElement("span")
@@ -122,17 +132,23 @@ function createAgentFormElements(): AgentFormElements {
   const agentManageEnabled = document.createElement("input")
   const agentManageEnabledText = document.createElement("span")
   const agentManageReasoningEffort = document.createElement("select")
+  const agentManageApi = document.createElement("select")
+  const agentManageRequestInterval = document.createElement("input")
   const agentManageEchoBackReasoningLabel = document.createElement("label")
   const agentManageEchoBackReasoning = document.createElement("input")
   const agentManageEchoBackReasoningText = document.createElement("span")
   const agentManageApply = document.createElement("button")
   const agentDeleteConfirm = document.createElement("input")
+  const agentManageStatus = document.createElement("p")
   const agentManageClose = document.createElement("button")
 
   agentSeatRoster.hidden = true
-  agentSeatsBody.hidden = true
+  systemPalette.hidden = true
   agentConfigForm.hidden = true
   agentConfigForm.noValidate = true
+  agentConfigRequestInterval.type = "number"
+  agentConfigRequestInterval.value = String(CONFIG.timing.defaultAgentApiRequestIntervalSeconds)
+  agentManageRequestInterval.type = "number"
   agentManageDialog.hidden = true
   agentConfigEnabledLabel.className = "agent-config-form__toggle"
   agentManageEnabledLabel.className = "agent-config-form__toggle"
@@ -162,14 +178,21 @@ function createAgentFormElements(): AgentFormElements {
     manageOption.value = value
     agentManageReasoningEffort.append(manageOption)
   })
+  ;["ollama", "openai", "anthropic"].forEach((value) => {
+    const option = document.createElement("option")
+    option.value = value
+    agentManageApi.append(option)
+  })
   agentConfigReasoningEffort.value = "max"
   agentManageReasoningEffort.value = "max"
+  agentManageApi.value = "ollama"
   agentConfigCredentialRequired.hidden = true
   agentConfigForm.append(
     agentConfigTitle,
     agentConfigPlayerName,
     agentConfigModel,
     agentConfigApi,
+    agentConfigRequestInterval,
     agentConfigEndpoint,
     agentConfigCredential,
     agentConfigCredentialLabel,
@@ -182,6 +205,9 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigStatus,
   )
   const app = document.createElement("div")
+  // Matches #terminal-app's tabindex="0" in the real markup. Without it app.focus() is a no-op in
+  // jsdom, and any test asserting that focus was NOT stolen would pass no matter what the code did.
+  app.tabIndex = 0
   agentManageEnabledText.id = "agent-manage-enabled-label"
   agentManageEnabledLabel.append(agentManageEnabled, agentManageEnabledText)
   agentManageEchoBackReasoningText.id = "agent-manage-echo-back-reasoning-label"
@@ -191,13 +217,32 @@ function createAgentFormElements(): AgentFormElements {
     agentDeleteTarget,
     agentManageEnabledLabel,
     agentManageReasoningEffort,
+    agentManageApi,
+    agentManageRequestInterval,
     agentManageEchoBackReasoningLabel,
     agentManageApply,
     agentDeleteConfirm,
+    agentManageStatus,
     agentManageClose,
   )
-  app.append(agentSeatsBody, agentConfigForm, agentManageDialog)
-  agentSeatsBody.append(tapooLogsReset, tapooLogsDownload, agentSeatRoster)
+  const systemSettings = document.createElement("button")
+  const systemSettingsDialog = document.createElement("section")
+  systemSettingsDialog.hidden = true
+  const systemSettingsTitle = document.createElement("strong")
+  const systemSettingsRestartLevel = document.createElement("input")
+  systemSettingsRestartLevel.type = "number"
+  const systemSettingsStatus = document.createElement("span")
+  const systemSettingsApply = document.createElement("button")
+  const systemSettingsClose = document.createElement("button")
+  systemSettingsDialog.append(
+    systemSettingsTitle,
+    systemSettingsRestartLevel,
+    systemSettingsStatus,
+    systemSettingsApply,
+    systemSettingsClose,
+  )
+  systemPalette.append(systemSettings, tapooLogsReset, tapooLogsDownload, agentSeatRoster)
+  app.append(systemPalette, systemSettingsDialog, agentConfigForm, agentManageDialog)
 
   return {
     app,
@@ -208,7 +253,19 @@ function createAgentFormElements(): AgentFormElements {
     touchButtons: [],
     touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
-    agentSeatsBody,
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
+    systemPalette,
+    systemSettings,
+    systemSettingsDialog,
+    systemSettingsTitle,
+    systemSettingsRestartLevel,
+    systemSettingsStatus,
+    systemSettingsApply,
+    systemSettingsClose,
     tapooLogsReset,
     tapooLogsDownload,
     agentSeatRoster,
@@ -217,6 +274,7 @@ function createAgentFormElements(): AgentFormElements {
     agentConfigPlayerName,
     agentConfigModel,
     agentConfigApi,
+    agentConfigRequestInterval,
     agentConfigEndpoint,
     agentConfigCredential,
     agentConfigCredentialLabel,
@@ -236,10 +294,13 @@ function createAgentFormElements(): AgentFormElements {
     agentManageEnabled,
     agentManageEnabledLabel: agentManageEnabledText,
     agentManageReasoningEffort,
+    agentManageApi,
+    agentManageRequestInterval,
     agentManageEchoBackReasoning,
     agentManageEchoBackReasoningLabel: agentManageEchoBackReasoningText,
     agentManageApply,
     agentDeleteConfirm,
+    agentManageStatus,
     agentManageClose,
   }
 }
@@ -294,10 +355,11 @@ type AgentRoundLogDetails = {
     model: string
     playerName: string
   }
-  level: number
   outcome: "won" | "lost"
   score: number
-  uniqueCellsVisited: number
+  playerUniqueCellsVisited: number
+  allUniqueCellsVisited: number
+  decayUnitsCharged: number
   winSummary: string
 }
 
@@ -305,6 +367,10 @@ type AgentRoundLogEntry = {
   details: AgentRoundLogDetails
   payload: string
   log: string
+  // level/game are stamped on every entry by setTapooLogContext, so logAgentRoundCompletion's own
+  // details never repeats them.
+  level: number
+  game: number
 }
 
 function createControlFixture(
@@ -322,6 +388,7 @@ function createControlFixture(
     lastRoundScore: 0,
     lastWinTraversalSpeedUnits: null,
     level: 4,
+    restartLevel: 1,
     maze: null,
     mazeDimensions: { numCols: 3, numRows: 1, area: 3 },
     startPosition: { x: 1, y: 1 },
@@ -340,17 +407,17 @@ describe("agent control mode", () => {
   beforeEach(() => {
     vi.stubGlobal("localStorage", createMemoryStorage())
     window.localStorage.clear()
+    window.sessionStorage.clear()
     vi.useFakeTimers()
-    CONFIG.timing.agentApiRequestPollIntervalMs = 0
   })
 
   afterEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     tapooResetLogs("agent-api")
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
-    CONFIG.timing.agentApiRequestPollIntervalMs = originalAgentApiRequestPollIntervalMs
   })
 
   it("polls the agent endpoint for traversal moves and dispatches them with feedback enabled", async () => {
@@ -363,6 +430,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -406,7 +478,7 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     expect(fetchMock).toHaveBeenCalled()
@@ -441,9 +513,7 @@ describe("agent control mode", () => {
       { type: "MoveDown" },
       { wantFeedback: true, playerName: "Blue" },
     )
-    expect(commitAgentTurn).toHaveBeenCalledWith(
-      1,
-    )
+    expect(commitAgentTurn).toHaveBeenCalledWith(1, expect.any(Number))
     expect(commitAgentTurn).toHaveBeenCalledTimes(1)
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
@@ -465,6 +535,11 @@ describe("agent control mode", () => {
       touchButtons: [],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
 
     const mode = createTestAgentMode(elements)
@@ -482,6 +557,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -512,10 +592,10 @@ describe("agent control mode", () => {
     const agentWithDecay = { ...enabledAgentConfigs()[0], decayUnitsCharged: 2 }
     const mode = createAgentMode(elements, () => [agentWithDecay])
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
-    expect(mode.readCurrentPlayer?.()).toBe("Blue the Backtracker - 0.50x")
+    expect(mode.readCurrentPlayer?.()).toBe("Blue the Backtracker - 0.5000x")
   })
 
   it("keeps a single successful prediction as applied", async () => {
@@ -528,6 +608,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -558,11 +643,11 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(1)
-    expect(commitAgentTurn).toHaveBeenCalledWith(1)
+    expect(commitAgentTurn).toHaveBeenCalledWith(1, expect.any(Number))
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
@@ -577,6 +662,7 @@ describe("agent control mode", () => {
   it("logs final round payload from the same finalized score the UI uses", async () => {
     const elements = createAgentFormElements()
     savePersistedAgentApiConfigs(enabledAgentConfigs())
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -587,6 +673,17 @@ describe("agent control mode", () => {
       }),
     )
 
+    // A real, deterministically generated 3x3-cell maze (generateMaze seed 1), not a contrived
+    // stand-in — the same wall/corridor pattern encodeMazeForLog would actually see in production.
+    const finalMaze = [
+      ["|", "---", "-", "---", "-", "---", "|"],
+      ["|", "   ", " ", "   ", " ", "   ", "|"],
+      ["|", "   ", "|", "---", "-", "---", "|"],
+      ["|", "   ", "|", "   ", " ", "   ", "|"],
+      ["|", "   ", "|", "   ", "|", "   ", "|"],
+      ["|", "   ", " ", "   ", "|", "   ", "|"],
+      ["|", "---", "-", "---", "|", "---", "|"],
+    ]
     let state = createControlFixture({ status: "running", score: 800 })
     const dispatch = vi.fn(() =>
       createControlFixture({
@@ -602,11 +699,13 @@ describe("agent control mode", () => {
         score: 700,
         status: "won",
         winSummary: "New record",
+        maze: finalMaze,
+        mazeDimensions: { numCols: 3, numRows: 3, area: 9 },
       })
     })
 
     const mode = createAgentMode(elements)
-    mode.bindActionDispatch(dispatch, () => state, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, () => state, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     const logEntries = loadTapooLog<AgentRoundLogEntry>(CONFIG.runtime.controlModes.agentApi)
@@ -614,7 +713,7 @@ describe("agent control mode", () => {
     expect(lastEntry.payload).toBe("Agent level won.")
     expect(lastEntry.log).toBe("info")
     expect(lastEntry.details.outcome).toBe("won")
-    expect(lastEntry.details.level).toBe(4)
+    expect(lastEntry.level).toBe(4)
     expect(lastEntry.details.score).toBe(800)
     expect(lastEntry.details.winSummary).toBe("New record")
     expect(lastEntry.details.agent.playerName).toBe("Blue")
@@ -623,9 +722,76 @@ describe("agent control mode", () => {
     // chargedMovesCount, etc.), not the round as a whole, and everything that mattered about the
     // round outcome is already covered by the fields above.
     expect(lastEntry.details).not.toHaveProperty("lastActionResult")
-    // Summarised rather than embedded: the entry carries the visited-cell count, not the trail.
-    // The fixture records only the start cell, so the count is 1.
-    expect(lastEntry.details.uniqueCellsVisited).toBe(1)
+    // Summarised rather than embedded: the entry carries scoped and collective counts, not the trail.
+    expect(lastEntry.details.playerUniqueCellsVisited).toBe(0)
+    expect(lastEntry.details.allUniqueCellsVisited).toBe(1)
+    expect(lastEntry.details.decayUnitsCharged).toBe(1)
+    // The maze grid/dimensions are no longer repeated here: they never change once a round starts,
+    // so they're logged beside the level's first full agent request instead.
+    expect(lastEntry.details).not.toHaveProperty("maze")
+  })
+
+  it("logs final round payload when the round is lost", async () => {
+    const elements = createAgentFormElements()
+    savePersistedAgentApiConfigs(enabledAgentConfigs())
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveRight\"]}" },
+        }),
+      }),
+    )
+
+    // A real, deterministically generated 3x3-cell maze (generateMaze seed 1), not a contrived
+    // stand-in — the same wall/corridor pattern encodeMazeForLog would actually see in production.
+    const finalMaze = [
+      ["|", "---", "-", "---", "-", "---", "|"],
+      ["|", "   ", " ", "   ", " ", "   ", "|"],
+      ["|", "   ", "|", "---", "-", "---", "|"],
+      ["|", "   ", "|", "   ", " ", "   ", "|"],
+      ["|", "   ", "|", "   ", "|", "   ", "|"],
+      ["|", "   ", " ", "   ", "|", "   ", "|"],
+      ["|", "---", "-", "---", "|", "---", "|"],
+    ]
+    let state = createControlFixture({ status: "running", score: 100 })
+    const dispatch = vi.fn(() =>
+      createControlFixture({
+        currentCell: { row: 0, col: 1 },
+        lastMoveStatus: "invalid-move",
+      }),
+    )
+    const commitAgentTurn = vi.fn(() => {
+      state = createControlFixture({
+        turnCount: 5,
+        cumulativeRoundCount: 1,
+        lastRoundScore: 0,
+        score: 0,
+        status: "lost",
+        winSummary: "",
+        maze: finalMaze,
+        mazeDimensions: { numCols: 3, numRows: 3, area: 9 },
+      })
+    })
+
+    const mode = createAgentMode(elements)
+    mode.bindActionDispatch(dispatch, () => state, commitAgentTurn, testGameControls())
+    await flushImmediateAgentTurn()
+
+    const logEntries = loadTapooLog<AgentRoundLogEntry>(CONFIG.runtime.controlModes.agentApi)
+    const lastEntry = logEntries[logEntries.length - 1]
+    expect(lastEntry.payload).toBe("Agent level lost.")
+    expect(lastEntry.log).toBe("info")
+    expect(lastEntry.details.outcome).toBe("lost")
+    expect(lastEntry.level).toBe(4)
+    expect(lastEntry.details.score).toBe(0)
+    expect(lastEntry.details.winSummary).toBe("")
+    expect(lastEntry.details.agent.playerName).toBe("Blue")
+    expect(lastEntry.details.agent.model).toBe("llama3.2")
+    // The maze grid/dimensions are no longer repeated here — see the "won" test above.
+    expect(lastEntry.details).not.toHaveProperty("maze")
   })
 
   it("applies score decay to every submitted move in a valid prediction batch even when replay stops early", async () => {
@@ -638,6 +804,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -681,13 +852,11 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(2)
-    expect(commitAgentTurn).toHaveBeenCalledWith(
-      2,
-    )
+    expect(commitAgentTurn).toHaveBeenCalledWith(2, expect.any(Number))
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
@@ -710,6 +879,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -747,7 +921,7 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
 
     expect(dispatch).toHaveBeenCalledTimes(1)
@@ -755,7 +929,7 @@ describe("agent control mode", () => {
       { type: "MoveRight" },
       { wantFeedback: true, playerName: "Blue" },
     )
-    expect(commitAgentTurn).toHaveBeenCalledWith(1)
+    expect(commitAgentTurn).toHaveBeenCalledWith(1, expect.any(Number))
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
@@ -782,6 +956,11 @@ describe("agent control mode", () => {
       ],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -799,7 +978,7 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, vi.fn(() => createControlFixture()))
+    mode.bindActionDispatch(dispatch, readState, vi.fn(() => createControlFixture()), testGameControls())
     elements.touchButtons[0].click()
     elements.touchButtons[1].click()
     elements.touchButtons[2].click()
@@ -849,6 +1028,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "proceed" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -912,12 +1096,13 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     await flushImmediateAgentTurn()
     expect(fetchMock).not.toHaveBeenCalled()
 
     elements.touchButtons[0].click()
     await flushImmediateAgentTurn()
+    await vi.advanceTimersByTimeAsync(CONFIG.timing.defaultAgentApiRequestIntervalSeconds * 1_000)
 
     expect(fetchMock).toHaveBeenCalled()
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: "proceed" }, { playerName: "Self" })
@@ -938,6 +1123,11 @@ describe("agent control mode", () => {
       touchButtons: [],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -978,7 +1168,7 @@ describe("agent control mode", () => {
     const commitAgentTurn = vi.fn(() => createControlFixture({ level: 1 }))
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(dispatch, readState, commitAgentTurn)
+    mode.bindActionDispatch(dispatch, readState, commitAgentTurn, testGameControls())
     mode.recordActionResult(createControlFixture({
       currentCell: { row: 9, col: 9 },
       level: 99,
@@ -988,6 +1178,7 @@ describe("agent control mode", () => {
     mode.clearActionResult()
 
     await flushImmediateAgentTurn()
+    await vi.advanceTimersByTimeAsync(CONFIG.timing.defaultAgentApiRequestIntervalSeconds * 1_000)
     expect(fetchMock).toHaveBeenCalledTimes(2)
 
     const request = fetchMock.mock.calls[1][1] as RequestInit
@@ -1030,6 +1221,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -1046,15 +1242,17 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture()),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
     await flushImmediateAgentTurn()
     // The one-shot connection-error retry fires after its own backoff; the stubbed fetch keeps
     // rejecting, so the retry fails the same way before the agent is finally disabled.
     await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiConnectionErrorRetryDelayMs)
 
-    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(
-      enabledAgentConfigs()[0],
-    )
+    expect(disableAgentAfterNetworkError).toHaveBeenCalledWith(expect.objectContaining({
+      seatId: enabledAgentConfigs()[0].seatId,
+      playerName: "Blue",
+    }))
     expect(mode.readLastActionResult()).toEqual(
       expect.objectContaining({
         lastMoveStatus: "network-error",
@@ -1066,22 +1264,24 @@ describe("agent control mode", () => {
   it("renders compact seats for configured and empty agent slots", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Grey",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/grey/move"),
         api: "ollama",
-        enabled: false,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    resetAgentSessionAvailability({ seatId: 2, sessionId: 1_700_000_000_002 }, false)
     const elements = createAgentFormElements()
     vi.stubGlobal("fetch", vi.fn())
 
@@ -1090,6 +1290,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     expect(elements.agentSeatRoster?.hidden).toBe(false)
@@ -1133,9 +1334,10 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
-    expect(elements.agentSeatsBody?.hidden).toBe(false)
+    expect(elements.systemPalette?.hidden).toBe(false)
     expect(elements.tapooLogsReset?.disabled).toBe(true)
     expect(elements.tapooLogsDownload?.disabled).toBe(true)
     logTapooDiagnostic("agent-api", "info", "downloadable log")
@@ -1157,6 +1359,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     expect(elements.tapooLogsReset?.disabled).toBe(true)
@@ -1179,24 +1382,27 @@ describe("agent control mode", () => {
   it("opens delete confirmation for an inactive occupied seat, forcing disabled toggles off", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
-        api: "ollama",
+        api: "openai",
         reasoningEffort: "max",
+        requestIntervalSeconds: 42,
         echoBackReasoning: true,
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    resetAgentSessionAvailability({ seatId: 2, sessionId: 1_700_000_000_002 }, true)
     const elements = createAgentFormElements()
     const dispatch = vi.fn()
     vi.stubGlobal("fetch", vi.fn())
@@ -1206,6 +1412,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "running" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickDeleteSeat(elements, "2")
@@ -1220,6 +1427,10 @@ describe("agent control mode", () => {
     )
     expect(elements.agentDeleteTarget?.textContent).toBe("Delete now?")
     expect(elements.agentDeleteConfirm?.checked).toBe(false)
+    expect(elements.agentManageApi?.value).toBe("openai")
+    expect(elements.agentManageApi?.disabled).toBe(true)
+    expect(elements.agentManageRequestInterval?.value).toBe("42")
+    expect(elements.agentManageRequestInterval?.disabled).toBe(false)
     expect(elements.agentManageEchoBackReasoning?.checked).toBe(true)
 
     elements.agentDeleteConfirm.checked = true
@@ -1241,26 +1452,29 @@ describe("agent control mode", () => {
         ?.closest(".agent-config-form__toggle")
         ?.classList.contains("agent-config-form__toggle--disabled"),
     ).toBe(true)
+    expect(elements.agentManageRequestInterval?.disabled).toBe(true)
 
     elements.agentDeleteConfirm.checked = false
     elements.agentDeleteConfirm.dispatchEvent(new Event("change"))
     expect(elements.agentManageEnabled?.disabled).toBe(false)
     expect(elements.agentManageEchoBackReasoning?.disabled).toBe(false)
+    expect(elements.agentManageRequestInterval?.disabled).toBe(false)
   })
 
   it("locks echo-back-reasoning off in the manage dialog when reasoning effort is none", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
         reasoningEffort: "max",
         echoBackReasoning: true,
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
     const elements = createAgentFormElements()
     vi.stubGlobal("fetch", vi.fn())
 
@@ -1269,6 +1483,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickDeleteSeat(elements, "1")
@@ -1287,7 +1502,7 @@ describe("agent control mode", () => {
 
     elements.agentManageApply?.click()
     expect(loadPersistedAgentApiConfigs()).toEqual([
-      expect.objectContaining({ id: 1, reasoningEffort: "none" }),
+      expect.objectContaining({ seatId: 1, reasoningEffort: "none" }),
     ])
     expect(loadPersistedAgentApiConfigs()[0]).not.toHaveProperty("echoBackReasoning")
   })
@@ -1295,22 +1510,24 @@ describe("agent control mode", () => {
   it("deletes only the selected non-current agent after confirmation", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
         api: "ollama",
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    resetAgentSessionAvailability({ seatId: 2, sessionId: 1_700_000_000_002 }, true)
     const elements = createAgentFormElements()
     vi.stubGlobal("fetch", vi.fn())
 
@@ -1319,6 +1536,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickDeleteSeat(elements, "2")
@@ -1326,22 +1544,41 @@ describe("agent control mode", () => {
     elements.agentManageApply?.click()
 
     expect(loadPersistedAgentApiConfigs()).toEqual([
-      expect.objectContaining({ id: 1, playerName: "Blue" }),
+      expect.objectContaining({ seatId: 1, playerName: "Blue" }),
     ])
+    expect(loadAgentApiSeatConfigs().map((agent) => agent.seatId)).toEqual([1])
+
+    savePersistedAgentApiConfigs([
+      ...loadPersistedAgentApiConfigs(),
+      {
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
+        playerName: "NewRed",
+        model: "qwen3",
+        endpoint: new URL("https://agents.example/agents/new-red/move"),
+        api: "ollama",
+      },
+    ])
+    expect(loadAgentApiSeatConfigs().find((agent) => agent.seatId === 2)).toMatchObject({
+      seatId: 2,
+      sessionId: 1_700_000_000_002,
+      enabled: false,
+    })
     expect(elements.agentSeatRoster?.querySelector('[data-agent-seat-add="2"]')).not.toBeNull()
   })
 
   it("updates an occupied agent enabled state from the manage dialog", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: false,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, false)
     const elements = createAgentFormElements()
     vi.stubGlobal("fetch", vi.fn())
 
@@ -1350,6 +1587,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickDeleteSeat(elements, "1")
@@ -1365,8 +1603,8 @@ describe("agent control mode", () => {
     )
     elements.agentManageApply?.click()
 
-    expect(loadPersistedAgentApiConfigs()).toEqual([
-      expect.objectContaining({ id: 1, enabled: true }),
+    expect(loadAgentApiSeatConfigs()).toEqual([
+      expect.objectContaining({ seatId: 1, enabled: true }),
     ])
     expect(elements.agentManageDialog?.hidden).toBe(true)
     expect(
@@ -1376,25 +1614,70 @@ describe("agent control mode", () => {
     ).toBe(false)
   })
 
-  it("marks the currently playing agent seat and disables direct deletion", async () => {
+  it("shows invalid manage request interval errors inside the manage dialog", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
+      },
+    ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+
+    const mode = createAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+      testGameControls(),
+    )
+
+    clickDeleteSeat(elements, "1")
+    elements.agentConfigStatus.textContent = "add form message"
+    if (elements.agentManageRequestInterval) {
+      elements.agentManageRequestInterval.value = String(CONFIG.agentConfig.requestIntervalMaxSeconds + 1)
+    }
+    elements.agentManageApply?.click()
+
+    expect(elements.agentManageDialog?.hidden).toBe(false)
+    expect(elements.agentManageStatus?.textContent).toBe(
+      CONFIG.agentConfig.invalidRequestIntervalTemplate
+        .replace("{min}", String(CONFIG.agentConfig.requestIntervalMinSeconds))
+        .replace("{max}", String(CONFIG.agentConfig.requestIntervalMaxSeconds)),
+    )
+    expect(
+      elements.agentManageStatus?.classList.contains("agent-config-form__status--error"),
+    ).toBe(true)
+    expect(elements.agentConfigStatus.textContent).toBe("add form message")
+    expect(loadPersistedAgentApiConfigs()[0].playerName).toBe("Blue")
+  })
+
+  it("marks the currently playing agent seat and disables direct deletion", async () => {
+    savePersistedAgentApiConfigs([
+      {
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: new URL("https://agents.example/agents/blue/move"),
+        api: "ollama",
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Red",
         model: "gemma4",
         endpoint: new URL("https://agents.example/agents/red/move"),
         api: "ollama",
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    resetAgentSessionAvailability({ seatId: 2, sessionId: 1_700_000_000_002 }, true)
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
@@ -1409,6 +1692,7 @@ describe("agent control mode", () => {
       vi.fn(() => createControlFixture({ lastMoveStatus: "applied" })),
       vi.fn(() => createControlFixture({ status: "running" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     await flushImmediateAgentTurn()
@@ -1430,14 +1714,15 @@ describe("agent control mode", () => {
   it("clears the active agent seat when the maze stops running", async () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
@@ -1460,6 +1745,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     await flushImmediateAgentTurn()
@@ -1499,6 +1785,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1537,6 +1824,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1558,6 +1846,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1585,6 +1874,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1606,14 +1896,15 @@ describe("agent control mode", () => {
     // session shortcut, regardless of which element type currently holds focus.
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
     const elements = createAgentFormElements()
     const dispatch = vi.fn()
     vi.stubGlobal("fetch", vi.fn())
@@ -1624,6 +1915,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickDeleteSeat(elements, "1")
@@ -1650,6 +1942,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "running" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1675,6 +1968,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1698,6 +1992,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1713,7 +2008,7 @@ describe("agent control mode", () => {
 
   it("persists a newly configured agent from an empty seat", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn(loadPersistedAgentApiConfigs)
+    const readAgentConfigs = vi.fn(loadAgentApiSeatConfigs)
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
     elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
@@ -1724,6 +2019,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -1733,14 +2029,16 @@ describe("agent control mode", () => {
 
     expect(loadPersistedAgentApiConfigs()).toEqual([
       expect.objectContaining({
-        id: 1,
+        seatId: 1,
+        // Stamped from the clock the moment the seat was filled, so only its shape is assertable.
+        sessionId: expect.any(Number) as number,
         playerName: "Scout",
         model: "gemma4",
         endpoint: new URL("http://localhost:5000/api/chat"),
         api: "ollama",
-        enabled: true,
       }),
     ])
+    expect(loadAgentApiSeatConfigs()[0]).toMatchObject({ seatId: 1, enabled: true })
     expect(elements.agentConfigForm.hidden).toBe(true)
     expect(elements.agentConfigStatus.textContent).toBe("")
     expect(
@@ -1758,6 +2056,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1794,6 +2093,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1823,6 +2123,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -1853,7 +2154,7 @@ describe("agent control mode", () => {
 
   it("collects multiple header rows into one Key: Value per line string, skipping blank keys", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn(loadPersistedAgentApiConfigs)
+    const readAgentConfigs = vi.fn(loadAgentApiSeatConfigs)
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
     elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
@@ -1864,6 +2165,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -1906,7 +2208,7 @@ describe("agent control mode", () => {
 
   it("rejects a bare host:port endpoint that carries no request path", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
     // No path at all — this must not be silently defaulted to a provider's conventional route;
@@ -1919,6 +2221,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -1933,7 +2236,7 @@ describe("agent control mode", () => {
 
   it("rejects submission when a typed extra header key isn't a valid HTTP header name", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
     elements.agentConfigEndpoint.value = "localhost:5000/api/chat"
@@ -1944,6 +2247,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -1967,7 +2271,7 @@ describe("agent control mode", () => {
 
   it("shows required-field errors at the bottom of the agent form", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = ""
     elements.agentConfigEndpoint.value = "https://agents.example/scout/move"
@@ -1978,6 +2282,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -1998,7 +2303,7 @@ describe("agent control mode", () => {
 
   it("shows required-field errors when every agent input is empty", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     vi.stubGlobal("fetch", vi.fn())
 
     const mode = createAgentMode(elements, readAgentConfigs)
@@ -2006,6 +2311,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2026,7 +2332,7 @@ describe("agent control mode", () => {
 
   it("rejects agent endpoints that are not http or https URLs", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
     elements.agentConfigEndpoint.value = "/agents/scout/move"
@@ -2037,6 +2343,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2057,7 +2364,7 @@ describe("agent control mode", () => {
 
   it("shows player-name length errors outside the compact label range", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "TooLongName"
     elements.agentConfigModel.value = "gemma4"
     elements.agentConfigEndpoint.value = "https://agents.example/long/move"
@@ -2068,6 +2375,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2088,9 +2396,10 @@ describe("agent control mode", () => {
 
   it("shows a player-name error when the configured player already exists", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Scout",
         model: "llama3.2",
         endpoint: new URL("https://agents.example/scout/move"),
@@ -2108,6 +2417,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "2")
@@ -2128,7 +2438,7 @@ describe("agent control mode", () => {
 
   it("persists a disabled agent when the form toggle is off", () => {
     const elements = createAgentFormElements()
-    const readAgentConfigs = vi.fn((): AgentApiConfig[] => [])
+    const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "Observer"
     elements.agentConfigModel.value = "llama3.2"
     elements.agentConfigEndpoint.value = "https://agents.example/observer/move"
@@ -2140,6 +2450,7 @@ describe("agent control mode", () => {
       vi.fn(),
       vi.fn(() => createControlFixture({ status: "await-agent" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     clickAddSeat(elements, "1")
@@ -2150,9 +2461,9 @@ describe("agent control mode", () => {
     expect(loadPersistedAgentApiConfigs()).toEqual([
       expect.objectContaining({
         playerName: "Observer",
-        enabled: false,
       }),
     ])
+    expect(loadAgentApiSeatConfigs()[0]).toMatchObject({ playerName: "Observer", enabled: false })
     expect(elements.agentConfigEnabled.checked).toBe(true)
   })
 
@@ -2166,6 +2477,11 @@ describe("agent control mode", () => {
       touchButtons: [createButton({ action: "pause" })],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
 
@@ -2186,8 +2502,8 @@ describe("agent control mode", () => {
 
     const mode = createTestAgentMode(elements)
 
-    mode.bindActionDispatch(firstDispatch, readState, vi.fn(() => createControlFixture()))
-    mode.bindActionDispatch(secondDispatch, readState, vi.fn(() => createControlFixture()))
+    mode.bindActionDispatch(firstDispatch, readState, vi.fn(() => createControlFixture()), testGameControls())
+    mode.bindActionDispatch(secondDispatch, readState, vi.fn(() => createControlFixture()), testGameControls())
     elements.touchButtons[0].click()
 
     expect(firstDispatch).not.toHaveBeenCalled()
@@ -2205,6 +2521,11 @@ describe("agent control mode", () => {
       touchButtons: [pauseButton],
       touchControls: document.createElement("div"),
       zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateProceed: document.createElement("button"),
     }
     const outsideInput = document.createElement("input")
     elements.app.tabIndex = 0
@@ -2218,6 +2539,7 @@ describe("agent control mode", () => {
       dispatch,
       vi.fn(() => createControlFixture({ status: "running" })),
       vi.fn(() => createControlFixture()),
+      testGameControls(),
     )
 
     outsideInput.focus()
@@ -2231,5 +2553,181 @@ describe("agent control mode", () => {
 
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: "pause" }, { playerName: "Self" })
     expect(dispatch).toHaveBeenNthCalledWith(2, { type: "pause" }, { playerName: "Self" })
+  })
+})
+
+describe("system settings dialog", () => {
+  // bindSettings wires an agent mode against a live restartLevel, and hands back the pieces a test
+  // needs to drive the dialog and see what it did.
+  function bindSettings(restartLevel = 1) {
+    const elements = createAgentFormElements()
+    const setRestartLevel = vi.fn(() => true)
+    const state = createControlFixture({ status: "running" })
+    state.restartLevel = restartLevel
+    // In the document, or focus() is a no-op and any focus assertion silently passes on whatever
+    // an earlier test left focused.
+    document.body.append(elements.app)
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      () => state,
+      vi.fn(),
+      { setRestartLevel },
+    )
+
+    return { elements, setRestartLevel }
+  }
+
+  it("opens on the gear with the live restart level already filled in", () => {
+    const { elements } = bindSettings(84)
+
+    expect(elements.systemSettingsDialog?.hidden).toBe(true)
+    elements.systemSettings?.click()
+
+    expect(elements.systemSettingsDialog?.hidden).toBe(false)
+    // Prefilled so Apply with no edit is a no-op rather than a surprise reset to some default.
+    expect(elements.systemSettingsRestartLevel?.value).toBe("84")
+  })
+
+  // The title names the mode it was opened from, so a per-mode setting never reads as global.
+  it("titles the dialog with the mode it was opened from", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+
+    expect(elements.systemSettingsTitle?.textContent).toBe(
+      CONFIG.systemSettings.title.replace("{mode}", CONFIG.runtime.displayLabels.agentApi),
+    )
+    expect(elements.systemSettingsTitle?.textContent).toContain("Agent-API")
+  })
+
+  // The bug this guards: the terminal grabs focus back on any click inside #terminal-app, so an
+  // overlay missing from the shared "is anything open" check cannot be typed into — clicking its
+  // input hands focus straight to the terminal. It fails silently, as an unusable field.
+  it("does not let the terminal steal focus while the dialog is open", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    elements.systemSettingsRestartLevel?.focus()
+    expect(document.activeElement).toBe(elements.systemSettingsRestartLevel)
+
+    // A click anywhere inside the app, exactly as clicking into the field produces by bubbling.
+    elements.app.click()
+
+    expect(document.activeElement).toBe(elements.systemSettingsRestartLevel)
+  })
+
+  it("dims the terminal while the dialog is open, like the agent overlays", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    expect(elements.body.classList.contains("terminal-body--agent-form-active")).toBe(true)
+
+    elements.systemSettingsClose?.click()
+    expect(elements.body.classList.contains("terminal-body--agent-form-active")).toBe(false)
+  })
+
+  // Overlays share one screen position, so an open one left behind renders superimposed and keeps
+  // hold of focus. Every open path has to drop the others, not just the ones that existed when it
+  // was written.
+  it("is dropped when an agent overlay opens over it", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    expect(elements.systemSettingsDialog?.hidden).toBe(false)
+
+    clickAddSeat(elements, "2")
+
+    expect(elements.systemSettingsDialog?.hidden).toBe(true)
+    expect(elements.agentConfigForm?.hidden).toBe(false)
+  })
+
+  it("drops an open agent overlay when it opens", () => {
+    const { elements } = bindSettings(1)
+
+    clickAddSeat(elements, "2")
+    expect(elements.agentConfigForm?.hidden).toBe(false)
+
+    elements.systemSettings?.click()
+
+    expect(elements.agentConfigForm?.hidden).toBe(true)
+    expect(elements.systemSettingsDialog?.hidden).toBe(false)
+  })
+
+  it("closes on Escape, like the agent overlays", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+
+    expect(elements.systemSettingsDialog?.hidden).toBe(true)
+  })
+
+  it("applies a valid level and closes", () => {
+    const { elements, setRestartLevel } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    elements.systemSettingsRestartLevel.value = "84"
+    elements.systemSettingsApply?.click()
+
+    expect(setRestartLevel).toHaveBeenCalledWith(84)
+    expect(elements.systemSettingsDialog?.hidden).toBe(true)
+  })
+
+  // 1 is the only bound: there is no known ceiling to a level, so nothing above it is refused.
+  it.each([
+    ["zero", "0"],
+    ["negative", "-3"],
+    ["fractional", "2.5"],
+    ["empty", ""],
+    ["not a number", "abc"],
+  ])("refuses a %s restart level and stays open", (_label, value) => {
+    const { elements, setRestartLevel } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    elements.systemSettingsRestartLevel.value = value
+    elements.systemSettingsApply?.click()
+
+    expect(setRestartLevel).not.toHaveBeenCalled()
+    expect(elements.systemSettingsDialog?.hidden).toBe(false)
+    expect(elements.systemSettingsStatus?.textContent).toBe(
+      CONFIG.systemSettings.invalidRestartLevelMessage,
+    )
+    // The same error styling the agent forms use. Without the modifier the message inherits the
+    // faint neutral colour and reads as ordinary status rather than a rejection.
+    expect(
+      elements.systemSettingsStatus?.classList.contains("agent-config-form__status--error"),
+    ).toBe(true)
+  })
+
+  it("accepts any level at or above the minimum", () => {
+    const { elements, setRestartLevel } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    elements.systemSettingsRestartLevel.value = "1"
+    elements.systemSettingsApply?.click()
+
+    expect(setRestartLevel).toHaveBeenCalledWith(1)
+  })
+
+  // A rejected value must not greet the next open as if it were still a problem.
+  it("clears a previous error when reopened", () => {
+    const { elements } = bindSettings(1)
+
+    elements.systemSettings?.click()
+    elements.systemSettingsRestartLevel.value = "0"
+    elements.systemSettingsApply?.click()
+    expect(elements.systemSettingsStatus?.textContent).not.toBe("")
+
+    elements.systemSettingsClose?.click()
+    elements.systemSettings?.click()
+
+    expect(elements.systemSettingsStatus?.textContent).toBe("")
+    // The colour has to clear with the text, or the next open shows an empty red line.
+    expect(
+      elements.systemSettingsStatus?.classList.contains("agent-config-form__status--error"),
+    ).toBe(false)
+    expect(elements.systemSettingsDialog?.hidden).toBe(false)
   })
 })

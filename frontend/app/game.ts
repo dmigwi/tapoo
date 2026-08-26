@@ -16,12 +16,10 @@ import {
   getMazeDimensions,
 } from "./maze"
 import { render } from "./render"
-import { calculateTraversalSpeedUnits } from "./agent/efficiency"
 import {
   calculateElapsedScore,
   calculateMaxScore,
   calculateScoreAfterDecay,
-  resolveWinScore,
 } from "./scoring"
 import {
   canTrackDestinationVisibility,
@@ -40,7 +38,6 @@ import {
 import {
   clearPersistedSnapshot,
   clearPersistedRound,
-  clearStaleStorageVersions,
   loadPersistedSnapshot,
   resetAgentRoundStats,
   saveGameProgress,
@@ -52,17 +49,16 @@ import {
   cloneMazeRows,
   cloneRenderGridPoint,
   cloneTraversalHistory,
+  findTraversalHistoryEntry,
   isValidPersistedRound,
   isWallWeight,
   nextWallWeight,
-  resolvePlayerMove,
   reweightMaze,
   traversalHistoryEntry,
-  traversalHistoryIncludes,
 } from "./traversal"
+import type { ResolvedPlayerMove } from "./traversal"
 import type {
   Elements,
-  GameRuntime,
   LevelDimensions,
   MazeAction,
   MazeActionControl,
@@ -70,7 +66,6 @@ import type {
   MazeActionResult,
   MazeControlModeName,
   MazeDimensions,
-  MoveAction,
   PersistedGameStatus,
   PersistedRound,
   PersistedSnapshot,
@@ -95,7 +90,10 @@ type RuntimeRoundState = {
 
 const state: State = {
   controlMode: runtime.controlModes.interactive,
-  level: 1,
+  level: runtime.defaultRestartLevel,
+  // Replaced during bootstrap by whatever this session already chose; the config default only
+  // applies until then, and on a session that has never set one.
+  restartLevel: runtime.defaultRestartLevel,
   maze: null,
   mazeDimensions: null,
   startPosition: null,
@@ -126,7 +124,7 @@ let runtimeElements: Elements | null = null
 function loadPersistedSnapshotWithFallbacks(
   mode: MazeControlModeName,
 ): PersistedSnapshot {
-  return loadPersistedSnapshot(mode, 1, WALL_WEIGHTS[0], isWallWeight)
+  return loadPersistedSnapshot(mode, state.restartLevel, WALL_WEIGHTS[0], isWallWeight)
 }
 
 // calculateRoundScore resolves authoritative score updates for gameplay state changes.
@@ -266,31 +264,6 @@ function renderState(): void {
   render(runtimeElements, state, activeControlMode?.readCurrentPlayer?.() ?? null)
 }
 
-// applyWinSummary delegates post-win scoring details and stores the resolved result.
-function applyWinSummary(totalCells: number): void {
-  // Only cells the agents actually reached count as progress; the start cell is seeded under the
-  // interactive player name and was never earned, so it must not inflate the round's speed.
-  const agentCellsVisited = state.traversalHistory.filter(
-    (entry) => entry.playerName !== runtime.interactivePlayerName,
-  ).length
-  const winScore = resolveWinScore({
-    bestWinRetentionUnits: state.bestWinRetentionUnits,
-    bestWinTraversalSpeedUnits: state.bestWinTraversalSpeedUnits,
-    controlMode: state.controlMode,
-    lastAttemptRetentionUnits: state.lastAttemptRetentionUnits,
-    lastWinTraversalSpeedUnits: state.lastWinTraversalSpeedUnits,
-    score: state.score,
-    totalCells,
-    traversalSpeedUnits: calculateTraversalSpeedUnits(agentCellsVisited, state.scoreDecayUnits),
-  })
-
-  state.winSummary = winScore.winSummary
-  state.lastAttemptRetentionUnits = winScore.lastAttemptRetentionUnits
-  state.bestWinRetentionUnits = winScore.bestWinRetentionUnits
-  state.lastWinTraversalSpeedUnits = winScore.lastWinTraversalSpeedUnits
-  state.bestWinTraversalSpeedUnits = winScore.bestWinTraversalSpeedUnits
-}
-
 // scheduleRoundPersistence debounces in-progress interactive move snapshots so rapid key repeats
 // write the latest round once instead of persisting every valid step immediately.
 function scheduleRoundPersistence(): void {
@@ -327,8 +300,22 @@ function noValidRoundExists(snapshot: PersistedRound | null): boolean {
   return false
 }
 
+// restoredRestartLevel keeps a corrupt or absent stored floor from reaching state. It is validated
+// here rather than in isValidPersistedRound because a bad value must not discard an otherwise good
+// round — and because startRound raises every round to this floor, so an implausible one would make
+// the game unplayable rather than merely wrong.
+function restoredRestartLevel(level: number | undefined): number {
+  return typeof level === "number" && Number.isInteger(level) && level >= 1
+    ? level
+    : runtime.defaultRestartLevel
+}
+
 // restoreValidPersistedRound rebuilds runtime state from a snapshot that already passed validation.
 function restoreValidPersistedRound(snapshot: PersistedRound): void {
+  // Ahead of the viewport bail-out below: the floor applies to whatever round opens next, including
+  // the one a too-small viewport will ask for.
+  state.restartLevel = restoredRestartLevel(snapshot.restartLevel)
+
   if (!persistedRoundFitsViewport(snapshot)) {
     applyTooSmallState(snapshot.level)
     state.wallWeight = snapshot.wallWeight
@@ -411,6 +398,7 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
   state.turnCount = 0
   state.cumulativeRoundCount += 1
   state.winSummary = ""
+  
   if (isAgentApiMode(state.controlMode)) {
     resetAgentRoundStats(state.level, state.cumulativeRoundCount)
   }
@@ -427,10 +415,16 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
 }
 
 // startRound generates and initializes a fresh round for the requested level.
-function startRound(level: number, persist = true): boolean {
+function startRound(requestedLevel: number, persist = true): boolean {
   if (!runtimeElements) {
     return false
   }
+
+  // restartLevel is a floor, not just a restart target: no round may open below where this session
+  // says games begin. Applied here rather than at each call site so every entry point obeys it —
+  // a restore from stored progress, a retry, and a viewport bailout included. Progression above the
+  // floor is untouched, since a level already past it is its own maximum.
+  const level = Math.max(requestedLevel, state.restartLevel)
 
   const terminalSize = getTerminalSize(runtimeElements)
   const dimensions = getMazeDimensions(level, terminalSize)
@@ -460,7 +454,7 @@ function redrawRoundForViewport(level: number): boolean {
   return startRoundWithDimensions(dimensions)
 }
 
-// restartGame clears persisted progress and restarts from level one.
+// restartGame clears persisted progress and restarts from the configured opening level.
 function restartGame(): boolean {
   cancelScheduledRoundPersist()
   clearPersistedSnapshot(state.controlMode)
@@ -472,7 +466,52 @@ function restartGame(): boolean {
   state.bestWinTraversalSpeedUnits = null
   state.lastRoundScore = 0
   state.winSummary = ""
-  return startRound(1, false)
+  return startRound(state.restartLevel, false)
+}
+
+// stopActiveRound freezes a game that is actually playing, so state can be changed underneath it.
+// Nothing else: no mode-specific handling, and no status written when there was nothing to stop.
+//
+// Paused in both modes. await-agent is not the agent-api equivalent of a pause — it means play has
+// no enabled agent seat to run (see awaitAgent below, and the dispatch in control/agent-api.ts),
+// which is untrue of a round an agent was mid-turn on. Stopping such a round is a pause, and
+// paused is also what lets it resume by the ordinary route.
+//
+// The running check is the only condition, and it is checked here rather than delegated to
+// awaitAgent/pauseGame, whose own guards can decline — pauseGame additionally requires a clock
+// (canTrackDestinationVisibility) — leaving a live round running behind a caller that believed it
+// had stopped.
+function stopActiveRound(): boolean {
+  if (!isRunningStatus(state.status)) {
+    return false
+  }
+
+  // Optional because a running round without a clock is possible in principle; the status change
+  // below is what actually stops play, and it must happen either way.
+  state.clock?.pause()
+  state.status = "paused"
+  persistNow("state")
+  return true
+}
+
+// setRestartLevel moves the floor every round opens at or above, returning whether it changed.
+//
+// The round in progress is stopped first. A level chosen mid-play would otherwise sit inert until
+// something happened to call startRound, and the score would keep decaying against a round the
+// player has mentally already left. Stopping makes the change take effect at a moment the player
+// chose, rather than at whatever moment the game next happens to restart.
+function setRestartLevel(level: number): boolean {
+  if (!Number.isInteger(level) || level < 1 || level === state.restartLevel) {
+    return false
+  }
+
+  stopActiveRound()
+  state.restartLevel = level
+  // After the assignment, not before: stopActiveRound's own persist ran while the old value was
+  // still in state. "round" rather than "state" because only the round snapshot carries this —
+  // rewriting durable progress here would be a side effect nobody asked for.
+  persistNow("round")
+  return true
 }
 
 // resumeOrProceed resumes a pause or advances from a finished round.
@@ -539,19 +578,25 @@ function cycleWallWeight(): boolean {
   return true
 }
 
-// movePlayer applies one validated move step and leaves turn finalization to the active control mode.
-function movePlayer(action: MoveAction, playerName: string): void {
-  const moveEvaluation = resolvePlayerMove(state, action)
+// movePlayer applies a resolved move step and keeps the game-side mutation boundary defensive.
+function movePlayer(moveEvaluation: ResolvedPlayerMove, playerName: string): void {
   if (!moveEvaluation.canMove) {
     return
   }
 
   state.playerPosition = moveEvaluation.nextGridPoint
-  if (!traversalHistoryIncludes(state.traversalHistory, moveEvaluation.nextCell)) {
-    state.traversalHistory.push(
-      traversalHistoryEntry(moveEvaluation.nextCell, playerName, state.maze),
-    )
+  // One entry per cell: a revisit bumps that cell's tally rather than appending, so the array length
+  // stays a distinct-cell count while visitCount still records how worked-over the cell is (which is
+  // what agent/context.ts turns into visitStatus).
+  const visitedEntry = findTraversalHistoryEntry(state.traversalHistory, moveEvaluation.nextCell)
+  if (visitedEntry) {
+    visitedEntry.visitCount += 1
+    return
   }
+
+  state.traversalHistory.push(
+    traversalHistoryEntry(moveEvaluation.nextCell, playerName, state.maze),
+  )
 }
 
 // dispatchControl gives the shared control layer the game-owned effects needed to run actions.
@@ -639,12 +684,10 @@ export function bootstrapGame(
   // controlMode is the page-selected MazeActionControl that supplies the active input behavior.
   controlMode: MazeActionControl,
   elements: Elements,
-): GameRuntime {
+): void {
   runtimeElements = elements
   activeControlMode = controlMode
-
   state.controlMode = controlMode.name
-  clearStaleStorageVersions()
 
   window.addEventListener("resize", handleResize)
   window.visualViewport?.addEventListener("resize", handleResize)
@@ -685,32 +728,28 @@ export function bootstrapGame(
 
   const commitTurnDeps = {
     state,
-    applyWinSummary,
     calculateRoundScore,
     persistNow,
     renderState,
   }
 
+  // Agent-api's own dispatch loop (control/agent-api.ts) always calls commitTurn with both real
+  // values already computed for that turn; interactive mode never supplies either. traversalSpeedUnits
+  // is optional on AgentApiTurnResolutionDeps itself — handleWin already branches on its presence —
+  // so there's nothing to default here beyond the trivial charged-count fallback.
   const commitTurn = isAgentApiMode(controlMode.name)
-    ? (chargedMovesCount = 0) => commitAgentApiTurn({
+    ? (chargedMovesCount = 0, traversalSpeedUnits?: number) => commitAgentApiTurn({
       ...commitTurnDeps,
       chargedMovesCount,
+      traversalSpeedUnits,
     })
     : () => commitInteractiveTurn({
       ...commitTurnDeps,
       scheduleRoundPersistence,
     })
 
-  controlMode.bindActionDispatch(dispatchControl, readState, commitTurn)
+  controlMode.bindActionDispatch(dispatchControl, readState, commitTurn, { setRestartLevel })
   if (isInteractiveMode(controlMode.name)) {
     runtimeElements.app.focus()
-  }
-
-  return {
-    mode: controlMode.name,
-    dispatch: dispatchControl,
-    persistSnapshot: () => {
-      persistNow("state")
-    },
   }
 }

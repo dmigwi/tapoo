@@ -96,6 +96,7 @@ function buildContext(path) {
     emptyResponses: 0,
     unparseableResponses: 0,
     endpointFailures: 0,
+    tokenExhaustions: 0,
   }
 
   let currentTurn = 0
@@ -167,13 +168,9 @@ function buildContext(path) {
           noteTool("get_prediction_rules")
           context.suggested = payload.suggestedMovesPerTurn
           context.speedReadings.push([
-            payload.uniqueCellsVisited ?? 0,
+            payload.playerUniqueCellsVisited ?? 0,
             payload.decayUnitsCharged ?? 0,
           ])
-        }
-
-        if ("status" in payload && "mazeDimensions" in payload) {
-          noteTool("get_game_status")
         }
 
         if ("lastMoveStatus" in payload) {
@@ -242,6 +239,8 @@ function buildContext(path) {
       context.duplicatesAfterWarning += 1
     } else if (entry.payload === "Agent requested an unknown or hallucinated tool.") {
       context.hallucinated += 1
+    } else if (entry.payload === "Agent exhausted the token cap without returning a prediction.") {
+      context.tokenExhaustions += 1
     } else if (
       entry.payload === "Provider HTTP response failed." ||
       entry.payload === "Request failed before a valid response."
@@ -335,8 +334,8 @@ function inConfirmedCorridorRun(context, cell, move) {
 
 // --- capabilities --------------------------------------------------------
 
-// C1. RULES ADHERENCE   scope: responses a moves array was extracted from
-function rulesAdherence(context) {
+// C1. INSTRUCTION ADHERENCE   scope: responses a moves array was extracted from
+function instructionAdherence(context) {
   const submissions = context.submissions
   if (submissions.length === 0) {
     return { Q1: false, Q2: false, Q3: false }
@@ -352,74 +351,18 @@ function rulesAdherence(context) {
   }
 }
 
-// C2. SINGLE VALID OUTCOME DELIVERY
+// C2. VALID ACTION DELIVERY
 // Q1. Did the agent produce at least one valid move (a successfully applied move)?
-function singleValidOutcomeDelivery(context) {
+function validActionDelivery(context) {
   return { Q1: context.submissions.some((entry) => (entry.applied ?? 0) > 0) }
 }
 
-// C3. POSITION AWARENESS
-// Q1. At round end, is traversal speed (uniqueCellsVisited per decayUnitsCharged)
-//     at least 1.0 (Navigator)?
-function positionAwareness(context) {
-  const reading = context.speedReadings.at(-1)
-  if (!reading) {
-    return { Q1: false }
-  }
-
-  const [cells, decay] = reading
-  return { Q1: decay > 0 && cells / decay >= 1 }
-}
-
-// C4. BOLDNESS
-// Q1. Did the agent make any batched (2+ move) prediction?
-function boldness(context) {
-  return { Q1: context.submissions.some((entry) => entry.moves.length >= 2) }
-}
-
-// C5. STRATEGIC THINKING
-function strategicThinking(context) {
-  const batches = context.submissions.filter((entry) => entry.moves.length >= 2)
-  return {
-    // Q1. Was there a batched (2+ move) prediction where every move applied?
-    Q1: batches.some(fullyApplied),
-    // Q2. Was there a batch (2+ move) through a confirmed branchless corridor
-    //     where every move applied?
-    Q2: batches.some(
-      (entry) =>
-        fullyApplied(entry) &&
-        entry.before &&
-        inConfirmedCorridorRun(context, entry.before, entry.moves[0]),
-    ),
-  }
-}
-
-// C6. PLANNING DEPTH
-// Q1. Was there a batch of at least the level's suggested moves per turn, where
-//     every move applied?
-function planningDepth(context) {
-  const target = context.suggested
-  if (!target) {
-    return { Q1: false }
-  }
-
-  return {
-    Q1: context.submissions.some((entry) => entry.moves.length >= target && fullyApplied(entry)),
-  }
-}
-
-// C7. STATE GATHERING - each question asks whether one payload was extracted on
-// EVERY turn. Index order below is the question order in the rubric.
-// Q1. the nearby maze structure (current/destination cells, filtered visits,
-//     open exits, and which neighbours those exits lead to)
-// Q2. the game status (level, score, maze dimensions)
-// Q3. the prediction rules (suggested move count, traversal speed, efficiency rank)
-// Q4. the previous turn's outcome after the first turn
-function stateGathering(context) {
+// C3. CONTEXT ACQUISITION - each question asks whether one payload was extracted on
+// every prediction turn.
+function contextAcquisition(context) {
   const turns = [...context.turnsWithPrediction]
   const needed = [
     "get_maze_structure",
-    "get_game_status",
     "get_prediction_rules",
     "get_last_prediction_outcome",
   ]
@@ -432,14 +375,68 @@ function stateGathering(context) {
   )
 }
 
-// C8. SELF-CORRECTION
+// C4. STATE AWARENESS
+// Q1. Was each first submitted move consistent with confirmed open exits when known?
+function stateAwareness(context) {
+  const checkable = context.submissions.filter((entry) => entry.before && exitsOf(context, entry.before))
+  if (checkable.length === 0) {
+    return { Q1: false }
+  }
+
+  return { Q1: checkable.every((entry) => exitsOf(context, entry.before).has(entry.moves[0])) }
+}
+
+// C5. RESOURCE EFFICIENCY
+// Q1. At round end, is traversal speed (playerUniqueCellsVisited per decayUnitsCharged)
+//     at least 1.0000 (Navigator)?
+function resourceEfficiency(context) {
+  const reading = context.speedReadings.at(-1)
+  if (!reading) {
+    return { Q1: false }
+  }
+
+  const [cells, decay] = reading
+  return { Q1: decay > 0 && cells / decay >= 1.0000 }
+}
+
+// C6. MULTI-STEP EXECUTION
+function multiStepExecution(context) {
+  const batches = context.submissions.filter((entry) => entry.moves.length >= 2)
+  return {
+    // Q1. Did the agent make any batched (2+ move) prediction?
+    Q1: batches.length > 0,
+    // Q2. Did any batched prediction fully apply?
+    Q2: batches.some(fullyApplied),
+  }
+}
+
+// C7. STRUCTURAL REASONING
+function structuralReasoning(context) {
+  const batches = context.submissions.filter((entry) => entry.moves.length >= 2)
+  const trailblazerWin = context.outcomes.some(
+    (outcome) => outcome.outcome === "won" && Number(outcome.traversalSpeed) > 1.0000,
+  )
+  return {
+    // Q1. Was there a batch through confirmed branchless structure where every move applied?
+    Q1: batches.some(
+      (entry) =>
+        fullyApplied(entry) &&
+        entry.before &&
+        inConfirmedCorridorRun(context, entry.before, entry.moves[0]),
+    ),
+    // Q2. Did the sampled level end in a Trailblazer-speed win?
+    Q2: trailblazerWin,
+  }
+}
+
+// C8. ADAPTIVE RECOVERY
 // Q1. Was there a failed turn where the following turn's prediction had its first
 //     two consecutive moves applied?
 //
 // A single applied move proves nothing here: the current cell's open exits are handed to the model on
 // every tool call, so repeating one back is transcription. The second consecutive move is the first
 // that requires reasoning about a cell it was not given.
-function selfCorrection(context) {
+function adaptiveRecovery(context) {
   const submissions = context.submissions
   for (const [index, failed] of submissions.entries()) {
     const next = submissions[index + 1]
@@ -455,9 +452,9 @@ function selfCorrection(context) {
   return { Q1: false }
 }
 
-// C9. OBJECTIVE COMPLETION
+// C9. TASK COMPLETION
 // Q1. Did the agent reach the destination in any sampled round?
-function objectiveCompletion(context) {
+function taskCompletion(context) {
   return { Q1: context.outcomes.some((outcome) => outcome.outcome === "won") }
 }
 
@@ -470,8 +467,8 @@ function hallucinations(context) {
   return { Q1: undeclared || context.hallucinated > 0 }
 }
 
-// V2. MALFORMED OUTPUT
-function malformedOutput(context) {
+// V2. OUTPUT CONTRACT FAILURE
+function outputContractFailure(context) {
   return {
     // Q1. Any response with content but no extractable moves array?
     Q1: context.unparseableResponses > 0,
@@ -487,11 +484,11 @@ function warningDisregard(context) {
   return { Q1: context.duplicatesAfterWarning > 0 }
 }
 
-// V4. RESOURCE WASTAGE
-function resourceWastage(context) {
+// V4. AVAILABLE-CONTEXT DISREGARD
+function availableContextDisregard(context) {
   // Q1. Any move submitted that was not among its cell's confirmed open exits
   //     (open exits clue disregarded)?
-  const outsideOpenExits = context.submissions.some((entry) => {
+  return { Q1: context.submissions.some((entry) => {
     if (!entry.before) {
       return false
     }
@@ -509,8 +506,11 @@ function resourceWastage(context) {
     }
 
     return false
-  })
+  }) }
+}
 
+// V5. RESOURCE WASTE
+function resourceWaste(context) {
   // Q2. Any cell visited more times than its openMoves count (visit record
   //     disregarded)?
   const arrivals = new Map()
@@ -533,13 +533,13 @@ function resourceWastage(context) {
       inConfirmedCorridorRun(context, entry.before, entry.moves[0]),
   )
 
-  return { Q1: outsideOpenExits, Q2: excessVisits, Q3: declinedFreeBatch }
+  return { Q1: excessVisits, Q2: declinedFreeBatch, Q3: context.tokenExhaustions > 0 }
 }
 
-// V5. PERSEVERATION
+// V6. FAILED-STATE REPETITION
 // Q1. Any prediction repeating verbatim a moves array already proven invalid from
 //     the same cell?
-function perseveration(context) {
+function failedStateRepetition(context) {
   const failed = new Set()
   for (const entry of context.submissions) {
     if (!entry.before || entry.applied === null) {
@@ -558,32 +558,25 @@ function perseveration(context) {
   return { Q1: false }
 }
 
-// V6. FATAL ERRORS
-// Q1. Any non-OK HTTP status, transport failure, or timeout from the agent's own
-//     endpoint?
-function fatalErrors(context) {
-  return { Q1: context.endpointFailures > 0 }
-}
-
 const CAPABILITIES = [
-  ["C1", "RULES ADHERENCE", rulesAdherence],
-  ["C2", "SINGLE VALID OUTCOME DELIVERY", singleValidOutcomeDelivery],
-  ["C3", "POSITION AWARENESS", positionAwareness],
-  ["C4", "BOLDNESS", boldness],
-  ["C5", "STRATEGIC THINKING", strategicThinking],
-  ["C6", "PLANNING DEPTH", planningDepth],
-  ["C7", "STATE GATHERING", stateGathering],
-  ["C8", "SELF-CORRECTION", selfCorrection],
-  ["C9", "OBJECTIVE COMPLETION", objectiveCompletion],
+  ["C1", "INSTRUCTION ADHERENCE", instructionAdherence],
+  ["C2", "VALID ACTION DELIVERY", validActionDelivery],
+  ["C3", "CONTEXT ACQUISITION", contextAcquisition],
+  ["C4", "STATE AWARENESS", stateAwareness],
+  ["C5", "RESOURCE EFFICIENCY", resourceEfficiency],
+  ["C6", "MULTI-STEP EXECUTION", multiStepExecution],
+  ["C7", "STRUCTURAL REASONING", structuralReasoning],
+  ["C8", "ADAPTIVE RECOVERY", adaptiveRecovery],
+  ["C9", "TASK COMPLETION", taskCompletion],
 ]
 
 const VIOLATIONS = [
-  ["V1", "HALLUCINATIONS", hallucinations],
-  ["V2", "MALFORMED OUTPUT", malformedOutput],
+  ["V1", "TOOL HALLUCINATION", hallucinations],
+  ["V2", "OUTPUT CONTRACT FAILURE", outputContractFailure],
   ["V3", "WARNING DISREGARD", warningDisregard],
-  ["V4", "RESOURCE WASTAGE", resourceWastage],
-  ["V5", "PERSEVERATION", perseveration],
-  ["V6", "FATAL ERRORS", fatalErrors],
+  ["V4", "AVAILABLE-CONTEXT DISREGARD", availableContextDisregard],
+  ["V5", "RESOURCE WASTE", resourceWaste],
+  ["V6", "FAILED-STATE REPETITION", failedStateRepetition],
 ]
 
 // A capability needs every question answered yes; a violation needs only one. The assertion is not

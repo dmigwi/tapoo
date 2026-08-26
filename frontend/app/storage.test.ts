@@ -2,17 +2,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CONFIG, STORE_ENCODING_PREFIX } from "./config"
 import {
+  agentForCurrentRound,
   clearPersistedRound,
   clearPersistedSnapshot,
   clearStaleStorageVersions,
   disableAgentApiConfigForNetworkError,
+  loadAgentApiSeatConfigs,
   loadPersistedAgentApiConfigs,
   loadPersistedSnapshot,
   recordAgentTurnStats,
+  resetAgentSessionAvailability,
   resetAgentRoundStats,
   saveActiveRoundSnapshot,
   saveGameProgress,
   savePersistedAgentApiConfigs,
+  staleStorageSummary,
 } from "./storage"
 // The real guard rather than a local copy: loadPersistedSnapshot takes it from its caller, so a copy
 // here would let these tests keep accepting weights production had already stopped accepting.
@@ -24,7 +28,7 @@ const AGENT_MODE = CONFIG.runtime.controlModes.agentApi
 const { agentConfigs, gameSetup, winMetrics } = CONFIG.runtime.storage.suffixes
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [], visitCount: 1 }
 }
 
 // storageKey mirrors the production per-mode browser storage naming.
@@ -81,6 +85,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.interactive,
     level: 4,
+    restartLevel: 1,
     mazeDimensions: { numCols: 5, numRows: 5, area: 25 },
     maze: [
       ["|", "---", "|"],
@@ -157,22 +162,21 @@ describe("storage", () => {
   it("saves and reloads configured agent api details separately from game progress", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/a/move"),
         api: "ollama",
-        enabled: true,
+        requestIntervalSeconds: 45,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Agent B",
         model: "gemma4",
         endpoint: endpoint("/api/agents/b/move"),
         api: "ollama",
-        enabled: false,
-        disabledReason: "network-error",
-        lastErrorAt: 1_725_000_000_000,
       },
     ])
 
@@ -184,25 +188,29 @@ describe("storage", () => {
     expect(storedConfigs).not.toContain("/api/agents/a/move")
     expect(loadPersistedAgentApiConfigs()).toEqual([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/a/move"),
         api: "ollama",
         reasoningEffort: "none",
-        enabled: true,
+        requestIntervalSeconds: 45,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Agent B",
         model: "gemma4",
         endpoint: endpoint("/api/agents/b/move"),
         api: "ollama",
         reasoningEffort: "none",
-        enabled: false,
-        disabledReason: "network-error",
-        lastErrorAt: 1_725_000_000_000,
+        requestIntervalSeconds: CONFIG.timing.defaultAgentApiRequestIntervalSeconds,
       },
+    ])
+    expect(loadAgentApiSeatConfigs()).toEqual([
+      expect.objectContaining({ seatId: 1, enabled: false }),
+      expect.objectContaining({ seatId: 2, enabled: false }),
     ])
 
     clearPersistedSnapshot(AGENT_MODE)
@@ -212,6 +220,110 @@ describe("storage", () => {
     expect(loadPersistedAgentApiConfigs()).toEqual([])
   })
 
+  it("never lets a refilled seat inherit the previous occupant's session metrics", () => {
+    // The cross-tab case sessionId exists for. Another tab deletes seat 1 and creates a new agent
+    // in it; this tab never saw either event, so its sessionStorage still holds a row filed under
+    // seat 1 by the agent that is now gone.
+    const previousOccupant = {
+      seatId: 1,
+      sessionId: 1_700_000_000_001,
+      playerName: "Blue",
+      model: "llama3.2",
+      endpoint: endpoint("/api/agents/blue/move"),
+      api: "ollama" as const,
+    }
+    savePersistedAgentApiConfigs([previousOccupant])
+    resetAgentSessionAvailability(previousOccupant, true)
+    recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 4, 1)
+    expect(loadAgentApiSeatConfigs()[0]).toMatchObject({
+      enabled: true,
+      decayUnitsCharged: 4,
+    })
+
+    // The other tab's delete-then-create, seen from here as nothing but a changed localStorage
+    // record: same seat, new stamp.
+    savePersistedAgentApiConfigs([
+      { ...previousOccupant, sessionId: 1_700_000_000_999, playerName: "Red" },
+    ])
+
+    const [refilledSeat] = loadAgentApiSeatConfigs()
+    expect(refilledSeat.playerName).toBe("Red")
+    // Enabled would mean this tab starts predicting against Red's endpoint and credential without
+    // anyone ever switching it on here; the counters would score Red on Blue's spend.
+    expect(refilledSeat.enabled).toBe(false)
+    expect(refilledSeat.decayUnitsCharged).toBeUndefined()
+    expect(refilledSeat.turnCount).toBeUndefined()
+  })
+
+  // The write-path counterpart to the read-path guard above: a turn that finishes after its seat
+  // was deleted and refilled must not charge its counters to the newcomer.
+  it("never credits a finishing turn to a seat's new occupant", () => {
+    const previousOccupant = {
+      seatId: 1,
+      sessionId: 1_700_000_000_001,
+      playerName: "Blue",
+      model: "llama3.2",
+      endpoint: endpoint("/api/agents/blue/move"),
+      api: "ollama" as const,
+    }
+    // The seat is now held by a different agent — same seatId, new stamp.
+    const newOccupant = { ...previousOccupant, sessionId: 1_700_000_000_999, playerName: "Red" }
+    savePersistedAgentApiConfigs([newOccupant])
+    resetAgentSessionAvailability(newOccupant, true)
+
+    // Blue's turn resolves late, still carrying its own identity.
+    const updatedAgent = recordAgentTurnStats(
+      { ...previousOccupant, enabled: true },
+      3,
+      7,
+      4,
+      1,
+    )
+
+    // Red's stored row is untouched: no turn, no decay charged against it.
+    const storedRed = loadAgentApiSeatConfigs()[0]
+    expect(storedRed.playerName).toBe("Red")
+    expect(storedRed.turnCount ?? 0).toBe(0)
+    expect(storedRed.decayUnitsCharged ?? 0).toBe(0)
+
+    // Blue's own counters still come back so the turn can finish reporting against them.
+    expect(updatedAgent).toMatchObject({ playerName: "Blue", turnCount: 1, decayUnitsCharged: 4 })
+  })
+
+  it("keeps volatile session fields out of the durable localStorage record", () => {
+    // Seat configs are saved straight from the merged runtime view at every call site in
+    // control/agent.ts, so normalizeAgentApiConfig's explicit field list is the only thing keeping
+    // per-tab state out of the bucket every tab shares. Assert it rather than assume it.
+    savePersistedAgentApiConfigs([
+      {
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
+        playerName: "Blue",
+        model: "llama3.2",
+        endpoint: endpoint("/api/agents/blue/move"),
+        api: "ollama",
+      },
+    ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 4, 1)
+
+    savePersistedAgentApiConfigs(loadAgentApiSeatConfigs())
+
+    const durableRecord = loadPersistedAgentApiConfigs()[0] as Record<string, unknown>
+    for (const volatileField of [
+      "enabled",
+      "disabledReason",
+      "lastErrorAt",
+      "gameLevel",
+      "cumulativeRoundCount",
+      "levelTurnCount",
+      "turnCount",
+      "decayUnitsCharged",
+    ]) {
+      expect(durableRecord).not.toHaveProperty(volatileField)
+    }
+  })
+
   it("backfills a pre-multi-provider agent record with the ollama default on load", () => {
     // Simulates a record saved by a build that predates the api field. Written directly to the
     // storage key as plain base64 JSON (no XOR layer, no AgentApiConfig typing) rather than through
@@ -219,6 +331,8 @@ describe("storage", () => {
     // api before the payload ever reached storage, defeating the point of this test. Plain base64
     // is a real, currently-supported format: decodeStoredPayload falls back to it whenever a stored
     // value lacks the STORE_ENCODING_PREFIX.
+    // Keyed id, not seatId, and carrying no sessionId: both fields postdate this record, so it also
+    // exercises the legacy-name fallback and the sessionId backfill.
     const legacyRecord = {
       id: 1,
       playerName: "Legacy",
@@ -232,10 +346,15 @@ describe("storage", () => {
     const loaded = loadPersistedAgentApiConfigs()
     expect(loaded).toEqual([
       {
-        ...legacyRecord,
+        seatId: legacyRecord.id,
+        // Stamped at load time, so only its presence and shape can be asserted here.
+        sessionId: expect.any(Number) as number,
+        playerName: legacyRecord.playerName,
+        model: legacyRecord.model,
         endpoint: endpoint("/api/agents/legacy/move"),
         api: "ollama",
         reasoningEffort: "none",
+        requestIntervalSeconds: CONFIG.timing.defaultAgentApiRequestIntervalSeconds,
       },
     ])
 
@@ -248,6 +367,25 @@ describe("storage", () => {
     expect(loadPersistedAgentApiConfigs()).toEqual(loaded)
   })
 
+  it("drops an agent record with an explicitly invalid request interval instead of rewriting it", () => {
+    const invalidRecord = {
+      seatId: 1,
+      sessionId: 1_700_000_000_001,
+      playerName: "Broken",
+      model: "llama3.2",
+      endpoint: endpoint("/api/agents/broken/move").href,
+      api: "ollama",
+      requestIntervalSeconds: CONFIG.agentConfig.requestIntervalMaxSeconds + 1,
+      enabled: true,
+    }
+    window.localStorage.setItem(
+      agentStorageKey(agentConfigs),
+      window.btoa(JSON.stringify([invalidRecord])),
+    )
+
+    expect(loadPersistedAgentApiConfigs()).toEqual([])
+  })
+
   it("normalizes fixed agent seats without reassigning occupied slots", () => {
     // One config beyond maxSeats, so the excess (highest id) has to be dropped rather than
     // reassigned into an earlier gap — the behavior this test's name asserts.
@@ -255,14 +393,14 @@ describe("storage", () => {
     const oversizedConfigs = Array.from(
       { length: CONFIG.agentConfig.maxSeats + 1 },
       (_, index) => {
-        const id = index + 1
+        const seatId = index + 1
         return {
-          id,
-          playerName: `Aseat${id}`,
+          seatId,
+          sessionId: 1_700_000_000_000 + seatId,
+          playerName: `Aseat${seatId}`,
           model: models[index % models.length],
-          endpoint: endpoint(`/api/agents/${id}/move`),
+          endpoint: endpoint(`/api/agents/${seatId}/move`),
           api: "ollama" as const,
-          enabled: true,
         }
       },
     )
@@ -273,8 +411,8 @@ describe("storage", () => {
     expect(loadPersistedAgentApiConfigs().map((agent) => agent.playerName)).toEqual(
       survivingConfigs.map((config) => config.playerName),
     )
-    expect(loadPersistedAgentApiConfigs().map((agent) => agent.id)).toEqual(
-      survivingConfigs.map((config) => config.id),
+    expect(loadPersistedAgentApiConfigs().map((agent) => agent.seatId)).toEqual(
+      survivingConfigs.map((config) => config.seatId),
     )
   })
 
@@ -282,12 +420,12 @@ describe("storage", () => {
     const oversizedConfigs = Array.from(
       { length: CONFIG.agentConfig.maxSeats + 1 },
       (_, index) => ({
-        id: index + 1,
+        seatId: index + 1,
+        sessionId: 1_700_000_000_000 + index + 1,
         playerName: `A${index + 1}bot`,
         model: "llama3.2",
         endpoint: endpoint(`/api/agents/${index + 1}/move`),
         api: "ollama" as const,
-        enabled: true,
       }),
     )
 
@@ -331,114 +469,143 @@ describe("storage", () => {
     vi.spyOn(Date, "now").mockReturnValue(1_725_000_000_001)
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/a/move"),
         api: "ollama",
-        enabled: true,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Agent B",
         model: "gemma4",
         endpoint: endpoint("/api/agents/b/move"),
         api: "ollama",
-        enabled: true,
       },
     ])
+    resetAgentSessionAvailability({ seatId: 1, sessionId: 1_700_000_000_001 }, true)
+    resetAgentSessionAvailability({ seatId: 2, sessionId: 1_700_000_000_002 }, true)
 
-    const nextConfigs = disableAgentApiConfigForNetworkError({
-      id: 2,
-      playerName: "Agent B",
-      model: "gemma4",
-      endpoint: endpoint("/api/agents/b/move"),
-      api: "ollama",
-      enabled: true,
-    })
+    disableAgentApiConfigForNetworkError({ seatId: 2, sessionId: 1_700_000_000_002 })
 
-    expect(nextConfigs).toEqual([
+    expect(loadAgentApiSeatConfigs()).toEqual([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Agent A",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/a/move"),
         api: "ollama",
         reasoningEffort: "none",
+        requestIntervalSeconds: CONFIG.timing.defaultAgentApiRequestIntervalSeconds,
         enabled: true,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Agent B",
         model: "gemma4",
         endpoint: endpoint("/api/agents/b/move"),
         api: "ollama",
         reasoningEffort: "none",
+        requestIntervalSeconds: CONFIG.timing.defaultAgentApiRequestIntervalSeconds,
         enabled: false,
         disabledReason: "network-error",
         lastErrorAt: 1_725_000_000_001,
       },
     ])
-    expect(loadPersistedAgentApiConfigs()).toEqual(nextConfigs)
+    const stableConfigs = loadPersistedAgentApiConfigs()
+    expect(stableConfigs).toHaveLength(2)
+    for (const stableConfig of stableConfigs) {
+      expect(stableConfig).not.toHaveProperty("enabled")
+    }
   })
 
   it("syncs round levelTurnCount for every seat while turnCount and decayUnitsCharged only accumulate for the playing agent", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/blue/move"),
         api: "ollama",
-        enabled: true,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Red",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/red/move"),
         api: "ollama",
-        enabled: true,
       },
     ])
 
     // A clean turn costs 1 decay unit; a turn that hit an invalid move costs 3. Requests count
     // one per turn either way, so the two counters deliberately diverge.
-    const firstTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 1, 1)
+    const storedConfigsBeforeTurns = window.localStorage.getItem(agentStorageKey(agentConfigs))
+    const firstTurnAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 1, 1)
     expect(firstTurnAgent).toMatchObject({
       gameLevel: 3, cumulativeRoundCount: 7, levelTurnCount: 1, turnCount: 1, decayUnitsCharged: 1,
     })
     // Red never played: its own turnCount and decayUnitsCharged stay at zero, but levelTurnCount
     // still syncs to the round's shared total — that field is a staleness signal, not a per-agent count.
-    expect(loadPersistedAgentApiConfigs()[1]).toMatchObject({
+    expect(loadAgentApiSeatConfigs()[1]).toMatchObject({
       gameLevel: 3, cumulativeRoundCount: 7, levelTurnCount: 1, turnCount: 0, decayUnitsCharged: 0,
     })
 
-    const secondTurnAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 7, 3, 2)
+    const secondTurnAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 3, 2)
     expect(secondTurnAgent).toMatchObject({
       gameLevel: 3, cumulativeRoundCount: 7, levelTurnCount: 2, turnCount: 2, decayUnitsCharged: 4,
     })
-    expect(loadPersistedAgentApiConfigs()[0]).toMatchObject({ levelTurnCount: 2, turnCount: 2, decayUnitsCharged: 4 })
-    expect(loadPersistedAgentApiConfigs()[1]).toMatchObject({ levelTurnCount: 2, turnCount: 0, decayUnitsCharged: 0 })
+    expect(loadAgentApiSeatConfigs()[0]).toMatchObject({ levelTurnCount: 2, turnCount: 2, decayUnitsCharged: 4 })
+    expect(loadAgentApiSeatConfigs()[1]).toMatchObject({ levelTurnCount: 2, turnCount: 0, decayUnitsCharged: 0 })
+    expect(window.localStorage.getItem(agentStorageKey(agentConfigs))).toBe(storedConfigsBeforeTurns)
+  })
+
+  it("resets stale counters before using an agent in a different current round", () => {
+    const staleRoundAgent = {
+      seatId: 1,
+      sessionId: 1_700_000_000_001,
+      playerName: "Blue",
+      model: "llama3.2",
+      endpoint: endpoint("/api/agents/blue/move"),
+      api: "ollama" as const,
+      enabled: true,
+      gameLevel: 3,
+      cumulativeRoundCount: 7,
+      levelTurnCount: 4,
+      turnCount: 4,
+      decayUnitsCharged: 9,
+    }
+
+    const currentRoundAgent = agentForCurrentRound(staleRoundAgent, 3, 8, 2)
+
+    expect(currentRoundAgent).toMatchObject({
+      gameLevel: 3,
+      cumulativeRoundCount: 8,
+      levelTurnCount: 2,
+      turnCount: 0,
+      decayUnitsCharged: 0,
+    })
   })
 
   it("resets both counters when the level changes", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/blue/move"),
         api: "ollama",
-        enabled: true,
-        gameLevel: 3,
-        cumulativeRoundCount: 7,
-        turnCount: 5,
-        decayUnitsCharged: 12,
       },
     ])
+    recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 12, 5)
 
-    const nextLevelAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 4, 7, 1, 1)
+    const nextLevelAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 4, 7, 1, 1)
 
     expect(nextLevelAgent).toMatchObject({
       gameLevel: 4, cumulativeRoundCount: 7, turnCount: 1, decayUnitsCharged: 1,
@@ -448,20 +615,17 @@ describe("storage", () => {
   it("resets both counters when the level is retried in a new round (level unchanged, cumulativeRoundCount changed)", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/blue/move"),
         api: "ollama",
-        enabled: true,
-        gameLevel: 3,
-        cumulativeRoundCount: 7,
-        turnCount: 5,
-        decayUnitsCharged: 12,
       },
     ])
+    recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 12, 5)
 
-    const retryAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 3, 8, 1, 1)
+    const retryAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 8, 1, 1)
 
     expect(retryAgent).toMatchObject({
       gameLevel: 3, cumulativeRoundCount: 8, turnCount: 1, decayUnitsCharged: 1,
@@ -476,21 +640,18 @@ describe("storage", () => {
     // this stale record already holds, purely by coincidence.
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/blue/move"),
         api: "ollama",
-        enabled: true,
-        gameLevel: 5,
-        cumulativeRoundCount: 12,
-        turnCount: 9,
-        decayUnitsCharged: 25,
       },
     ])
+    recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 5, 12, 25, 9)
 
     // New session, different level, but the round counter happens to collide.
-    const postResetAgent = recordAgentTurnStats(loadPersistedAgentApiConfigs()[0], 1, 12, 1, 1)
+    const postResetAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 1, 12, 1, 1)
 
     // Must NOT inherit the stale turnCount: 9 or decayUnitsCharged: 25 — gameLevel differing
     // (1 vs 5) is what catches this. If recordAgentTurnStats is ever "simplified" to compare only
@@ -503,38 +664,32 @@ describe("storage", () => {
   it("clears all agent round counters when a fresh round starts", () => {
     savePersistedAgentApiConfigs([
       {
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         playerName: "Blue",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/blue/move"),
         api: "ollama",
-        enabled: true,
-        gameLevel: 2,
-        cumulativeRoundCount: 8,
-        levelTurnCount: 4,
-        turnCount: 4,
-        decayUnitsCharged: 9,
       },
       {
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         playerName: "Red",
         model: "llama3.2",
         endpoint: endpoint("/api/agents/red/move"),
         api: "ollama",
-        enabled: true,
-        gameLevel: 2,
-        cumulativeRoundCount: 8,
-        levelTurnCount: 4,
-        turnCount: 1,
-        decayUnitsCharged: 2,
       },
     ])
+    recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 2, 8, 9, 4)
+    recordAgentTurnStats(loadAgentApiSeatConfigs()[1], 2, 8, 2, 4)
+    const storedConfigsBeforeReset = window.localStorage.getItem(agentStorageKey(agentConfigs))
 
     const nextConfigs = resetAgentRoundStats(3, 9)
 
     expect(nextConfigs).toEqual([
       expect.objectContaining({
-        id: 1,
+        seatId: 1,
+        sessionId: 1_700_000_000_001,
         gameLevel: 3,
         cumulativeRoundCount: 9,
         levelTurnCount: 0,
@@ -542,7 +697,8 @@ describe("storage", () => {
         decayUnitsCharged: 0,
       }),
       expect.objectContaining({
-        id: 2,
+        seatId: 2,
+        sessionId: 1_700_000_000_002,
         gameLevel: 3,
         cumulativeRoundCount: 9,
         levelTurnCount: 0,
@@ -550,7 +706,8 @@ describe("storage", () => {
         decayUnitsCharged: 0,
       }),
     ])
-    expect(loadPersistedAgentApiConfigs()).toEqual(nextConfigs)
+    expect(loadAgentApiSeatConfigs()).toEqual(nextConfigs)
+    expect(window.localStorage.getItem(agentStorageKey(agentConfigs))).toBe(storedConfigsBeforeReset)
   })
 
   it("saves and reloads the active round state", () => {
@@ -577,6 +734,8 @@ describe("storage", () => {
       score: 1200,
       lastRoundScore: 700,
       winSummary: "",
+      // The floor travels inside the round snapshot rather than under a key of its own.
+      restartLevel: 1,
       remainingMs: 25_000,
       scoreDecayUnits: 0,
       turnCount: 0,
@@ -646,6 +805,53 @@ describe("storage", () => {
       lastWinTraversalSpeedUnits: 1_500,
       bestWinTraversalSpeedUnits: 2_500,
     })
+  })
+
+  it("reports what an older version left behind without reading any of it", () => {
+    const currentVersion = CONFIG.runtime.storage.version
+    window.localStorage.setItem(versionedStorageKey(currentVersion, MODE, gameSetup), "current")
+    window.localStorage.setItem(versionedStorageKey(currentVersion + 1, MODE, gameSetup), "old")
+    window.localStorage.setItem(versionedStorageKey(currentVersion + 1, MODE, winMetrics), "old")
+    window.sessionStorage.setItem(versionedStorageKey(currentVersion + 2, MODE, "round"), "older")
+
+    // Counts both stores, ignores the current version, and lists each stale version once.
+    expect(staleStorageSummary()).toEqual({
+      versions: [String(currentVersion + 1), String(currentVersion + 2)].sort(),
+      itemCount: 3,
+    })
+  })
+
+  it("reports nothing stale when only current-version entries exist", () => {
+    saveGameProgress(MODE, {
+      level: 8,
+      wallWeight: 3,
+      lastAttemptRetentionUnits: 710000,
+      bestWinRetentionUnits: 840000,
+      lastWinTraversalSpeedUnits: 6,
+      bestWinTraversalSpeedUnits: 4,
+    })
+
+    expect(staleStorageSummary()).toEqual({ versions: [], itemCount: 0 })
+  })
+
+  // The version segment is itself dotted, so a naive split on "." would report "4" for every key.
+  it("reads the whole dotted version out of a stale key", () => {
+    window.localStorage.setItem(`tapoo.v4.82.${MODE}.${gameSetup}`, "old")
+
+    expect(staleStorageSummary()).toEqual({ versions: ["4.82"], itemCount: 1 })
+  })
+
+  // The regression guard for the whole change: reading persisted data must no longer delete
+  // anything an older version wrote. Consent now gates that, and it happens in tapoo.ts.
+  it("leaves stale entries in place when current-version data is loaded", () => {
+    const staleKey = versionedStorageKey(CONFIG.runtime.storage.version + 1, MODE, gameSetup)
+    window.localStorage.setItem(staleKey, "old")
+
+    loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
+    loadPersistedAgentApiConfigs()
+
+    expect(window.localStorage.getItem(staleKey)).toBe("old")
+    expect(staleStorageSummary().itemCount).toBe(1)
   })
 
   it("clears stale browser storage versions without touching the current version", () => {

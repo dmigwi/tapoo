@@ -4,12 +4,8 @@ import type { GameStatus, MazeDimensions, RenderGridPoint, State, TraversalHisto
 // AgentStateSnapshot is the minified, frozen view of State an agent turn reads from — the agent
 // context tools (buildAgentToolHandlers, agent/context.ts) and the turn's log-context stamping
 // (setTapooLogContext, logs.ts) alike, so nothing lower in the call chain ever needs the raw,
-// mutable State object once this exists; a caller that has the snapshot never also needs to thread
-// state itself alongside it. Only the fields actually read anywhere are included: maze (the raw
-// string[][] grid) and every other field nothing currently reads (wallWeight, clock, winSummary,
-// ...) are deliberately left out — either too large to snapshot for no benefit, or simply not used
-// in their current form by any caller, and including them "just in case" would erode the point of
-// keeping this minified.
+// mutable State object once this exists. Only the fields actually read by agent context/tools are
+// included; larger diagnostic-only fields such as the raw maze grid stay outside this snapshot.
 // Every field is readonly so nothing downstream can mutate the snapshot in place instead of
 // touching live state — a caller that wants to track a real change reaches for __readState()
 // (or an equivalent live read), never for editing this. traversalHistory is readonly as an array

@@ -39,10 +39,13 @@
         or use Tapoo controls such as Reset Progress. Stored values are lightly obfuscated
         to reduce casual tampering, but this is not strong encryption for gameplay data.
         Every stored entry is also tagged with Tapoo's storage schema version, separate
-        from the app version shown at the bottom of this page. Upgrading Tapoo
-        automatically discards any entries left over from an older schema version rather
-        than migrating them, so an upgrade can silently reset previously stored
-        preferences and AI Agent configuration.
+        from the app version shown at the bottom of this page. Upgrading Tapoo to a new
+        schema version does not migrate entries left over from an older one, and the
+        upgraded page cannot read them. Instead, the next time you open Tapoo it tells you
+        how many leftover entries exist and which version wrote them, and asks you to
+        confirm before removing them. Nothing is deleted until you confirm, and confirming
+        does clear previously stored preferences and AI Agent configuration, including any
+        credential or header values saved with an agent.
       </p>
 
       <h2>Third-Party Sharing (AI Agent Mode)</h2>
@@ -56,8 +59,8 @@
         traversal-speed classification — unique cells visited and decay units charged
         this level (turns taken is included too, for context only) — and the
         classification itself: a rate (unique cells visited divided by decay units
-        charged) below 1.0 is <code>Backtracker</code>, exactly 1.0 is <code>Navigator</code>,
-        and above 1.0 is <code>Trailblazer</code>. An agent starts out as a Trailblazer and
+        charged) below 1.0000 is <code>Backtracker</code>, exactly 1.0000 is <code>Navigator</code>,
+        and above 1.0000 is <code>Trailblazer</code>. An agent starts out as a Trailblazer and
         is expected to maintain that rank throughout the game. The rank is shown in the
         agent seat roster in your browser and included in the prompt sent to the
         configured agent endpoint. If Echo Back Reasoning is enabled for an agent, its own
@@ -80,7 +83,13 @@
       <h2>Your Choices and Controls</h2>
       <p>
         You can reset game progress, download Tapoo Logs, or clear Tapoo Logs from the
-        game controls. To remove all stored site data, use your browser settings. If you
+        game controls. When leftover data from an older storage schema version is present,
+        Tapoo asks you to confirm its removal before the game loads; this is a notice
+        rather than a choice to keep that data while playing, since the upgraded page
+        cannot read it either way. Declining simply means not continuing, and the data
+        stays on your device until you return and confirm — so if you want to keep a
+        copy, export it through your browser's developer tools before confirming. To
+        remove all stored site data, use your browser settings. If you
         have configured AI Agent endpoints, remove any you no longer trust before using
         that mode. Tapoo also reads your browser's Reduce Motion (prefers-reduced-motion)
         setting to decide whether the maze target marker blinks or stays steadily visible;

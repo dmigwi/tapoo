@@ -81,7 +81,7 @@ export function calculateScoreRetentionUnits(
 }
 
 // formatTraversalSpeedLabel renders the speed a round actually achieved together with the
-// classification it earned, e.g. "3.123 (Trailblazer)". Only an achieved speed carries a
+// classification it earned, e.g. "3.1230 (Trailblazer)". Only an achieved speed carries a
 // classification — a delta between two rounds is a difference, not a pace, so deltas stay bare
 // numbers.
 function formatTraversalSpeedLabel(traversalSpeedUnits: number): string {
@@ -149,18 +149,13 @@ export function resolveWinScore(input: WinScoreInput): WinScoreResult {
   const bestWinRetentionUnits = selectBestRetentionUnits(currentRetentionUnits, input.bestWinRetentionUnits)
 
   if (input.controlMode === runtime.controlModes.interactive) {
-    // Interactive wins translate retention deltas back into time-like progress messages.
+    // Interactive wins keep retention metrics only; win-summary text is agent-api specific.
     return {
       bestWinRetentionUnits,
       bestWinTraversalSpeedUnits: input.bestWinTraversalSpeedUnits,
       lastAttemptRetentionUnits: currentRetentionUnits,
       lastWinTraversalSpeedUnits: input.lastWinTraversalSpeedUnits,
-      winSummary: buildWinSummary(
-        currentRetentionUnits,
-        input.lastAttemptRetentionUnits,
-        input.bestWinRetentionUnits,
-        input.totalCells * timing.interactiveDecayIntervalPerCellMs,
-      ),
+      winSummary: "",
     }
   }
 

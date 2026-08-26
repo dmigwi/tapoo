@@ -8,6 +8,33 @@ const pageChrome = {
   initTopMenus: vi.fn(),
 }
 
+// createMemoryStorage mirrors storage.test.ts's stub: this jsdom config exposes no real
+// localStorage, and the entrypoint now reads storage to decide whether the info gate is needed.
+function createMemoryStorage(): Storage {
+  const values = new Map<string, string>()
+
+  return {
+    get length() {
+      return values.size
+    },
+    clear() {
+      values.clear()
+    },
+    getItem(key) {
+      return values.get(key) ?? null
+    },
+    key(index) {
+      return Array.from(values.keys())[index] ?? null
+    },
+    removeItem(key) {
+      values.delete(key)
+    },
+    setItem(key, value) {
+      values.set(key, value)
+    },
+  }
+}
+
 // These tests verify that the entrypoint boots only on pages that expose a game host.
 describe("tapoo entrypoint", () => {
   beforeEach(() => {
@@ -15,15 +42,18 @@ describe("tapoo entrypoint", () => {
     vi.clearAllMocks()
     vi.doMock("./page-chrome", () => pageChrome)
     delete document.body.dataset.tapooControlMode
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: createMemoryStorage(),
+    })
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      value: createMemoryStorage(),
+    })
   })
 
   it("boots the game on import", async () => {
-    const runtime = {
-      dispatch: vi.fn(),
-      mode: "interactive",
-      persistSnapshot: vi.fn(),
-    }
-    const bootstrapGame = vi.fn(() => runtime)
+    const bootstrapGame = vi.fn()
     const getGameElements = vi.fn(() => ({ app: {} }))
     const showPlaceholderArt = vi.fn()
     const prepareTerminalAppForBootstrap = vi.fn()
@@ -66,12 +96,99 @@ describe("tapoo entrypoint", () => {
     expect(showPlaceholderArt).not.toHaveBeenCalled()
   })
 
-  it("uses the agent-api page mode when configured in html", async () => {
-    const bootstrapGame = vi.fn(() => ({
-      dispatch: vi.fn(),
-      mode: "agent-api",
-      persistSnapshot: vi.fn(),
+  // mountGateScenario seeds stale keys, boots the entrypoint against real storage, and hands back
+  // the nodes plus the mocks the assertions need. Shared so the singular and plural copy cases do
+  // not duplicate ten lines of module mocking each.
+  async function mountGateScenario(staleKeys: string[]): Promise<{
+    infoGate: HTMLElement
+    infoGateDetail: HTMLElement
+    infoGateProceed: HTMLButtonElement
+    bootstrapGame: ReturnType<typeof vi.fn>
+    initTapooLogs: ReturnType<typeof vi.fn>
+    prepareTerminalAppForBootstrap: ReturnType<typeof vi.fn>
+  }> {
+    for (const key of staleKeys) {
+      window.localStorage.setItem(key, "old")
+    }
+
+    const infoGate = document.createElement("div")
+    infoGate.hidden = true
+    const infoGateDetail = document.createElement("p")
+    const infoGateProceed = document.createElement("button")
+    const elements = {
+      app: {},
+      infoGate,
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail,
+      infoGateProceed,
+    }
+
+    const bootstrapGame = vi.fn()
+    const initTapooLogs = vi.fn()
+    const prepareTerminalAppForBootstrap = vi.fn()
+    const interactiveMode = {
+      bindActionDispatch: vi.fn(),
+      clearActionState: vi.fn(),
+      name: "interactive",
+      readLastActionState: vi.fn(),
+      recordActionState: vi.fn(),
+    }
+
+    document.body.dataset.tapooControlMode = "interactive"
+
+    vi.doMock("./app/dom", () => ({ getGameElements: vi.fn(() => elements) }))
+    vi.doMock("./app/fallback-policy", async () => {
+      const actual = await vi.importActual<typeof FallbackPolicy>("./app/fallback-policy")
+      return { ...actual, prepareTerminalAppForBootstrap, showPlaceholderArt: vi.fn() }
+    })
+    vi.doMock("./app/control/interactive", () => ({
+      createInteractiveMode: vi.fn(() => interactiveMode),
     }))
+    vi.doMock("./app/control/agent", () => ({ createAgentMode: vi.fn() }))
+    vi.doMock("./app/game", () => ({ bootstrapGame }))
+    vi.doMock("./app/logs", () => ({
+      initTapooLogs,
+      tapooDownloadLogs: vi.fn(),
+      tapooResetLogs: vi.fn(),
+    }))
+
+    await import("./tapoo")
+
+    return {
+      infoGate,
+      infoGateDetail,
+      infoGateProceed,
+      bootstrapGame,
+      initTapooLogs,
+      prepareTerminalAppForBootstrap,
+    }
+  }
+
+  // The point of the whole change: an upgrade must not start the game, or delete anything, until
+  // the user has acknowledged that leftover data is about to go.
+  it("holds the game behind the info gate while stale storage exists", async () => {
+    const staleKey = "tapoo.v0.1.interactive.gameSetup"
+    const scenario = await mountGateScenario([staleKey])
+
+    // The terminal shell is revealed so the gate has something to sit over, but the game itself
+    // has not started and the stale entry is untouched.
+    expect(scenario.prepareTerminalAppForBootstrap).toHaveBeenCalledTimes(1)
+    expect(scenario.infoGate.hidden).toBe(false)
+    expect(scenario.bootstrapGame).not.toHaveBeenCalled()
+    expect(scenario.initTapooLogs).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem(staleKey)).toBe("old")
+
+    scenario.infoGateProceed.click()
+
+    expect(window.localStorage.getItem(staleKey)).toBeNull()
+    expect(scenario.bootstrapGame).toHaveBeenCalledTimes(1)
+    expect(scenario.initTapooLogs).toHaveBeenCalledTimes(1)
+    expect(scenario.infoGate.hidden).toBe(true)
+  })
+
+  it("uses the agent-api page mode when configured in html", async () => {
+    const bootstrapGame = vi.fn()
     const elements = { app: {} }
     const showPlaceholderArt = vi.fn()
     const agentMode = {
@@ -184,13 +301,8 @@ describe("tapoo entrypoint", () => {
     expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
   })
 
-  it("does not persist the active runtime after a later invariant failure", async () => {
+  it("reports a later invariant failure through the placeholder art", async () => {
     const failure = new Error("agent move dispatch must return feedback")
-    const runtime = {
-      dispatch: vi.fn(),
-      mode: "agent-api",
-      persistSnapshot: vi.fn(),
-    }
     const showPlaceholderArt = vi.fn()
 
     vi.doMock("./app/dom", () => ({
@@ -209,7 +321,7 @@ describe("tapoo entrypoint", () => {
       })),
     }))
     vi.doMock("./app/game", () => ({
-      bootstrapGame: vi.fn(() => runtime),
+      bootstrapGame: vi.fn(),
     }))
 
     document.body.dataset.tapooControlMode = "agent-api"
@@ -217,7 +329,6 @@ describe("tapoo entrypoint", () => {
     await import("./tapoo")
     window.dispatchEvent(new ErrorEvent("error", { error: failure }))
 
-    expect(runtime.persistSnapshot).not.toHaveBeenCalled()
     expect(showPlaceholderArt).toHaveBeenCalledWith("agent-api", failure)
   })
 })

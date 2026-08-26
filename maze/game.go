@@ -771,7 +771,7 @@ func (state *gameState) reloadLevel(
 
 // loadLevel creates a fresh maze for the requested level using the current wall-weight setting.
 func loadLevel(ui UI, level int, weight WallWeight) (*Dimensions, [][]string, error) {
-	val, err := GetMazeDimensions(level, GetTerminalSize(ui.Size()))
+	val, err := GetMazeDimensions(level, GetTerminalSize(ui.ViewportSize()))
 	if err != nil {
 		return nil, nil, fmt.Errorf("get maze dimensions: %w", err)
 	}

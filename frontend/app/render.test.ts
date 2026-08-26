@@ -9,7 +9,7 @@ import type { AgentElements, Elements, State, TraversalHistoryEntry } from "./ty
 const { messages } = CONFIG
 
 function selfVisit(row: number, col: number): TraversalHistoryEntry {
-  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [] }
+  return { playerName: CONFIG.runtime.interactivePlayerName, row, col, openMoves: [], visitCount: 1 }
 }
 
 // normalizeScreenText keeps DOM assertions readable by collapsing non-breaking spaces.
@@ -80,10 +80,16 @@ function createElements(): RenderElements {
     controls: [],
     touchControls,
     zoomPlaceholder: document.createElement("div"),
+    infoGate: document.createElement("div"),
+    infoGateTitle: document.createElement("strong"),
+    infoGateMessage: document.createElement("p"),
+    infoGateDetail: document.createElement("p"),
+    infoGateProceed: document.createElement("button"),
     touchButtons,
     agentConfigForm,
     agentManageDialog,
-    agentSeatsBody: document.createElement("div"),
+    systemPalette: document.createElement("div"),
+    systemSettings: document.createElement("button"),
   }
 }
 
@@ -92,6 +98,7 @@ function createState(overrides: Partial<State> = {}): State {
   return {
     controlMode: CONFIG.runtime.controlModes.interactive,
     level: 1,
+    restartLevel: 1,
     mazeDimensions: { numCols: 2, numRows: 2, area: 4 },
     maze: [
       ["|", "---", "|", "---", "|"],
@@ -259,7 +266,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain("Player: Kora the Trailblazer - 1.20x")
+    expect(text).toContain("Player: Kora the Trailblazer - 1.2000x")
   })
 
   it("shows - Default instead of a computed rate for a player with no decay units charged yet", () => {
@@ -293,7 +300,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).not.toContain("Player:")
-    expect(text).toContain("Level: 1   Scores: 900")
+    expect(text).toContain("Level: 1   Turn: 0   Scores: 900")
   })
 
   it("ellipsis-trims an overlong player label to fit the compact status line's character budget", () => {
@@ -335,7 +342,7 @@ describe("render", () => {
 
     // Roughly half the available width is kept from the front, half from the back, with the
     // middle dropped — the same middle-truncation compactAgentModelLabel (agent/seats.ts) uses.
-    expect(statusLineText(elements)).toBe("Player: Kora the T…zer - 1.20x   Level: 1   Scores: 900")
+    expect(statusLineText(elements)).toBe("Player: Kora the T…r - 1.2000x   Level: 1   Scores: 900")
   })
 
   it("leaves the wide-viewport label untouched even when it would exceed the compact budget", () => {
@@ -356,7 +363,7 @@ describe("render", () => {
 
     const text = normalizeScreenText(elements.screen.textContent)
 
-    expect(text).toContain("Player: AgentOne the Trailblazer - 1.20x")
+    expect(text).toContain("Player: AgentOne the Trailblazer - 1.2000x")
   })
 
   it("trims a long player label to fit the compact status line too, dropping its middle", () => {
@@ -399,7 +406,7 @@ describe("render", () => {
       currentPlayerLabel,
     )
 
-    expect(statusLineText(elements)).toBe("Player: AgentOne t…zer - 1.20x   Level: 1   Scores: 900")
+    expect(statusLineText(elements)).toBe("Player: AgentOne t…r - 1.2000x   Level: 1   Scores: 900")
   })
 
   it("keeps a compact label untouched right at the character-budget boundary", () => {
@@ -854,6 +861,7 @@ describe("render", () => {
       createState({
         mazeDimensions: { numCols: 3, numRows: 3, area: 9 },
         level: 1,
+        restartLevel: 1,
         status: "won",
         lastRoundScore: 900,
         lastAttemptRetentionUnits: 1_000_000,
@@ -1016,9 +1024,9 @@ describe("render", () => {
     expect(elements.zoomPlaceholder.getAttribute("aria-hidden")).toBe("false")
   })
 
-  it("hides the agent seats dock while the zoom placeholder is up, in agent-api mode", () => {
+  it("hides the system palette while the zoom placeholder is up, in agent-api mode", () => {
     const elements = createElements()
-    elements.agentSeatsBody!.hidden = false
+    elements.systemPalette!.hidden = false
     // Same narrow width as the previous test: too small for even the too-small status text.
     vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
       x: 0, y: 0, top: 0, left: 0, right: 40, bottom: 200,
@@ -1038,12 +1046,12 @@ describe("render", () => {
     )
 
     expect(elements.zoomPlaceholder.hidden).toBe(false)
-    expect(elements.agentSeatsBody!.hidden).toBe(true)
+    expect(elements.systemPalette!.hidden).toBe(true)
   })
 
-  it("restores the agent seats dock once the zoom placeholder clears, in agent-api mode", () => {
+  it("restores the system palette once the zoom placeholder clears, in agent-api mode", () => {
     const elements = createElements()
-    elements.agentSeatsBody!.hidden = true
+    elements.systemPalette!.hidden = true
 
     render(
       elements,
@@ -1054,12 +1062,12 @@ describe("render", () => {
     )
 
     expect(elements.zoomPlaceholder.hidden).toBe(true)
-    expect(elements.agentSeatsBody!.hidden).toBe(false)
+    expect(elements.systemPalette!.hidden).toBe(false)
   })
 
-  it("never touches the agent seats dock outside agent-api mode", () => {
+  it("never touches the system palette outside agent-api mode", () => {
     const elements = createElements()
-    elements.agentSeatsBody!.hidden = false
+    elements.systemPalette!.hidden = false
     vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
       x: 0, y: 0, top: 0, left: 0, right: 40, bottom: 200,
       width: 40, height: 200, toJSON: () => ({}),
@@ -1077,7 +1085,9 @@ describe("render", () => {
     )
 
     expect(elements.zoomPlaceholder.hidden).toBe(false)
-    expect(elements.agentSeatsBody!.hidden).toBe(false)
+    // Left as it was: interactive play does not use the palette yet, so render must not start
+    // managing an element that mode never shows.
+    expect(elements.systemPalette!.hidden).toBe(false)
   })
 
   it("shows too-small messaging without navigation text on narrow screens", () => {
@@ -1185,17 +1195,17 @@ describe("render", () => {
 // isolated, standalone string rather than embedded inside a full running-status line.
 describe("fitPlayerSegmentToWidth", () => {
   it("returns the label unchanged when it already fits the available width", () => {
-    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.20x", 20)).toBe(
-      "Kora the Trailblazer - 1.20x",
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.2000x", 20)).toBe(
+      "Kora the Trailblazer - 1.2000x",
     )
   })
 
   it("keeps roughly half the available width from the front, half from the back, dropping the middle", () => {
-    // "Kora the Trailblazer - 1.20x" is 28 characters; a remainder of 33 leaves 22 characters of
+    // "Kora the Trailblazer - 1.2000x" is 30 characters; a remainder of 33 leaves 22 characters of
     // room (COMPACT_STATUS_MAX_LENGTH 55 minus 33), so 21 characters go to the label once the "…"
     // marker is accounted for — 10 kept from the front, 11 from the back.
-    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.20x", 33)).toBe(
-      "Kora the T…zer - 1.20x",
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.2000x", 33)).toBe(
+      "Kora the T…r - 1.2000x",
     )
   })
 
@@ -1203,8 +1213,8 @@ describe("fitPlayerSegmentToWidth", () => {
     // "AgentOne" is 8 characters — CONFIG.agentConfig.playerNameMaxLength, the real cap on agent
     // names — so this is the longest label the running app can ever actually need to trim.
     expect(
-      fitPlayerSegmentToWidth("AgentOne the Trailblazer - 1.20x", 33),
-    ).toBe("AgentOne t…zer - 1.20x")
+      fitPlayerSegmentToWidth("AgentOne the Trailblazer - 1.2000x", 33),
+    ).toBe("AgentOne t…r - 1.2000x")
   })
 
   it("applies the same middle-truncation to an arbitrary string with no player/rate structure at all", () => {
@@ -1214,10 +1224,10 @@ describe("fitPlayerSegmentToWidth", () => {
   })
 
   it("keeps only the marker plus a single trailing character when almost nothing fits", () => {
-    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.20x", 53)).toBe("…x")
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.2000x", 53)).toBe("…x")
   })
 
   it("returns an empty string when there is no room for the label at all", () => {
-    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.20x", 55)).toBe("")
+    expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.2000x", 55)).toBe("")
   })
 })

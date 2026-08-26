@@ -10,10 +10,10 @@ import { OLLAMA_PREDICTION_FORMAT } from "./providers"
 import { requestPredictionWithAbort } from "./request"
 import { snapshotAgentState } from "./state-snapshot"
 import { CONFIG } from "../config"
-import { tapooResetLogs } from "../logs"
+import { checksumLoggedDescription, encodeMazeForLog, tapooResetLogs } from "../logs"
 import { loadTapooLog } from "../storage"
 import type {
-  AgentApiConfig,
+  AgentApiSeatConfig,
   MazeActionResult,
   MazeCellType,
   MazeDimensions,
@@ -22,16 +22,16 @@ import type {
 
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
-const prompt = buildMazeActionPrompt("Blue", "trailblazer")
+const prompt = buildMazeActionPrompt("Blue", "trailblazer", true)
 const developerMessage = prompt
-const userMessage = `It is Blue's turn to predict next moves. Use the available tools to see the maze state.`
+const userMessage = `It is Blue's turn to predict the next moves. Call every available tool once, then reply with only the moves JSON.`
 const agentContextTools = [
   {
     type: "function" as const,
     function: {
       name: "get_maze_structure",
       description:
-        "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. currentCell is the position you landed on after applying the valid moves from the previous turn. filteredTraversalHistory includes only first-visit records within historyWindowRadius of currentCell, ordered oldest-visited to most-recently-visited — currentCell's own position in this list depends on when it was first visited, not on it being current, so it will not always be last. Entries before currentCell in this list were visited earlier; entries after it were visited more recently. If currentCell is not last, every listed entry after it is a cell first reached after currentCell but before now, so the entry itself is charted ground. However, any neighbor under that entry's openMoves whose alreadyExplored is false is still an unexplored cell and remains a valid branch target. currentCell is always included because its distance is 0. historyWindowRadius is a fixed configured radius — the maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell — unrelated to how far destinationCell is; compute that yourself from currentCell and destinationCell's row/col if you need it. Each included entry's openMoves maps every fixed open exit from that cell directly to the neighboring cell it leads to and whether that neighbor's own alreadyExplored is true — meaning it has been explored and exists in the full maze traversal history — even when that neighbor itself is outside the filtered result. cellType is precomputed so you never need to count exits yourself: start-cell (the traversal start), target-cell (the destination), dead-end (one exit), corridor (two exits), or junction (three or more). Only dead-end should trigger backtracking; start-cell and target-cell are special cells, not ordinary dead ends. cellType only ever exists for a cell already in filteredTraversalHistory — an unvisited cell, including one that only appears as a neighbor inside another cell's openMoves, has no known cellType and must never be assumed to be of a specific cellType before visiting. The only way to learn an unvisited cell's own structure is to move there and read its own entry on a later turn. Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null, \"historyWindowRadius\":number, \"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"cellType\":string, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"alreadyExplored\":boolean}, ...}}]}.",
+        "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down, col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col by 1 and MoveRight increases it by 1. currentCell is the position you landed on after applying the valid moves from the previous turn or is the start position in turn 0. filteredTraversalHistory holds one record per visited cell, created when that cell was first reached, for cells within historyWindowRadius of currentCell. It is ordered by first visit, oldest first — currentCell's own position depends on when it was first visited, not on it being current, so it will not always be the last. Order says nothing about recent activity: a cell listed early may have been re-entered moments ago, and its visitStatus, not its position, is what reports that. If currentCell is not last, every listed entry after it is a cell first reached after currentCell but before now, so the entry itself is charted ground. However, any move under that entry's openMoves that leads to a cell with visitStatus set to unvisited still points at unexplored ground and remains a valid branch target. currentCell is always included because its distance is 0. historyWindowRadius is a fixed configured radius — the maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell — unrelated to how far destinationCell is; compute that yourself from currentCell and destinationCell's row/col if you need it. Each included entry's openMoves maps every fixed open exit from that cell to the neighboring cell reached by that move. openMoves are generated once and never change with visit counts. visitStatus gives direction guidance by comparing that neighboring cell's visit count with its fixed open-exit count: unvisited=zero visits and new ground to explore; explored=visited, but still has unused passages that can lead to unexplored or destination cells; backtracking=all passages have been used, so this direction is exhausted; oscillating=the cell has been visited more often than its exit count, proving this direction is wasting limited moves. An exit counts as used once it has served as the passage into that cell. A dead-end reads as backtracking from its first visit, because nothing lies beyond a single exit. cellType is precomputed so you never need to count exits yourself: start-cell (the traversal start), target-cell (the destination), dead-end (one exit), corridor (two exits), or junction (three or more). cellType and visitStatus answer different questions, and help in extracting high-confidence moves: cellType is the cell's fixed structure, visitStatus provides a sense of direction based on cell visit count. start-cell and target-cell are special cells, not ordinary dead ends. cellType is only set for a cell already in filteredTraversalHistory — an unvisited cell, including one that only appears as a neighbor inside another cell's openMoves, has no known cellType and must never be assumed to be of a specific cellType before visiting. The only way to learn an unvisited cell's own structure is to move there and read its own entry on a later turn. currentCell or destinationCell being null means the game state is invalid or incomplete for planning, not a normal maze situation. Returns JSON: {\"level\":number, \"currentCell\":{\"row\":number, \"col\":number}|null, \"destinationCell\":{\"row\":number, \"col\":number}|null, \"historyWindowRadius\":number, \"filteredTraversalHistory\":[{\"playerName\":string, \"cell\":{\"row\":number, \"col\":number}, \"cellType\":string, \"openMoves\":{\"MoveLeft\":{\"row\":number, \"col\":number, \"visitStatus\":string}, ...}}]}.",
       parameters: {
         type: "object",
         properties: {},
@@ -44,7 +44,7 @@ const agentContextTools = [
     function: {
       name: "get_prediction_rules",
       description:
-        "Get move response rules. suggestedMovesPerTurn is a min/max range for how many moves to include in your prediction response per turn: submit min moves when you are only confident about the immediate next cell or two, and go up to max only when the local map supports a longer high-confidence run. Batching accuracy drops sharply the further out a prediction reaches, so lean toward min rather than max whenever you are unsure. When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent — a scale grouped by batchEfficiencyClass. When decayUnitsCharged is 0, do not divide; batchEfficiencyClass defaults to trailblazer. Only a cell's first visit counts as progress. The higher the traversal speed, the higher the likelihood of finding the target on time. batchEfficiencyClass is set to backtracker when the speed is below 1.0 (units wasted on invalid moves or oscillation between visited cells), navigator at 1.0 (one new cell move per decay unit), or trailblazer above 1.0 (valid multi-move guesses are paying off — the only classification that can set a new best-score record). allUniqueCellsVisited is every cell any player has reached this level, not just your own — compare it against mazeDimensions.totalMazeCells to know how much of the maze the team has collectively explored so far. At the initial game levels the single solution path covers nearly all of totalMazeCells, so expect to explore most of the maze before reaching the destination; the path's length relative to totalMazeCells drops only slightly as the level number grows, so at higher levels the destination can be reachable well before allUniqueCellsVisited approaches totalMazeCells. It does not affect your traversal speed, which is scored on playerUniqueCellsVisited against decayUnitsCharged. totalTurnCount is the total number of completed prediction turns in this game level. playerTurnsTaken is the number completed by the player and is reported for context; neither count affects your speed, classification, or scores. The resulting score is visible via get_last_prediction_outcome. mazeDimensions.totalMazeCells is the full level size. Returns JSON: {\"suggestedMovesPerTurn\":{\"min\":number,\"max\":number}, \"allUniqueCellsVisited\":number, \"playerUniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"batchEfficiencyClass\":string, \"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null, \"expectedResponseSchema\":object}.",
+        "Get move response rules. suggestedMovesPerTurn is a min/max range for how many moves you can include in your prediction response per turn. Use the local map to extract moves you are most confident about. Batching accuracy drops sharply the further out a prediction reaches, so lean toward min rather than max whenever you are unsure. When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent, which batchEfficiencyClass groups into bands. When decayUnitsCharged is 0, batchEfficiencyClass defaults to trailblazer. Only a cell's first visit counts as progress. Higher traversal speed means more progress per decay unit, increasing the chance of reaching the target before score runs out. batchEfficiencyClass is set to backtracker when the speed is below 1.0000, navigator at 1.0000, or trailblazer above 1.0000. Backtracker is a live game metric rating prediction efficiency class, while get_maze_structure's backtracking visitStatus marks one cell as a spent direction. The two are independent: a player can classify as backtracker without ever entering a backtracking cell, and crossing such cells costs no decay beyond the turn's own charge. Retrace-only batching can save turns but cannot create new-cell progress, so trailblazer is evidence that forward prediction into unvisited cells succeeded. allUniqueCellsVisited is every cell any player has reached this level, not just your own — compare it against mazeDimensions.totalMazeCells to know how much of the maze the team has collectively explored so far; it does not affect your traversal speed, which is scored on playerUniqueCellsVisited against decayUnitsCharged. At the initial game levels the single solution path covers nearly all of totalMazeCells, so expect to explore most of the maze before reaching the destination. At higher levels, the destination can be reachable well before allUniqueCellsVisited approaches totalMazeCells. totalTurnCount is the total number of completed prediction turns in this game level. playerTurnsTaken is the number completed by the player and is reported for context; neither count affects your speed, classification, or scores. The resulting score is visible via get_last_prediction_outcome. mazeDimensions.totalMazeCells is the full level size. mazeDimensions being null means the game state is invalid or incomplete for planning. Returns JSON: {\"suggestedMovesPerTurn\":{\"min\":number,\"max\":number}, \"allUniqueCellsVisited\":number, \"playerUniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"batchEfficiencyClass\":string, \"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null, \"expectedResponseSchema\":object}.",
       parameters: {
         type: "object",
         properties: {},
@@ -57,7 +57,7 @@ const agentContextTools = [
     function: {
       name: "get_last_prediction_outcome",
       description:
-        "Get the outcome of the previous submitted moves: whether they fully applied, partially failed, reached the target, or were rejected. status is the current game status, score is the current score after that outcome. decayUnitsRemaining is the current maximum number of decay units the player can spend, starting with this turn, to find the target. If the final unit is spent without reaching the target, the score becomes 0 and the level is lost; reaching the target with that unit wins with a score of 0. lastMoveStatus is the outcome of only the single last move actually dispatched that turn: null=first turn, no history yet; applied=the move executed successfully; visitedBefore indicates whether it revisited a cell; invalid-move=that move hit a wall or boundary, execution stopped there; reached-target=destination reached, stop predicting; malformed-response=previous response was not valid JSON, requested a tool that does not exist, or ignored a warning, resulting in zero progress and a fixed score penalty. A warning is a user message beginning with \"Warning:\". token-limit-exhaustion=the previous empty prediction reached the configured token threshold and its corrective warning opportunity also returned no prediction — no moves were replayed and the same fixed score penalty was charged; network-error=HTTP failure, no score charged. predictionStatus instead summarizes the entire submitted prediction as one story: all-applied=all submitted moves applied and at least one entered a previously unvisited cell, or the target was reached; partially-applied=one or more moves applied, at least one entered a previously unvisited cell, and replay then stopped at the first invalid move; repeat-cell-visits=one or more moves applied, but none entered a new cell — replay may have completed or stopped at an invalid move; invalid-prediction=a real prediction was replayed but the very first submitted move was already invalid, no progress made; empty-prediction=a malformed-response, token-limit-exhaustion, or network-error meant there was no usable prediction to replay at all. lastSubmittedMoves lists every submitted move from that turn as a zero-based <index>:<move> entry, including moves after the first invalid move that were not executed. lastReplayStartIndex is 0 when moves were submitted and marks the first entry. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. visitedBefore indicates whether the cell entered by the last successfully applied move was already in traversal history; it is null when no move applied. On an empty-prediction turn these four fields are always reset to null/empty, matching that no moves were replayed — they never carry over stale data from an earlier turn. chargedMovesCount is the total decay units charged toward score that turn. Returns JSON: {\"status\":string, \"score\":number, \"decayUnitsRemaining\":number, \"lastPlayerName\":string|null, \"lastMoveStatus\":string|null, \"predictionStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"visitedBefore\":boolean|null, \"chargedMovesCount\":number}.",
+        "Get the outcome of the previous prediction attempt: whether its moves fully applied, partially failed, reached the target, or were rejected. status is the current game status, score is the current score after that outcome. decayUnitsRemaining is the current maximum number of decay units the player can spend, starting with this turn, to find the target. If the final unit is spent without reaching the target, the score becomes 0 and the level is lost; reaching the target with that unit wins with a score of 0. When moves were replayed, lastMoveStatus is the outcome of the last executed move in the previous prediction: null=first turn, no previous outcome yet; applied=the last executed move succeeded; invalid-move=the last executed move hit a wall or boundary and replay stopped there; reached-target=destination reached, stop predicting. When no moves were replayed, lastMoveStatus explains why: malformed-response=previous response was not valid JSON, requested a tool that does not exist, or ignored a warning, resulting in zero progress and a fixed score penalty. A warning is a user message beginning with \"Warning:\"; token-limit-exhaustion=the previous empty prediction reached the configured token threshold and its corrective warning opportunity also returned no prediction — no moves were replayed and the same fixed score penalty was charged; network-error=HTTP failure, no score charged. predictionStatus summarizes the outcome of the entire prediction submitted in the last turn as one story: all-applied=all submitted moves applied and at least one entered a previously unvisited cell, or the target was reached; partially-applied=one or more moves applied, at least one entered a previously unvisited cell, and replay then stopped at the first invalid move; repeat-cell-visits=one or more moves applied, but none entered a new cell — replay may have completed or stopped at an invalid move; invalid-prediction=a real prediction was replayed but the very first submitted move was already invalid, no progress made; empty-prediction=a malformed-response, token-limit-exhaustion, or network-error meant there was no usable prediction to replay at all. lastSubmittedMoves lists every submitted move from that turn as a zero-based <index>:<move> entry, including moves after the first invalid move that were not executed. lastReplayStartIndex is 0 when moves were submitted and marks the first replayed submitted-move index. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully applied move — moves after it were not executed. On an empty-prediction turn these three fields are always reset to null/empty, matching that no moves were replayed — they never carry over stale data from an earlier turn. chargedMovesCount is the total decay units charged toward score that turn. Returns JSON: {\"status\":string, \"score\":number, \"decayUnitsRemaining\":number, \"lastMoveStatus\":string|null, \"predictionStatus\":string|null, \"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null, \"chargedMovesCount\":number}.",
       parameters: {
         type: "object",
         properties: {},
@@ -79,15 +79,17 @@ function uncalledTools(calledNames: string[]) {
 function expectedLoggedTools(
   wireTools: ReturnType<typeof uncalledTools>,
   keepFull: boolean,
-): { name: string; description: string }[] {
+): { name: string; description_checksum: string | undefined; description: string }[] {
   return wireTools.map(({ function: fn }) => ({
     name: fn.name,
+    description_checksum: checksumLoggedDescription(fn.description),
     description: keepFull ? fn.description : `${fn.description.slice(0, 25)}...`,
   }))
 }
 
-const agent: AgentApiConfig = {
-  id: 1,
+const agent: AgentApiSeatConfig = {
+  seatId: 1,
+  sessionId: 1_700_000_000_000,
   playerName: "Blue",
   model,
   endpoint: new URL(endpoint),
@@ -112,6 +114,7 @@ const state: State = {
   lastRoundScore: 0,
   lastWinTraversalSpeedUnits: null,
   level: 1,
+  restartLevel: 1,
   maze: null,
   mazeDimensions,
   startPosition: { x: 1, y: 1 },
@@ -119,7 +122,7 @@ const state: State = {
   score: 10000,
   scoreDecayUnits: 0,
   status: "running",
-  traversalHistory: [{ playerName: "Self", row: 0, col: 0, openMoves: [] }],
+  traversalHistory: [{ playerName: "Self", row: 0, col: 0, openMoves: [], visitCount: 1 }],
   wallWeight: 1,
   winSummary: "",
 }
@@ -134,6 +137,16 @@ type SerializedRequestBody = {
   options?: unknown
 }
 
+function encodeMazeForLevelStart(state: State) {
+  if (!state.maze || !state.mazeDimensions) {
+    return null
+  }
+
+  return {
+    ...encodeMazeForLog(state.maze),
+    dimensions: state.mazeDimensions,
+  }
+}
 
 function requestInput(
   stateOverrides: Partial<State> = {},
@@ -146,9 +159,12 @@ function requestInput(
   return {
     agent,
     lastActionResult,
+    encodedMazeForLevelStart: encodeMazeForLevelStart(mergedState),
     stateSnapshot: snapshotAgentState(mergedState),
     timeoutMs: 180_000,
     requestIntervalMs: 0,
+    // Running unless a test says otherwise, which is the state every turn starts from.
+    isRoundRunning: () => true,
   }
 }
 
@@ -212,8 +228,10 @@ function mazeStructureContent(overrides: Partial<State> = {}): string {
       }
     : null
   const { manhattanDistance: historyWindowRadius } = CONFIG.runtime.modelConfig
-  const visitedCells = new Set(
-    nextState.traversalHistory.map(({ row, col }) => `${row},${col}`),
+  // Mirrors resolvedOpenMoves/cellVisitStatus in agent/context.ts: keyed by cell so each neighbor's
+  // own entry (visitCount and exit count) is available, since visitStatus is derived from both.
+  const visitedCells = new Map(
+    nextState.traversalHistory.map((entry) => [`${entry.row},${entry.col}`, entry]),
   )
   const filteredTraversalHistory = currentCell
     ? nextState.traversalHistory
@@ -248,7 +266,15 @@ function mazeStructureContent(overrides: Partial<State> = {}): string {
                   MoveDown: [1, 0],
                 }[move]
                 const neighbor = { row: row + rowDelta, col: col + colDelta }
-                return [move, { ...neighbor, alreadyExplored: visitedCells.has(`${neighbor.row},${neighbor.col}`) }]
+                const neighborEntry = visitedCells.get(`${neighbor.row},${neighbor.col}`)
+                const visitStatus = !neighborEntry
+                  ? "unvisited"
+                  : neighborEntry.visitCount < neighborEntry.openMoves.length
+                    ? "explored"
+                    : neighborEntry.visitCount === neighborEntry.openMoves.length
+                      ? "backtracking"
+                      : "oscillating"
+                return [move, { ...neighbor, visitStatus }]
               }),
             ),
           }
@@ -394,8 +420,8 @@ describe("agent request service", () => {
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), true),
       messages: [
-        { role: "system", content: developerMessage },
-        { role: "user", content: userMessage },
+        { role: "system", content_checksum: checksumLoggedDescription(developerMessage), content: developerMessage },
+        { role: "user", content_checksum: checksumLoggedDescription(userMessage), content: userMessage },
       ],
     })
 
@@ -414,8 +440,16 @@ describe("agent request service", () => {
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
-        { role: "system", content: `${developerMessage.slice(0, 25)}...` },
-        { role: "user", content: `${userMessage.slice(0, 25)}...` },
+        {
+          role: "system",
+          content_checksum: checksumLoggedDescription(developerMessage),
+          content: `${developerMessage.slice(0, 25)}...`,
+        },
+        {
+          role: "user",
+          content_checksum: checksumLoggedDescription(userMessage),
+          content: `${userMessage.slice(0, 25)}...`,
+        },
         {
           role: "assistant",
           content: "",
@@ -434,6 +468,53 @@ describe("agent request service", () => {
             "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}",
         },
       ],
+    })
+  })
+
+  it("logs the encoded maze before the level's first request", async () => {
+    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(successfulResponse(JSON.stringify({ moves: ["MoveRight"] }))),
+    )
+
+    await requestPrediction(requestInput({
+      finalPosition: { x: 1, y: 1 },
+      maze: [
+        ["|", "---", "|"],
+        ["|", "   ", "|"],
+        ["|", "---", "|"],
+      ],
+      mazeDimensions: { numCols: 1, numRows: 1, area: 1 },
+      startPosition: { x: 1, y: 1 },
+    }))
+
+    const entries = loadTapooLog<{
+      payload: string
+      level: number
+      game: number
+      details?: Record<string, unknown>
+    }>(CONFIG.runtime.controlModes.agentApi)
+
+    const levelStartedIndex = entries.findIndex((entry) => entry.payload === "Agent level started.")
+    const requestIndex = entries.findIndex((entry) => entry.payload === "Agent request.")
+    expect(levelStartedIndex).toBeGreaterThanOrEqual(0)
+    expect(requestIndex).toBeGreaterThan(levelStartedIndex)
+
+    const levelStarted = entries[levelStartedIndex]
+    expect(levelStarted.level).toBe(1)
+    expect(levelStarted.game).toBe(0)
+    // Static expected encoding for this 1x1 maze, first-seen order "|"(0), "---"(1), "   "(2),
+    // then "\n"(3) as the row separator.
+    expect(levelStarted.details).toEqual({
+      startPosition: { x: 1, y: 1 },
+      finalPosition: { x: 1, y: 1 },
+      maze: {
+        index_chars: ["|", "---", "   ", "\n"],
+        structure_checksum: "0x279d74cddf9d2e85",
+        structure: "01030203010",
+        dimensions: { numCols: 1, numRows: 1, area: 1 },
+      },
     })
   })
 
@@ -490,6 +571,10 @@ describe("agent request service", () => {
     )
 
     expect(requestEntries).toHaveLength(2)
+    expect(
+      loadTapooLog<{ payload: string }>(CONFIG.runtime.controlModes.agentApi)
+        .some((entry) => entry.payload === "Agent level started."),
+    ).toBe(false)
 
     // Round 1: the static system/user prompt is previewed (role intact, content shortened),
     // and tool descriptions are previewed too, since both repeat verbatim every turn.
@@ -502,8 +587,16 @@ describe("agent request service", () => {
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools([]), false),
       messages: [
-        { role: "system", content: `${developerMessage.slice(0, 25)}...` },
-        { role: "user", content: `${userMessage.slice(0, 25)}...` },
+        {
+          role: "system",
+          content_checksum: checksumLoggedDescription(developerMessage),
+          content: `${developerMessage.slice(0, 25)}...`,
+        },
+        {
+          role: "user",
+          content_checksum: checksumLoggedDescription(userMessage),
+          content: `${userMessage.slice(0, 25)}...`,
+        },
       ],
     })
 
@@ -519,8 +612,16 @@ describe("agent request service", () => {
       reasoning: agent.reasoningEffort,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
-        { role: "system", content: `${developerMessage.slice(0, 25)}...` },
-        { role: "user", content: `${userMessage.slice(0, 25)}...` },
+        {
+          role: "system",
+          content_checksum: checksumLoggedDescription(developerMessage),
+          content: `${developerMessage.slice(0, 25)}...`,
+        },
+        {
+          role: "user",
+          content_checksum: checksumLoggedDescription(userMessage),
+          content: `${userMessage.slice(0, 25)}...`,
+        },
         {
           role: "assistant",
           content: "",
@@ -581,6 +682,67 @@ describe("agent request service", () => {
       stream: false,
     })
   })
+
+  // The opening persona is decided per agent, not per round. In a multi-agent round the seats play
+  // in rotation, so the second and later agents make their own first prediction on a nonzero shared
+  // State.turnCount — they are still unmeasured, and must still be told they open at trailblazer.
+  it("primes an agent on its own first turn even when the round is already several turns in", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await requestPrediction({
+      ...requestInput({ turnCount: 3 }),
+      agent: { ...agent, turnCount: 0, decayUnitsCharged: 0 },
+    })
+
+    const requestBody = JSON.parse(
+      (fetchMock.mock.calls[0][1] as RequestInit).body as string,
+    ) as SerializedRequestBody
+    expect(requestBody.messages[0]).toEqual({ role: "system", content: developerMessage })
+    expect(developerMessage).toContain("primed for success")
+  })
+
+  // The contrast that makes the test above mean something, one counter at a time. Any single
+  // non-zero counter is enough to withdraw the opening framing: the three are checked together
+  // precisely so that no one of them can carry the claim on its own.
+  const playedAgentCases = [
+    {
+      name: "a turn of its own",
+      agentOverrides: { turnCount: 1 },
+      stateOverrides: {},
+    },
+    {
+      name: "decay units of its own",
+      agentOverrides: { decayUnitsCharged: 2 },
+      stateOverrides: {},
+    },
+    {
+      name: "a cell of its own on the board",
+      agentOverrides: {},
+      stateOverrides: {
+        traversalHistory: [{ playerName: "Blue", row: 0, col: 0, openMoves: [], visitCount: 1 }],
+      } satisfies Partial<State>,
+    },
+  ]
+
+  for (const { name, agentOverrides, stateOverrides } of playedAgentCases) {
+    it(`drops the opening framing once the agent has ${name}`, async () => {
+      const fetchMock = vi.fn().mockResolvedValue(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
+      vi.stubGlobal("fetch", fetchMock)
+
+      await requestPrediction({
+        ...requestInput({ turnCount: 3, ...stateOverrides }),
+        agent: { ...agent, turnCount: 0, decayUnitsCharged: 0, ...agentOverrides },
+      })
+
+      const requestBody = JSON.parse(
+        (fetchMock.mock.calls[0][1] as RequestInit).body as string,
+      ) as SerializedRequestBody
+      const systemMessage = requestBody.messages[0] as { role: string; content: string }
+      expect(systemMessage.content).not.toContain("primed for success")
+      expect(systemMessage.content).not.toBe(developerMessage)
+    })
+  }
 
   it("executes one tool-call round before reading the final prediction", async () => {
     const fetchMock = vi
@@ -661,13 +823,11 @@ describe("agent request service", () => {
           status: state.status,
           score: state.score,
           decayUnitsRemaining: Math.ceil(state.score / CONFIG.timing.scoreDecayRate),
-          lastPlayerName: null,
           lastMoveStatus: null,
           predictionStatus: null,
           lastReplayStartIndex: null,
           lastSubmittedMoves: [],
           lastAppliedMoveIndex: null,
-          visitedBefore: null,
           chargedMovesCount: 0,
         }),
       },
@@ -726,13 +886,11 @@ describe("agent request service", () => {
         status: state.status,
         score: state.score,
         decayUnitsRemaining: Math.ceil(state.score / CONFIG.timing.scoreDecayRate),
-        lastPlayerName: null,
         lastMoveStatus: null,
         predictionStatus: null,
         lastReplayStartIndex: null,
         lastSubmittedMoves: [],
         lastAppliedMoveIndex: null,
-        visitedBefore: null,
         chargedMovesCount: 0,
       },
       {
@@ -1093,6 +1251,53 @@ describe("agent request service", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  // A round that stops mid-turn is lifecycle cleanup, exactly like a caller abort — not a provider
+  // failure — so it must not spend score or disable the agent.
+  it("stops before the first request when the round is no longer running", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    const request = requestPredictionWithAbort({
+      ...requestInput(),
+      isRoundRunning: () => false,
+    })
+
+    await expect(request.promise).resolves.toEqual({ ok: false, reason: "caller-abort" })
+    // Not one provider request went out for a round that had already stopped.
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(request.isAborted()).toBe(true)
+  })
+
+  // The case the live callback exists for: a turn spans several provider requests, and the round
+  // stops after the first. A value read off the frozen stateSnapshot could never notice this.
+  it("stops between provider requests when the round stops mid-turn", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        toolCallResponse([
+          { function: { name: "get_maze_structure", arguments: {} } },
+        ]),
+      )
+      .mockResolvedValueOnce(successfulResponse("{\"moves\":[\"MoveRight\"]}"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    let running = true
+    const request = requestPredictionWithAbort({
+      ...requestInput(),
+      isRoundRunning: () => running,
+    })
+
+    // Let the first round's fetch resolve and its tool call be serviced, then stop the round
+    // before the follow-up request goes out.
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    running = false
+
+    await expect(request.promise).resolves.toEqual({ ok: false, reason: "caller-abort" })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it("marks manually aborted requests without throwing provider details", async () => {
     const fetchMock = vi.fn((_endpoint: string, init?: RequestInit) => {
       return new Promise((_resolve, reject) => {
@@ -1326,7 +1531,7 @@ describe("agent request service", () => {
 
     const credentialSentinel = "sk-redaction-sentinel-credential-000111"
     const extraHeadersSentinel = "redaction-sentinel-extra-header-222333"
-    const anthropicAgent: AgentApiConfig = {
+    const anthropicAgent: AgentApiSeatConfig = {
       ...agent,
       api: "anthropic",
       credential: credentialSentinel,
@@ -1354,7 +1559,7 @@ describe("agent request service", () => {
   })
 
   it("echoes an assistant's reasoning back on the next round when echoBackReasoning is on, for reasoning models that require it preserved (e.g. Kimi K3)", async () => {
-    const openaiAgent: AgentApiConfig = { ...agent, api: "openai", echoBackReasoning: true }
+    const openaiAgent: AgentApiSeatConfig = { ...agent, api: "openai", echoBackReasoning: true }
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -1395,7 +1600,7 @@ describe("agent request service", () => {
   })
 
   it("withholds reasoning_content by default, for models that require it not be sent back (e.g. Gemma)", async () => {
-    const openaiAgent: AgentApiConfig = { ...agent, api: "openai" }
+    const openaiAgent: AgentApiSeatConfig = { ...agent, api: "openai" }
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({

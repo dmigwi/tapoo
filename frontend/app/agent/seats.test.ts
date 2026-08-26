@@ -14,11 +14,12 @@ import {
   renderAgentSeatRoster,
 } from "./seats"
 import { CONFIG } from "../config"
-import type { AgentApiConfig, TraversalHistoryEntry } from "../types"
+import type { AgentApiSeatConfig, TraversalHistoryEntry } from "../types"
 
-function agent(id: number, playerName: string, model = "llama3.2"): AgentApiConfig {
+function agent(seatId: number, playerName: string, model = "llama3.2"): AgentApiSeatConfig {
   return {
-    id,
+    seatId,
+    sessionId: 1_700_000_000_000,
     playerName,
     model,
     endpoint: new URL("https://example.test/move"),
@@ -28,7 +29,7 @@ function agent(id: number, playerName: string, model = "llama3.2"): AgentApiConf
 }
 
 function visit(playerName: string, row: number, col: number): TraversalHistoryEntry {
-  return { playerName, row, col, openMoves: [] }
+  return { playerName, row, col, openMoves: [], visitCount: 1 }
 }
 
 // Agent-seat tests keep display labels, dataset ids, and fixed roster slots centralized.
@@ -84,8 +85,8 @@ describe("agent seats", () => {
     const expectedSeats = Array.from(
       { length: CONFIG.agentConfig.maxSeats },
       (_, index) => {
-        const id = index + 1
-        return { id, agent: id === 2 ? agent(2, "Kora") : null }
+        const seatId = index + 1
+        return { seatId, agent: seatId === 2 ? agent(2, "Kora") : null }
       },
     )
 

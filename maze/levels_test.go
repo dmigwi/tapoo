@@ -268,6 +268,63 @@ func TestGetMazeDimensionsErrors(t *testing.T) {
 	}
 }
 
+// TestGetMazeDimensionsRepairsBadFactors pins the band repair, and pins it against the browser port
+// rather than against itself. A level's exact area is an arithmetic target that need not factorize
+// into a drawable rectangle — level 143's 1490 does not at this size — so without the repair the
+// level would be unplayable for want of a usable factor pair rather than for want of screen room.
+//
+// The expectations are copied from frontend/app/maze.test.ts's "repairs isolated bad area factors"
+// and "stops at two consecutive undrawable exact level targets" cases, at the same 61x39 viewport.
+// Go used to return an error for 143 while the browser played a 44x34 maze: the same level, on the
+// same size screen, playable in one port and not the other. Any future change that reintroduces
+// that split fails here.
+func TestGetMazeDimensionsRepairsBadFactors(t *testing.T) {
+	t.Parallel()
+
+	// The viewport frontend/app/maze.test.ts calls macbookBrowserTerminalSize.
+	browserSize := maze.Dimensions{NumCols: 61, NumRows: 39}
+
+	tests := []struct {
+		name  string
+		level int
+		want  maze.Dimensions
+	}{
+		{
+			// Exact target 1490 has no drawable factor pair here, so the band above it supplies 1496.
+			name:  "repairs an unusable exact target from inside the level's own band",
+			level: 143,
+			want:  maze.Dimensions{NumCols: 44, NumRows: 34},
+		},
+		{
+			// The neighbouring level factorizes, so it must still land on its exact target: the
+			// repair has to be reachable only when the exact area genuinely fails.
+			name:  "leaves a level whose exact target factorizes untouched",
+			level: 144,
+			want:  maze.Dimensions{NumCols: 50, NumRows: 30},
+		},
+		{
+			name:  "keeps a higher level drawable at the same size",
+			level: 150,
+			want:  maze.Dimensions{NumCols: 40, NumRows: 39},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := maze.GetMazeDimensions(testCase.level, browserSize)
+			if err != nil {
+				t.Fatalf("GetMazeDimensions(%d) returned error: %v", testCase.level, err)
+			}
+
+			if *got != testCase.want {
+				t.Fatalf("GetMazeDimensions(%d) = %+v, want %+v", testCase.level, *got, testCase.want)
+			}
+		})
+	}
+}
+
 func TestGetMazeDimensionsFits(t *testing.T) {
 	t.Parallel()
 
