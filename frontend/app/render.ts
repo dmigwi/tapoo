@@ -98,7 +98,11 @@ function replaceAt(line: string, index: number, char: string): string {
 // the entire "Player: {player}   " lead-in (whatever literal text/spacing surrounds {player} in
 // CONFIG.messages.runningStatus) when there's no player to show, rather than leaving a bare "Player:".
 function statusText(state: State, currentPlayerLabel: string | null): string {
-  const template = displayText(messages.runningStatus)
+  const template = displayText(
+    isAgentApiMode(state.controlMode)
+      ? messages.runningStatus.agentApi
+      : messages.runningStatus.interactive,
+  )
   const [beforePlayer, afterPlayerRaw] = template.split("{player}")
   const afterPlayer = afterPlayerRaw
     .replace("{level}", String(state.level))

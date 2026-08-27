@@ -303,6 +303,24 @@ describe("render", () => {
     expect(text).toContain("Level: 1   Turn: 0   Scores: 900")
   })
 
+  // Turn is agent-api's alone. State.turnCount is incremented only by commitAgentApiTurn, which
+  // returns early outside agent-api, so an interactive round rendered a permanent "Turn: 0" — a
+  // field that was not merely uninteresting there but could never read anything else.
+  it("omits the turn count from an interactive round's status line", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({ controlMode: CONFIG.runtime.controlModes.interactive }),
+      null,
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).not.toContain("Turn:")
+    expect(text).toContain("Level: 1   Scores: 900")
+  })
+
   it("ellipsis-trims an overlong player label to fit the compact status line's character budget", () => {
     const elements = createElements()
     elements.body.getBoundingClientRect = vi.fn(() => ({

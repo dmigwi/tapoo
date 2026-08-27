@@ -808,7 +808,11 @@ export type AppConfig = {
     tooSmallMessage: string
     tooSmallActionMessage: string
     tooSmallActionMessageWithReset: string
-    runningStatus: DisplayMsg
+    // Per-mode: only agent-api has a turn count to show. See config.ts.
+    runningStatus: {
+      interactive: DisplayMsg
+      agentApi: DisplayMsg
+    }
     highScoreTemplate: string
     // noPrevious is a single line rather than a comparison group: with no previous record there is
     // no best record either, so the result can only ever be a new record.

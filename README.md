@@ -1,8 +1,7 @@
 # Tapoo
-
-[![Go CI](https://github.com/dmigwi/tapoo/actions/workflows/go.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/go.yml)
-[![Pages](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml)
+[![TypeScript Version](https://img.shields.io/badge/TypeScript-6.0.3+-blue.svg)](http://www.typescriptlang.org/)
 [![Go Version](https://img.shields.io/badge/go-1.25+-00ADD8.svg)](https://go.dev/)
+[![Go CI](https://github.com/dmigwi/tapoo/actions/workflows/go.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/go.yml)
 [![Page Deployment](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml)
 
 Tapoo is a maze runner hide-and-seek game with two interfaces built from the same codebase: a Go terminal game and a browser SPA with the same terminal-inspired feel.

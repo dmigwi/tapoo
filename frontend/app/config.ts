@@ -151,9 +151,22 @@ export const CONFIG: AppConfig = {
     // case canShowRestart actually allows it — see tooSmallRows (render.ts) for the selection.
     tooSmallActionMessage: "Make more screen room on zoom out.",
     tooSmallActionMessageWithReset: "Make screen room on zoom out, or Reset Progress.",
+    // Split by mode, like navigation above it. {turn} is State.turnCount, which only
+    // commitAgentApiTurn increments and which returns early outside agent-api — so an interactive
+    // round rendered a permanent "Turn: 0". The field is not merely uninteresting there, it is
+    // never anything else.
+    //
+    // Interactive's wide and compact copy are identical on purpose: Turn was the only segment
+    // compact dropped, so with it gone there is nothing left to shed at the narrow size.
     runningStatus: {
-      wide: "Player: {player}   Level: {level}   Turn: {turn}   Scores: {score}",
-      compact: "Player: {player}   Level: {level}   Scores: {score}",
+      interactive: {
+        wide: "Player: {player}   Level: {level}   Scores: {score}",
+        compact: "Player: {player}   Level: {level}   Scores: {score}",
+      },
+      agentApi: {
+        wide: "Player: {player}   Level: {level}   Turn: {turn}   Scores: {score}",
+        compact: "Player: {player}   Level: {level}   Scores: {score}",
+      },
     },
     highScoreTemplate:
       "Final Level {level} Scores:  {score} ({percent}% retention)",

@@ -2559,10 +2559,11 @@ describe("agent control mode", () => {
 describe("system settings dialog", () => {
   // bindSettings wires an agent mode against a live restartLevel, and hands back the pieces a test
   // needs to drive the dialog and see what it did.
-  function bindSettings(restartLevel = 1) {
+  function bindSettings(restartLevel = 1, status: "running" | "paused" = "running") {
     const elements = createAgentFormElements()
     const setRestartLevel = vi.fn(() => true)
-    const state = createControlFixture({ status: "running" })
+    const dispatch = vi.fn()
+    const state = createControlFixture({ status })
     state.restartLevel = restartLevel
     // In the document, or focus() is a no-op and any focus assertion silently passes on whatever
     // an earlier test left focused.
@@ -2570,14 +2571,36 @@ describe("system settings dialog", () => {
 
     const mode = createTestAgentMode(elements)
     mode.bindActionDispatch(
-      vi.fn(),
+      dispatch,
       () => state,
       vi.fn(),
       { setRestartLevel },
     )
 
-    return { elements, setRestartLevel }
+    return { dispatch, elements, setRestartLevel }
   }
+
+  // The gear is an overlay like the agent forms, so it stops play on open for the same reason they
+  // do: what is behind it is being reconfigured, and a round left running decays its own score
+  // while the dialog sits open. Pausing on Apply instead would charge the player for the time they
+  // spent deciding, which is why setRestartLevel itself no longer pauses (see game.test.ts).
+  it("pauses a running round when the gear opens", () => {
+    const { dispatch, elements } = bindSettings(1, "running")
+
+    elements.systemSettings?.click()
+
+    expect(dispatch).toHaveBeenCalledWith({ type: "pause" }, { playerName: "Self" })
+  })
+
+  // Nothing to stop means nothing to dispatch: a spurious pause on an already-paused round would
+  // be a state write the player did not ask for.
+  it("does not dispatch a pause when the round is already stopped", () => {
+    const { dispatch, elements } = bindSettings(1, "paused")
+
+    elements.systemSettings?.click()
+
+    expect(dispatch).not.toHaveBeenCalled()
+  })
 
   it("opens on the gear with the live restart level already filled in", () => {
     const { elements } = bindSettings(84)

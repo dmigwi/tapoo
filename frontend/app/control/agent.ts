@@ -815,6 +815,8 @@ export function createAgentMode(
       // Apply with no edit is a no-op rather than a surprise.
       const openSystemSettings = (): void => {
         closeOtherOverlays("systemSettings")
+        pauseIfRunning()
+
         // Named per mode rather than statically, so a setting that only governs this mode's play
         // is never mistaken for a global one. Read from live state so the dialog stays correct if
         // the palette is ever shown in interactive mode too.

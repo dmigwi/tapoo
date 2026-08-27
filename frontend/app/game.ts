@@ -469,47 +469,21 @@ function restartGame(): boolean {
   return startRound(state.restartLevel, false)
 }
 
-// stopActiveRound freezes a game that is actually playing, so state can be changed underneath it.
-// Nothing else: no mode-specific handling, and no status written when there was nothing to stop.
-//
-// Paused in both modes. await-agent is not the agent-api equivalent of a pause — it means play has
-// no enabled agent seat to run (see awaitAgent below, and the dispatch in control/agent-api.ts),
-// which is untrue of a round an agent was mid-turn on. Stopping such a round is a pause, and
-// paused is also what lets it resume by the ordinary route.
-//
-// The running check is the only condition, and it is checked here rather than delegated to
-// awaitAgent/pauseGame, whose own guards can decline — pauseGame additionally requires a clock
-// (canTrackDestinationVisibility) — leaving a live round running behind a caller that believed it
-// had stopped.
-function stopActiveRound(): boolean {
-  if (!isRunningStatus(state.status)) {
-    return false
-  }
-
-  // Optional because a running round without a clock is possible in principle; the status change
-  // below is what actually stops play, and it must happen either way.
-  state.clock?.pause()
-  state.status = "paused"
-  persistNow("state")
-  return true
-}
-
 // setRestartLevel moves the floor every round opens at or above, returning whether it changed.
 //
-// The round in progress is stopped first. A level chosen mid-play would otherwise sit inert until
-// something happened to call startRound, and the score would keep decaying against a round the
-// player has mentally already left. Stopping makes the change take effect at a moment the player
-// chose, rather than at whatever moment the game next happens to restart.
+// It does not stop the round, and does not need to: every overlay that can reach this pauses a
+// running game when it opens (pauseIfRunning in control/agent.ts), so by the time a level is
+// applied the round is already stopped. Pausing again here would be a second owner of the same
+// rule, and pausing on apply would leave the score decaying for as long as the dialog stayed open —
+// which is the case the overlay-level pause exists to cover.
 function setRestartLevel(level: number): boolean {
   if (!Number.isInteger(level) || level < 1 || level === state.restartLevel) {
     return false
   }
 
-  stopActiveRound()
   state.restartLevel = level
-  // After the assignment, not before: stopActiveRound's own persist ran while the old value was
-  // still in state. "round" rather than "state" because only the round snapshot carries this —
-  // rewriting durable progress here would be a side effect nobody asked for.
+  // "round" rather than "state" because only the round snapshot carries this — rewriting durable
+  // progress here would be a side effect nobody asked for.
   persistNow("round")
   return true
 }

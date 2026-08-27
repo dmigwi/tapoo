@@ -936,22 +936,23 @@ describe("bootstrapGame", () => {
     expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(84, { numCols: 20, numRows: 20 })
   })
 
-  // Changing where games begin stops what is playing first, so the change lands at a moment the
-  // player chose rather than whenever something next happens to restart — and so the score stops
-  // decaying against a round they have already left.
-  it("stops an interactive round in progress before moving the floor", async () => {
+  // Moving the floor is not what stops play, and these two pin that it stays that way. Every
+  // overlay that can reach setRestartLevel pauses a running round when it opens (pauseIfRunning in
+  // control/agent.ts), so the round is already stopped by the time a level is applied — pausing
+  // here as well would give one rule two owners, and pausing only on apply would leave the score
+  // decaying for as long as the dialog stayed open. That the gear itself pauses is asserted in
+  // control/agent.test.ts, where the overlay lives.
+  it("leaves an interactive round alone when the floor moves", async () => {
     const harness = await bootstrapHarness({})
     expect(latestRenderedState(harness.render).status).toBe("running")
 
     expect(harness.runtime.setRestartLevel(84)).toBe(true)
 
-    expect(latestRenderedState(harness.render).status).toBe("paused")
+    expect(latestRenderedState(harness.render).status).toBe("running")
     expect(harness.runtime.readRestartLevel()).toBe(84)
   })
 
-  // Paused, not await-agent: that status means play has no enabled agent seat, which is untrue of
-  // a round an agent was mid-turn on.
-  it("pauses an agent-api round in progress before moving the floor", async () => {
+  it("leaves an agent-api round alone when the floor moves", async () => {
     const harness = await bootstrapHarness({
       mode: CONFIG.runtime.controlModes.agentApi,
       agentConfigs: [enabledAgentConfig()],
@@ -960,7 +961,7 @@ describe("bootstrapGame", () => {
 
     expect(harness.runtime.setRestartLevel(84)).toBe(true)
 
-    expect(latestRenderedState(harness.render).status).toBe("paused")
+    expect(latestRenderedState(harness.render).status).toBe("running")
     expect(harness.runtime.readRestartLevel()).toBe(84)
   })
 
