@@ -105,7 +105,7 @@ export function buildAgentPersonaPrompt(
   if (isOpeningTurn) { // trailblazer
     return [
       `You are ${playerName}, and you start this level primed for success: your traversal speed`,
-      "opens at trailblazer before your first prediction. Justify it by batching several moves you can",
+      "opens at trailblazer before your first prediction. Maintain it by batching moves you can",
       "prove will apply, rather than stepping one cell at a time.",
     ].join(" ")
   }
@@ -311,17 +311,16 @@ const mazeStructureTool: AgentToolDefinition = {
       "maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell - unrelated to how",
       "far destinationCell is; compute that yourself from currentCell and destinationCell's row/col if you need it.",
       "Each included entry's openMoves maps every fixed open exit from that cell to the neighboring cell reached",
-      "by that move. openMoves are generated once and never change with visit counts. visitStatus gives direction",
-      "guidance by comparing that neighboring cell's visit count with its fixed open-exit count: unvisited=zero",
-      "visits and new ground to explore; explored=visited, but still has unused passages that can lead to",
-      "unexplored or destination cells; backtracking=all passages have been used, so this direction is exhausted;",
-      "oscillating=the cell has been visited more often than its exit count, proving this direction is wasting",
-      "limited moves. An exit counts as used once it has served as the passage into that cell.",
+      "by that move. openMoves are generated once and never change with visits count. visitStatus gives direction",
+      "guidance for each cell in filteredTraversalHistory by comparing that cell's visits count with its fixed open-exit count:",
+      "unvisited=no recorded visit and new ground to explore; explored=visits count is below the open-exit count;",
+      "backtracking=visits count equals the open-exit count, so this direction is exhausted;",
+      "oscillating=visits count is greater than the open-exit count, proving this direction is wasting limited moves.",
       "A dead-end reads as backtracking from its first visit, because nothing lies beyond a single exit.",
       "cellType is precomputed so you never need to count exits yourself: start-cell (the traversal start), target-cell",
       "(the destination), dead-end (one exit), corridor (two exits), or junction (three or more). cellType and visitStatus",
       "answer different questions, and help in extracting high-confidence moves: cellType is the cell's fixed structure, visitStatus",
-      "provides a sense of direction based on cell visit count. start-cell and target-cell are special cells, not ordinary dead ends.",
+      "provides a sense of direction based on cell visits count. start-cell and target-cell are special cells, not ordinary dead ends.",
       "cellType is only set for a cell already in filteredTraversalHistory - an unvisited cell, including one that only",
       "appears as a neighbor inside another cell's openMoves, has no known cellType and must never be assumed to be of",
       "a specific cellType before visiting. The only way to learn an unvisited cell's own structure is to move there",
