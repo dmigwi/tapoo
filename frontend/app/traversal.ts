@@ -293,7 +293,7 @@ export function isTraversalHistoryEntry(value: unknown): value is TraversalHisto
     !("openMoves" in value) ||
     !Array.isArray(value.openMoves) ||
     // An entry only exists once its cell has been stood on, so any count below 1 is corrupt rather
-    // than merely unset — a restored round carrying one would silently understate how worked-over
+    // than merely unset - a restored round carrying one would silently understate how worked-over
     // that cell is, which is exactly what visitStatus reads.
     !("visitCount" in value) ||
     typeof value.visitCount !== "number" ||
@@ -451,7 +451,7 @@ export function isValidPersistedRound(snapshot: PersistedRound): boolean {
       return false
     }
 
-    // The stored openMoves must match what the restored maze actually has open at this cell —
+    // The stored openMoves must match what the restored maze actually has open at this cell -
     // a stale or tampered snapshot's saved directions must not be trusted as fact and forwarded
     // to agents unchecked.
     const actualOpenMoves = openMovesFromCell(snapshot.maze, visitedCell)

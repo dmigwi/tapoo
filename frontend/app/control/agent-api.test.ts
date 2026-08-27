@@ -101,7 +101,7 @@ async function flushConnectionErrorRetry(): Promise<void> {
   await vi.advanceTimersByTimeAsync(CONFIG.timing.agentApiConnectionErrorRetryDelayMs)
 }
 
-// createMemoryStorage is a minimal in-memory Storage polyfill — window.localStorage is unset in
+// createMemoryStorage is a minimal in-memory Storage polyfill - window.localStorage is unset in
 // this jsdom test environment (unlike sessionStorage, which loadTapooLog relies on elsewhere in
 // this file), so a test that needs recordAgentTurnStats's real persisted output to actually
 // round-trip through storage.ts's loadPersistedAgentApiConfigs/savePersistedAgentApiConfigs must
@@ -173,7 +173,7 @@ describe("agent api turn loop", () => {
   })
 
   // The status read handed to the request service must be live. stateSnapshot also carries a
-  // status, and typechecks identically, but it is frozen at turn start — so a round that stops
+  // status, and typechecks identically, but it is frozen at turn start - so a round that stops
   // part-way through a multi-request turn would go unnoticed and the remaining requests would land
   // on a game that had already moved on.
   it("stops a turn's later requests once the round is no longer running", async () => {
@@ -220,7 +220,7 @@ describe("agent api turn loop", () => {
     poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
 
     // Let the first request go out and its tool call be serviced, then stop the round before the
-    // follow-up request is sent — the window a frozen snapshot could never see.
+    // follow-up request is sent - the window a frozen snapshot could never see.
     await flushImmediateAgentTurn()
     expect(fetchMock).toHaveBeenCalledTimes(1)
     state = createState({ status: "paused" })
@@ -399,8 +399,14 @@ describe("agent api turn loop", () => {
       expect.objectContaining({
         lastMoveStatus: "invalid-move",
         predictionStatus: "partially-applied",
-        lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
+        lastSubmittedMoves: ["MoveRight", "MoveDown", "MoveLeft"],
         lastAppliedMoveIndex: 1,
+        // Where replay began, not where it ended. Reconstructing this by walking backwards from
+        // the current cell is what two observed turns got wrong: an agent measured last turn's
+        // moves from the cell it was standing on afterwards, concluded an applied move had failed,
+        // and on the second occasion declared an open neighbour a wall and retreated from the only
+        // unvisited direction it had.
+        lastReplayStartCell: { row: 0, col: 0 },
         visitedBefore: false,
         chargedMovesCount: 2,
       }),
@@ -823,7 +829,7 @@ describe("agent api turn loop", () => {
     expect(onActionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         lastMoveStatus: "reached-target",
-        lastSubmittedMoves: ["0:MoveRight", "1:MoveDown"],
+        lastSubmittedMoves: ["MoveRight", "MoveDown"],
         lastAppliedMoveIndex: 0,
         chargedMovesCount: 1,
       }),
@@ -871,7 +877,7 @@ describe("agent api turn loop", () => {
       }),
     )
     // malformed-response is the model's own recoverable mistake, already charged its own decay
-    // penalty above — not a system failure, so unlike network-error this stays a "warn".
+    // penalty above - not a system failure, so unlike network-error this stays a "warn".
     const malformedEntry = loadTapooLog<{ payload: string; log: string }>(
       CONFIG.runtime.controlModes.agentApi,
     ).find((entry) => entry.payload === "Malformed agent prediction response.")
@@ -882,7 +888,7 @@ describe("agent api turn loop", () => {
     // __commitAgentTurn mirrors commitAgentApiTurn's real state.turnCount += 1 side effect
     // (control/turn-resolution.ts) without needing its full round-scoring machinery. This test
     // guards against a real bug where recordRejectedAgentResponse persisted the turn's pre-commit
-    // stateSnapshot.turnCount instead of re-reading state after committing — leaving every agent's
+    // stateSnapshot.turnCount instead of re-reading state after committing - leaving every agent's
     // stored levelTurnCount one behind live state and spuriously tripping agentTurnCountMismatch
     // (a full restart) on the very next turn.
     vi.stubGlobal("localStorage", createMemoryStorage())
@@ -948,12 +954,12 @@ describe("agent api turn loop", () => {
       __readState: () => createState(),
     })
 
-    // Seed replay details as if a previous turn had actually applied moves — the exact shape
+    // Seed replay details as if a previous turn had actually applied moves - the exact shape
     // get_last_prediction_outcome must NOT still be showing once this turn's malformed response
     // lands, since nothing was replayed this time.
     poller.__setLastActionResult(createActionResult({
       lastMoveStatus: "applied",
-      lastSubmittedMoves: ["0:MoveRight", "1:MoveRight"],
+      lastSubmittedMoves: ["MoveRight", "MoveRight"],
       lastReplayStartIndex: 0,
       lastAppliedMoveIndex: 1,
       visitedBefore: false,
@@ -1008,7 +1014,7 @@ describe("agent api turn loop", () => {
     await flushImmediateAgentTurn()
     expect(fetchMock).toHaveBeenCalledTimes(1)
     // First attempt times out, then the one-shot retry fires after its own backoff and times out
-    // the same way — the mock fetch hangs forever regardless of call count, so both attempts abort
+    // the same way - the mock fetch hangs forever regardless of call count, so both attempts abort
     // on their own timeout rather than ever resolving.
     await vi.advanceTimersByTimeAsync(testAgentResponseTimeoutMs)
     await vi.advanceTimersByTimeAsync(testAgentConnectionErrorRetryDelayMs)
@@ -1103,11 +1109,11 @@ describe("agent api turn loop", () => {
       __readState: () => createState(),
     })
 
-    // Seed replay details as if a previous turn had actually applied moves — a network error
+    // Seed replay details as if a previous turn had actually applied moves - a network error
     // must not leave this data looking like it belongs to the failed turn.
     poller.__setLastActionResult(createActionResult({
       lastMoveStatus: "applied",
-      lastSubmittedMoves: ["0:MoveRight", "1:MoveRight"],
+      lastSubmittedMoves: ["MoveRight", "MoveRight"],
       lastReplayStartIndex: 0,
       lastAppliedMoveIndex: 1,
       visitedBefore: false,
@@ -1188,7 +1194,7 @@ describe("agent api turn loop", () => {
       error: "TypeError: network failed",
     })
     // network-error means the provider/infrastructure actually broke, unlike malformed-response
-    // (the model's own recoverable mistake, which stays a "warn") — so this logs as "error".
+    // (the model's own recoverable mistake, which stays a "warn") - so this logs as "error".
     expect(networkErrorEntry?.log).toBe("error")
   })
 
@@ -1230,7 +1236,7 @@ describe("agent api turn loop", () => {
     await flushImmediateAgentTurn()
     await flushConnectionErrorRetry()
 
-    // The retry succeeded, so the turn completes normally — no disablement, no network-error/
+    // The retry succeeded, so the turn completes normally - no disablement, no network-error/
     // connection-error penalty, the move gets replayed and charged like any other successful turn.
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(disableAgentAfterNetworkError).not.toHaveBeenCalled()

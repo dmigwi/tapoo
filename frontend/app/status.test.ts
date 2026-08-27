@@ -54,7 +54,7 @@ const ALL_VIEWPORT_FIT_STATUSES = valuesOf<ViewportFitStatus>({
 })
 
 // TOO_SMALL_STATUSES mirrors TooSmallStatus as runtime values. That type is computed rather than
-// written out — "too-small" | Exclude<ViewportFitStatus, "fits"> — so a new ViewportFitStatus member
+// written out - "too-small" | Exclude<ViewportFitStatus, "fits"> - so a new ViewportFitStatus member
 // widens it with nothing written down changing. The missing key here is what surfaces that.
 const TOO_SMALL_STATUSES = valuesOf<TooSmallStatus>({
   "too-small": true,
@@ -163,7 +163,7 @@ describe("isTooSmallStatus", () => {
   it("only ever accepts statuses that TooSmallStatus can hold", () => {
     // isTooSmallStatus asserts `status is TooSmallStatus`, and TypeScript never checks a predicate
     // body against that claim. TooSmallStatus is derived from ViewportFitStatus, so adding a member
-    // there widens the promised type while this four-way body keeps checking the old values —
+    // there widens the promised type while this four-way body keeps checking the old values -
     // callers would then narrow to a status the function never actually verified. Filtering both
     // input unions and matching the result against TOO_SMALL_STATUSES is what catches that.
     const inputs = [...ALL_STATUSES, ...ALL_VIEWPORT_FIT_STATUSES]
@@ -316,7 +316,7 @@ describe("canPersistRoundStatus", () => {
     // canPersistRoundStatus is a type predicate asserting `status is PersistedGameStatus`, but it
     // is now defined as `isRunningStatus || canProceedStatus` and canProceedStatus returns a plain
     // boolean. TypeScript never verifies a predicate body, so nothing at compile time stops
-    // canProceedStatus from later widening — folding in too-small would make this function claim a
+    // canProceedStatus from later widening - folding in too-small would make this function claim a
     // non-persistable status is persistable, and an unrestorable round would reach storage.
     const accepted = ALL_STATUSES.filter(canPersistRoundStatus)
     accepted.forEach((status) => {

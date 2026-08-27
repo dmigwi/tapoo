@@ -40,8 +40,8 @@ type Walk = {
   totalCells: number
 }
 
-// walkMaze replays a whole level the way game.ts's movePlayer maintains history — one entry per cell,
-// visitCount incremented on re-entry — choosing moves the way the prompt instructs (prefer unvisited,
+// walkMaze replays a whole level the way game.ts's movePlayer maintains history - one entry per cell,
+// visitCount incremented on re-entry - choosing moves the way the prompt instructs (prefer unvisited,
 // otherwise explored), and calls back on every step so a test can audit mid-walk state.
 function walkMaze(
   seed: number,
@@ -193,14 +193,14 @@ describe("cellType and visitStatus relationship", () => {
 
   it("never reads explored for a dead-end, whatever its visit count", () => {
     // explored needs 0 < visitCount < openMoves.length. A dead-end has one exit, so that window is
-    // 0 < v < 1 — empty for integers, which is why a dead-end reads backtracking from its first visit.
+    // 0 < v < 1 - empty for integers, which is why a dead-end reads backtracking from its first visit.
     for (let visitCount = 1; visitCount <= 6; visitCount += 1) {
       expect(cellVisitStatus(cellWith(1, visitCount))).not.toBe("explored")
     }
 
     expect(cellVisitStatus(cellWith(1, 1))).toBe("backtracking")
     expect(cellVisitStatus(cellWith(1, 2))).toBe("oscillating")
-    // Only absence of an entry reads unvisited — never a count.
+    // Only absence of an entry reads unvisited - never a count.
     expect(cellVisitStatus(undefined)).toBe("unvisited")
   })
 

@@ -266,7 +266,7 @@ describe("storage", () => {
       endpoint: endpoint("/api/agents/blue/move"),
       api: "ollama" as const,
     }
-    // The seat is now held by a different agent — same seatId, new stamp.
+    // The seat is now held by a different agent - same seatId, new stamp.
     const newOccupant = { ...previousOccupant, sessionId: 1_700_000_000_999, playerName: "Red" }
     savePersistedAgentApiConfigs([newOccupant])
     resetAgentSessionAvailability(newOccupant, true)
@@ -327,7 +327,7 @@ describe("storage", () => {
   it("backfills a pre-multi-provider agent record with the ollama default on load", () => {
     // Simulates a record saved by a build that predates the api field. Written directly to the
     // storage key as plain base64 JSON (no XOR layer, no AgentApiConfig typing) rather than through
-    // savePersistedAgentApiConfigs, because that function normalizes on save — it would backfill
+    // savePersistedAgentApiConfigs, because that function normalizes on save - it would backfill
     // api before the payload ever reached storage, defeating the point of this test. Plain base64
     // is a real, currently-supported format: decodeStoredPayload falls back to it whenever a stored
     // value lacks the STORE_ENCODING_PREFIX.
@@ -388,7 +388,7 @@ describe("storage", () => {
 
   it("normalizes fixed agent seats without reassigning occupied slots", () => {
     // One config beyond maxSeats, so the excess (highest id) has to be dropped rather than
-    // reassigned into an earlier gap — the behavior this test's name asserts.
+    // reassigned into an earlier gap - the behavior this test's name asserts.
     const models = ["llama3.2", "gemma4", "qwen3", "mistral", "deepseek", "phi4"]
     const oversizedConfigs = Array.from(
       { length: CONFIG.agentConfig.maxSeats + 1 },
@@ -551,7 +551,7 @@ describe("storage", () => {
       gameLevel: 3, cumulativeRoundCount: 7, levelTurnCount: 1, turnCount: 1, decayUnitsCharged: 1,
     })
     // Red never played: its own turnCount and decayUnitsCharged stay at zero, but levelTurnCount
-    // still syncs to the round's shared total — that field is a staleness signal, not a per-agent count.
+    // still syncs to the round's shared total - that field is a staleness signal, not a per-agent count.
     expect(loadAgentApiSeatConfigs()[1]).toMatchObject({
       gameLevel: 3, cumulativeRoundCount: 7, levelTurnCount: 1, turnCount: 0, decayUnitsCharged: 0,
     })
@@ -636,7 +636,7 @@ describe("storage", () => {
     // "Reset Progress" (clearPersistedSnapshot) never touches the agentConfigs storage
     // namespace, so this agent's record survives untouched from a prior session where it
     // last played level 5. state.cumulativeRoundCount restarts from 0 after the reset, so a
-    // later session can legitimately reach cumulativeRoundCount 12 again — the same value
+    // later session can legitimately reach cumulativeRoundCount 12 again - the same value
     // this stale record already holds, purely by coincidence.
     savePersistedAgentApiConfigs([
       {
@@ -653,7 +653,7 @@ describe("storage", () => {
     // New session, different level, but the round counter happens to collide.
     const postResetAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 1, 12, 1, 1)
 
-    // Must NOT inherit the stale turnCount: 9 or decayUnitsCharged: 25 — gameLevel differing
+    // Must NOT inherit the stale turnCount: 9 or decayUnitsCharged: 25 - gameLevel differing
     // (1 vs 5) is what catches this. If recordAgentTurnStats is ever "simplified" to compare only
     // cumulativeRoundCount, these assertions will fail.
     expect(postResetAgent).toMatchObject({
@@ -766,7 +766,7 @@ describe("storage", () => {
     // Gameplay never produces a half-set pair: resolveWinScore writes both, a reset clears both.
     // A pair can only arrive split from corrupted storage, and restoring it split would resurrect
     // the impossible "no previous attempt, but a stored best" state the win summary has no wording
-    // for — with no previous record, any result is by definition a new record.
+    // for - with no previous record, any result is by definition a new record.
     // Written through the real encoder so the test exercises production decoding; the values are
     // out of range rather than the wrong type, which is what a tampered record looks like.
     saveGameProgress(MODE, {

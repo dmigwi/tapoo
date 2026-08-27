@@ -234,7 +234,7 @@ func TestBuildWinSummary(t *testing.T) {
 			// loadStoredGameState drops the retention pair unless both halves are present, so this
 			// combination cannot reach BuildWinSummary from a real save. It is pinned here because
 			// the summary has no wording for trailing a best clear that no attempt was measured
-			// against — with nothing previous recorded, the clear is a record by definition.
+			// against - with nothing previous recorded, the clear is a record by definition.
 			current:     660000,
 			lastAttempt: nil,
 			best:        uint32Ptr(740000),

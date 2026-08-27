@@ -304,7 +304,7 @@ describe("render", () => {
   })
 
   // Turn is agent-api's alone. State.turnCount is incremented only by commitAgentApiTurn, which
-  // returns early outside agent-api, so an interactive round rendered a permanent "Turn: 0" — a
+  // returns early outside agent-api, so an interactive round rendered a permanent "Turn: 0" - a
   // field that was not merely uninteresting there but could never read anything else.
   it("omits the turn count from an interactive round's status line", () => {
     const elements = createElements()
@@ -359,13 +359,13 @@ describe("render", () => {
     )
 
     // Roughly half the available width is kept from the front, half from the back, with the
-    // middle dropped — the same middle-truncation compactAgentModelLabel (agent/seats.ts) uses.
+    // middle dropped - the same middle-truncation compactAgentModelLabel (agent/seats.ts) uses.
     expect(statusLineText(elements)).toBe("Player: Kora the T…r - 1.2000x   Level: 1   Scores: 900")
   })
 
   it("leaves the wide-viewport label untouched even when it would exceed the compact budget", () => {
     const elements = createElements()
-    // 8 characters — CONFIG.agentConfig.playerNameMaxLength, the real cap enforced on agent names,
+    // 8 characters - CONFIG.agentConfig.playerNameMaxLength, the real cap enforced on agent names,
     // so this exercises the longest name the running app can ever actually produce.
     const currentPlayerLabel = formatPlayerStatusLabel({
       playerName: "AgentOne",
@@ -409,7 +409,7 @@ describe("render", () => {
       configurable: true,
       value: 412,
     })
-    // 8 characters — CONFIG.agentConfig.playerNameMaxLength, the real cap enforced on agent names.
+    // 8 characters - CONFIG.agentConfig.playerNameMaxLength, the real cap enforced on agent names.
     // Even at that maximum, the full "{name} the {Class}({rate})" label still overflows the
     // compact budget once "the Trailblazer" is added, so trimming still has real work to do.
     const currentPlayerLabel = formatPlayerStatusLabel({
@@ -453,7 +453,7 @@ describe("render", () => {
       value: 412,
     })
     // At the default level (1) and score (900), the compact budget leaves exactly 22 characters
-    // for the label — a label of exactly that length must render untouched, with no ellipsis.
+    // for the label - a label of exactly that length must render untouched, with no ellipsis.
     const currentPlayerLabel = "A".repeat(22)
 
     render(
@@ -539,7 +539,7 @@ describe("render", () => {
 
     render(
       elements,
-      // An oversized level/score leaves negative room for any label at all — the whole
+      // An oversized level/score leaves negative room for any label at all - the whole
       // "Player: {player}   " lead-in should disappear rather than leave a bare "Player:".
       createState({
         controlMode: CONFIG.runtime.controlModes.agentApi,
@@ -948,7 +948,7 @@ describe("render", () => {
 
     expect(text).toContain("Level 1 needs more screen room!")
     // Level 1 has no lower level to fall back to, so canShowRestart already hides the Reset
-    // Progress button here (asserted below) — the text must not promise an action with no button.
+    // Progress button here (asserted below) - the text must not promise an action with no button.
     expect(text).toContain(messages.tooSmallActionMessage)
     expect(text).not.toContain(messages.tooSmallActionMessageWithReset)
 
@@ -1221,15 +1221,15 @@ describe("fitPlayerSegmentToWidth", () => {
   it("keeps roughly half the available width from the front, half from the back, dropping the middle", () => {
     // "Kora the Trailblazer - 1.2000x" is 30 characters; a remainder of 33 leaves 22 characters of
     // room (COMPACT_STATUS_MAX_LENGTH 55 minus 33), so 21 characters go to the label once the "…"
-    // marker is accounted for — 10 kept from the front, 11 from the back.
+    // marker is accounted for - 10 kept from the front, 11 from the back.
     expect(fitPlayerSegmentToWidth("Kora the Trailblazer - 1.2000x", 33)).toBe(
       "Kora the T…r - 1.2000x",
     )
   })
 
   it("trims a longer label the same way, using the same front/back split", () => {
-    // "AgentOne" is 8 characters — CONFIG.agentConfig.playerNameMaxLength, the real cap on agent
-    // names — so this is the longest label the running app can ever actually need to trim.
+    // "AgentOne" is 8 characters - CONFIG.agentConfig.playerNameMaxLength, the real cap on agent
+    // names - so this is the longest label the running app can ever actually need to trim.
     expect(
       fitPlayerSegmentToWidth("AgentOne the Trailblazer - 1.2000x", 33),
     ).toBe("AgentOne t…r - 1.2000x")

@@ -455,7 +455,7 @@ describe("agent control mode", () => {
         currentCell: { row: 0, col: 1 },
         traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "applied",
-        lastSubmittedMoves: ["0:MoveRight"],
+        lastSubmittedMoves: ["MoveRight"],
         lastAppliedMoveIndex: 0,
         visitedBefore: false,
       }))
@@ -463,7 +463,7 @@ describe("agent control mode", () => {
         currentCell: { row: 1, col: 1 },
         traversalHistory: [selfVisit(0, 0), visit(0, 1), visit(1, 1)],
         lastMoveStatus: "applied",
-        lastSubmittedMoves: ["0:MoveDown"],
+        lastSubmittedMoves: ["MoveDown"],
         lastAppliedMoveIndex: 0,
         visitedBefore: false,
       }))
@@ -519,7 +519,7 @@ describe("agent control mode", () => {
       expect.objectContaining({
         currentCell: { row: 1, col: 1 },
         lastMoveStatus: "applied",
-        lastSubmittedMoves: ["0:MoveRight", "1:MoveDown"],
+        lastSubmittedMoves: ["MoveRight", "MoveDown"],
         lastAppliedMoveIndex: 1,
       }),
     )
@@ -577,7 +577,7 @@ describe("agent control mode", () => {
       currentCell: { row: 0, col: 1 },
       traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "applied",
-      lastSubmittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["MoveRight"],
       lastAppliedMoveIndex: 0,
       visitedBefore: false,
     }))
@@ -628,7 +628,7 @@ describe("agent control mode", () => {
       currentCell: { row: 0, col: 1 },
       traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "applied",
-      lastSubmittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["MoveRight"],
       lastAppliedMoveIndex: 0,
       visitedBefore: false,
     }))
@@ -652,7 +652,7 @@ describe("agent control mode", () => {
       expect.objectContaining({
         currentCell: { row: 0, col: 1 },
         lastMoveStatus: "applied",
-        lastSubmittedMoves: ["0:MoveRight"],
+        lastSubmittedMoves: ["MoveRight"],
         lastAppliedMoveIndex: 0,
         chargedMovesCount: 1,
       }),
@@ -674,7 +674,7 @@ describe("agent control mode", () => {
     )
 
     // A real, deterministically generated 3x3-cell maze (generateMaze seed 1), not a contrived
-    // stand-in — the same wall/corridor pattern encodeMazeForLog would actually see in production.
+    // stand-in - the same wall/corridor pattern encodeMazeForLog would actually see in production.
     const finalMaze = [
       ["|", "---", "-", "---", "-", "---", "|"],
       ["|", "   ", " ", "   ", " ", "   ", "|"],
@@ -746,7 +746,7 @@ describe("agent control mode", () => {
     )
 
     // A real, deterministically generated 3x3-cell maze (generateMaze seed 1), not a contrived
-    // stand-in — the same wall/corridor pattern encodeMazeForLog would actually see in production.
+    // stand-in - the same wall/corridor pattern encodeMazeForLog would actually see in production.
     const finalMaze = [
       ["|", "---", "-", "---", "-", "---", "|"],
       ["|", "   ", " ", "   ", " ", "   ", "|"],
@@ -790,7 +790,7 @@ describe("agent control mode", () => {
     expect(lastEntry.details.winSummary).toBe("")
     expect(lastEntry.details.agent.playerName).toBe("Blue")
     expect(lastEntry.details.agent.model).toBe("llama3.2")
-    // The maze grid/dimensions are no longer repeated here — see the "won" test above.
+    // The maze grid/dimensions are no longer repeated here - see the "won" test above.
     expect(lastEntry.details).not.toHaveProperty("maze")
   })
 
@@ -829,7 +829,7 @@ describe("agent control mode", () => {
         currentCell: { row: 0, col: 1 },
         traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "applied",
-        lastSubmittedMoves: ["0:MoveRight"],
+        lastSubmittedMoves: ["MoveRight"],
         lastAppliedMoveIndex: 0,
         visitedBefore: false,
       }))
@@ -837,7 +837,7 @@ describe("agent control mode", () => {
         currentCell: { row: 0, col: 1 },
         traversalHistory: [selfVisit(0, 0), visit(0, 1)],
         lastMoveStatus: "invalid-move",
-        lastSubmittedMoves: ["1:MoveDown"],
+        lastSubmittedMoves: ["MoveDown"],
         lastAppliedMoveIndex: 0,
         visitedBefore: true,
       }))
@@ -862,7 +862,7 @@ describe("agent control mode", () => {
         currentCell: { row: 0, col: 1 },
         lastMoveStatus: "invalid-move",
         predictionStatus: "partially-applied",
-        lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
+        lastSubmittedMoves: ["MoveRight", "MoveDown", "MoveLeft"],
         lastAppliedMoveIndex: 0,
         chargedMovesCount: 2,
       }),
@@ -903,7 +903,7 @@ describe("agent control mode", () => {
       destinationCell: { row: 0, col: 1 },
       traversalHistory: [selfVisit(0, 0), visit(0, 1)],
       lastMoveStatus: "reached-target",
-      lastSubmittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["MoveRight"],
       lastAppliedMoveIndex: 0,
       visitedBefore: false,
       status: "won",
@@ -935,7 +935,7 @@ describe("agent control mode", () => {
         currentCell: { row: 0, col: 1 },
         destinationCell: { row: 0, col: 1 },
         lastMoveStatus: "reached-target",
-        lastSubmittedMoves: ["0:MoveRight", "1:MoveDown", "2:MoveLeft"],
+        lastSubmittedMoves: ["MoveRight", "MoveDown", "MoveLeft"],
         lastAppliedMoveIndex: 0,
         chargedMovesCount: 1,
       }),
@@ -1076,7 +1076,7 @@ describe("agent control mode", () => {
             level: 1,
             score: 100,
             lastMoveStatus: "applied",
-            lastSubmittedMoves: ["0:MoveRight"],
+            lastSubmittedMoves: ["MoveRight"],
             lastAppliedMoveIndex: 0,
             visitedBefore: false,
           }),
@@ -1161,7 +1161,7 @@ describe("agent control mode", () => {
     const dispatch = vi.fn().mockReturnValue(createControlFixture({
       currentCell: { row: 0, col: 1 },
       lastMoveStatus: "applied",
-      lastSubmittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["MoveRight"],
       lastAppliedMoveIndex: 0,
     }))
     const readState = vi.fn(() => createControlFixture({ level: 1 }))
@@ -1173,7 +1173,7 @@ describe("agent control mode", () => {
       currentCell: { row: 9, col: 9 },
       level: 99,
       lastMoveStatus: "reached-target",
-      lastSubmittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["MoveRight"],
     }))
     mode.clearActionResult()
 
@@ -1435,7 +1435,7 @@ describe("agent control mode", () => {
 
     elements.agentDeleteConfirm.checked = true
     elements.agentDeleteConfirm.dispatchEvent(new Event("change"))
-    // A disabled toggle is always forced off, not left showing its prior value — a control the user
+    // A disabled toggle is always forced off, not left showing its prior value - a control the user
     // can no longer interact with should never silently claim to be on. Covers both toggles the
     // delete checkbox locks: enabled/disabled and echo-back-reasoning.
     expect(elements.agentManageEnabled?.disabled).toBe(true)
@@ -2113,7 +2113,7 @@ describe("agent control mode", () => {
 
   it("keeps the + Add Header button working after the form resets for another seat", () => {
     // The + button lives on the static first row and is wired to a click listener once, at bind
-    // time — resetExtraHeaderRows must not recreate that row, or the fresh node it swaps in would
+    // time - resetExtraHeaderRows must not recreate that row, or the fresh node it swaps in would
     // carry no listener at all and this button would silently stop working after any reopen.
     const elements = createAgentFormElements()
     vi.stubGlobal("fetch", vi.fn())
@@ -2135,7 +2135,7 @@ describe("agent control mode", () => {
     ).toHaveLength(2)
 
     // Closing (which resets the form) and reopening for a different seat drops the extra row
-    // added above — resetAgentConfigForm runs on close, not merely on switching seats while open.
+    // added above - resetAgentConfigForm runs on close, not merely on switching seats while open.
     elements.agentConfigClose.dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     )
@@ -2211,7 +2211,7 @@ describe("agent control mode", () => {
     const readAgentConfigs = vi.fn((): AgentApiSeatConfig[] => [])
     elements.agentConfigPlayerName.value = "Scout"
     elements.agentConfigModel.value = "gemma4"
-    // No path at all — this must not be silently defaulted to a provider's conventional route;
+    // No path at all - this must not be silently defaulted to a provider's conventional route;
     // the user has to type the actual path themselves.
     elements.agentConfigEndpoint.value = "localhost:5000"
     vi.stubGlobal("fetch", vi.fn())
@@ -2626,7 +2626,7 @@ describe("system settings dialog", () => {
   })
 
   // The bug this guards: the terminal grabs focus back on any click inside #terminal-app, so an
-  // overlay missing from the shared "is anything open" check cannot be typed into — clicking its
+  // overlay missing from the shared "is anything open" check cannot be typed into - clicking its
   // input hands focus straight to the terminal. It fails silently, as an unusable field.
   it("does not let the terminal steal focus while the dialog is open", () => {
     const { elements } = bindSettings(1)

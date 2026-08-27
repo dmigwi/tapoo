@@ -10,7 +10,7 @@ import type { PRNGGenerator } from "./maze"
 import { createMazeDimensions, openMovesFromCell } from "./traversal"
 import type { BaseDimensions, LevelDimensions } from "./types"
 
-// createXorshift128Generator is a small, deterministic PRNGGenerator for tests — a real varied
+// createXorshift128Generator is a small, deterministic PRNGGenerator for tests - a real varied
 // pseudorandom sequence, reproducible from a fixed seed, standing in for getPRNGInt. This replaces
 // mocking crypto.getRandomValues directly, which coupled tests to getPRNGInt's own internal
 // rejection-sampling/Uint32Array details rather than just the PRNGGenerator contract every caller
@@ -125,7 +125,7 @@ describe("maze", () => {
 
   it("cuts junction density as __leastNeighborsBias rises, with the grid held fixed", () => {
     // The test below varies bias and area together, because getNavigationProfile derives the
-    // profile from area alone — so on its own it cannot say whether the bias or the size did the
+    // profile from area alone - so on its own it cannot say whether the bias or the size did the
     // work. Overriding the profile pins one square 20x20 grid and moves only the bias. Square
     // because skew is not neutral either: at full bias a skewed grid branches measurably more than a
     // square of the same area, so a non-square grid would leave a second uncontrolled variable.
@@ -162,7 +162,7 @@ describe("maze", () => {
   it("cuts junction density for small mazes versus large ones", () => {
     // Covers the wiring players actually get, where the profile is derived rather than supplied.
     // Area and bias move together here by design, so this pins the end-to-end outcome without
-    // attributing it — the test above is what isolates the knob.
+    // attributing it - the test above is what isolates the knob.
     const junctionFraction = (dimensions: BaseDimensions): number => {
       const { maze } = generateMaze(createLevelDimensions(1, dimensions), 1)
       let junctions = 0

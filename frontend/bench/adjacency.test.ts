@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { mazeAdjacencyHash } from "./adjacency"
 import type { LevelDimensions } from "../app/types"
 
-// A real generated 2x1-cell maze (generateMaze, seed 1) — the only possible topology for two cells
+// A real generated 2x1-cell maze (generateMaze, seed 1) - the only possible topology for two cells
 // is a single open passage between them, so this is deterministic regardless of generator.
 const openMaze = [
   ["|", "---", "-", "---", "|"],
@@ -28,7 +28,7 @@ describe("mazeAdjacencyHash", () => {
   // mismatches could pass even with a bug that's far too lenient.
   it("differs when a single passage changes between two otherwise identical mazes", () => {
     const closedMaze = openMaze.map((row) => [...row])
-    // The shared wall between cell (0,0) and cell (0,1) — a single space (open) becomes "|" (closed).
+    // The shared wall between cell (0,0) and cell (0,1) - a single space (open) becomes "|" (closed).
     closedMaze[1][2] = "|"
 
     expect(mazeAdjacencyHash(closedMaze, dimensions)).not.toBe(

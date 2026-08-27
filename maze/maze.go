@@ -28,7 +28,7 @@ type pathStep struct {
 // GenerateMaze converts the created grid view playing field into a series on paths and walls.
 // The Maze is created such that only a single path can exists between the starting point and
 // and the goal. Maze size controls how strongly generation should resist long straight corridors.
-// generator is an optional trailing argument (see PRNGGenerator) — omit it in production code.
+// generator is an optional trailing argument (see PRNGGenerator) - omit it in production code.
 func (config *Dimensions) GenerateMaze(weight WallWeight, generator ...PRNGGenerator) ([][]string, error) {
 	return config.GenerateMazeWithProfile(weight, GetNavigationProfile(*config), generator...)
 }
@@ -37,7 +37,7 @@ func (config *Dimensions) GenerateMaze(weight WallWeight, generator ...PRNGGener
 // one GetNavigationProfile derives from area. Gameplay always wants the derived profile, so this
 // exists for measurement: because the profile is a pure function of area, nothing else can hold the
 // grid fixed while moving a knob, which is what separates a knob's effect from the grid's own.
-// generator is an optional trailing argument (see PRNGGenerator) — omit it in production code.
+// generator is an optional trailing argument (see PRNGGenerator) - omit it in production code.
 func (config *Dimensions) GenerateMazeWithProfile(
 	weight WallWeight,
 	navigationProfile NavigationProfile,
@@ -176,7 +176,7 @@ func (config *Dimensions) chooseNextCell(
 			// Prefer the candidate with the fewest remaining unvisited neighbors of its own. A
 			// low-neighbor-count cell gets "used up" cleanly by visiting it now, leaving nothing
 			// behind for some later, unrelated branch to claim and retroactively turn this cell
-			// into a junction. This is the mechanism that actually controls branching — unlike
+			// into a junction. This is the mechanism that actually controls branching - unlike
 			// corridor length, neighbor count directly predicts whether a cell will be orphaned.
 			var (
 				leastPopulatedCount int

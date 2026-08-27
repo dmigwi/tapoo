@@ -175,7 +175,7 @@ describe("log context stamping", () => {
     logTapooDiagnostic("interactive", "info", "Agent request.")
 
     // One turn issues several requests, and a level issues several turns, so entries group by
-    // all three rather than mapping 1:1 to any one — without level and game, a downloaded log
+    // all three rather than mapping 1:1 to any one - without level and game, a downloaded log
     // can't tell which level/playthrough a given request belongs to, since turn alone resets every
     // level and level alone can't distinguish a retry from continuing the same level.
     const entries = loadTapooLog<{
@@ -241,14 +241,14 @@ describe("checksumLoggedDescription", () => {
   })
 
   it("hashes UTF-8 bytes so non-ASCII text (curly quotes, em dash, arrows) checksums consistently", () => {
-    const nonAscii = "“curly” quotes — an em dash → an arrow"
+    const nonAscii = "“curly” quotes - an em dash → an arrow"
     expect(checksumLoggedDescription(nonAscii)).toMatch(/^0x[0-9a-f]{16}$/)
-    // Same input still round-trips to the same checksum — not just any hex string.
+    // Same input still round-trips to the same checksum - not just any hex string.
     expect(checksumLoggedDescription(nonAscii)).toBe(checksumLoggedDescription(nonAscii))
   })
 
   it("matches independently-known FNV-1a 64-bit test vectors, proving external portability", () => {
-    // Empty input never enters the loop, so the result is just the untouched offset basis — a
+    // Empty input never enters the loop, so the result is just the untouched offset basis - a
     // standard published FNV-1a 64-bit test vector, not something only this implementation agrees
     // with itself on.
     expect(checksumLoggedDescription("")).toBe("0xcbf29ce484222325")
@@ -341,7 +341,7 @@ describe("encodeMazeForLog", () => {
     ]
 
     // Only three distinct tokens ever appear, so index_chars holds exactly those three plus the
-    // separator — never a full five-token alphabet padded out for tokens this maze never used.
+    // separator - never a full five-token alphabet padded out for tokens this maze never used.
     expect(encodeMazeForLog(maze).index_chars).toEqual(["|", "---", "-", "\n"])
   })
 

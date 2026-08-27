@@ -16,8 +16,8 @@ async function readTemplate(name) {
 }
 
 // subresourceIntegrity hashes an already-built file's actual bytes for a Subresource Integrity
-// attribute. Unlike a CSP script-src/style-src hash — which only ever gates inline <script>/<style>
-// content — integrity="..." is the mechanism that applies to externally-loaded files: the browser
+// attribute. Unlike a CSP script-src/style-src hash - which only ever gates inline <script>/<style>
+// content - integrity="..." is the mechanism that applies to externally-loaded files: the browser
 // refuses to execute or apply the resource at all if its fetched bytes don't match this hash,
 // which a plain CSP entry can't enforce for external sources regardless of what's listed in it.
 async function subresourceIntegrity(filePath) {
@@ -47,7 +47,7 @@ function indentHtml(html, indent) {
   return html.trimEnd().replaceAll("\n", `\n${indent}`)
 }
 
-// Byte offsets within the 32-byte digest — one contiguous run: 4 timestamp bytes, then the
+// Byte offsets within the 32-byte digest - one contiguous run: 4 timestamp bytes, then the
 // storage-encoding prefix string (e.g. "tapoo:v4.5:") padded to a fixed width, then 3 app-version
 // bytes (major/minor/patch).
 const DATA_BUILD_KEY_TIME_OFFSET = 11
@@ -57,16 +57,16 @@ const DATA_BUILD_KEY_VERSION_OFFSET = DATA_BUILD_KEY_PREFIX_OFFSET + DATA_BUILD_
 
 // dataBuildKey computes a version-stamp value from a constant already defined in the app
 // (storage.ts's blend key) rather than from git, so the build doesn't depend on the git binary
-// being available. The base hash is derived only from that one fixed, always-known constant —
-// never from anything that varies release to release — so confirming any value later means
+// being available. The base hash is derived only from that one fixed, always-known constant -
+// never from anything that varies release to release - so confirming any value later means
 // recomputing this one hash, not searching through past release combinations.
 //
 // The storage-encoding prefix, app version, and build timestamp are combined directly into a
-// fixed byte range of that hash via XOR before hex-encoding, rather than hashed away as input — a
+// fixed byte range of that hash via XOR before hex-encoding, rather than hashed away as input - a
 // one-way hash can't have information extracted back out that was only ever used to produce it, so
 // this keeps them recoverable exactly with the same fixed key. The prefix is kept as its full
 // literal string (e.g. "tapoo:v4.5:"), not just the bare version number, so a decode is
-// self-describing on its own rather than a number with no visible context — padded to a fixed
+// self-describing on its own rather than a number with no visible context - padded to a fixed
 // width with trailing spaces (not a punctuation character) since it isn't always the same length,
 // so the padding reads as ordinary trailing whitespace rather than something needing an
 // explanation.
@@ -120,8 +120,8 @@ function buildStructuredData({ website, type, name, description, url, extra = {}
 
 // renderPromptSections compiles the prompt builders and runs them here, at build time, so the
 // prompts page can ship as plain HTML with no bundle of its own. The content is derived entirely
-// from constants — the system prompt, the tool descriptions and the response schema never vary at
-// runtime — and sourcing it from the same module the agent runtime calls keeps the published page
+// from constants - the system prompt, the tool descriptions and the response schema never vary at
+// runtime - and sourcing it from the same module the agent runtime calls keeps the published page
 // from drifting away from what is actually sent.
 async function renderPromptSections() {
   const bundled = await build({
@@ -256,7 +256,7 @@ const { game, agents, prompts, privacy } = runtimeConfig.pages
 await mkdir(publicDirectory, { recursive: true })
 
 // og-image.png/.svg are static, hand-authored assets under public/images (like favicon.svg), not
-// build output — only the URL that points at them is computed here.
+// build output - only the URL that points at them is computed here.
 const ogImageUrl = `${urlPath}images/og-image.png`
 sharedPartials.ogImageUrl = ogImageUrl
 sharedPartials.dataBuildKey = dataBuildKey(STORE_BLEND_KEY, STORE_ENCODING_PREFIX, APP_VERSION)
@@ -264,7 +264,7 @@ sharedPartials.dataBuildKey = dataBuildKey(STORE_BLEND_KEY, STORE_ENCODING_PREFI
 const website = {
   "@type": "WebSite",
   "@id": `${urlPath}#website`,
-  name: "Tapoo — AI agent behavior profiler",
+  name: "Tapoo - AI agent behavior profiler",
   description: "Measures an agent's strategy execution under uncertainty.",
   url: urlPath,
   image: ogImageUrl,
@@ -298,7 +298,7 @@ function validTimestamp(value) {
 // a config or dependency change that git-per-path attribution never saw.
 //
 // Parsed, not merely defaulted: ?? only replaces an absent value, so a malformed TAPOO_BUILD_DATE
-// would publish straight into dateModified on every page — a field crawlers read and no human is
+// would publish straight into dateModified on every page - a field crawlers read and no human is
 // likely to check. config.ts screens the same env var the same way before it reaches the footer;
 // one variable feeding two consumers should not have two ideas of what counts as usable.
 const buildDate = validTimestamp(process.env.TAPOO_BUILD_DATE) ?? new Date().toISOString()

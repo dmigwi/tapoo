@@ -150,7 +150,7 @@ export function isFinishedStatus(
 
 // canProceedStatus marks a settled round: a maze exists but is not advancing, so the player owes
 // it a decision. The three compound checks below are each written as this set plus or minus what
-// makes them differ, so the shared membership is stated once here — widening this widens them all.
+// makes them differ, so the shared membership is stated once here - widening this widens them all.
 export function canProceedStatus(status: GameStatus): boolean {
   return (
     isAwaitAgentStatus(status) ||
@@ -179,7 +179,7 @@ export function canShowWallsStatus(status: GameStatus): boolean {
 
 // canShowRestart accepts everything canProceedStatus does, plus too-small when there's a lower level
 // to fall back to. Reset Progress always restarts at level 1 (restartGame in game.ts), so offering it
-// while already too-small at level 1 would just redraw the same maze into the same too-small state —
+// while already too-small at level 1 would just redraw the same maze into the same too-small state -
 // there's no smaller level left to make room.
 export function canShowRestart(status: GameStatus, level: number): boolean {
   if (isTooSmallStatus(status)) {

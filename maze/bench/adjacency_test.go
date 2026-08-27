@@ -7,7 +7,7 @@ import (
 	"github.com/dmigwi/tapoo/maze"
 )
 
-// TestMazeAdjacencyHashIsDeterministic hashes a real generated maze twice and checks the format —
+// TestMazeAdjacencyHashIsDeterministic hashes a real generated maze twice and checks the format -
 // the same grid must always hash to the same value, and the value must be shaped the way
 // parity-harness/bench-report.mjs and frontend/app/logs.ts's fnv1a64Checksum expect (0x-prefixed, 16 hex
 // digits) so the driver can compare Go's and TypeScript's hash sequences with plain string equality.
@@ -51,7 +51,7 @@ func TestMazeAdjacencyHashDiffersOnASinglePassage(t *testing.T) {
 		openGrid[i] = append([]string(nil), row...)
 	}
 
-	// Open the single passage between cell 1 and cell 2 (their only shared wall) in openGrid only —
+	// Open the single passage between cell 1 and cell 2 (their only shared wall) in openGrid only -
 	// everything else about the two grids stays identical.
 	address := config.GetCellAddress(1)
 	openGrid[address.MiddleRight[0]][address.MiddleRight[1]] = " "

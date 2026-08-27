@@ -30,7 +30,7 @@ import type {
 
 // The two lists below are built from a record keyed by the union rather than written as an annotated
 // array, because `const x: MoveAction[] = [...]` only asks that each element belong to the union and
-// never that the list be complete — a stale list stays valid as the union grows, and the tests that
+// never that the list be complete - a stale list stays valid as the union grows, and the tests that
 // walk it keep their old coverage in silence. A missing key is a compile error instead.
 function valuesOf<T extends string>(members: Record<T, true>): T[] {
   return Object.keys(members) as T[]
@@ -214,7 +214,7 @@ describe("traversal", () => {
     const revisited = { ...selfVisit(0, 1), visitCount: 3 }
     const history = [selfVisit(0, 0), revisited]
 
-    // Returns the live entry, not a copy — game.ts mutates visitCount straight through it.
+    // Returns the live entry, not a copy - game.ts mutates visitCount straight through it.
     expect(findTraversalHistoryEntry(history, { row: 0, col: 1 })).toBe(revisited)
     expect(findTraversalHistoryEntry(history, { row: 9, col: 9 })).toBeUndefined()
   })
@@ -322,7 +322,7 @@ describe("traversal", () => {
 
   it("rejects a traversal history entry whose visitCount is missing or below one", () => {
     // An entry only exists once its cell has been stood on, so anything under 1 is corrupt rather
-    // than merely unset — accepting it would understate how worked-over the cell is, which is
+    // than merely unset - accepting it would understate how worked-over the cell is, which is
     // exactly what agent/context.ts reads to derive visitStatus.
     const validEntry = { playerName: "Self", row: 0, col: 0, openMoves: ["MoveRight"] }
 

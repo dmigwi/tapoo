@@ -57,14 +57,16 @@ export const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
   },
 }
 
-// SUBMITTED_MOVES_SCHEMA documents the zero-based submitted-move entries returned after processing a turn.
+// SUBMITTED_MOVES_SCHEMA documents the submitted-move entries returned after processing a turn. The
+// same move names that were sent, in submission order - index fields point into this array rather
+// than being encoded into its strings.
 export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
   type: "array",
-  description: "Zero-based submitted-move entries formatted as <index>:<move>.",
+  description: "The moves submitted last turn, in order, exactly as they were sent.",
   items: {
     type: "string",
-    pattern: "^(0|[1-9][0-9]*):(MoveUp|MoveDown|MoveLeft|MoveRight)$",
-    examples: ["0:MoveRight", "1:MoveUp", "2:MoveRight"],
+    pattern: "^(MoveUp|MoveDown|MoveLeft|MoveRight)$",
+    examples: ["MoveRight", "MoveUp", "MoveRight"],
   },
 }
 
@@ -73,7 +75,7 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
 
 // buildAgentPersonaPrompt opens every turn's system prompt, and is where the agent is given the
 // standard it plays to: who it is, where its traversal speed currently stands, and whether the job
-// this turn is to hold that or climb out of it. Each classification gets its own stance — the two
+// this turn is to hold that or climb out of it. Each classification gets its own stance - the two
 // below the top are not interchangeable, since one is holding the baseline and the other is losing
 // ground against it.
 //
@@ -82,7 +84,7 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
 // agent can catch being untrue is worse than no stance at all.
 //
 // Stated as spend efficiency, never as acquisition. Traversal speed is first visits over decay
-// units spent — the same ratio get_prediction_rules calls "the progress per decay unit spent" — so
+// units spent - the same ratio get_prediction_rules calls "the progress per decay unit spent" - so
 // a high speed means units bought more ground, not that anything was gained. Nothing in this game
 // credits an agent for a cell: score only decays. Language like "gaining" or "worth" invents a
 // return side the scoring has none of.
@@ -96,7 +98,7 @@ export function buildAgentPersonaPrompt(
   // is stated the same way get_prediction_rules reports it, so the two never disagree.
 
   // isOpeningTurn is this agent's own first prediction of the level, decided entirely by its own
-  // counters — never by the round's shared turn count. In a multi-agent round the seats play in
+  // counters - never by the round's shared turn count. In a multi-agent round the seats play in
   // rotation, so every agent after the first opens on a nonzero State.turnCount; gating on that
   // would hand the opening framing to whichever seat happened to move first and deny it to the
   // rest, who are equally unmeasured and equally entitled to it. See request.ts for the checks.
@@ -109,7 +111,7 @@ export function buildAgentPersonaPrompt(
   }
 
   // "Hold that standard" is what this used to say, and it read as permission to coast. The class is
-  // a step function — resolveStatusSpeedClass returns trailblazer for any rate above 1.0000 — so an
+  // a step function - resolveStatusSpeedClass returns trailblazer for any rate above 1.0000 - so an
   // instruction to maintain it saturates the moment the threshold is crossed. Observed in play:
   // aggressive batching while below trailblazer, then near-none once it was reached at the minimum
   // rate, which drops back out on the first costly turn and oscillates between classes. The branch
@@ -119,8 +121,9 @@ export function buildAgentPersonaPrompt(
     return [
       `You are ${playerName} and your traversal speed currently classifies as trailblazer.`,
       "Your predictions have been reaching more than 1.0000 new cells for every decay unit spent. Your current speed",
-      "is a floor you have cleared, not a target to settle on: one costly turn drops you back out of it, and the",
-      "closer the rate sits to 1.0000, the smaller that margin is. Keep raising it with every batch you can prove.",
+      "is a floor you have cleared, not a target to settle on: a clean turn is charged once however far it reaches,",
+      "so every further move you can prove carries its new cell at no extra charge - that is what lifts the rate.",
+      "Keep raising it with every batch you can prove.",
     ].join(" ")
   }
 
@@ -137,7 +140,7 @@ export function buildAgentPersonaPrompt(
   }
 
   // "That may be the best this maze allows" used to sit here, and it handed the agent a structural
-  // excuse for its own single-cell turns — the same coasting trap "Hold that standard" set for
+  // excuse for its own single-cell turns - the same coasting trap "Hold that standard" set for
   // trailblazer, entered from below. It is also close to false: a turn whose moves all land is
   // charged the base unit whether it reached one new cell or six, so maze shape does not pin the
   // rate at the baseline. Dead ends do drag the average, but a retreat batched into one turn is
@@ -145,7 +148,7 @@ export function buildAgentPersonaPrompt(
   return [ // navigator
     `You are ${playerName} and your traversal speed currently classifies as navigator.`,
     "You are holding the 1.0000 baseline: reaching exactly one new cell for every decay unit spent. Nothing in the maze",
-    "pins you there — a turn whose moves all land is charged one unit whether it reached one new cell or",
+    "pins you there - a turn whose moves all land is charged one unit whether it reached one new cell or",
     "several cells, and even a forced retreat can be batched into a single turn. Raise the rate by batching longer",
     "predictions into unvisited cells, as far as you can prove the moves will apply.",
   ].join(" ")
@@ -168,7 +171,7 @@ export function buildMazeActionPrompt(
     "current level, maze dimensions and wall/open-exit structure are fixed once generated. When present in",
     `filteredTraversalHistory, playerName ${runtime.interactivePlayerName} marks the start cell. Use openMoves from`,
     "filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy",
-    "as your own. currentCell is the position you landed on after applying the valid moves from the previous turn;",
+    "as your own. currentCell is where the previous turn's valid moves ended, whoever played it;",
     "at the start of each level, currentCell matches the start-cell.",
     "Your primary objective is to reach destinationCell, the level's fixed target position, with the highest traversal",
     "speed. cellType start-cell and target-cell label the start and destination cells respectively. Every openMoves",
@@ -184,19 +187,19 @@ export function buildMazeActionPrompt(
     "point, maybe within or beyond historyWindowRadius, so keep retreating through explored cells until a",
     "later turn's filteredTraversalHistory brings it into view.",
     "When judging whether one candidate cell is closer to destinationCell than another, compare the full combined",
-    "row and col differences for each candidate, not just one axis — a cell closer on one axis can be equally far or",
+    "row and col differences for each candidate, not just one axis - a cell closer on one axis can be equally far or",
     "farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from",
     "start to destination; the only valid path may require moving away from the target before turning towards it.",
     "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that",
     "outcome.",
     `A turn with any valid moves costs a constant ${agentBaseDecayUnits}-unit decay charge regardless of how many submitted`,
     `moves apply. If replay then reaches an invalid move, that adds a ${agentPartialInvalidPenaltyDecayUnits}-unit penalty,`,
-    `for a total charge of ${partialInvalidTurnCost}. If the very first submitted move is already invalid — no progress`,
-    `at all — the turn instead costs a flat ${agentZeroProgressPenaltyDecayUnits}-unit decay charge. A malformed response`,
+    `for a total charge of ${partialInvalidTurnCost}. If the very first submitted move is already invalid - no progress`,
+    `at all - the turn instead costs a flat ${agentZeroProgressPenaltyDecayUnits}-unit decay charge. A malformed response`,
     `(invalid JSON, an unknown tool request, or ignoring a warning) costs a fixed ${agentMalformedPenaltyDecayUnits}`,
-    `decay units with no moves applied — the costliest outcome of all.`,
+    `decay units with no moves applied - the costliest outcome of all.`,
     "Those charges are what spend decayUnitsRemaining, and every turn spends at least one of them, so it caps how many",
-    "turns you have left — fewer than that whenever a turn takes a penalty. get_last_prediction_outcome reports its",
+    "turns you have left - fewer than that whenever a turn takes a penalty. get_last_prediction_outcome reports its",
     "current value and what running out of it means.",
     // "sustain ... keeping your classification at trailblazer" stood here and set the same coasting
     // trap the persona branch had: the class is a step function, so an instruction to maintain it
@@ -214,7 +217,7 @@ export function buildMazeActionPrompt(
     // states the same thing more precisely, conditioned on the moves actually landing.
     "Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision",
     "or out-of-bounds step) is hit.",
-    "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
+    "lastMoveStatus reached-target or status won means the game is complete - stop predicting.",
   ].join(" ")
 }
 
@@ -231,8 +234,8 @@ export function buildAgentMessages(
     },
     {
       role: "user",
-      // "Use the available tools to see the maze state" said less than the system prompt requires —
-      // every tool once per turn, not just the one that shows the maze — and a model reading only
+      // "Use the available tools to see the maze state" said less than the system prompt requires -
+      // every tool once per turn, not just the one that shows the maze - and a model reading only
       // the final message could take it as leave to stop after get_maze_structure. The ask now
       // matches, and names the deliverable so the turn ends on what to return.
       content: `It is ${playerName}'s turn to predict the next moves. Call every available tool once, then reply with only the moves JSON.`,
@@ -241,7 +244,7 @@ export function buildAgentMessages(
 }
 
 // buildDuplicateToolCallMessage names exactly which tool call(s) already have results, rather
-// than claiming no tool call can return anything new — other tools may still be genuinely
+// than claiming no tool call can return anything new - other tools may still be genuinely
 // uncalled, and the model remains free to request those. It is explicitly labeled with the
 // configured warning prefix and uses the same warning terminology as lastPredictionOutcomeTool's malformed-response
 // explanation, so a model that ignores it can tie the resulting penalty back to this message.
@@ -260,7 +263,7 @@ export function buildDuplicateToolCallMessage(duplicateToolCalls: AgentToolCall[
   }
 }
 
-// buildTokenLimitExhaustionPrompt gives a capped-empty response one free corrective retry — only a
+// buildTokenLimitExhaustionPrompt gives a capped-empty response one free corrective retry - only a
 // repeat failure after this warning charges a penalty, matching lastPredictionOutcomeTool's
 // "the same fixed score penalty was charged" description of that outcome. Named explicitly, the
 // same way buildDuplicateToolCallMessage names its own consequence, rather than leaving the model to
@@ -295,17 +298,17 @@ const mazeStructureTool: AgentToolDefinition = {
     description: [
       "Get current/destination cells and the nearby explored maze structure in one call. Row increases going down,",
       "col increases going right; MoveUp decreases row by 1 and MoveDown increases it by 1; MoveLeft decreases col",
-      "by 1 and MoveRight increases it by 1. currentCell is the position you landed on after applying the valid moves from",
-      "the previous turn or is the start position in turn 0. filteredTraversalHistory holds one record per visited cell,",
+      "by 1 and MoveRight increases it by 1. currentCell is where the previous turn's valid moves ended, whoever played it,",
+      "or is the start position in turn 0. filteredTraversalHistory holds one record per visited cell,",
       "created when that cell was first reached, for cells within historyWindowRadius of currentCell. It is ordered by",
-      "first visit, oldest first — currentCell's own position depends on when it was first visited, not on it being",
+      "first visit, oldest first - currentCell's own position depends on when it was first visited, not on it being",
       "current, so it will not always be the last. Order says nothing about recent activity: a cell listed early may",
       "have been re-entered moments ago, and its visitStatus, not its position, is what reports that.",
       "If currentCell is not last, every listed entry after it is a cell first reached after currentCell but",
       "before now, so the entry itself is charted ground. However, any move under that entry's openMoves that leads",
       "to a cell with visitStatus set to unvisited still points at unexplored ground and remains a valid branch target.",
-      "currentCell is always included because its distance is 0. historyWindowRadius is a fixed configured radius — the",
-      "maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell — unrelated to how",
+      "currentCell is always included because its distance is 0. historyWindowRadius is a fixed configured radius - the",
+      "maximum Manhattan distance a visited cell in filteredTraversalHistory can be from currentCell - unrelated to how",
       "far destinationCell is; compute that yourself from currentCell and destinationCell's row/col if you need it.",
       "Each included entry's openMoves maps every fixed open exit from that cell to the neighboring cell reached",
       "by that move. openMoves are generated once and never change with visit counts. visitStatus gives direction",
@@ -319,7 +322,7 @@ const mazeStructureTool: AgentToolDefinition = {
       "(the destination), dead-end (one exit), corridor (two exits), or junction (three or more). cellType and visitStatus",
       "answer different questions, and help in extracting high-confidence moves: cellType is the cell's fixed structure, visitStatus",
       "provides a sense of direction based on cell visit count. start-cell and target-cell are special cells, not ordinary dead ends.",
-      "cellType is only set for a cell already in filteredTraversalHistory — an unvisited cell, including one that only",
+      "cellType is only set for a cell already in filteredTraversalHistory - an unvisited cell, including one that only",
       "appears as a neighbor inside another cell's openMoves, has no known cellType and must never be assumed to be of",
       "a specific cellType before visiting. The only way to learn an unvisited cell's own structure is to move there",
       "and read its own entry on a later turn.",
@@ -337,7 +340,7 @@ const mazeStructureTool: AgentToolDefinition = {
 // predictionRulesTool documents the only accepted move response and the suggested batch size.
 // It deliberately does not restate the charging model: buildMazeActionPrompt already carries that,
 // with the actual unit counts, and is sent as the system message on every single turn. The split is
-// that the prompt owns the durable rules — what a turn costs and what each classification implies —
+// that the prompt owns the durable rules - what a turn costs and what each classification implies -
 // while this tool owns the live numbers and how to read them: the raw metrics, the division that
 // yields traversal speed, the thresholds it is scored against, and where to find the resulting
 // score.
@@ -346,8 +349,8 @@ const predictionRulesTool: AgentToolDefinition = {
   function: {
     name: "get_prediction_rules",
     description: [
-      "Get move response rules. suggestedMovesPerTurn is a min/max range for how many moves you can include in your",
-      "prediction response per turn. Use the local map to extract moves you are most confident about. Batching accuracy",
+      "Get move response rules. suggestedMovesPerTurn is a min/max range of how many moves a prediction per turn can include",
+      "- absolute minimum required is 1. Use the local map to extract moves you are most confident about. Batching accuracy",
       "drops sharply the further out a prediction reaches, so lean toward min rather than max whenever you are unsure.",
       "When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current",
       "traversal speed, the progress per decay unit spent, which batchEfficiencyClass groups into bands. When",
@@ -360,7 +363,7 @@ const predictionRulesTool: AgentToolDefinition = {
       "backtracker without ever entering a backtracking cell, and crossing such cells costs no decay beyond the turn's",
       "own charge. Retrace-only batching can save turns but cannot",
       "create new-cell progress, so trailblazer is evidence that forward prediction into unvisited cells succeeded.",
-      "allUniqueCellsVisited is every cell any player has reached this level, not just your own — compare it",
+      "allUniqueCellsVisited is every cell any player has reached this level, not just your own - compare it",
       "against mazeDimensions.totalMazeCells to know how much of the maze the team has collectively explored so far;",
       "it does not affect your traversal speed, which is scored on playerUniqueCellsVisited against decayUnitsCharged.",
       "At the initial game levels the single solution path covers nearly all of totalMazeCells, so expect to explore most",
@@ -398,26 +401,31 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
       "requested a tool that does not exist, or ignored a warning, resulting in zero progress and a fixed score penalty.",
       `A warning is a user message beginning with "${CONFIG.runtime.promptWarningPrefix}";`,
       "token-limit-exhaustion=the previous empty prediction reached the configured token threshold and its corrective warning opportunity",
-      "also returned no prediction — no moves were replayed and the same fixed score penalty was charged; network-error=HTTP",
+      "also returned no prediction - no moves were replayed and the same fixed score penalty was charged; network-error=HTTP",
       "failure, no score charged.",
       "predictionStatus summarizes the outcome of the entire prediction submitted in the last turn as one story:",
       "all-applied=all submitted moves applied and at least one entered a previously unvisited cell, or the target was",
       "reached; partially-applied=one or more moves applied, at least one entered a previously unvisited cell, and replay",
-      "then stopped at the first invalid move; repeat-cell-visits=one or more moves applied, but none entered a new cell — replay",
+      "then stopped at the first invalid move; repeat-cell-visits=one or more moves applied, but none entered a new cell - replay",
       "may have completed or stopped at an invalid move; invalid-prediction=a real",
       "prediction was replayed but the very first submitted move was already invalid, no progress made;",
       "empty-prediction=a malformed-response, token-limit-exhaustion, or network-error meant there was no usable",
       "prediction to replay at all.",
-      "lastSubmittedMoves lists every submitted move from that turn as a zero-based <index>:<move> entry, including moves",
+      "lastSubmittedMoves lists every submitted move from that turn, in order and exactly as sent, including moves",
       "after the first invalid move that were not executed. lastReplayStartIndex is 0 when moves were submitted and marks",
       "the first replayed submitted-move index. lastAppliedMoveIndex is the index within lastSubmittedMoves of the last successfully",
-      "applied move — moves after it were not executed. On an empty-prediction turn these three fields are always reset to null/empty,",
-      "matching that no moves were replayed — they never carry over stale data from an earlier turn.",
+      "applied move - moves after it were not executed. lastReplayStartCell is the cell position replay began from: where the",
+      "previous player stood before those moves were applied, not where it stands now. Walk lastSubmittedMoves forward from",
+      "lastReplayStartCell up to and including lastAppliedMoveIndex to see exactly which move landed where, and the move at",
+      "lastAppliedMoveIndex + 1 is the one that was rejected. Do not measure last turn's moves from currentCell: currentCell",
+      "is where replay ended, so assuming it is where replay started makes an applied move look like it never happened.",
+      "On an empty-prediction turn these fields are always reset to null/empty,",
+      "matching that no moves were replayed - they never carry over stale data from an earlier turn.",
       "chargedMovesCount is the total decay units charged toward score that turn.",
       "Returns JSON: {\"status\":string, \"score\":number, \"decayUnitsRemaining\":number,",
-      "\"lastMoveStatus\":string|null, \"predictionStatus\":string|null,",
-      "\"lastReplayStartIndex\":number|null, \"lastSubmittedMoves\":string[], \"lastAppliedMoveIndex\":number|null,",
-      "\"chargedMovesCount\":number}.",
+      "\"lastMoveStatus\":string|null, \"predictionStatus\":string|null, \"lastReplayStartIndex\":number|null,",
+      "\"lastReplayStartCell\":{\"row\":number, \"col\":number}|null, \"lastSubmittedMoves\":string[],",
+      "\"lastAppliedMoveIndex\":number|null, \"chargedMovesCount\":number}.",
     ].join(" "),
     parameters: emptyToolParameters,
   },
@@ -436,7 +444,7 @@ export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
 // classifyCellType names a visited cell's local structure from its fixed exit count, sparing the
 // model from re-deriving "one exit is a dead-end, two is a corridor, three or more is a junction"
 // from openMoves key counts itself on every turn. Real gameplay logs showed the model getting this
-// wrong even though the rule was already spelled out in mazeStructureTool's description — handing
+// wrong even though the rule was already spelled out in mazeStructureTool's description - handing
 // it the precomputed label removes the room for that misreading, the same way historyWindowRadius
 // and playerUniqueCellsVisited/allUniqueCellsVisited hand over other conclusions instead of raw
 // material to re-derive.
@@ -465,12 +473,12 @@ function classifyCellType(
 // get it wrong, when the decision is the only part it needs.
 //
 // A cell with N open exits still has an unused way out while visits < N, so:
-//   unvisited    — never reached; this direction immediately enters new ground.
-//   explored     — reached, but at least one exit is still unused; this direction can lead back to
+//   unvisited    - never reached; this direction immediately enters new ground.
+//   explored     - reached, but at least one exit is still unused; this direction can lead back to
 //                  the frontier where forward exploration resumes.
-//   backtracking — visited exactly as many times as it has exits; this direction is exhausted,
+//   backtracking - visited exactly as many times as it has exits; this direction is exhausted,
 //                  cannot lead to the destination, and should not be chosen.
-//   oscillating  — visited more often than it has exits; the player crossed back into exhausted
+//   oscillating  - visited more often than it has exits; the player crossed back into exhausted
 //                  ground and is wasting limited moves instead of progressing toward the destination.
 export function cellVisitStatus(entry: TraversalHistoryEntry | undefined): VisitStatus {
   if (!entry) {
@@ -515,9 +523,9 @@ function isWithinManhattanDistance(
 }
 
 // buildAgentToolHandlers binds an already-frozen state snapshot (see snapshotAgentState,
-// agent/state-snapshot.ts — also used for turn logging elsewhere, not tool-specific despite the
+// agent/state-snapshot.ts - also used for turn logging elsewhere, not tool-specific despite the
 // name of this function) to the context tools for this request. Takes the snapshot itself, not
-// State, so it never has to decide when to (re)read live state — that decision belongs to the caller.
+// State, so it never has to decide when to (re)read live state - that decision belongs to the caller.
 export function buildAgentToolHandlers(
   snapshot: AgentStateSnapshot,
   lastActionResult: MazeActionResult | null,
@@ -555,7 +563,7 @@ export function buildAgentToolHandlers(
       const destinationCell = snapshot.finalPosition ? cellCoordinateFromGridPoint(snapshot.finalPosition) : null
       // Named historyWindowRadius on the wire (not manhattanDistance) even though it comes from
       // runtime.modelConfig.manhattanDistance: sitting beside currentCell/destinationCell under the
-      // name "manhattanDistance" reads as the live distance between them, which it is not — it's a
+      // name "manhattanDistance" reads as the live distance between them, which it is not - it's a
       // fixed configured radius. A model that computes the real distance itself and finds this
       // field disagreeing has no way to know it isn't supposed to match, and can burn real
       // reasoning trying to reconcile the two.
@@ -588,6 +596,7 @@ export function buildAgentToolHandlers(
         lastMoveStatus: lastActionResult?.lastMoveStatus ?? null,
         predictionStatus: lastActionResult?.predictionStatus ?? null,
         lastReplayStartIndex: lastActionResult?.lastReplayStartIndex ?? null,
+        lastReplayStartCell: lastActionResult?.lastReplayStartCell ?? null,
         lastSubmittedMoves: lastActionResult?.lastSubmittedMoves ?? [],
         lastAppliedMoveIndex: lastActionResult?.lastAppliedMoveIndex ?? null,
         chargedMovesCount: lastActionResult?.chargedMovesCount ?? 0,

@@ -5,7 +5,7 @@ import type { InfoGateContent } from "./info-gate"
 import type { StaleStorageSummary } from "./storage"
 import type { Elements } from "./types"
 
-// Every consent gate Tapoo can raise lives here — one module for all of them, not one per gate.
+// Every consent gate Tapoo can raise lives here - one module for all of them, not one per gate.
 //
 // It is the layer where three deliberately unaware modules meet: info-gate.ts renders an overlay
 // and holds no copy and no storage, storage.ts holds no UI, and config.ts holds only words. A gate
@@ -41,7 +41,7 @@ function staleDataGateContent(summary: StaleStorageSummary): InfoGateContent {
 // older schema version left nothing behind, or after the user has agreed to its removal.
 //
 // The no-stale path is synchronous on purpose. An ordinary start must be indistinguishable from
-// before this gate existed — no deferred callback, and no frame in which the overlay could show.
+// before this gate existed - no deferred callback, and no frame in which the overlay could show.
 //
 // Nothing is deleted until the user has been shown what will go. clearStaleStorageVersions
 // swallows its own storage failures, so the only way onProceed is skipped is the user never

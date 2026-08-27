@@ -25,11 +25,11 @@ const expectedLastSubmittedMovesSchema: NonNullable<
   MazeActionResult["lastSubmittedMovesSchema"]
 > = {
   type: "array",
-  description: "Zero-based submitted-move entries formatted as <index>:<move>.",
+  description: "The moves submitted last turn, in order, exactly as they were sent.",
   items: {
     type: "string",
-    pattern: "^(0|[1-9][0-9]*):(MoveUp|MoveDown|MoveLeft|MoveRight)$",
-    examples: ["0:MoveRight", "1:MoveUp", "2:MoveRight"],
+    pattern: "^(MoveUp|MoveDown|MoveLeft|MoveRight)$",
+    examples: ["MoveRight", "MoveUp", "MoveRight"],
   },
 }
 
@@ -134,7 +134,7 @@ describe("control", () => {
       lastMoveStatus: "invalid-move",
       lastReplayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
-      lastSubmittedMoves: ["0:MoveLeft"],
+      lastSubmittedMoves: ["MoveLeft"],
       lastAppliedMoveIndex: null,
       chargedMovesCount: 0,
     })
@@ -163,7 +163,7 @@ describe("control", () => {
       lastMoveStatus: "invalid-move",
       lastReplayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
-      lastSubmittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["MoveRight"],
       lastAppliedMoveIndex: null,
       chargedMovesCount: 0,
     })
@@ -201,7 +201,7 @@ describe("control", () => {
       visitedBefore: false,
       lastReplayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
-      lastSubmittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["MoveRight"],
       lastAppliedMoveIndex: 0,
       chargedMovesCount: 0,
     })
@@ -243,7 +243,7 @@ describe("control", () => {
       visitedBefore: true,
       lastReplayStartIndex: 0,
       lastSubmittedMovesSchema: expectedLastSubmittedMovesSchema,
-      lastSubmittedMoves: ["0:MoveLeft"],
+      lastSubmittedMoves: ["MoveLeft"],
       lastAppliedMoveIndex: 0,
       chargedMovesCount: 0,
     })

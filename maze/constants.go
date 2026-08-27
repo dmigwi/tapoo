@@ -260,7 +260,7 @@ type NavigationProfile struct {
 
 	// LeastNeighborsBias (0-100) is the percent chance, at any decision point with more than
 	// one unvisited neighbor, of preferring the candidate with the fewest unvisited neighbors of
-	// its own — this is what actually controls junction density. 100 minimizes branching (long,
+	// its own - this is what actually controls junction density. 100 minimizes branching (long,
 	// predictable corridors, bounded by MaxCorridorLength); 0 restores fully random neighbor
 	// selection (the original branching rate, ~10% junctions regardless of area).
 	LeastNeighborsBias int

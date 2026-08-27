@@ -43,9 +43,9 @@ let skipNextFrameRender = false
 
 // handleWin captures the completed-round score; agent-api also records its speed summary. Branches
 // on the actual control mode rather than on whether traversalSpeedUnits happens to be present,
-// since mode is the real signal — traversalSpeedUnits is only the data agent-api's branch needs to
+// since mode is the real signal - traversalSpeedUnits is only the data agent-api's branch needs to
 // act on it. Falls back to the interactive metrics if agent-api mode somehow reaches this without
-// it, the same way an unreachable-in-practice case is handled anywhere else in this file — a
+// it, the same way an unreachable-in-practice case is handled anywhere else in this file - a
 // mid-round throw is worse than a plain, recoverable fallback.
 function handleWin(state: State, totalCells: number, traversalSpeedUnits?: number): boolean {
   if (!hasReachedTarget(state)) {
@@ -64,7 +64,7 @@ function handleWin(state: State, totalCells: number, traversalSpeedUnits?: numbe
 
 // applyAgentWinSummary stores the agent-api traversal-speed summary after an agent reaches the
 // target. Takes the already-computed speed rather than the raw AgentPlayerStatus it's derived
-// from — that's the only part of it this ever needed.
+// from - that's the only part of it this ever needed.
 function applyAgentWinSummary(state: State, totalCells: number, traversalSpeedUnits: number): void {
   const winScore = resolveWinScore({
     bestWinRetentionUnits: state.bestWinRetentionUnits,

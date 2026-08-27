@@ -98,9 +98,9 @@ Instead of (or alongside) a human player, up to 6 agent seats can each be config
 
 ### Supported providers
 
-- **Ollama** — native `/api/chat` shape
-- **OpenAI-compatible** — `/v1/chat/completions` (also covers self-hosted servers such as vLLM, LM Studio, and llama.cpp, and routers such as Hugging Face's Inference Providers)
-- **Anthropic** — `/v1/messages`
+- **Ollama** - native `/api/chat` shape
+- **OpenAI-compatible** - `/v1/chat/completions` (also covers self-hosted servers such as vLLM, LM Studio, and llama.cpp, and routers such as Hugging Face's Inference Providers)
+- **Anthropic** - `/v1/messages`
 
 ### Per-agent configuration
 
@@ -108,8 +108,8 @@ Each seat is configured independently from the `/agents.html` overlay:
 
 - player name, model, endpoint, and API provider
 - credential (bearer token or API key) and custom extra headers, e.g. `anthropic-version`
-- **reasoning effort** — how hard the model reasons before replying; the available levels and default depend on the provider, since reasoning support varies by model (e.g. Kimi K3 handles heavy reasoning well, Gemma 4 does not)
-- **echo back reasoning** — whether prior reasoning content is replayed on the next request, off by default since guidance on this conflicts across reasoning models; locked off automatically whenever reasoning effort is set to `none`, and has no effect for Anthropic agents
+- **reasoning effort** - how hard the model reasons before replying; the available levels and default depend on the provider, since reasoning support varies by model (e.g. Kimi K3 handles heavy reasoning well, Gemma 4 does not)
+- **echo back reasoning** - whether prior reasoning content is replayed on the next request, off by default since guidance on this conflicts across reasoning models; locked off automatically whenever reasoning effort is set to `none`, and has no effect for Anthropic agents
 
 The `/prompts.html` page mirrors the exact system prompt, tool definitions, and required response format an agent receives, so its behavior can be inspected without capturing live traffic.
 
@@ -118,7 +118,7 @@ The `/prompts.html` page mirrors the exact system prompt, tool definitions, and 
 <details>
 <summary><strong>Persistence</strong></summary>
 
-Tapoo carries a semantic version (`MAJOR.MINOR.PATCH`), shown in the terminal intro banner and in the browser footer. Browser storage additionally carries its own separate schema version, independent of the app version above — see the browser storage note below.
+Tapoo carries a semantic version (`MAJOR.MINOR.PATCH`), shown in the terminal intro banner and in the browser footer. Browser storage additionally carries its own separate schema version, independent of the app version above - see the browser storage note below.
 
 ### Terminal
 
@@ -141,7 +141,7 @@ The SPA stores gameplay state in browser storage:
 - `localStorage` for durable preferences such as level and wall weight, and for configured agent seats (including credentials, endpoints, and per-agent reasoning settings)
 - `sessionStorage` for the active round snapshot
 
-Every stored entry is tagged with the current storage schema version. On startup, Tapoo automatically discards any entries left over from an older schema version rather than attempting to migrate them — so upgrading Tapoo can silently reset previously stored preferences and agent configuration.
+Every stored entry is tagged with the current storage schema version. On startup, Tapoo automatically discards any entries left over from an older schema version rather than attempting to migrate them - so upgrading Tapoo can silently reset previously stored preferences and agent configuration.
 
 Privacy note: browser storage stays on the current device unless the user clears it, resets progress, or removes configured agent data. Browser storage is lightly obfuscated to discourage casual tampering, but it should not be treated as strong encryption for personal data. When AI Agent play is configured, gameplay context such as player name, current cell, destination cell, submitted moves, score, level, and traversal history may be sent to the configured agent API endpoint.
 

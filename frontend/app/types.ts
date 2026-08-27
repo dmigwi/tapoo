@@ -33,7 +33,7 @@ export type PersistedWinMetrics = {
 export type PersistedPreferences = PersistedGameSetup & Partial<PersistedWinMetrics>
 
 // AgentApiProvider selects which wire format an agent's endpoint speaks. Always present on a live
-// config — normalizeAgentApiConfig (storage.ts) defaults a persisted record lacking it to "ollama"
+// config - normalizeAgentApiConfig (storage.ts) defaults a persisted record lacking it to "ollama"
 // rather than rejecting the record, so this being required here never risks dropping an old agent.
 export type AgentApiProvider = "ollama" | "openai" | "anthropic"
 
@@ -41,19 +41,19 @@ export type AgentApiProvider = "ollama" | "openai" | "anthropic"
 // provider only recognizes a subset of it (agentConfig.reasoningEffortOptions, config.ts) and maps
 // it onto a completely different wire mechanism: Ollama's boolean think, OpenAI-compatible's
 // qualitative reasoning_effort string, Anthropic's numeric thinking.budget_tokens. Anthropic has no
-// "none" — it always reasons at some level once thinking is enabled.
+// "none" - it always reasons at some level once thinking is enabled.
 export type AgentReasoningEffort = "none" | "low" | "medium" | "high" | "max"
 
 // AgentApiConfig stores one HTTP-controlled agent that can join the shared agent-api maze.
 export type AgentApiConfig = {
   // seatId is the fixed roster slot this agent occupies (isAgentSeatId), not a unique agent
-  // identity — deleting a seat frees the value for the next occupant. Pair it with sessionId
+  // identity - deleting a seat frees the value for the next occupant. Pair it with sessionId
   // below whenever an agent instance has to be identified rather than merely located.
   seatId: number
   // sessionId stamps when this seat's current occupant was created. id alone cannot identify an
   // agent across tabs: ids are fixed roster seats (isAgentSeatId), so deleting a seat frees its id
-  // for the next occupant. Another tab never sees that delete — its sessionStorage still holds a
-  // metrics row filed under the same id — so the stamp is what tells the two apart. A session row
+  // for the next occupant. Another tab never sees that delete - its sessionStorage still holds a
+  // metrics row filed under the same id - so the stamp is what tells the two apart. A session row
   // is only honoured when its sessionId matches the config's; otherwise it belonged to a previous
   // occupant and is discarded rather than inherited. Backfilled by normalizeAgentApiConfig
   // (storage.ts) for records saved before this field existed, the same way api is.
@@ -64,14 +64,14 @@ export type AgentApiConfig = {
   api: AgentApiProvider
   // reasoningEffort picks how hard the model reasons before replying, filtered to the options its
   // provider actually supports (agentConfig.reasoningEffortOptions). Optional here purely to avoid
-  // forcing every existing AgentApiConfig test fixture to specify it — normalizeAgentApiConfig
+  // forcing every existing AgentApiConfig test fixture to specify it - normalizeAgentApiConfig
   // (storage.ts) always coerces a persisted record to a concrete, provider-valid value, the same way
   // it already does for api, so a genuinely absent value should never reach a provider adapter.
   reasoningEffort?: AgentReasoningEffort
   // credential is one stored value behind two labels: "Bearer Token" for ollama/openai, "API Key"
   // for anthropic. The header it becomes is decided by the provider adapter, not by this field.
   credential?: string
-  // extraHeaders is raw multi-line "Key: Value" user input, provider-agnostic — appended directly
+  // extraHeaders is raw multi-line "Key: Value" user input, provider-agnostic - appended directly
   // onto every request this agent sends. Covers cases a dedicated field would need re-shipping to
   // support: anthropic-version (Anthropic's API evolves independently of Tapoo), X-Wait-For-Model
   // (Hugging Face's router, to dodge cold-start read timeouts), or anything else a given endpoint
@@ -124,7 +124,7 @@ export type PersistedRound = {
 export type AgentApiSessionMetrics = {
   seatId: number
   // sessionId must equal the AgentApiConfig.sessionId of the seat's current occupant for this row
-  // to apply — see that field for why an id on its own is not enough.
+  // to apply - see that field for why an id on its own is not enough.
   sessionId: number
   // enabled is deliberately session-scoped rather than durable: a tab starts every agent switched
   // off, so opening a new tab or reopening the browser never resumes spending against a remote
@@ -141,7 +141,7 @@ export type AgentApiSessionMetrics = {
   gameLevel?: number
   cumulativeRoundCount?: number
   // levelTurnCount mirrors State.turnCount (every seat gets the same value on every commit) purely
-  // as the staleness signal above — it is not a per-agent count and must not be read as one.
+  // as the staleness signal above - it is not a per-agent count and must not be read as one.
   levelTurnCount?: number
   // turnCount is this agent's own tally of turns it has personally taken this round, incremented
   // only when this agent is the one who just played. decayUnitsCharged is this agent's own share of
@@ -162,7 +162,7 @@ export type PersistedSnapshot = {
 // AgentApiSeatConfig is the fully resolved occupant of one seat: its durable localStorage config
 // plus this tab's sessionStorage availability and round counters. AgentSeat is the slot itself and
 // can be empty; this is what fills one. Everything that renders a seat or asks its agent to predict
-// works from this type, never from AgentApiConfig alone — that half cannot say whether the agent is
+// works from this type, never from AgentApiConfig alone - that half cannot say whether the agent is
 // even switched on in this tab.
 export type AgentApiSeatConfig = AgentApiConfig & AgentApiSessionMetrics
 
@@ -194,7 +194,7 @@ export type VisitStatus =
   | "oscillating"  // visitCount > openMoves.length; the cell is being over-revisited
 
 // TraversalHistoryEntry records one chronological logical-cell visit for the named player. There is
-// exactly one entry per cell — a revisit increments visitCount rather than appending, which is what
+// exactly one entry per cell - a revisit increments visitCount rather than appending, which is what
 // keeps allUniqueCellsVisited (agent/efficiency.ts) and the persisted-round duplicate check
 // (isValidPersistedRound, traversal.ts) reading a distinct-cell count off the array length.
 export type TraversalHistoryEntry = CellCoordinate & {
@@ -251,7 +251,7 @@ export type MazeAction =
   | { type: MoveAction }
   | { type: SessionAction }
 
-// MoveStatus is the granular outcome of the single last move actually dispatched this turn — it
+// MoveStatus is the granular outcome of the single last move actually dispatched this turn - it
 // tells the story of that one move, not the batch as a whole. See PredictionOutcomeStatus for the
 // collective summary of everything a multi-move prediction attempted.
 export type MoveStatus =
@@ -314,13 +314,13 @@ export type NavigationProfile = {
   __maxCorridorLength: number
   // __leastNeighborsBias (0-100) is the percent chance, at any decision point with more than
   // one unvisited neighbor, of preferring the candidate with the fewest unvisited neighbors of
-  // its own — this is what actually controls junction density. 100 minimizes branching (long,
+  // its own - this is what actually controls junction density. 100 minimizes branching (long,
   // predictable corridors, bounded by __maxCorridorLength); 0 restores fully random neighbor
   // selection (the original branching rate, ~10% junctions regardless of area).
   //
   // Junction density also controls how much of the maze the solution path covers, since
   // generateMaze always connects start to the single farthest cell from it (see its comment).
-  // A tree's longest path is a bigger share of its cells the less it branches — near 100 the
+  // A tree's longest path is a bigger share of its cells the less it branches - near 100 the
   // maze is almost one long corridor, so the path can cover 90-100% of all cells; near 0, more
   // cells get spent on short junction side-branches instead, so the path covers less of the
   // maze. In other words: higher values make the route straighter and easier to predict from
@@ -415,17 +415,17 @@ export type AgentToolCall = {
 }
 
 // AgentChatMessage is the minimal chat message shape needed by the prediction request loop.
-// reasoning is populated by every provider adapter (each from its own wire field name — Ollama's
+// reasoning is populated by every provider adapter (each from its own wire field name - Ollama's
 // thinking, the openai adapter's reasoning_content), so request.ts never needs to know which one
 // is active. Whether it gets echoed back verbatim on the next assistant message is the per-agent
-// AgentApiConfig.echoBackReasoning flag's call, not automatic — model guidance conflicts: some
+// AgentApiConfig.echoBackReasoning flag's call, not automatic - model guidance conflicts: some
 // reasoning models (e.g. Kimi K3) require it echoed back across a turn's tool-calling rounds or
 // they lose context of analysis they already did, while others (e.g. Gemma) require it withheld.
-// tokens_used is internal response metadata normalized by provider adapters — completion tokens
+// tokens_used is internal response metadata normalized by provider adapters - completion tokens
 // only (Ollama's eval_count, OpenAI's usage.completion_tokens, Anthropic's usage.output_tokens),
 // not prompt tokens. Deliberately scoped that way: it's the only figure comparable against
 // CONFIG.runtime.modelConfig.maxTokens (a completion-only cap sent as Ollama's num_predict /
-// OpenAI's max_tokens / Anthropic's max_tokens) — a large accumulated prompt would push a
+// OpenAI's max_tokens / Anthropic's max_tokens) - a large accumulated prompt would push a
 // prompt-inclusive total past maxTokens on its own, so that total could never be used for the
 // token-limit-exhaustion threshold check. Request serializers must remove it before sending an
 // accumulated assistant message back to a model.
@@ -440,17 +440,17 @@ export type AgentChatMessage = {
 }
 
 // network-error and connection-error both mean "the provider/infrastructure is at fault, not the
-// model" and get identical game treatment (agent disabled, no penalty — see recordAgentNetworkError
-// in control/agent-api.ts) — they're split apart only so a caller can tell them apart for retry
+// model" and get identical game treatment (agent disabled, no penalty - see recordAgentNetworkError
+// in control/agent-api.ts) - they're split apart only so a caller can tell them apart for retry
 // eligibility. connection-error is narrow and deliberate: it is the one case request.ts's bare
 // catch{} produces, meaning the connection itself failed (a reset, a dropped socket, a DNS hiccup)
-// before any HTTP response arrived at all — exactly the transient case a one-shot retry can fix.
+// before any HTTP response arrived at all - exactly the transient case a one-shot retry can fix.
 // token-limit-exhaustion identifies a model response that reached the configured token threshold
 // without producing any prediction; request.ts gives it one corrective warning opportunity.
 // network-error covers everything else in the bucket: a non-OK HTTP status (the provider did
-// respond, just with an error — retrying a 429 immediately can make rate-limiting worse), a 200 OK
+// respond, just with an error - retrying a 429 immediately can make rate-limiting worse), a 200 OK
 // response missing the expected message shape, a Tapoo-side tool-handler bug, or an unrecognized
-// provider — none of which a blind retry is likely to fix, so none of them should be retried.
+// provider - none of which a blind retry is likely to fix, so none of them should be retried.
 export type AgentPredictionFailureReason =
   | "caller-abort"
   | "malformed-response"
@@ -485,7 +485,7 @@ export type AgentPredictionRequest = {
 // Both fields are readonly because a seat is a snapshot, not a handle: buildAgentSeats rebuilds the
 // whole roster from the current configs on every render, so reseating an agent means changing what
 // that function reads. A write here would be discarded on the next build while looking like it had
-// taken effect. seatId matches AgentApiSeatConfig.seatId — the same fixed slot, named the same way.
+// taken effect. seatId matches AgentApiSeatConfig.seatId - the same fixed slot, named the same way.
 export type AgentSeat = {
   readonly seatId: number
   readonly agent: AgentApiSeatConfig | null
@@ -495,10 +495,15 @@ export type AgentSeat = {
 export type MazeActionResult = {
   lastPlayerName?: string
   lastReplayStartIndex?: 0
+  // The cell replay began from, i.e. where the player stood before last turn's moves were applied.
+  // Without it, reconstructing which move landed where means inferring backwards from
+  // lastAppliedMoveIndex - an inference a model got wrong by assuming replay started at the cell it
+  // is standing on now, which is where replay *ended*.
+  lastReplayStartCell?: CellCoordinate | null
   lastSubmittedMovesSchema?: AgentSubmittedMovesSchema
   lastSubmittedMoves?: string[]
   lastMoveStatus?: MoveStatus
-  // predictionStatus only ever gets set by the agent-api batch-replay path — a single interactive
+  // predictionStatus only ever gets set by the agent-api batch-replay path - a single interactive
   // move dispatch (control.ts's buildReplayState) has no "collective prediction" to summarize, so
   // it leaves this field alone entirely rather than setting a degenerate one-move value for it.
   predictionStatus?: PredictionOutcomeStatus
@@ -530,7 +535,7 @@ export type AgentPlayerStatus = {
 // union of bare type tags, and giving one a payload would reshape every action in it.
 export type GameControls = {
   // Moves the floor every round opens at or above, returning whether it changed. Stops the round
-  // in progress first — see setRestartLevel in game.ts.
+  // in progress first - see setRestartLevel in game.ts.
   setRestartLevel: (level: number) => boolean
 }
 
@@ -553,7 +558,7 @@ export interface MazeActionControl {
 export type State = {
   controlMode: MazeControlModeName
   level: number
-  // restartLevel is the floor every round opens at or above — level is where the player currently
+  // restartLevel is the floor every round opens at or above - level is where the player currently
   // is, and the two move apart the moment a game progresses past it. Seeded from
   // CONFIG.runtime.defaultRestartLevel and editable while the game runs, so a playtest can open
   // deep in the level curve without a code change.
@@ -563,7 +568,7 @@ export type State = {
   //
   // A floor no round can be drawn at is dropped on purpose, not by oversight: a viewport too small
   // for it yields a "too-small" round, which is unpersistable, so the snapshot carrying the floor
-  // goes with it. Keeping it would close both ways out at once — reloading would re-enter the same
+  // goes with it. Keeping it would close both ways out at once - reloading would re-enter the same
   // undrawable level, and Reset Progress, the one control meant to recover a broken game, reopens
   // at this very floor (see restartGame). Losing it is what leaves a reload something playable.
   restartLevel: number
@@ -585,7 +590,7 @@ export type State = {
   bestWinTraversalSpeedUnits: number | null
   winSummary: string
   scoreDecayUnits: number
-  // turnCount counts completed turns within the CURRENT round only — it resets to 0 every time
+  // turnCount counts completed turns within the CURRENT round only - it resets to 0 every time
   // cumulativeRoundCount increments (a fresh level start, a retry, or a too-small-viewport bailout).
   // Paired with level and cumulativeRoundCount, it forms a fingerprint that can never collide across
   // two different points in gameplay: cumulativeRoundCount only rewinds to 0 via a full storage-version
@@ -595,7 +600,7 @@ export type State = {
   // view before it can be handed turn context that doesn't belong to the round it's actually in. The
   // same collision-free property also makes it possible to reconstruct the exact play order of every
   // round logged before a given storage-version upgrade purely from that fingerprint, without relying
-  // on log timestamps or storage layout that the upgrade may have changed — useful for post-hoc
+  // on log timestamps or storage layout that the upgrade may have changed - useful for post-hoc
   // assessment of logged sessions.
   turnCount: number
   cumulativeRoundCount: number // Rounds played since the last reset; each level start and retry counts once.
@@ -621,7 +626,7 @@ export type TerminalElements = {
   touchButtons: HTMLButtonElement[]
   // zoomPlaceholder covers the terminal with the same unavailable-page.svg artwork
   // placeholder-art.html uses standalone, for the case where the too-small status text itself
-  // can no longer render in full (see terminalCanDisplayText, dom.ts) — a real error condition
+  // can no longer render in full (see terminalCanDisplayText, dom.ts) - a real error condition
   // like a broken bootstrap uses the separate top-level #placeholder-art instead.
   zoomPlaceholder: HTMLElement
   // The info gate overlay (info-gate.ts). It lives in TerminalElements rather than AgentElements
@@ -703,36 +708,36 @@ export type SummaryComparisonTemplates = {
 // LogLevel classifies the severity of a Tapoo log entry for filtering and analysis. For an
 // agent-api provider response specifically (see request.ts/control/agent-api.ts), the three levels
 // map onto AgentPredictionResult like this:
-//   info  — a successful request/response round-trip with a validly-formatted output. This covers
+//   info  - a successful request/response round-trip with a validly-formatted output. This covers
 //           "Agent request.", "Agent response.", and a round's final "Agent level won/lost." entry
-//           — the batch of moves it carried may still include invalid ones (a wall hit stops
+//           - the batch of moves it carried may still include invalid ones (a wall hit stops
 //           replay), since that is a maze-navigation outcome, not a wire-format problem.
-//   warn  — reason: "malformed-response" or "token-limit-exhaustion". The model's own recoverable
+//   warn  - reason: "malformed-response" or "token-limit-exhaustion". The model's own recoverable
 //           mistake (unparseable JSON, a hallucinated tool call, ignoring a duplicate-call warning,
-//           or exhausting the token cap without a prediction) — Tapoo charges the fixed mistake
+//           or exhausting the token cap without a prediction) - Tapoo charges the fixed mistake
 //           penalty after any eligible retry is exhausted and keeps the agent enabled.
-//   error — reason: "network-error". The provider/infrastructure itself failed (HTTP failure,
+//   error - reason: "network-error". The provider/infrastructure itself failed (HTTP failure,
 //           timeout, fetch exception) rather than the model producing bad output. No penalty is
-//           charged for this — see recordAgentNetworkError — and the agent is disabled instead.
+//           charged for this - see recordAgentNetworkError - and the agent is disabled instead.
 // "error" is also used outside the agent-api response path, for internal invariant violations
 // (game.ts) and fallback-policy failures unrelated to any specific agent's response.
 export type LogLevel = "error" | "info" | "warn"
 
 // LogEntry is one structured record in the Tapoo log buffer.
-// epochMs is Unix time in milliseconds — machine-readable and suitable for sorting or arithmetic.
+// epochMs is Unix time in milliseconds - machine-readable and suitable for sorting or arithmetic.
 // time is the same instant expressed in local timezone as a human-readable string, so downloaded
 // logs are interpretable without UTC conversion.
 // turn is the agent turn being resolved when the entry was written. One turn issues several
-// provider requests — one per tool-servicing round, then the prediction — so this is what ties
+// provider requests - one per tool-servicing round, then the prediction - so this is what ties
 // those entries back together when a downloaded log is analysed.
-// level is the maze level being played when the entry was written, stamped the same way turn is —
+// level is the maze level being played when the entry was written, stamped the same way turn is -
 // without it, a "Agent request."/"Agent response." pair only carries a turn number, which resets
 // every level and gives no way to tell which level a given request actually belongs to.
-// game is State's cumulativeRoundCount, stamped the same way turn and level are — level and turn
+// game is State's cumulativeRoundCount, stamped the same way turn and level are - level and turn
 // alone can't distinguish a retry of the same level from continuing the prior playthrough, since
 // both reset to the same values either way; this counter never resets mid-session.
 // payload is the human-readable description of what was logged.
-// details holds arbitrary context — request payloads, response bodies, error objects — and is
+// details holds arbitrary context - request payloads, response bodies, error objects - and is
 // omitted when there is nothing beyond the payload to record.
 export type LogEntry = {
   epochMs: number

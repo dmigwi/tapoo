@@ -44,7 +44,7 @@ export class GameClock {
   }
 
   // blink toggles the destination marker in configured visibility phases. A steady, always-visible
-  // marker instead of the toggle itself when the user prefers reduced motion — still findable,
+  // marker instead of the toggle itself when the user prefers reduced motion - still findable,
   // just without the blinking that preference exists specifically to avoid.
   blink(now = performance.now()): boolean {
     if (prefersReducedMotion()) {

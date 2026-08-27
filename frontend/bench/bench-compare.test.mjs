@@ -24,7 +24,7 @@ describe("compareHashSequences", () => {
   // This is the proof the check is actually sensitive to a slight deviation, not just to gross
   // mismatches: every sample in every case is identical except a single hash in the middle of one
   // case's sequence. A check that only ever separates wildly-different runs could pass here even
-  // with a bug that's far too lenient — this is what rules that out.
+  // with a bug that's far too lenient - this is what rules that out.
   it("fails on a single differing sample in one case, out of many identical ones", () => {
     const goHashesByCase = new Map([
       ["area70_10x7", ["0xaaa", "0xbbb", "0xccc"]],
@@ -33,7 +33,7 @@ describe("compareHashSequences", () => {
     ])
     const frontendHashesByCase = new Map([
       ["area70_10x7", ["0xaaa", "0xbbb", "0xccc"]],
-      // Only sample #1 ("0x222") differs — everything else, in every case, matches exactly.
+      // Only sample #1 ("0x222") differs - everything else, in every case, matches exactly.
       ["area100_10x10", ["0x111", "0xDIFFERENT", "0x333"]],
       ["area400_20x20", ["0xd1", "0xd2", "0xd3"]],
     ])
@@ -47,7 +47,7 @@ describe("compareHashSequences", () => {
       goHash: "0x222",
       frontendHash: "0xDIFFERENT",
     })
-    // Only the one case with the deviation is flagged — the two untouched cases are proof the check
+    // Only the one case with the deviation is flagged - the two untouched cases are proof the check
     // does not over-fire across the whole run just because one case had a problem.
     expect([...result.mismatchByCase.keys()]).toEqual(["area100_10x10"])
     expect(result.mismatchByCase.get("area100_10x10")).toEqual({ mismatches: 1, total: 3 })
@@ -63,7 +63,7 @@ describe("compareHashSequences", () => {
     const result = compareHashSequences(goHashesByCase, frontendHashesByCase)
 
     expect(result.matched).toBe(false)
-    expect(result.unmatchedCases).toEqual(["area100_10x10 — missing from TypeScript"])
+    expect(result.unmatchedCases).toEqual(["area100_10x10 - missing from TypeScript"])
   })
 })
 

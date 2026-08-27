@@ -1,5 +1,5 @@
 // Wire-format adapters for each supported agent API provider. This is the only layer that speaks
-// a provider's literal request/response shape — request.ts keeps using its own internal dialect
+// a provider's literal request/response shape - request.ts keeps using its own internal dialect
 // (AgentChatMessage[], OpenAI-shaped AgentToolDefinition[], and wantsPredictionFormat as a
 // structured-output intent flag rather than a literal wire field) both before a request is built
 // and after a response is read back. Kept apart from ../agent/config.ts, which validates the
@@ -17,10 +17,10 @@ import type {
 
 // ProviderRequestInput is everything a provider needs to assemble one chat request body. It
 // intentionally mirrors requestChatTurn's existing parameters rather than the whole AgentApiConfig,
-// so an adapter cannot reach for credential/extraHeaders by accident — those two are threaded
+// so an adapter cannot reach for credential/extraHeaders by accident - those two are threaded
 // separately, only into buildHeaders, which is what keeps them out of anything that could end up
 // logged (see the "Agent request." log entry in request.ts). wantsPredictionFormat is the only
-// structured-output signal request.ts needs to send — the schema itself, and how each provider
+// structured-output signal request.ts needs to send - the schema itself, and how each provider
 // wraps it on the wire, live entirely below.
 export type ProviderRequestInput = {
   model: string
@@ -66,7 +66,7 @@ const BASE_BODY = {
 // verbatim: that schema's moves.minItems is useful prompt-facing documentation (read by the model
 // via get_prediction_rules, never validated against), but OpenAI's strict json_schema
 // response_format only accepts a restricted JSON Schema subset that excludes array keywords like
-// minItems/maxItems outright — confirmed by a real 400 from an OpenAI-compatible endpoint:
+// minItems/maxItems outright - confirmed by a real 400 from an OpenAI-compatible endpoint:
 // "Invalid fields for schema with types ['array']: {'minItems'}", param "response_format". Also
 // drops EXPECTED_RESPONSE_SCHEMA's own description for the same reason it always did: that text is
 // prompt-facing annotation, not something any provider's schema-validation payload needs.
@@ -82,11 +82,11 @@ const PREDICTION_FORMAT = {
   },
 } as const
 
-// Each provider wraps that same schema differently on the wire — grouped together here (rather
+// Each provider wraps that same schema differently on the wire - grouped together here (rather
 // than beside each buildBody) so the three wrapping conventions can be compared at a glance.
 // Exported (not just used internally by buildBody) so tests can assert against the real wrapped
 // shape instead of duplicating it in a fixture; nothing in production ever imports these directly.
-// Ollama takes the schema directly as its `format` field — no extra wrapping.
+// Ollama takes the schema directly as its `format` field - no extra wrapping.
 export const OLLAMA_PREDICTION_FORMAT = { format: PREDICTION_FORMAT }
 // OpenAI wraps the schema in a strict json_schema response_format.
 export const OPENAI_PREDICTION_FORMAT = {
@@ -101,10 +101,10 @@ export const ANTHROPIC_PREDICTION_FORMAT = {
 }
 
 // bearerHeaders is shared by ollama and openai: both accept a plain Authorization: Bearer header,
-// sent only when a credential was actually configured — an empty header is worse than none, since
+// sent only when a credential was actually configured - an empty header is worse than none, since
 // some servers reject a malformed Authorization value outright rather than treating it as absent.
 // extraHeaders is spread last so a user's own configured headers can override a default if they
-// choose to — e.g. supplying their own Authorization value.
+// choose to - e.g. supplying their own Authorization value.
 function bearerHeaders(
   credential: string | undefined,
   extraHeaders: Record<string, string>,
@@ -130,7 +130,7 @@ function ollamaBuildBody(input: ProviderRequestInput): Record<string, unknown> {
     },
     ...(input.wantsPredictionFormat ? OLLAMA_PREDICTION_FORMAT : {}),
     ...BASE_BODY,
-    // Ollama's think is a plain boolean — the finest-grained control it exposes — so "none" is the
+    // Ollama's think is a plain boolean - the finest-grained control it exposes - so "none" is the
     // only reasoningEffort level that disables it; every other configured level (just "max", per
     // agentConfig.reasoningEffortOptions.ollama) enables it.
     think: input.reasoningEffort !== "none",
@@ -153,7 +153,7 @@ function ollamaReadMessage(body: unknown): AgentChatMessage | undefined {
   if (!message) {
     return undefined
   }
-  // eval_count is the completion side alone (excludes prompt_eval_count) — see AgentChatMessage's
+  // eval_count is the completion side alone (excludes prompt_eval_count) - see AgentChatMessage's
   // tokens_used comment for why only the completion side is tracked.
   const tokensUsed = tokenCount(responseBody.eval_count)
 
@@ -161,7 +161,7 @@ function ollamaReadMessage(body: unknown): AgentChatMessage | undefined {
     role: message.role ?? "assistant",
     content: message.content,
     // thinking is Ollama's wire name for the same concept the openai-compatible adapter below
-    // calls reasoning — mapped onto that shared internal field so request.ts's echoBackReasoning
+    // calls reasoning - mapped onto that shared internal field so request.ts's echoBackReasoning
     // handling (and every other reasoning consumer) works identically across providers.
     reasoning: message.thinking,
     ...(tokensUsed !== undefined ? { tokens_used: tokensUsed } : {}),
@@ -174,7 +174,7 @@ function ollamaReadMessage(body: unknown): AgentChatMessage | undefined {
 // openaiMessage translates one internal-dialect message onto the openai wire shape: drops
 // tool_name (an Ollama-only field request.ts stamps onto every tool-result message for its own
 // diagnostics, which OpenAI-compatible servers running strict schema validation reject outright),
-// and renames reasoning to reasoning_content — the wire name this adapter's servers use, mirroring
+// and renames reasoning to reasoning_content - the wire name this adapter's servers use, mirroring
 // openaiReadMessage's reverse translation on the way in. request.ts only ever builds/reads the
 // internal reasoning field; this is the one place that name changes for the wire.
 function openaiMessage(
@@ -194,7 +194,7 @@ function openaiMessage(
 // Unlike Ollama's think, there is no single OpenAI-compatible field that reliably disables
 // reasoning across servers. reasoning_effort ("low"/"medium"/"high"/"max") is the one sent here, since it
 // is documented by multiple reasoning models (OpenAI's o-series, Kimi K3) rather than being a
-// server-specific convention — omitted entirely for "none", the closest equivalent to disabling it.
+// server-specific convention - omitted entirely for "none", the closest equivalent to disabling it.
 function openaiBuildBody(input: ProviderRequestInput): Record<string, unknown> {
   return {
     model: input.model,
@@ -205,7 +205,7 @@ function openaiBuildBody(input: ProviderRequestInput): Record<string, unknown> {
     // only max_tokens) or for most self-hosted OpenAI-compatible servers this adapter's endpoint
     // placeholders target (vLLM, LM Studio, llama.cpp). A silently-ignored cap here was
     // indistinguishable from a respected one in a short reply, but surfaced directly once a
-    // verbose reasoning model ran long enough to actually hit — and blow past — an uncapped limit.
+    // verbose reasoning model ran long enough to actually hit - and blow past - an uncapped limit.
     max_tokens: CONFIG.runtime.modelConfig.maxTokens,
     ...(input.reasoningEffort !== "none" ? { reasoning_effort: input.reasoningEffort } : {}),
     ...(input.wantsPredictionFormat ? OPENAI_PREDICTION_FORMAT : {}),
@@ -234,7 +234,7 @@ function openaiReadMessage(body: unknown): AgentChatMessage | undefined {
     return undefined
   }
 
-  // completion_tokens is the completion side alone (excludes prompt_tokens) — see
+  // completion_tokens is the completion side alone (excludes prompt_tokens) - see
   // AgentChatMessage's tokens_used comment for why only the completion side is tracked.
   const tokensUsed = tokenCount(responseBody.usage?.completion_tokens)
 
@@ -242,7 +242,7 @@ function openaiReadMessage(body: unknown): AgentChatMessage | undefined {
     role: message.role ?? "assistant",
     content: message.content ?? undefined,
     // reasoning_content is the openai-compatible wire name for the same concept Ollama calls
-    // thinking — mapped onto the shared internal reasoning field so request.ts's echoBackReasoning
+    // thinking - mapped onto the shared internal reasoning field so request.ts's echoBackReasoning
     // handling works identically regardless of which provider is active.
     reasoning: message.reasoning_content,
     ...(tokensUsed !== undefined ? { tokens_used: tokensUsed } : {}),
@@ -263,13 +263,13 @@ type AnthropicContentBlock =
   | { type: "thinking"; thinking: string; signature?: string }
 
 // ANTHROPIC_THINKING_RESERVE_FRACTION is the share of maxTokens (Anthropic's max_tokens) reserved
-// for the model's actual reply, never spent on thinking — Anthropic rejects a request where
+// for the model's actual reply, never spent on thinking - Anthropic rejects a request where
 // budget_tokens is not strictly less than max_tokens, and a "max" allocation that ate the whole
 // budget would leave no room for a reply at all.
 const ANTHROPIC_THINKING_RESERVE_FRACTION = 0.2
 
 // anthropicThinkingBudget subdivides the reasoning-usable share of maxTokens evenly across
-// Anthropic's own ordered option list (agentConfig.reasoningEffortOptions.anthropic — read from
+// Anthropic's own ordered option list (agentConfig.reasoningEffortOptions.anthropic - read from
 // there rather than a second hardcoded list, so the two can't drift apart), so the scale stays
 // correct if maxTokens itself is ever retuned rather than hardcoding numbers that would silently
 // drift out of sync with it. At the current maxTokens of 10_000 this yields low=2000, medium=4000,
@@ -294,7 +294,7 @@ function anthropicToolDefinitions(tools: AgentToolDefinition[]) {
 // omitting an empty text block entirely rather than sending one Anthropic would reject. Deliberately
 // never replays a thinking block: Anthropic requires that block's original signature verbatim to
 // accept it back on a later turn, and AgentChatMessage.reasoning is a plain string with no
-// signature — replaying content without one would make Anthropic reject the request outright, so
+// signature - replaying content without one would make Anthropic reject the request outright, so
 // echoBackReasoning currently has no effect for Anthropic agents (only Ollama/OpenAI-compatible
 // reasoning is actually echoed back).
 function anthropicAssistantContent(message: AgentChatMessage): AnthropicContentBlock[] {
@@ -307,7 +307,7 @@ function anthropicAssistantContent(message: AgentChatMessage): AnthropicContentB
     if (!call.function?.name) continue
     blocks.push({
       type: "tool_use",
-      // Falls back to the function name for an id-less call — anthropicBuildBody's tool_result
+      // Falls back to the function name for an id-less call - anthropicBuildBody's tool_result
       // branch mirrors this exact fallback so the two block types stay pairable by id.
       id: call.id ?? call.function.name,
       name: call.function.name,
@@ -332,14 +332,14 @@ function anthropicBuildBody(input: ProviderRequestInput): Record<string, unknown
     if (message.role === "tool") {
       const toolResultBlock: AnthropicContentBlock = {
         type: "tool_result",
-        // Falls back to tool_name the same way anthropicAssistantContent's tool_use.id does — both
+        // Falls back to tool_name the same way anthropicAssistantContent's tool_use.id does - both
         // must agree on the same id for an id-less call, or Anthropic can't pair this result back
         // to the tool_use block that requested it.
         tool_use_id: message.tool_call_id ?? message.tool_name ?? "",
         content: message.content ?? "",
       }
 
-      // Coalesce consecutive tool results into the same user turn — Anthropic rejects consecutive
+      // Coalesce consecutive tool results into the same user turn - Anthropic rejects consecutive
       // same-role turns, and a single tool-servicing round can produce several results in a row.
       const previous = anthropicMessages[anthropicMessages.length - 1]
       if (previous && previous.role === "user" && Array.isArray(previous.content)) {
@@ -357,7 +357,7 @@ function anthropicBuildBody(input: ProviderRequestInput): Record<string, unknown
 
     // "user" role: plain text turn (e.g. a corrective warning). Anthropic rejects consecutive
     // same-role turns, and this can immediately follow a tool-result turn (also mapped to "user"
-    // above) or another plain-text turn — so fold it into the previous turn instead of opening a
+    // above) or another plain-text turn - so fold it into the previous turn instead of opening a
     // new one, the same way consecutive tool results already coalesce above. Prefixed ahead of the
     // existing content so the warning reads first, with what it's warning about following it.
     const previous = anthropicMessages[anthropicMessages.length - 1]
@@ -382,7 +382,7 @@ function anthropicBuildBody(input: ProviderRequestInput): Record<string, unknown
     tools: anthropicToolDefinitions(input.tools),
     max_tokens: CONFIG.runtime.modelConfig.maxTokens,
     // Anthropic has no "none" reasoning-effort option (agentConfig.reasoningEffortOptions.anthropic),
-    // so thinking is always enabled here — every configured level maps to a budget_tokens share of
+    // so thinking is always enabled here - every configured level maps to a budget_tokens share of
     // maxTokens (see anthropicThinkingBudget). Temperature is intentionally provider-controlled
     // across all adapters; Anthropic specifically requires its default of 1 while thinking is enabled.
     thinking: { type: "enabled", budget_tokens: anthropicThinkingBudget(input.reasoningEffort) },
@@ -420,13 +420,13 @@ function anthropicReadMessage(body: unknown): AgentChatMessage | undefined {
       })
     } else if (block.type === "thinking") {
       // Mapped onto the same shared internal reasoning field Ollama's thinking and the
-      // openai-compatible adapter's reasoning_content map onto — see anthropicAssistantContent for
+      // openai-compatible adapter's reasoning_content map onto - see anthropicAssistantContent for
       // why this is never echoed back on a later turn despite being read here.
       reasoning += block.thinking
     }
   }
 
-  // output_tokens alone is the completion side billed against max_tokens — it already includes
+  // output_tokens alone is the completion side billed against max_tokens - it already includes
   // extended-thinking tokens. See AgentChatMessage's tokens_used comment for why only the
   // completion side is tracked (input_tokens and the cache-token fields are never read).
   const tokensUsed = tokenCount(responseBody.usage?.output_tokens)
@@ -440,7 +440,7 @@ function anthropicReadMessage(body: unknown): AgentChatMessage | undefined {
   }
 }
 
-// anthropic-version has no default here — Anthropic requires it, but pinning a value in code would
+// anthropic-version has no default here - Anthropic requires it, but pinning a value in code would
 // go stale as their API evolves, so it is the user's responsibility to supply it via extraHeaders
 // (e.g. "anthropic-version: 2023-06-01"); extraHeadersPlaceholders (config.ts) hints at this when
 // Anthropic is the selected provider.

@@ -22,7 +22,7 @@ const benchmarkRenderCellStep = 2
 // benchmarkHashesMarker prefixes one stdout line per case listing every timed sample's maze
 // adjacency hash, mirroring frontend/bench/maze-test.benchmark.ts's TAPOO_BENCH_REPORT: marker-line
 // convention. b.ReportMetric only carries a single float64 per (name, run), so it cannot carry this
-// list — parity-harness/bench-report.mjs scans stdout for this prefix instead.
+// list - parity-harness/bench-report.mjs scans stdout for this prefix instead.
 const benchmarkHashesMarker = "TAPOO_BENCH_HASHES:"
 const benchmarkValidationMarker = "TAPOO_BENCH_VALIDATION:"
 
@@ -64,7 +64,7 @@ func configuredBenchmarkIterations() int {
 	return iterations
 }
 
-// newXorshift128Generator returns a small, deterministic maze.PRNGGenerator for tests — the same
+// newXorshift128Generator returns a small, deterministic maze.PRNGGenerator for tests - the same
 // algorithm as maze/maze_test.go's newXorshift128Generator and frontend/app/maze.test.ts's
 // createXorshift128Generator (standard 4-word xorshift128, uint32 throughout so every shift is
 // logical/zero-filling, matching JS's >>> bit for bit). Duplicated rather than imported because Go
@@ -106,7 +106,7 @@ func branchingShapes() []branchingCase {
 		// Areas carrying several shapes are skew ladders: same area means the same navigation profile,
 		// so the whole profile is pinned and only the aspect ratio moves. Any spread within a ladder is
 		// grid geometry acting alone. The ladders sit at four points down the bias range (100, 57, 28,
-		// 0) because the shape effect is not constant — it is largest where the bias is working hardest
+		// 0) because the shape effect is not constant - it is largest where the bias is working hardest
 		// to suppress branching, and nearly absent once the bias is off.
 		{name: "area70_10x7", cols: 10, rows: 7},
 		{name: "area70_7x10", cols: 7, rows: 10},
@@ -153,7 +153,7 @@ func branchingShapes() []branchingCase {
 		{name: "area1600_160x10", cols: 160, rows: 10},
 		{name: "area1600_400x4", cols: 400, rows: 4},
 
-		// sensitivityCaseName runs through this exact same sweep, not a separate synthetic check — see
+		// sensitivityCaseName runs through this exact same sweep, not a separate synthetic check - see
 		// its own comment below for why.
 		{name: sensitivityCaseName, cols: 5, rows: 5},
 	}
@@ -163,7 +163,7 @@ func branchingShapes() []branchingCase {
 // as every other shape in this sweep, whose only difference is a deliberately offset seed (see
 // seedForCase) on this side only. frontend/bench/maze-test.benchmark.ts uses the same shared seed as
 // every other case for this name, so the two sides are expected to generate genuinely different
-// mazes here and nowhere else — proving, with two real, independent generation runs rather than an
+// mazes here and nowhere else - proving, with two real, independent generation runs rather than an
 // edited hash, that parity-harness/bench-report.mjs's comparison actually detects real divergence when it
 // occurs.
 const sensitivityCaseName = "sensitivity_area25_5x5"
@@ -205,7 +205,7 @@ const (
 )
 
 // baseViewport is the maze-cell grid both ports measure their Preferred column against: 70x45,
-// 3150 cells. It is a fixed baseline for the report, not something this port measures — the Go game
+// 3150 cells. It is a fixed baseline for the report, not something this port measures - the Go game
 // takes its viewport from UI.ViewportSize, which returns termbox character cells directly and never
 // sees a pixel.
 //
@@ -214,7 +214,7 @@ const (
 //   - at devicePixelRatio 2, 3456x2234 physical px is 1728x1117 CSS px;
 //   - measured on the page, ten PT Mono sample characters span about 60 CSS px (so 6px per
 //     character) and one text row is about 11 CSS px, giving 288 character columns by 101 rows;
-//   - getTerminalSize then applies the same insets and scales GetTerminalSize applies here —
+//   - getTerminalSize then applies the same insets and scales GetTerminalSize applies here -
 //     (288-5)/4 columns and (101-10)/2 rows.
 //
 // Only the last step is shared. The pixel arithmetic above it is the browser's alone, and this
@@ -241,7 +241,7 @@ func baseViewport() maze.Dimensions {
 // Three outcomes, because two could not distinguish them: the level does not fit this display at
 // all, it fits but the selector picks a different shape for it, or it is the shape the selector
 // picks. A row can be unselected while the shape the selector *would* pick is absent from the sweep
-// — the sweep is a geometry ladder, not a catalogue of production choices — so an area with no
+// - the sweep is a geometry ladder, not a catalogue of production choices - so an area with no
 // selected row is expected rather than a gap to fill.
 func shapeFitStatus(config maze.Dimensions) float64 {
 	level := levelForArea(config.NumCols * config.NumRows)
@@ -256,7 +256,7 @@ func shapeFitStatus(config maze.Dimensions) float64 {
 
 	// Orientation is part of the answer, not noise to normalise away. Accepting a rotation here
 	// marked both 10x7 and 7x10 as selected for area 70, which contradicts the column's own claim to
-	// name the shape the selector picks — one shape, not a pair. baseViewport is landscape, so the
+	// name the shape the selector picks - one shape, not a pair. baseViewport is landscape, so the
 	// selector's aspect-mismatch scoring has a definite preference between the two; deferring to it
 	// is what makes the tiebreak defined rather than restated here.
 	if selected.NumCols == config.NumCols && selected.NumRows == config.NumRows {
@@ -350,7 +350,7 @@ func measureBranching(b *testing.B, caseName string, config maze.Dimensions, pro
 	// generator is seeded once per benchmark case and reused across every warm-up/timed sample.
 	// seedForCase reads the shared seed parity-harness/bench-report.mjs derives and forwards to both ports
 	// each run, so a repeated go test -bench run generates the exact same sequence of mazes as the
-	// matching frontend/bench run for this case — except sensitivityCaseName, deliberately offset.
+	// matching frontend/bench run for this case - except sensitivityCaseName, deliberately offset.
 	generator := newXorshift128Generator(seedForCase(caseName))
 
 	// sampleOnce is shared by the warm-up and the timed loop so both do identical work. Warming only
@@ -397,7 +397,7 @@ func measureBranching(b *testing.B, caseName string, config maze.Dimensions, pro
 	// the timer, so this costs wall-clock only. Capped at b.N (mirroring frontend/bench/maze-test.benchmark.ts's
 	// identical cap) rather than always running the full benchmarkWarmupIterations: the generator is
 	// shared and stateful across warm-up and timed samples alike, so the two ports must draw exactly
-	// the same number of warm-up samples or their PRNG state permanently desyncs from that point on —
+	// the same number of warm-up samples or their PRNG state permanently desyncs from that point on -
 	// an uncapped side burning more warm-up draws than the other would silently break every later
 	// hash comparison, even though the actual maze-generation logic in both is correct.
 	warmupCount := min(benchmarkWarmupIterations, configuredBenchmarkIterations())
@@ -440,7 +440,7 @@ func measureBranching(b *testing.B, caseName string, config maze.Dimensions, pro
 		b.Fatalf("failed to marshal maze adjacency hashes: %v", err)
 	}
 	// Printed directly (not via b.Log), so it lands on stdout unconditionally rather than only under
-	// -v — parity-harness/bench-report.mjs scans plain stdout for this marker the same way it already scans
+	// -v - parity-harness/bench-report.mjs scans plain stdout for this marker the same way it already scans
 	// for frontend/bench's TAPOO_BENCH_REPORT: lines.
 	fmt.Printf("%s%s:%s\n", benchmarkHashesMarker, caseName, hashesJSON)
 	fmt.Printf(
@@ -694,7 +694,7 @@ func countOpenExits(config maze.Dimensions, grid [][]string, cellNo int) int {
 }
 
 // adjacencyMask reports which of a cell's four directions have an open passage, as a 4-bit mask in a
-// fixed Up(1)/Right(2)/Down(4)/Left(8) order — the same open-check countOpenExits uses. This is
+// fixed Up(1)/Right(2)/Down(4)/Left(8) order - the same open-check countOpenExits uses. This is
 // wall-glyph/weight-independent by construction: two mazes carved identically but rendered under
 // different WallWeight values produce the identical mask for every cell.
 func adjacencyMask(config maze.Dimensions, grid [][]string, cellNo int) int {
@@ -724,7 +724,7 @@ func adjacencyMask(config maze.Dimensions, grid [][]string, cellNo int) int {
 
 // mazeAdjacencyHash reduces a maze's decoded adjacency (not its glyph rendering) to one hash: every
 // cell's adjacencyMask, row-major, as one hex digit each, hashed with FNV-1a 64-bit and formatted to
-// match frontend/app/logs.ts's fnv1a64Checksum exactly (0x-prefixed, 16 lowercase hex digits) — Go's
+// match frontend/app/logs.ts's fnv1a64Checksum exactly (0x-prefixed, 16 lowercase hex digits) - Go's
 // stdlib [hash/fnv.New64a] was verified to produce byte-identical output to that TypeScript
 // implementation for the same input bytes, so the two ports can compare these hashes directly.
 func mazeAdjacencyHash(config maze.Dimensions, grid [][]string) string {
@@ -742,8 +742,8 @@ func mazeAdjacencyHash(config maze.Dimensions, grid [][]string) string {
 }
 
 // BenchmarkMazeBranching sweeps grid shapes under the profile GetNavigationProfile derives,
-// which is the only combination the game can produce. Area and bias are not independent inputs —
-// both follow from the level — so a sweep that varied them separately would report states no round
+// which is the only combination the game can produce. Area and bias are not independent inputs -
+// both follow from the level - so a sweep that varied them separately would report states no round
 // can reach, and a number that cannot occur in production cannot be used to judge production.
 //
 //	go test ./maze/bench -run '^$' -bench BenchmarkMazeBranching -benchtime 100x

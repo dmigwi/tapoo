@@ -12,7 +12,7 @@ import type { BaseDimensions, LevelDimensions, NavigationProfile } from "../app/
 import { mazeAdjacencyHash } from "./adjacency"
 
 // createXorshift128Generator is the same algorithm as app/maze.test.ts's createXorshift128Generator
-// and maze/maze_test.go's Go port (standard 4-word xorshift128) — duplicated here rather than
+// and maze/maze_test.go's Go port (standard 4-word xorshift128) - duplicated here rather than
 // imported from a .test.ts file, so this benchmark generates the exact same reproducible sequence of
 // mazes on every run, isolating whatever a before/after comparison measures from run-to-run
 // maze-shape noise instead of that noise coming from crypto.getRandomValues on every sample.
@@ -136,7 +136,7 @@ function branchingShapes(): BranchingCase[] {
     // Areas carrying several shapes are skew ladders: same area means the same navigation profile,
     // so the whole profile is pinned and only the aspect ratio moves. Any spread within a ladder is
     // grid geometry acting alone. The ladders sit at four points down the bias range (100, 57, 28,
-    // 0) because the shape effect is not constant — it is largest where the bias is working hardest
+    // 0) because the shape effect is not constant - it is largest where the bias is working hardest
     // to suppress branching, and nearly absent once the bias is off.
     { name: "area70_10x7", numCols: 10, numRows: 7 },
     { name: "area70_7x10", numCols: 7, numRows: 10 },
@@ -184,9 +184,9 @@ function branchingShapes(): BranchingCase[] {
     { name: "area1600_400x4", numCols: 400, numRows: 4 },
 
     // sensitivityCaseName (same literal name as maze/bench/levels_bench_test.go's constant) runs
-    // through this exact same sweep with no special handling on this side — it uses the same shared
+    // through this exact same sweep with no special handling on this side - it uses the same shared
     // benchmarkSeed as every other case. Go deliberately offsets its own seed for this one name only,
-    // so the two sides are expected to generate genuinely different mazes here — proving, with two
+    // so the two sides are expected to generate genuinely different mazes here - proving, with two
     // real, independent generation runs rather than an edited hash, that parity-harness/bench-report.mjs's
     // comparison actually detects real divergence when it occurs.
     { name: "sensitivity_area25_5x5", numCols: 5, numRows: 5 },
@@ -226,7 +226,7 @@ const baseViewport = { numCols: 70, numRows: 45 }
 
 // shapeFitStatus asks the production selector what baseViewport would do with this grid's level,
 // rather than restating the squarest-fit rule in the report: a third copy of that rule would keep
-// agreeing with itself after this one changed. Three outcomes — the level does not fit this
+// agreeing with itself after this one changed. Three outcomes - the level does not fit this
 // display, it fits but the selector picks a different shape, or it is the shape the selector picks.
 // Orientation counts: accepting a rotation marked both 10x7 and 7x10 as selected for area 70, which
 // contradicts the column naming one shape.
@@ -590,7 +590,7 @@ function validMazeStructure(maze: string[][], dimensions: LevelDimensions): bool
 // logBenchmarkSummaries prints the descriptive per-case tables (shape/bias/branching-density figures
 // unrelated to cross-language comparison) and, in JSON mode, includes each case's full hash sequence
 // so parity-harness/bench-report.mjs can assert Go and TypeScript produced byte-identical mazes sample for
-// sample — the hashes are kept out of the printed table itself so it stays readable.
+// sample - the hashes are kept out of the printed table itself so it stays readable.
 function logBenchmarkSummaries(
   title: string,
   summaries: BranchingSummary[],
@@ -618,7 +618,7 @@ function logBenchmarkSummaries(
 }
 
 // Only the derived profile is swept. Area and bias both follow from the level, so sweeping them
-// independently would report combinations no round can reach — and a number that cannot occur in
+// independently would report combinations no round can reach - and a number that cannot occur in
 // production cannot be used to judge production. Attribution to the bias alone lives in
 // maze.test.ts, as an assertion at a fixed grid rather than a metric reported every run.
 describe("Maze branching benchmarks", () => {

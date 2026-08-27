@@ -177,7 +177,7 @@ func TestLeastNeighborsBiasCutsJunctionDensity(t *testing.T) {
 
 // TestJunctionDensityRisesWithMazeArea covers the wiring players actually get, where the profile is
 // derived rather than supplied. Area and bias move together here by design, so this pins the
-// end-to-end outcome without attributing it — the test above is what isolates the knob.
+// end-to-end outcome without attributing it - the test above is what isolates the knob.
 func TestJunctionDensityRisesWithMazeArea(t *testing.T) {
 	t.Parallel()
 
@@ -270,7 +270,7 @@ func TestGetMazeDimensionsErrors(t *testing.T) {
 
 // TestGetMazeDimensionsRepairsBadFactors pins the band repair, and pins it against the browser port
 // rather than against itself. A level's exact area is an arithmetic target that need not factorize
-// into a drawable rectangle — level 143's 1490 does not at this size — so without the repair the
+// into a drawable rectangle - level 143's 1490 does not at this size - so without the repair the
 // level would be unplayable for want of a usable factor pair rather than for want of screen room.
 //
 // The expectations are copied from frontend/app/maze.test.ts's "repairs isolated bad area factors"

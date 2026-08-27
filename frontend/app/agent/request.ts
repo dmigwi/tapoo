@@ -46,10 +46,10 @@ type AgentChatResponse = {
 }
 
 type RequestAgentPredictionInput = {
-  // The only state this turn ever reads — no separate raw State is threaded alongside it. Built
+  // The only state this turn ever reads - no separate raw State is threaded alongside it. Built
   // once by the caller (control/agent-api.ts's requestNextAgentTurn), before the first of possibly
   // several attempts this turn makes (including a connection-error retry, separated by a real
-  // backoff delay) — never rebuilt here, so every attempt sees the exact same frozen values no
+  // backoff delay) - never rebuilt here, so every attempt sees the exact same frozen values no
   // matter how much wall-clock time passes between them. See snapshotAgentState.
   stateSnapshot: AgentStateSnapshot
   // Pre-encoded static maze diagnostics for the level's first request. Kept separate from
@@ -62,7 +62,7 @@ type RequestAgentPredictionInput = {
   requestIntervalMs: number
   agent: AgentApiSeatConfig
   lastActionResult: MazeActionResult | null
-  // Live read of whether the round is still running — deliberately a callback, not a value off
+  // Live read of whether the round is still running - deliberately a callback, not a value off
   // stateSnapshot, which is frozen at turn start and so can never report a round that stopped
   // mid-turn. A turn can span several provider requests and minutes of wall clock; anything that
   // halts the round in that window (a pause, a restart, a level change) must stop the remaining
@@ -70,7 +70,7 @@ type RequestAgentPredictionInput = {
   isRoundRunning: () => boolean
 }
 
-// sleep resolves after delayMs — used only to pace consecutive provider requests within one turn.
+// sleep resolves after delayMs - used only to pace consecutive provider requests within one turn.
 function sleep(delayMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, delayMs))
 }
@@ -79,8 +79,8 @@ type AgentChatTurnResult =
   | { ok: true; response: AgentChatResponse }
   | AgentPredictionFailure
 
-// ToolServicingResult distinguishes a hallucinated/unknown tool call — the model's own fault,
-// reported as malformed-response — from a handler throwing, which is a bug in our own tool
+// ToolServicingResult distinguishes a hallucinated/unknown tool call - the model's own fault,
+// reported as malformed-response - from a handler throwing, which is a bug in our own tool
 // implementation and stays a network-error.
 type ToolServicingResult =
   | { ok: true; messages: AgentChatMessage[] }
@@ -120,7 +120,7 @@ async function buildToolResultMessages(
 
   for (const toolCall of toolCalls) {
     // A missing or unrecognized tool name means the model asked for something that was never
-    // offered — most likely a hallucinated call — so it is the model's own fault, not ours.
+    // offered - most likely a hallucinated call - so it is the model's own fault, not ours.
     const toolName = toolCall.function?.name
     const handler = toolName ? toolHandlers[toolName] : undefined
     if (!toolName || !handler) {
@@ -144,7 +144,7 @@ async function buildToolResultMessages(
   return { ok: true, messages: toolMessages }
 }
 
-// requestChatTurn sends one provider-compatible chat request while keeping wire details local —
+// requestChatTurn sends one provider-compatible chat request while keeping wire details local -
 // the actual body/headers/response shape is entirely the chosen provider adapter's concern.
 async function requestChatTurn(
   agent: AgentApiSeatConfig,
@@ -161,7 +161,7 @@ async function requestChatTurn(
 
   // Defensive: agent.api is typed as AgentApiProvider, but that only binds at compile time.
   // agentConfigValidationError already rejects an unrecognized provider at form submission, and
-  // storage.ts coerces one out of any persisted record — but a provider added to the type without
+  // storage.ts coerces one out of any persisted record - but a provider added to the type without
   // being wired into this table, or a record that reached here by some other path, must still fail
   // the turn cleanly instead of throwing out of a plain object lookup.
   const adapter = (PROVIDER_ADAPTERS as Partial<Record<string, ProviderAdapter>>)[agent.api]
@@ -200,7 +200,7 @@ async function requestChatTurn(
 
   const msgBody = adapter.buildBody({ model: agent.model, messages, tools, wantsPredictionFormat, reasoningEffort })
   
-  // credential and extraHeaders reach only buildHeaders — never the log above, never the assembled
+  // credential and extraHeaders reach only buildHeaders - never the log above, never the assembled
   // body, and never anything else that could flow into logTapooDiagnostic (see request storage in
   // logs.ts; log entries land in sessionStorage and are user-downloadable).
   const response = await fetch(agent.endpoint, {
@@ -212,7 +212,7 @@ async function requestChatTurn(
 
   if (!response.ok) {
     // The provider's own error body usually names the exact rejected field (e.g. an unrecognized
-    // request parameter) — status/statusText alone rarely do. Read it as text rather than
+    // request parameter) - status/statusText alone rarely do. Read it as text rather than
     // response.json(): a strict-validation rejection isn't guaranteed to be valid JSON, and a
     // failed parse here must not shadow the real failure this diagnostic exists to capture.
     const responseBodyText = await response.text().catch(() => undefined)
@@ -256,7 +256,7 @@ export function requestPredictionWithAbort({
 
   // shouldStopRequesting answers the one question both in-loop checkpoints ask: is there any
   // reason not to send another provider request? A caller abort and a round that stopped under us
-  // are the same situation — lifecycle cleanup, not a provider failure — so a stopped round is
+  // are the same situation - lifecycle cleanup, not a provider failure - so a stopped round is
   // promoted to an expected abort here, cancelling anything in flight. That keeps every later
   // check, including the catch below, on the single wasExpectedAbort flag.
   const shouldStopRequesting = (): boolean => {
@@ -330,8 +330,8 @@ export function requestPredictionWithAbort({
         decayUnitsCharged: decayUnitsCharged,
       }, batchEfficiencyClass)
 
-      // The opening persona claims two things — that traversal speed opens at trailblazer, and that
-      // no prediction has been made yet — so all three of this agent's own level counters must be
+      // The opening persona claims two things - that traversal speed opens at trailblazer, and that
+      // no prediction has been made yet - so all three of this agent's own level counters must be
       // clear before it is used. decayUnitsCharged alone was not enough: it is what
       // resolveStatusSpeedClass defaults on, so on its own it cannot distinguish "nothing spent
       // yet" from a state where cells or turns were somehow recorded without spend.
@@ -465,7 +465,7 @@ export function requestPredictionWithAbort({
         }
 
         // Split this response into tool calls that need servicing and duplicate calls that
-        // already have results, so only genuinely new work gets a payload — duplicates get a
+        // already have results, so only genuinely new work gets a payload - duplicates get a
         // reminder naming them instead, without blocking whatever new calls came with them.
         // Calls with an unrecognized or missing name are treated as "new" (not a known
         // duplicate) so buildToolResultMessages still surfaces them as a servicing failure
@@ -495,7 +495,7 @@ export function requestPredictionWithAbort({
             {
               role: "assistant",
               content: response.message.content ?? "",
-              // Only echoed back when the agent's own echoBackReasoning flag is on — model
+              // Only echoed back when the agent's own echoBackReasoning flag is on - model
               // guidance conflicts here (Kimi K3 requires it echoed back, Gemma requires it
               // withheld), so this defaults off. See AgentApiConfig.echoBackReasoning.
               ...(agent.echoBackReasoning ? { reasoning: response.message.reasoning } : {}),
@@ -549,7 +549,7 @@ export function requestPredictionWithAbort({
           {
             role: "assistant",
             content: response.message.content ?? "",
-            // Only echoed back when the agent's own echoBackReasoning flag is on — model guidance
+            // Only echoed back when the agent's own echoBackReasoning flag is on - model guidance
             // conflicts here (Kimi K3 requires it echoed back, Gemma requires it withheld), so
             // this defaults off. See AgentApiConfig.echoBackReasoning.
             ...(agent.echoBackReasoning ? { reasoning: response.message.reasoning } : {}),
@@ -576,8 +576,8 @@ export function requestPredictionWithAbort({
         diagnostic: {
           message: "Request failed before a valid response.",
           // String(error) rather than the raw caught value: Error/DOMException instances (fetch's
-          // TypeError, an aborted signal's AbortError) serialize to "{}" via JSON.stringify — their
-          // name/message are non-enumerable own properties — so logging the value as-is would
+          // TypeError, an aborted signal's AbortError) serialize to "{}" via JSON.stringify - their
+          // name/message are non-enumerable own properties - so logging the value as-is would
           // silently discard exactly the detail this diagnostic exists to capture. String() covers
           // any thrown shape uniformly via its own toString(), without special-casing by type.
           details: { endpoint: endpointLabel(agent.endpoint), error: String(error) },

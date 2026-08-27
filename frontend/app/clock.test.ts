@@ -70,7 +70,7 @@ describe("GameClock", () => {
     clock.startedAt = 100
     const { blinkIntervalMs } = CONFIG.timing
 
-    // Same instants the toggle test above uses — every one of them would normally alternate,
+    // Same instants the toggle test above uses - every one of them would normally alternate,
     // so a steady true across all of them proves reduced motion is actually overriding the phase.
     expect(clock.blink(100)).toBe(true)
     expect(clock.blink(100 + blinkIntervalMs - 1)).toBe(true)
