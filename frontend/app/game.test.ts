@@ -19,7 +19,7 @@ function selfVisit(row: number, col: number, visitCount = 1): TraversalHistoryEn
   return { playerName: "Self", row, col, openMoves: [], visitCount }
 }
 
-// setVisualViewportScale mutates the mocked window.visualViewport.scale — a direct assignment
+// setVisualViewportScale mutates the mocked window.visualViewport.scale - a direct assignment
 // fails typecheck since the real VisualViewport.scale is readonly.
 function setVisualViewportScale(scale: number): void {
   Object.defineProperty(window.visualViewport, "scale", {
@@ -389,7 +389,7 @@ type CapturedRuntime = {
 
 // captureRuntimeHandles wraps a real control mode and records what bindActionDispatch is handed,
 // then forwards the call untouched. Tests therefore drive the same dispatch and gameControls the
-// settings dialog drives in the browser — if that wiring is ever dropped, these tests stop working
+// settings dialog drives in the browser - if that wiring is ever dropped, these tests stop working
 // instead of passing against a parallel seam.
 function captureRuntimeHandles(realMode: MazeActionControl): {
   controlMode: MazeActionControl
@@ -923,7 +923,7 @@ describe("bootstrapGame", () => {
       ],
     })
 
-    // Bootstrap opened the stored level, not the restart level — the two are independent.
+    // Bootstrap opened the stored level, not the restart level - the two are independent.
     expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(7, { numCols: 20, numRows: 20 })
     expect(harness.runtime.readRestartLevel()).toBe(CONFIG.runtime.defaultRestartLevel)
 
@@ -936,22 +936,23 @@ describe("bootstrapGame", () => {
     expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(84, { numCols: 20, numRows: 20 })
   })
 
-  // Changing where games begin stops what is playing first, so the change lands at a moment the
-  // player chose rather than whenever something next happens to restart — and so the score stops
-  // decaying against a round they have already left.
-  it("stops an interactive round in progress before moving the floor", async () => {
+  // Moving the floor is not what stops play, and these two pin that it stays that way. Every
+  // overlay that can reach setRestartLevel pauses a running round when it opens (pauseIfRunning in
+  // control/agent.ts), so the round is already stopped by the time a level is applied - pausing
+  // here as well would give one rule two owners, and pausing only on apply would leave the score
+  // decaying for as long as the dialog stayed open. That the gear itself pauses is asserted in
+  // control/agent.test.ts, where the overlay lives.
+  it("leaves an interactive round alone when the floor moves", async () => {
     const harness = await bootstrapHarness({})
     expect(latestRenderedState(harness.render).status).toBe("running")
 
     expect(harness.runtime.setRestartLevel(84)).toBe(true)
 
-    expect(latestRenderedState(harness.render).status).toBe("paused")
+    expect(latestRenderedState(harness.render).status).toBe("running")
     expect(harness.runtime.readRestartLevel()).toBe(84)
   })
 
-  // Paused, not await-agent: that status means play has no enabled agent seat, which is untrue of
-  // a round an agent was mid-turn on.
-  it("pauses an agent-api round in progress before moving the floor", async () => {
+  it("leaves an agent-api round alone when the floor moves", async () => {
     const harness = await bootstrapHarness({
       mode: CONFIG.runtime.controlModes.agentApi,
       agentConfigs: [enabledAgentConfig()],
@@ -960,7 +961,7 @@ describe("bootstrapGame", () => {
 
     expect(harness.runtime.setRestartLevel(84)).toBe(true)
 
-    expect(latestRenderedState(harness.render).status).toBe("paused")
+    expect(latestRenderedState(harness.render).status).toBe("running")
     expect(harness.runtime.readRestartLevel()).toBe(84)
   })
 
@@ -974,7 +975,7 @@ describe("bootstrapGame", () => {
   // is storage.test.ts's round-trip assertion.
   it("persists the round when the restart level changes with nothing running", async () => {
     // A finished round on purpose. While one is running, stopActiveRound's own persist would save
-    // anyway and mask whether setRestartLevel writes at all — which is exactly the case where the
+    // anyway and mask whether setRestartLevel writes at all - which is exactly the case where the
     // value would be lost on the next reload.
     const harness = await bootstrapHarness({
       persistedSnapshots: [
@@ -1005,7 +1006,7 @@ describe("bootstrapGame", () => {
   })
 
   // startRound raises every round to this floor, so a corrupt stored value would make the game
-  // unplayable rather than merely wrong — it must not reach state.
+  // unplayable rather than merely wrong - it must not reach state.
   it.each([
     ["zero", 0],
     ["negative", -5],
@@ -1055,7 +1056,7 @@ describe("bootstrapGame", () => {
     expect(harness.clearPersistedSnapshot).toHaveBeenCalledTimes(1)
     expect(harness.loadPersistedSnapshot).toHaveBeenCalledTimes(1)
     // Read from CONFIG rather than hardcoded, so raising defaultRestartLevel for a playtest deep
-    // in the level curve does not fail the suite — while still proving restartGame goes through
+    // in the level curve does not fail the suite - while still proving restartGame goes through
     // that knob instead of a literal of its own.
     expect(harness.getMazeDimensions).toHaveBeenLastCalledWith(CONFIG.runtime.defaultRestartLevel, {
       numCols: 20,
@@ -1246,7 +1247,7 @@ describe("bootstrapGame", () => {
     const state = latestRenderedState(harness.render)
     expect(state.playerPosition).toEqual({ x: 1, y: 1 })
     // The backtrack onto (0,0) bumps that cell's visitCount instead of appending a second entry, so
-    // the array stays a distinct-cell list while still recording how worked-over the cell is — which
+    // the array stays a distinct-cell list while still recording how worked-over the cell is - which
     // is what agent/context.ts reads to derive visitStatus.
     expect(state.traversalHistory).toEqual([
       selfVisit(0, 0, 2),
@@ -1434,7 +1435,7 @@ describe("bootstrapGame", () => {
   })
 
   it("treats pinch-zoom past the configured scale as too-small even when the maze still fits", async () => {
-    // Pinch-zoom never changes getBoundingClientRect()/terminalSizes on its own — this maze and
+    // Pinch-zoom never changes getBoundingClientRect()/terminalSizes on its own - this maze and
     // terminal size would otherwise report "fits" at every resize, so the only thing that can be
     // causing too-small here is window.visualViewport.scale itself.
     Object.defineProperty(window, "visualViewport", {
@@ -1463,7 +1464,7 @@ describe("bootstrapGame", () => {
       value: { scale: 1, addEventListener: vi.fn() },
     })
 
-    // A single fitting entry each — both clamp to themselves for however many extra calls the
+    // A single fitting entry each - both clamp to themselves for however many extra calls the
     // recovery path below makes, so this doesn't depend on hand-counting the exact call sequence.
     const harness = await bootstrapHarness({
       dimensionsResults: [{ level: 1, numCols: 1, numRows: 1 }],
@@ -1721,7 +1722,7 @@ describe("bootstrapGame", () => {
     expect(actionResult).toEqual(expect.objectContaining({
       lastMoveStatus: "reached-target",
       visitedBefore: false,
-      lastSubmittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["MoveRight"],
       lastAppliedMoveIndex: 0,
     }))
     expect(harness.mode.readLastActionResult()).toEqual(actionResult)
@@ -1764,7 +1765,7 @@ describe("bootstrapGame", () => {
     expect(harness.mode.readLastActionResult()).toBeNull()
   })
 
-  // No public call sequence can produce an inconsistent state — restore matches the clock to the
+  // No public call sequence can produce an inconsistent state - restore matches the clock to the
   // status it restores, and every transition sets the clock before the status. These tests inject
   // the violation directly onto the live state instead, which is the only way to reach the reporting
   // path. cycle-walls is the render trigger because it is the one action that redraws without

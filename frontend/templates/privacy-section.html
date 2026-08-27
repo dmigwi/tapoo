@@ -25,7 +25,7 @@
         demand, not stored separately. If you supply a bearer token or API key, or any
         extra request headers, when configuring an agent, those values are stored
         alongside the rest of the agent's configuration under the same light obfuscation
-        described below — they are recoverable by anyone with access to your browser
+        described below - they are recoverable by anyone with access to your browser
         profile, so only enter a credential or header value you would accept being read
         that way.
         Tapoo Logs capture
@@ -53,11 +53,11 @@
         AI Agent mode sends gameplay context to the agent API endpoints you configure.
         That context may include the current cell, destination cell, player names
         (user-chosen in-game nicknames), model name, allowed moves, submitted moves,
-        score, level, and traversal history — each entry recording a visited cell and,
+        score, level, and traversal history - each entry recording a visited cell and,
         for that cell, every open exit mapped to its neighbouring cell and whether that
         neighbour has already been visited. It also includes the raw counts behind a
-        traversal-speed classification — unique cells visited and decay units charged
-        this level (turns taken is included too, for context only) — and the
+        traversal-speed classification - unique cells visited and decay units charged
+        this level (turns taken is included too, for context only) - and the
         classification itself: a rate (unique cells visited divided by decay units
         charged) below 1.0000 is <code>Backtracker</code>, exactly 1.0000 is <code>Navigator</code>,
         and above 1.0000 is <code>Trailblazer</code>. An agent starts out as a Trailblazer and
@@ -87,7 +87,7 @@
         Tapoo asks you to confirm its removal before the game loads; this is a notice
         rather than a choice to keep that data while playing, since the upgraded page
         cannot read it either way. Declining simply means not continuing, and the data
-        stays on your device until you return and confirm — so if you want to keep a
+        stays on your device until you return and confirm - so if you want to keep a
         copy, export it through your browser's developer tools before confirming. To
         remove all stored site data, use your browser settings. If you
         have configured AI Agent endpoints, remove any you no longer trust before using

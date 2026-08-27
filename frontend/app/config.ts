@@ -27,7 +27,7 @@ const VERSION_MAJOR = 2
 const VERSION_MINOR = 4
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 8
+const VERSION_PATCH = 9
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -42,7 +42,7 @@ const BUILD_YEAR =
 // stamps into JSON-LD's dateModified, so the footer and the structured data always name one
 // moment. The footer shows only the date half; the time is what keeps two deploys on the same day
 // distinguishable in structured data.
-// Parsed, not merely type-checked: everything downstream treats this as a real instant — the
+// Parsed, not merely type-checked: everything downstream treats this as a real instant - the
 // footer subtracts it from now, <time datetime> publishes it, and JSON-LD's dateModified mirrors
 // it. A string that is not a date would surface as "NaN secs ago" rather than as a build error,
 // so an unparseable value is discarded here and never reaches any of them.
@@ -59,7 +59,7 @@ export const CONFIG: AppConfig = {
     appSubtitle: "maze runner (hide & seek)",
     pageVersionTemplate: "v{version} © {year} Tapoo",
     // The footer shows how long ago this build went out, not when. At 375px there are only ~37
-    // characters for the whole line, and the word "updated" alone costs a fifth of them — it is
+    // characters for the whole line, and the word "updated" alone costs a fifth of them - it is
     // carried by pageUpdatedTitleTemplate below instead, where it costs nothing.
     pageUpdatedTemplate: "({updated} ago)",
     // Shown on hover and read out to assistive tech, so the exact instant stays reachable from the
@@ -74,7 +74,7 @@ export const CONFIG: AppConfig = {
       documentTitle: "Tapoo Maze Runner | Game",
       description:
         "Tapoo is an AI agent behavior profiler built as a maze runner hide-and-seek " +
-        "game — play it yourself in this browser-based terminal experience.",
+        "game - play it yourself in this browser-based terminal experience.",
       pageLabel: "Game",
       aiAgentsLabel: "AI Agents",
     },
@@ -106,7 +106,7 @@ export const CONFIG: AppConfig = {
   },
   // Runtime text shown inside the terminal view and overlay states.
   // Compact-viewport status strings should stay at or under ~57 characters (the longest existing
-  // compact string here) — there is no JS-side wrapping/truncation for this text, only CSS
+  // compact string here) - there is no JS-side wrapping/truncation for this text, only CSS
   // overflow:hidden, so longer strings risk being clipped.
   messages: {
     // Navigation hints are view-specific so keyboard bindings never leak into compact touch views.
@@ -144,16 +144,29 @@ export const CONFIG: AppConfig = {
       compact: "Use edge seats to add/manage agents. Tap Proceed.",
     },
     tooSmallMessage: "Level {level} needs more screen room!",
-    // Reset Progress only ever restarts at level 1 (restartGame, game.ts) — offering it while
+    // Reset Progress only ever restarts at level 1 (restartGame, game.ts) - offering it while
     // already too-small at level 1 would just redraw the same maze into the same too-small state,
     // so canShowRestart (status.ts) hides that touch button there. tooSmallActionMessage is the
     // base case that's always true; tooSmallActionMessageWithReset adds the option only for the
-    // case canShowRestart actually allows it — see tooSmallRows (render.ts) for the selection.
+    // case canShowRestart actually allows it - see tooSmallRows (render.ts) for the selection.
     tooSmallActionMessage: "Make more screen room on zoom out.",
     tooSmallActionMessageWithReset: "Make screen room on zoom out, or Reset Progress.",
+    // Split by mode, like navigation above it. {turn} is State.turnCount, which only
+    // commitAgentApiTurn increments and which returns early outside agent-api - so an interactive
+    // round rendered a permanent "Turn: 0". The field is not merely uninteresting there, it is
+    // never anything else.
+    //
+    // Interactive's wide and compact copy are identical on purpose: Turn was the only segment
+    // compact dropped, so with it gone there is nothing left to shed at the narrow size.
     runningStatus: {
-      wide: "Player: {player}   Level: {level}   Turn: {turn}   Scores: {score}",
-      compact: "Player: {player}   Level: {level}   Scores: {score}",
+      interactive: {
+        wide: "Player: {player}   Level: {level}   Scores: {score}",
+        compact: "Player: {player}   Level: {level}   Scores: {score}",
+      },
+      agentApi: {
+        wide: "Player: {player}   Level: {level}   Turn: {turn}   Scores: {score}",
+        compact: "Player: {player}   Level: {level}   Scores: {score}",
+      },
     },
     highScoreTemplate:
       "Final Level {level} Scores:  {score} ({percent}% retention)",
@@ -208,12 +221,12 @@ export const CONFIG: AppConfig = {
   systemSettings: {
     // Named for the mode it is opened from, so a setting that only governs this mode's play never
     // reads as global. {mode} is filled from runtime.displayLabels at open time, not at build
-    // time — which is also why this title carries no data-config-key in the markup.
+    // time - which is also why this title carries no data-config-key in the markup.
     title: "{mode} System Settings Configuration",
     restartLevelLabel: "Restart Level",
     restartLevelTooltip:
       "The level a fresh or restarted game opens on, and the lowest level any round can open " +
-      "at. Applies for this page only — reloading returns to the built-in default.",
+      "at. Applies for this page only - reloading returns to the built-in default.",
     applyLabel: "Apply",
     invalidRestartLevelMessage: "Restart level must be a whole number of 1 or more.",
   },
@@ -279,9 +292,9 @@ export const CONFIG: AppConfig = {
     reasoningEffortLabel: "Reasoning Effort",
     reasoningEffortTooltip:
       "How much internal reasoning the model does before replying. Confirm your model's own usage " +
-      "guidance before choosing a level — options depend on the API: Ollama only distinguishes " +
+      "guidance before choosing a level - options depend on the API: Ollama only distinguishes " +
       "on/off, Anthropic always reasons at some level.",
-    // Ollama: think is a boolean, so "none" maps to false and every other level maps to true —
+    // Ollama: think is a boolean, so "none" maps to false and every other level maps to true -
     // "max" is offered rather than "low"/"medium"/"high" since Ollama exposes no finer control.
     // Anthropic has no off switch: enabling extended thinking always spends some budget_tokens.
     reasoningEffortOptions: {
@@ -290,7 +303,7 @@ export const CONFIG: AppConfig = {
       anthropic: ["low", "medium", "high", "max"],
     },
     // Defaults to each provider's own minimum rather than "max": reasoning support and quality vary
-    // by model, not just by provider — e.g. Kimi K3 handles "max" well, Gemma 4 does not — so a user
+    // by model, not just by provider - e.g. Kimi K3 handles "max" well, Gemma 4 does not - so a user
     // should opt into a heavier level deliberately, based on their specific model's documented
     // guidance, rather than the form silently assuming heavy reasoning is safe for every model.
     // Anthropic has no "none" (see reasoningEffortOptions above), so its minimum is "low".
@@ -309,7 +322,7 @@ export const CONFIG: AppConfig = {
     echoBackReasoningLabel: "Echo Back Reasoning",
     echoBackReasoningTooltip:
       "Whether the model's reasoning content is echoed back on the next request. Confirm your " +
-      "model's own multi-turn usage guidance before enabling — some reasoning models (e.g. Kimi K3) " +
+      "model's own multi-turn usage guidance before enabling - some reasoning models (e.g. Kimi K3) " +
       "require it echoed back every turn or they lose their analysis, others (e.g. Gemma) require it " +
       "withheld. Off by default; has no effect for Anthropic agents, which can't replay reasoning " +
       "content without its original signature.",
@@ -347,7 +360,7 @@ export const CONFIG: AppConfig = {
     // The persona is the system message's opening paragraph, not a message of its own, so the
     // heading says which form is attached above rather than presenting this as a separate send.
     personaHeading: "Agent persona (the system message above opens with the default; all four forms follow)",
-    personaDefaultLabel: "Default — first turn, before any prediction is measured",
+    personaDefaultLabel: "Default - first turn, before any prediction is measured",
     userHeading: "User message",
     toolsHeading: "Tool definitions",
     schemaHeading: "Required response format",
@@ -390,8 +403,8 @@ export const CONFIG: AppConfig = {
     retentionFullScaleUnits: 1_000_000, // Represents 100% scores retention without using floating-point percentages.
     agentBaseDecayUnits: 1,               // Constant decay for a turn that applied any valid moves.
     agentPartialInvalidPenaltyDecayUnits: 1, // Added on top of the base charge when at least one move applied before an invalid move (total 2).
-    agentZeroProgressPenaltyDecayUnits: 2,   // Flat charge when the very first submitted move was already invalid — no progress made.
-    agentMalformedPenaltyDecayUnits: 3,      // Flat charge for a malformed/protocol-violation response — costlier than any gameplay mistake.
+    agentZeroProgressPenaltyDecayUnits: 2,   // Flat charge when the very first submitted move was already invalid - no progress made.
+    agentMalformedPenaltyDecayUnits: 3,      // Flat charge for a malformed/protocol-violation response - costlier than any gameplay mistake.
     traversalSpeedScaleUnits: 10_000, // 4dp Scales the traversal speed ratio as its display precision.
   },
   // Timing values drive UI redraws, persistence debounce, score decay, and slower agent-api pacing.
@@ -400,7 +413,7 @@ export const CONFIG: AppConfig = {
     blinkIntervalMs: 700,
     scoreDecayRate: 100,
     // Also sizes agent-api mode's clock, which only exists there to drive the destination blink
-    // animation (see restoreClock's comment in game.ts) — agent-api score decay comes from
+    // animation (see restoreClock's comment in game.ts) - agent-api score decay comes from
     // scoreDecayUnits, not this figure.
     interactiveDecayIntervalPerCellMs: 1_000, // Translates to 1sec
     // Default whole-second request interval shown in the agent form. Agent configs store this same
@@ -408,11 +421,11 @@ export const CONFIG: AppConfig = {
     defaultAgentApiRequestIntervalSeconds: 30,
     // Per provider request, not per turn: a turn issues several rounds, so a whole turn can take a
     // multiple of this (see the request-count derivation in agent/request.ts). Per-request by
-    // design — a provider that stops responding is caught on the first round regardless.
+    // design - a provider that stops responding is caught on the first round regardless.
     agentApiResponseTimeoutMs: 300_000,           // Translates to 5min
     // Kept short deliberately: this backs the one-shot connection-error retry (see
     // requestAgentPredictionWithRetry in control/agent-api.ts) for transient connection drops/
-    // resets, which either clear almost immediately or not at all — a long backoff would just make
+    // resets, which either clear almost immediately or not at all - a long backoff would just make
     // the agent sit idle for a failure mode a second attempt is unlikely to fix anyway.
     agentApiConnectionErrorRetryDelayMs: 60_000,      // Translates to 1min
   },
@@ -425,10 +438,10 @@ export const CONFIG: AppConfig = {
     terminalWidthInset: 10,
     terminalWidthScale: 2,
     terminalSampleWidth: 10,
-    // Pinch-zoom is a pure visual magnification — it never changes getBoundingClientRect()/layout
+    // Pinch-zoom is a pure visual magnification - it never changes getBoundingClientRect()/layout
     // viewport size, so viewportFitStatus (which measures exactly that) can never detect it on its
     // own. window.visualViewport.scale is the direct signal instead: 1.0 is unzoomed, and this is
-    // the factor above which the visible area is treated as too small to responsibly play — the
+    // the factor above which the visible area is treated as too small to responsibly play - the
     // same too-small/placeholder-art path a genuinely small window already uses, since neither the
     // maze nor the touch controls can be trusted to stay reachable past this point.
     pinchZoomTooCloseScale: 1.2,
@@ -449,7 +462,7 @@ export const CONFIG: AppConfig = {
     // The level a game opens on before anyone has chosen otherwise. It seeds State.restartLevel,
     // which is what every entry point actually reads, so they can never disagree about where a
     // game begins. State.restartLevel is memory-only, so this is also where each page load starts
-    // again — changing it moves the opening level for everyone.
+    // again - changing it moves the opening level for everyone.
     defaultRestartLevel: 1,
     storage: {
       version: 4.9,
@@ -463,11 +476,11 @@ export const CONFIG: AppConfig = {
     },
     promptWarningPrefix: "Warning:",
     interactivePlayerName: "Self",
-    // The deployed site's own base URL — canonical links, Open Graph/sitemap URLs, and robots.txt
+    // The deployed site's own base URL - canonical links, Open Graph/sitemap URLs, and robots.txt
     // are all derived from this single value at build time, so redeploying to a different host is
     // a one-line change here rather than a hunt through scripts/build-html.mjs.
     siteUrl: "https://dmigwi.github.io/tapoo/",
-    // Feeds structured-data author attribution only (scripts/build-html.mjs) — kept separate from
+    // Feeds structured-data author attribution only (scripts/build-html.mjs) - kept separate from
     // contact-link.html's own hardcoded href since that template isn't run through render()'s
     // token substitution, and a personal profile URL changing is not a realistic drift risk.
     author: {
@@ -482,7 +495,7 @@ export const CONFIG: AppConfig = {
       // payload size does not grow with the maze. Ollama's own default is too small for the
       // prompt anyway, and it answers 500 rather than truncating.
       contextWindowFloor: 4000,
-      // Model-facing local context radius — how far back into traversal history get_maze_structure
+      // Model-facing local context radius - how far back into traversal history get_maze_structure
       // looks. Deliberately independent of suggestedMovesPerTurnRange below: one bounds what the
       // model can see, the other suggests how many moves to batch per turn, and scaling batch size
       // off the maze-area-derived navigation profile (the old behavior) coupled two unrelated
@@ -490,10 +503,10 @@ export const CONFIG: AppConfig = {
       manhattanDistance: 4, // Simulation corridor-run distribution: p50=1, p75=2, p90=3, p95=4.
       // A static range rather than a single number that shrank with maze area: observed batching
       // accuracy drops off sharply past the 2nd predicted move, so min is the safer, lower-confidence
-      // batch size (p50) and max is the more aggressive, higher-confidence one (p95) — the model
+      // batch size (p50) and max is the more aggressive, higher-confidence one (p95) - the model
       // picks within the range based on its own confidence for the cells ahead, not a fixed count.
       suggestedMovesPerTurnRange: { min: 2, max: 4 },
-      // Shared by num_predict (Ollama, think: true) and OpenAI-compatible reasoning_effort models —
+      // Shared by num_predict (Ollama, think: true) and OpenAI-compatible reasoning_effort models -
       // both count thinking tokens against this same cap rather than a separate budget (Ollama's own
       // thinking response field and usage.completion_tokens/reasoning_tokens respectively), so this
       // must stay sized well above what a compliant reply needs plus a full reasoning pass, not just
@@ -515,7 +528,7 @@ export const INFO_GATE_NOTICES = {
       "configuration and game progress. This cannot be undone!",
     // {versions} arrives carrying its own noun ("version (4.81)" / "versions (4.81, 4.82)"),
     // because only the caller knows how many there are. Putting the word here instead duplicates
-    // it — the template cannot pluralise.
+    // it - the template cannot pluralise.
     detailTemplate: "- {items} with storage {versions}.",
     proceedLabel: "Proceed",
   },
@@ -526,21 +539,21 @@ export const PAGE_COPYRIGHT_TEXT = CONFIG.chrome.pageVersionTemplate
   .replace("{version}", APP_VERSION)
   .replace("{year}", String(BUILD_YEAR))
 
-// PAGE_UPDATED_TEXT names the deployment this page was built from, to the minute — enough to tell
+// PAGE_UPDATED_TEXT names the deployment this page was built from, to the minute - enough to tell
 // two same-day deploys apart, which a calendar day alone cannot. Seconds are dropped: they do not
 // settle any question a footer is read to answer, and JSON-LD's dateModified keeps the full
 // timestamp for anything that needs the exact instant.
 //
 // Reformatted out of BUILD_DATE's ISO form (2026-08-25T15:01:37Z) by slicing rather than by
 // rebuilding a Date, so what is shown is literally part of the same string stamped into the
-// structured data — no timezone conversion can drift between the two. UTC is stated explicitly
+// structured data - no timezone conversion can drift between the two. UTC is stated explicitly
 // because the reader's timezone is unknown and an unlabelled wall-clock time invites a wrong guess.
 // PAGE_UPDATED_TEMPLATE is left unresolved because its value is not fixed at build time: the
 // footer states an age, which only the reader's clock can settle, so page-chrome.ts fills it on
 // every page load.
 export const PAGE_UPDATED_TEMPLATE = CONFIG.chrome.pageUpdatedTemplate
 
-// PAGE_UPDATED_AT is the deployment instant in full ISO form, for <time datetime> — the same
+// PAGE_UPDATED_AT is the deployment instant in full ISO form, for <time datetime> - the same
 // string JSON-LD's dateModified carries, so the machine-readable value on the page and in the
 // structured data cannot drift apart.
 export const PAGE_UPDATED_AT = BUILD_DATE

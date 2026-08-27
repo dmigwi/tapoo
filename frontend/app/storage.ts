@@ -57,11 +57,11 @@ export type StaleStorageSummary = {
 
 // STALE_STORAGE_KEY_VERSION captures the version segment of a Tapoo key. The version is itself
 // dotted (4.82), so the segment is matched as digits-and-dots up to the mode name rather than by
-// splitting on "." — which would read "tapoo.v4.82.agent-api.agentConfigs" as version "4".
+// splitting on "." - which would read "tapoo.v4.82.agent-api.agentConfigs" as version "4".
 const STALE_STORAGE_KEY_VERSION = /^tapoo\.v(\d+(?:\.\d+)*)\./
 
 // staleStorageKeys lists the keys a previous schema version wrote, without touching their values.
-// Everything downstream — the count, the version list, the deletion — is derived from key names
+// Everything downstream - the count, the version list, the deletion - is derived from key names
 // alone: a payload written under an older schema must never be decoded by this build, because
 // interpreting it against current validators is the migration hazard the versioning exists to
 // avoid.
@@ -80,7 +80,7 @@ function staleStorageKeys(storage: Storage): string[] {
 }
 
 // readStaleStorageKeys tolerates a storage object that throws on access at all, which is what a
-// browser in private mode or with site data blocked does — there, "no stale data" is the only
+// browser in private mode or with site data blocked does - there, "no stale data" is the only
 // answer available, and the same best-effort posture the rest of this file takes.
 function readStaleStorageKeys(readStorage: () => Storage): string[] {
   try {
@@ -221,7 +221,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
 
   // api is deliberately not part of the required-key gate above: a record persisted before this
   // field existed must still load, not be dropped. An absent or unrecognized value coerces to
-  // "ollama" (validAgentApiProvider), the same self-healing shape validWallWeightPreference uses —
+  // "ollama" (validAgentApiProvider), the same self-healing shape validWallWeightPreference uses -
   // the very next savePersistedAgentApiConfigs call then backfills it into storage for free.
   const apiValue = "api" in value ? value.api : undefined
   const api = isAgentApiProvider(apiValue) ? apiValue : "ollama"
@@ -241,7 +241,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   const seatIdValue = "seatId" in value ? value.seatId : "id" in value ? value.id : undefined
   // sessionId self-heals like api above rather than gating the record: a config saved before this
   // field existed still loads, and gets stamped now. The stamp only has to be stable from this
-  // point on, which the write-back in loadPersistedAgentApiConfigs guarantees — its normalized
+  // point on, which the write-back in loadPersistedAgentApiConfigs guarantees - its normalized
   // output differs from what was decoded, so the backfilled value is persisted immediately.
   const sessionIdValue = "sessionId" in value ? value.sessionId : undefined
   const sessionId =
@@ -349,7 +349,7 @@ export function loadPersistedAgentApiConfigs(): AgentApiConfig[] {
     const normalizedConfigs = normalizeAgentApiConfigs(decodedConfigs)
     // The volatile counters an older build kept inside these records are deliberately not carried
     // over. Tapoo resets mismatched state rather than migrating it, and lifting the old enabled
-    // flag would be the one path able to switch an agent on in a tab nobody switched it on in —
+    // flag would be the one path able to switch an agent on in a tab nobody switched it on in -
     // exactly what AgentApiSessionMetrics.enabled promises never happens. They are dropped here by
     // the save below, which rewrites each record through normalizeAgentApiConfig's field list.
     if (JSON.stringify(decodedConfigs) !== JSON.stringify(normalizedConfigs)) {
@@ -528,7 +528,7 @@ function mergeAgentSessionMetrics(configs: AgentApiConfig[]): AgentApiSeatConfig
 
   // Pruning belongs on this read path rather than at the delete: the tab that removed a seat
   // clears only its own sessionStorage, so every other tab either notices the orphan here or
-  // carries it forever. The write settles after one pass — every surviving row then matches a
+  // carries it forever. The write settles after one pass - every surviving row then matches a
   // live config, so the condition below stops firing.
   const liveAgents = new Set(configs.map((config) => `${config.seatId}:${config.sessionId}`))
   if (storedStats.some((stat) => !liveAgents.has(`${stat.seatId}:${stat.sessionId}`))) {
@@ -612,13 +612,13 @@ export function agentForCurrentRound(
 }
 
 // recordAgentTurnStats persists one agent's post-turn counters. levelTurnCount is synchronized to
-// the round's completed turn count for every agent in the current attempt — a staleness signal only,
-// not a per-agent count — while turnCount and decayUnitsCharged are each accumulated only for the
+// the round's completed turn count for every agent in the current attempt - a staleness signal only,
+// not a per-agent count - while turnCount and decayUnitsCharged are each accumulated only for the
 // agent that actually played, because neither State.turnCount nor state.scoreDecayUnits is split by
 // seat: the former counts every agent's turns together, the latter is shared spend with no
 // attribution to any individual agent.
 //
-// gameLevel and cumulativeRoundCount are required in the isSameAttempt check below — do not
+// gameLevel and cumulativeRoundCount are required in the isSameAttempt check below - do not
 // simplify this to cumulativeRoundCount alone. Reasoning:
 //   - Level alone can't tell a retry of the same level apart from continuing it, hence
 //     cumulativeRoundCount.
@@ -729,7 +729,7 @@ function validWallWeightPreference(
 }
 
 // validWinMetricPair restores a last/best win metric pair together or not at all. Every writer
-// sets both at once — resolveWinScore always returns both, a reset clears both — so a half-restored
+// sets both at once - resolveWinScore always returns both, a reset clears both - so a half-restored
 // pair is a state gameplay can never produce. Keeping restore atomic means "no previous record"
 // always implies "no best record" too, which is what lets the summary treat a first result as a
 // new record without needing to describe a last-attempt-missing-but-best-present case.
@@ -964,7 +964,7 @@ export function saveActiveRoundSnapshot(
   state: State,
 ): void {
   // No invariant check here: buildRoundSnapshot already refuses a round missing any of the fields
-  // hasActiveRoundState requires, and storage cannot report one anyway — logs.ts imports storage,
+  // hasActiveRoundState requires, and storage cannot report one anyway - logs.ts imports storage,
   // so importing it back would be circular. game.ts owns the state and does the reporting.
   saveRound(modeName, buildRoundSnapshot(state))
 }
@@ -1037,7 +1037,7 @@ export function saveTapooLog(modeName: MazeControlModeName, entries: unknown[]):
       encodeStoredPayload(entries),
     )
   } catch {
-    // Quota exceeded or storage unavailable — the in-memory count is still accurate.
+    // Quota exceeded or storage unavailable - the in-memory count is still accurate.
   }
 }
 

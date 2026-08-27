@@ -138,13 +138,13 @@ export function createAgentMode(
   const isAgentManageDialogOpen = (): boolean => elements.agentManageDialog?.hidden === false
   const isSystemSettingsOpen = (): boolean => elements.systemSettingsDialog?.hidden === false
   // At most one overlay is ever open (each open* closes the others first), but callers that only
-  // care whether the app should yield focus or dim don't need to know which — this is the shared
+  // care whether the app should yield focus or dim don't need to know which - this is the shared
   // "something is showing" check for those callers.
   //
   // Every overlay must be listed here, including ones that are not about agents: an omission does
   // not fail visibly, it steals focus. The terminal takes focus back on any click inside #terminal-app
   // (see the focusCurrentApp listener below), so an overlay missing from this check cannot be typed
-  // into at all — clicking its input immediately hands focus to the terminal instead.
+  // into at all - clicking its input immediately hands focus to the terminal instead.
   const isAnyOverlayOpen = (): boolean =>
     isAgentConfigFormOpen() || isAgentManageDialogOpen() || isSystemSettingsOpen()
   const focusCurrentApp = (): void => {
@@ -365,7 +365,7 @@ export function createAgentMode(
       // now also owns locking it from user interaction: every caller that needs to disable a toggle
       // (the delete-confirmation checkbox freezing enabled/echo-back, reasoning effort "none" locking
       // echo-back) used to hand-roll the same .disabled assignment plus
-      // .agent-config-form__toggle--disabled class toggle — centralized here instead so there is one
+      // .agent-config-form__toggle--disabled class toggle - centralized here instead so there is one
       // place that defines what "disabled" means for a toggle. A disabled toggle is always forced off
       // rather than left showing whatever it last held: a control a user cannot interact with should
       // never silently claim to be on. Takes the on/off copy explicitly so it can drive any of the
@@ -408,7 +408,7 @@ export function createAgentMode(
       }
 
       // syncAgentConfigEchoBackReasoningToggle keeps the Echo Back Reasoning toggle's label and CSS
-      // state aligned with its checkbox — off by default (see the field's tooltip and
+      // state aligned with its checkbox - off by default (see the field's tooltip and
       // AgentApiConfig.echoBackReasoning), since model guidance on this conflicts across providers.
       const syncAgentConfigEchoBackReasoningToggle = (): void => {
         syncToggleState(
@@ -437,8 +437,8 @@ export function createAgentMode(
           .replace("{min}", String(agentConfig.requestIntervalMinSeconds))
           .replace("{max}", String(agentConfig.requestIntervalMaxSeconds))
 
-      // extraHeaderKeyInputs/extraHeaderValueInputs read the current set of header rows — however
-      // many the user has added — rather than assuming just the one the form starts with.
+      // extraHeaderKeyInputs/extraHeaderValueInputs read the current set of header rows - however
+      // many the user has added - rather than assuming just the one the form starts with.
       const extraHeaderKeyInputs = (): HTMLInputElement[] =>
         Array.from(
           elements.agentConfigExtraHeadersRows?.querySelectorAll<HTMLInputElement>(".agent-config-form__header-key") ?? [],
@@ -470,7 +470,7 @@ export function createAgentMode(
         removeButton.className = "agent-config-form__header-remove"
         removeButton.type = "button"
         // Mirrors what applyConfigAttribute (page-chrome.ts) does for data-config-title elements
-        // in static markup — this button doesn't exist yet at that hydration pass, so it sets its
+        // in static markup - this button doesn't exist yet at that hydration pass, so it sets its
         // own data-tooltip/aria-label here instead, to get the same themed CSS tooltip.
         removeButton.setAttribute("data-tooltip", agentConfig.removeHeaderLabel)
         removeButton.setAttribute("aria-label", agentConfig.removeHeaderLabel)
@@ -507,7 +507,7 @@ export function createAgentMode(
 
       // collectExtraHeaders reduces the key/value rows back into the single "Key: Value" per line
       // string the record stores and parseExtraHeaders (agent/protocol.ts) already knows how to
-      // read — the row-based UI is presentation only, not a change to what gets persisted. Rows
+      // read - the row-based UI is presentation only, not a change to what gets persisted. Rows
       // with a blank key are skipped rather than submitted as broken headers.
       const collectExtraHeaders = (): string => {
         const keys = extraHeaderKeyInputs()
@@ -519,7 +519,7 @@ export function createAgentMode(
       }
 
       // syncReasoningEffortOptions hides/disables the <option>s a provider doesn't support (each of
-      // the three exposes a different subset — see agentConfig.reasoningEffortOptions) and resets an
+      // the three exposes a different subset - see agentConfig.reasoningEffortOptions) and resets an
       // now-unsupported selection to that provider's own default, rather than leaving a stale value
       // selected under a provider that never offered it. Shared by the add form (called on every
       // provider change) and the manage dialog (called once at open time against the agent's fixed,
@@ -546,14 +546,14 @@ export function createAgentMode(
 
       // syncAgentConfigProviderFields applies the selected provider's copy: the endpoint placeholder,
       // the credential field's label (same input, different real-world name per provider), each
-      // extra-header row's placeholders (a live example of what that provider might need — Extra
+      // extra-header row's placeholders (a live example of what that provider might need - Extra
       // Headers itself stays visible for every provider, unlike the Anthropic-only field it replaced),
       // and the reasoning-effort dropdown's available options.
       const syncAgentConfigProviderFields = (): void => {
         const selectedApi = elements.agentConfigApi?.value
         const api: AgentApiProvider = isAgentApiProvider(selectedApi) ? selectedApi : "ollama"
         syncReasoningEffortOptions(elements.agentConfigReasoningEffort, api)
-        // Echo-back-reasoning is locked off whenever reasoning effort is "none" — there is no
+        // Echo-back-reasoning is locked off whenever reasoning effort is "none" - there is no
         // reasoning content produced at that level, so echoing it back has nothing to send and
         // leaving the toggle clickable would let a user turn on a setting with no effect until they
         // pick a level that actually reasons.
@@ -570,7 +570,7 @@ export function createAgentMode(
           // The field's value (not just its placeholder) starts out hydrated to Ollama's default via
           // data-config-value, and switching providers would otherwise leave that real, editable text
           // behind looking like a deliberate choice. Only ever overwrite it when it still exactly
-          // matches some provider's own default — anything the user actually typed is left alone.
+          // matches some provider's own default - anything the user actually typed is left alone.
           if (
             elements.agentConfigEndpoint.value === "" || previousDefaults.includes(elements.agentConfigEndpoint.value)
           ) {
@@ -584,7 +584,7 @@ export function createAgentMode(
         if (elements.agentConfigCredentialRequired) {
           // Ollama/OpenAI treat an empty credential as "send no auth header" against a trusted
           // local server; Anthropic's hosted API rejects every request without one. The asterisk
-          // only appears — and is only enforced by agentConfigValidationError — for Anthropic.
+          // only appears - and is only enforced by agentConfigValidationError - for Anthropic.
           elements.agentConfigCredentialRequired.hidden = api !== "anthropic"
         }
         extraHeaderKeyInputs().forEach((input) => {
@@ -678,7 +678,7 @@ export function createAgentMode(
       }
 
       // syncAgentManageOptions disables the enable/disable toggle when the delete checkbox is
-      // checked (it won't matter once the agent is about to be removed — syncToggleState forces it
+      // checked (it won't matter once the agent is about to be removed - syncToggleState forces it
       // off along with locking it), and disables the echo-back-reasoning toggle the same way whenever
       // either that same delete checkbox is checked or reasoning effort is "none": at that level
       // there is no reasoning content to echo back, so the toggle having no effect until a level that
@@ -722,7 +722,7 @@ export function createAgentMode(
           elements.agentManageEnabled.checked = agent.enabled
         }
         if (elements.agentManageReasoningEffort) {
-          // Unlike the add form, this dialog has no live provider <select> to react to — the
+          // Unlike the add form, this dialog has no live provider <select> to react to - the
           // provider is fixed to whatever the already-persisted agent record carries, so options are
           // filtered once here at open time rather than on a change event.
           syncReasoningEffortOptions(elements.agentManageReasoningEffort, agent.api)
@@ -815,6 +815,8 @@ export function createAgentMode(
       // Apply with no edit is a no-op rather than a surprise.
       const openSystemSettings = (): void => {
         closeOtherOverlays("systemSettings")
+        pauseIfRunning()
+
         // Named per mode rather than statically, so a setting that only governs this mode's play
         // is never mistaken for a global one. Read from live state so the dialog stays correct if
         // the palette is ever shown in interactive mode too.
@@ -840,12 +842,12 @@ export function createAgentMode(
       }
 
       // closeOtherOverlays drops every overlay except the one about to show. They share one screen
-      // position, so leaving another open renders them superimposed rather than merely stacked —
+      // position, so leaving another open renders them superimposed rather than merely stacked -
       // and the one left behind still holds focus and keeps the terminal dimmed.
       //
       // One list, rather than a pairwise check inside each open*: adding an overlay then means
       // adding it here once, instead of remembering to close it from every other overlay's open
-      // path. Pairwise checks are why the settings dialog was invisible to both agent forms —
+      // path. Pairwise checks are why the settings dialog was invisible to both agent forms -
       // each knew only about the overlays that existed when it was written.
       //
       // Excluding the caller matters: closeAgentConfigForm resets the form, so an overlay closing
@@ -886,7 +888,7 @@ export function createAgentMode(
         if (applyButton) {
           const onClick = (): void => {
             // The input is the only value validated here: a whole number of 1 or more. Everything
-            // above that is allowed on purpose — there is no known ceiling to a level, so refusing
+            // above that is allowed on purpose - there is no known ceiling to a level, so refusing
             // a high one would be inventing a limit the game does not have.
             const restartLevel = Number(elements.systemSettingsRestartLevel?.value ?? "")
             if (!Number.isInteger(restartLevel) || restartLevel < 1) {
@@ -1177,7 +1179,7 @@ export function createAgentMode(
 
             // Omit the key entirely rather than storing false, matching how the add form only
             // ever persists this field when it is true (see agentFormSubmitHandler above).
-            // reasoningEffort is unconditionally set instead — unlike echo-back, there is always
+            // reasoningEffort is unconditionally set instead - unlike echo-back, there is always
             // a meaningful, provider-valid level in effect, never a meaningful "absent".
             const nextAgent: AgentApiConfig = {
               ...agent,

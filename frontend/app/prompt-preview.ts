@@ -12,7 +12,7 @@ import { CONFIG } from "./config"
 
 const { promptPreview, agentConfig, runtime } = CONFIG
 
-// SAMPLE_DUPLICATE_TOOL_CALL stands in for whichever call(s) a model actually repeated — the real
+// SAMPLE_DUPLICATE_TOOL_CALL stands in for whichever call(s) a model actually repeated - the real
 // warning names the live duplicate(s) instead. get_maze_structure is the first tool a turn calls,
 // making it the most representative example of one already answered before a repeat arrives.
 const SAMPLE_DUPLICATE_TOOL_CALL = {
@@ -34,7 +34,7 @@ export function previewPlayerNote(): string {
 }
 
 // buildPreviewSections returns the static half of every agent request, plus the two corrective
-// warnings a turn can receive mid-request — each rendered from a sample input standing in for the
+// warnings a turn can receive mid-request - each rendered from a sample input standing in for the
 // live mistake that would normally trigger it, using the same builders the request loop calls, so
 // neither warning's wording can drift from what an agent is actually shown. Tool *results* are
 // omitted because they depend on the live maze, so publishing them would describe one moment of one

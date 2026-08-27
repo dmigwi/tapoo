@@ -30,7 +30,7 @@ const { maze, messages } = CONFIG
 // ellipsis-trimmed to whatever room is left.
 const COMPACT_STATUS_MAX_LENGTH = 55
 
-// PLAYER_LABEL_TRIM_MARKER marks the dropped middle section of an over-length player label —
+// PLAYER_LABEL_TRIM_MARKER marks the dropped middle section of an over-length player label -
 // mirrors compactAgentModelLabel's middleTrimMarker (agent/seats.ts), the same technique this
 // function reuses for a different fixed-width field (a long model name there, a long player label
 // here).
@@ -40,9 +40,9 @@ const PLAYER_LABEL_TRIM_MARKER = "…"
 // rest of the compact status line (everything from CONFIG.messages.runningStatus other than the
 // label itself), so a long agent/player name can never overflow the character budget every other
 // compact string in CONFIG.messages already stays within. Uses the same middle-truncation
-// compactAgentModelLabel (agent/seats.ts) applies to long model names — roughly half the
+// compactAgentModelLabel (agent/seats.ts) applies to long model names - roughly half the
 // available width kept from the front, half from the back, with the middle dropped behind a
-// single marker — rather than a rule that has to know the label's internal shape.
+// single marker - rather than a rule that has to know the label's internal shape.
 export function fitPlayerSegmentToWidth(playerLabel: string, remainderLength: number): string {
   const available = COMPACT_STATUS_MAX_LENGTH - remainderLength
 
@@ -94,11 +94,15 @@ function replaceAt(line: string, index: number, char: string): string {
 
 // statusText selects the running-status footer copy for the current display size. currentPlayerLabel
 // is a ready-made "{name} the {Class}({rate})" string supplied by whichever control mode is active
-// (see MazeActionControl.readCurrentPlayer) — this function only decides whether it fits, and drops
+// (see MazeActionControl.readCurrentPlayer) - this function only decides whether it fits, and drops
 // the entire "Player: {player}   " lead-in (whatever literal text/spacing surrounds {player} in
 // CONFIG.messages.runningStatus) when there's no player to show, rather than leaving a bare "Player:".
 function statusText(state: State, currentPlayerLabel: string | null): string {
-  const template = displayText(messages.runningStatus)
+  const template = displayText(
+    isAgentApiMode(state.controlMode)
+      ? messages.runningStatus.agentApi
+      : messages.runningStatus.interactive,
+  )
   const [beforePlayer, afterPlayerRaw] = template.split("{player}")
   const afterPlayer = afterPlayerRaw
     .replace("{level}", String(state.level))
@@ -113,7 +117,7 @@ function statusText(state: State, currentPlayerLabel: string | null): string {
     ? fitPlayerSegmentToWidth(currentPlayerLabel, beforePlayer.length + afterPlayer.length)
     : currentPlayerLabel
 
-  // Trimming can shrink the label to nothing when there's no room at all — drop the whole
+  // Trimming can shrink the label to nothing when there's no room at all - drop the whole
   // "Player: {player}   " lead-in in that case too, rather than leaving a bare "Player:".
   if (!label) {
     return afterPlayer.trimStart()
@@ -161,7 +165,7 @@ function rowsWithSpacer(...rows: ScreenLine[]): ScreenLine[] {
 
 // tooSmallRows builds the viewport warning shown when the maze no longer fits. The action line must
 // only offer Reset Progress when canShowRestart agrees it would help (updateTouchControls hides the
-// button itself on the same condition) — level 1 has no smaller level to fall back to, so promising
+// button itself on the same condition) - level 1 has no smaller level to fall back to, so promising
 // it there would be a control with no button behind it.
 function tooSmallRows(state: State): ScreenLine[] {
   const actionMessage = canShowRestart(state.status, state.level)
@@ -356,7 +360,7 @@ function buildScreenLines(
     0,
   )
   // "Use Arrow Keys/touch buttons to guide Blue to Red" references controls for a maze that isn't
-  // even on screen when there's no room to show one — skip it here rather than pairing gameplay
+  // even on screen when there's no room to show one - skip it here rather than pairing gameplay
   // instructions with a screen that has no gameplay to instruct.
   const lines: ScreenLine[] = isTooSmallStatus(state.status)
     ? []
@@ -457,7 +461,7 @@ function updateAgentConfigForm(elements: Elements, state: State): void {
 
 // updateZoomPlaceholder swaps to the same artwork placeholder-art.html uses standalone once the
 // too-small status text (built into screenLines like any other content, so it's still there
-// underneath) can no longer render in full — see terminalCanDisplayText, dom.ts. Checked against
+// underneath) can no longer render in full - see terminalCanDisplayText, dom.ts. Checked against
 // tooSmallMessage specifically ("Level {level} needs more screen room!"), the line that matters
 // most: it's shorter than tooSmallActionMessage, so it stays readable a little further into a
 // pinch-zoom before the placeholder takes over.
@@ -471,19 +475,19 @@ function updateZoomPlaceholder(elements: Elements, state: State): void {
 
   elements.zoomPlaceholder.hidden = !needsPlaceholder
   // hidden alone removes it from the accessibility tree while true, but the template's static
-  // aria-hidden="true" never comes back off on its own once hidden is cleared — matching
+  // aria-hidden="true" never comes back off on its own once hidden is cleared - matching
   // fallback-policy.ts's showPageView, which keeps aria-hidden explicitly in sync with the JS-error
   // placeholder's own visibility the same way.
   elements.zoomPlaceholder.setAttribute("aria-hidden", String(!needsPlaceholder))
 
   // The system palette sits beside #terminal-body, not inside it (see .terminal-frame's flex
-  // layout), so the placeholder above — an overlay scoped to #terminal-body's own box — never
+  // layout), so the placeholder above - an overlay scoped to #terminal-body's own box - never
   // covers it on its own. Hide it explicitly while the placeholder is up: there's no usable game
   // behind it to keep the palette relevant for.
   //
   // Agent-api only, for now: the palette is named for the wider role it is expected to grow into,
   // but every control in it today exists for agent play. Interactive mode reaches it when a need
-  // there actually arises — showing it sooner would only narrow the maze, since the palette is a
+  // there actually arises - showing it sooner would only narrow the maze, since the palette is a
   // flex sibling of #terminal-body and takes width from it. control/agent.ts's bind/unbind owns
   // this element's visibility otherwise.
   if (elements.systemPalette && isAgentApiMode(state.controlMode)) {

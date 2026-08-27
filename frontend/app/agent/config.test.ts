@@ -214,8 +214,8 @@ describe("agent config", () => {
         existingAgents: [],
         model: "llama3.2",
         playerName: "Scout",
-        // A space inside the key — likely a typo, e.g. "X Custom Header: value" instead of
-        // "X-Custom-Header: value" — is not a valid HTTP header token.
+        // A space inside the key - likely a typo, e.g. "X Custom Header: value" instead of
+        // "X-Custom-Header: value" - is not a valid HTTP header token.
         extraHeaders: "X Custom Header: value",
       }),
     ).toBe(CONFIG.agentConfig.invalidExtraHeadersMessage)
@@ -227,7 +227,7 @@ describe("agent config", () => {
         existingAgents: [],
         model: "llama3.2",
         playerName: "Scout",
-        // One well-formed row followed by one malformed row — every row must pass, not just one.
+        // One well-formed row followed by one malformed row - every row must pass, not just one.
         extraHeaders: "X-Custom-Header: value\nX@Bad: value",
       }),
     ).toBe(CONFIG.agentConfig.invalidExtraHeadersMessage)
@@ -247,7 +247,7 @@ describe("agent config", () => {
   })
 
   it("rejects an api value the dropdown/adapters don't recognize instead of assuming it's fine", () => {
-    // api is typed as AgentApiProvider, but that only binds at compile time — this exercises the
+    // api is typed as AgentApiProvider, but that only binds at compile time - this exercises the
     // runtime guard that catches a value the type system can no longer stop, e.g. a provider added
     // to the type without being wired into the form and PROVIDER_ADAPTERS yet.
     expect(
@@ -263,7 +263,7 @@ describe("agent config", () => {
   })
 
   it("rejects a reasoning-effort value the selected provider doesn't offer", () => {
-    // "none" is a real, valid value overall (Ollama/OpenAI both offer it) — just not one Anthropic
+    // "none" is a real, valid value overall (Ollama/OpenAI both offer it) - just not one Anthropic
     // supports, so this exercises the provider-scoped check rather than isAgentReasoningEffort alone.
     expect(
       agentConfigValidationError({

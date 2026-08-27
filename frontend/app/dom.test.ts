@@ -156,7 +156,7 @@ describe("dom", () => {
       throw new Error("expected terminal elements")
     }
 
-    // charWidth = 100 / terminalSampleWidth(10) = 10; body.width 200 → 20 raw character columns —
+    // charWidth = 100 / terminalSampleWidth(10) = 10; body.width 200 → 20 raw character columns -
     // deliberately unrelated to getTerminalSize's maze-cell numCols, which also subtracts insets
     // and divides by a scale factor this check must not apply.
     elements.body.getBoundingClientRect = vi.fn(() => ({

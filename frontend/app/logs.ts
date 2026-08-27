@@ -20,11 +20,11 @@ let logCount = 0
 let currentTurn = 0
 
 // currentLevel stamps every entry the same way currentTurn does, so a downloaded log can tell
-// which maze level a given request belongs to — turn alone can't, since turnCount resets each level.
+// which maze level a given request belongs to - turn alone can't, since turnCount resets each level.
 let currentLevel = 0
 
 // currentGame stamps every entry the same way currentTurn/currentLevel do (from State's
-// cumulativeRoundCount) — turn and level alone can't tell a retry of the same level apart from
+// cumulativeRoundCount) - turn and level alone can't tell a retry of the same level apart from
 // continuing it, since both reset to the same values either way; this counter never resets
 // mid-session.
 let currentGame = 0
@@ -77,7 +77,7 @@ export function trimLoggedDescription(
   return `${description.slice(0, loggedDescriptionPreviewLength)}...`
 }
 
-// fnv1a64Checksum is the one checksum algorithm used consistently for every logged text field — not
+// fnv1a64Checksum is the one checksum algorithm used consistently for every logged text field - not
 // a security control, just cheap proof a prompt/tool description didn't silently change
 // mid-experiment. 64-bit for lower collision odds than the 32-bit variant. Hashes UTF-8 bytes (via
 // TextEncoder, the same encoding any external tool reproducing this outside the app would use)
@@ -97,14 +97,14 @@ export function fnv1a64Checksum(text: string): string {
 }
 
 // checksumLoggedDescription computes fnv1a64Checksum for a description/content field, or undefined when
-// there's nothing to hash — mirrors trimLoggedDescription's own undefined handling.
+// there's nothing to hash - mirrors trimLoggedDescription's own undefined handling.
 export function checksumLoggedDescription(description: string | undefined): string | undefined {
   return description === undefined ? undefined : fnv1a64Checksum(description)
 }
 
 // EncodedMazeForLog is fully self-contained: index_chars lists every distinct token the encoded maze
 // actually used, in first-seen order, with "\n" always appended last as the row separator. No
-// wallWeight or CONFIG lookup is needed to decode it — index_chars[Number(digit)] for every digit in
+// wallWeight or CONFIG lookup is needed to decode it - index_chars[Number(digit)] for every digit in
 // structure (including the separator digits) reconstructs the exact original printable maze text.
 export type EncodedMazeForLog = {
   index_chars: string[]
@@ -112,7 +112,7 @@ export type EncodedMazeForLog = {
   // before expanding it with index_chars. Fnva1-64bit checksum hash.
   structure_checksum: string
   // structure's exact length is (2R+1)(2C+1) + 2R for an R x C logical maze (renderCellStep 2: one
-  // digit per rendered cell, plus one row-separator digit per row boundary) — for a roughly square
+  // digit per rendered cell, plus one row-separator digit per row boundary) - for a roughly square
   // maze (R ~ C ~ sqrt(area)), that's well estimated from mazeDimensions.area alone as
   // 4*area + 6*sqrt(area) + 1.
   structure: string

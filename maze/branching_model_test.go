@@ -8,7 +8,7 @@ import (
 )
 
 // biasCurveSamples is the mazes generated per bias level. The per-level standard deviation is about
-// 0.010, so this holds the standard error near 0.0007 — an order of magnitude under the ~0.009 step
+// 0.010, so this holds the standard error near 0.0007 - an order of magnitude under the ~0.009 step
 // between adjacent levels, which is what lets the monotonicity check below be strict.
 const biasCurveSamples = 200
 
@@ -86,7 +86,7 @@ func fitExponential(x, y []float64) []float64 {
 // TestJunctionDensityFollowsBiasMixture pins the shape of the bias-to-density relationship, not just
 // its direction. chooseNextCell rolls a Bernoulli(p) coin per decision point to pick between two
 // policies, so by the law of total expectation the density has to be a convex combination of the two
-// pure-policy outcomes — linear in p, with a small p(1-p) term because consecutive decisions are not
+// pure-policy outcomes - linear in p, with a small p(1-p) term because consecutive decisions are not
 // independent. This asserts that form holds, and that a decaying exponential does not, which is the
 // claim a bare monotonicity check would miss: several wrong models are also monotonic.
 //

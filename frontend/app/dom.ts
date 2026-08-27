@@ -100,7 +100,7 @@ export function getGameElements(): Elements | null {
 }
 
 // terminalCharacterColumns reports the raw number of monospace characters that fit across the
-// terminal's current rendered width — real per-character metrics, not the maze-cell-adjusted
+// terminal's current rendered width - real per-character metrics, not the maze-cell-adjusted
 // numCols getTerminalSize below derives from this same measurement.
 export function terminalCharacterColumns(elements: Elements): number {
   const rect = elements.body.getBoundingClientRect()
@@ -112,7 +112,7 @@ export function terminalCharacterColumns(elements: Elements): number {
 // terminalCanDisplayText reports whether a single line of text would render in full at the
 // terminal's current size. #terminal-screen is white-space: pre (never wraps) and overflow:
 // hidden (clips rather than scrolls), so a line longer than this is silently cut off, not just
-// visually cramped — this is the line beyond which showing text at all stops being useful. The
+// visually cramped - this is the line beyond which showing text at all stops being useful. The
 // +10 is a deliberate safety margin: the raw character-column count is an approximation (a sampled
 // average char width applied uniformly, not this specific string's actual glyph widths, letter
 // spacing, or centering padding), so treating "just barely fits" as "doesn't" avoids a line that

@@ -20,9 +20,9 @@ const benchmarkIterations = isMainModule() ? configuredBenchmarkIterations() : 0
 const benchmarkSeed = isMainModule() ? configuredBenchmarkSeed() : 0
 const traversalSpeedScaleUnits = configuredTraversalSpeedScaleUnits()
 const traversalSpeedDisplayDecimals = String(traversalSpeedScaleUnits).length - 1
-const routeGeometryTableTitle = "Table 3a — Route geometry"
-const costModelTableTitle = "Table 3b — Cost model"
-const minWinSpeedTableTitle = "Table 3c — Minimum winning speed"
+const routeGeometryTableTitle = "Table 3a - Route geometry"
+const costModelTableTitle = "Table 3b - Cost model"
+const minWinSpeedTableTitle = "Table 3c - Minimum winning speed"
 
 const reportOutputPath = process.env.TAPOO_BENCH_OUT ?? "parity-harness/bench-report.json"
 const chartOutputPath = chartPathForReport(reportOutputPath)
@@ -59,7 +59,7 @@ function main() {
 
   // An unmatched case is a harness fault, not a result: the two sweeps are maintained as separate
   // lists, so a case added to one and not the other would otherwise shrink the check in silence while
-  // the report still read "matched" — fewer cases covered, and nothing saying so. Exits immediately,
+  // the report still read "matched" - fewer cases covered, and nothing saying so. Exits immediately,
   // before writeJsonReport, since there is nothing meaningful to persist yet.
   const hashCheck =
     goReport && frontendReport ? compareHashSequences(goRealHashes, frontendRealHashes) : null
@@ -217,8 +217,8 @@ export function minWinSpeedRows(summaries) {
 }
 
 // minWinSpeedNumbers is the JSON counterpart of minWinSpeedRows. The table's values are strings
-// by necessity — the 4dp directional rounding exists so a displayed figure can never contradict its
-// classification, and that is a formatting decision — but a consumer should never have to parse
+// by necessity - the 4dp directional rounding exists so a displayed figure can never contradict its
+// classification, and that is a formatting decision - but a consumer should never have to parse
 // them back. These are the raw quotients, unrounded and unformatted: same inputs, no presentation.
 export function minWinSpeedNumbers(summaries) {
   return Object.fromEntries(
@@ -401,7 +401,7 @@ export function validationSummary(reports) {
 }
 
 // partitionHashesByCase splits sensitivityCaseName out of a hashesByCase map into its own map, so it
-// can be compared separately from — and never silently folded into — the real pass/fail gate above.
+// can be compared separately from - and never silently folded into - the real pass/fail gate above.
 function partitionHashesByCase(hashesByCase) {
   const rest = new Map()
   const sensitivity = new Map()
@@ -413,19 +413,19 @@ function partitionHashesByCase(hashesByCase) {
   return { rest, sensitivity }
 }
 
-// printSensitivityCaseResult reports sensitivityCaseName's own comparison — using this run's own
+// printSensitivityCaseResult reports sensitivityCaseName's own comparison - using this run's own
 // real, independently-generated mazes and the exact same compareHashSequences/table machinery every
-// real case above went through — expecting a mismatch, since Go deliberately offset its seed for
+// real case above went through - expecting a mismatch, since Go deliberately offset its seed for
 // this one case. A mismatch here is the proof the check works; if it unexpectedly matches instead,
 // that means the deliberate divergence didn't actually happen (the offset seed produced the same
-// maze anyway) or the comparison itself has a blind spot — either way, worth failing loudly over.
+// maze anyway) or the comparison itself has a blind spot - either way, worth failing loudly over.
 function printSensitivityCaseResult(result) {
   console.info("")
-  console.info("Table 5 — Detection controls")
+  console.info("Table 5 - Detection controls")
   printWrapped(
     console.info,
     "Controls are expected failures and are excluded from the parity verdict. They exist to prove " +
-      "the check can fail — a comparison that only ever agrees proves nothing.",
+      "the check can fail - a comparison that only ever agrees proves nothing.",
   )
 
   if (!result.matched) {
@@ -532,7 +532,7 @@ function runGoBenchmarks() {
         TAPOO_BENCH_SEED: String(benchmarkSeed),
         // -benchtime Nx above already sets the real iteration count; this env var is what lets the
         // Go side's warm-up cap match the frontend's (b.N is unreliable for this under the newer
-        // b.Loop() API — see maze/bench/levels_bench_test.go's configuredBenchmarkIterations).
+        // b.Loop() API - see maze/bench/levels_bench_test.go's configuredBenchmarkIterations).
         TAPOO_BENCH_ITERATIONS: String(benchmarkIterations),
       },
       maxBuffer: 10 * 1024 * 1024,
@@ -649,7 +649,7 @@ function runFrontendBenchmarks() {
 }
 
 // printLegend explains the columns in place. Densities are reported per cell so cases of different
-// areas can be compared, but that form is unreadable on its own — junction counts are integers, so a
+// areas can be compared, but that form is unreadable on its own - junction counts are integers, so a
 // per-cell figure is always some multiple of 1/area, and 0.01429 at area 70 is not a small fraction
 // but exactly one junction. The legend prints every run because that conversion is the first thing
 // anyone needs and the last thing anyone remembers.
@@ -659,7 +659,7 @@ function printLegend() {
 
   printLegendSection("Glossary, regrouped by table")
 
-  printLegendSection("Table 1 — Case definitions")
+  printLegendSection("Table 1 - Case definitions")
 
   printLegendEntry(
     "Case, Level:",
@@ -680,7 +680,7 @@ function printLegend() {
     "how each row fares on the viewport named on the report's 'Viewport used:' line (derived in " +
       "baseViewport, maze/bench). " +
       "'yes' is the shape that display's selector picks for the level; '-' fits it but is not the " +
-      "shape picked; 'too-big' does not fit at all — and since every level fits by area, too-big " +
+      "shape picked; 'too-big' does not fit at all - and since every level fits by area, too-big " +
       "always means the ratio is too extreme rather than the maze too large. An area can have no " +
       "'yes' row: the sweep is a geometry ladder, so the shape the selector would pick is not " +
       "always one of the rows.",
@@ -692,11 +692,11 @@ function printLegend() {
       "attribute a branching change to one of the three in isolation; they are confounded by design.",
   )
 
-  printLegendSection("Table 2 — Branching distribution")
+  printLegendSection("Table 2 - Branching distribution")
 
   printLegendEntry(
     "Junctions/Maze:",
-    "Average count of cells with three or more exits. Read the count block before the rate block — " +
+    "Average count of cells with three or more exits. Read the count block before the rate block - " +
       "\"0.17 junctions per maze\" is legible in a way that \"0.0024 per cell\" is not.",
   )
   printLegendEntry(
@@ -716,7 +716,7 @@ function printLegend() {
     "Cells with a single exit. Determined by the two degree columns beside it: " +
       "deadEnds = deg3 + 2*deg4 + 2. This is the tree degree-sum identity, exact for every maze, " +
       "so the three columns are a visible redundancy check rather than three independent " +
-      "measurements. Do not read the difference between Dead Ends and Junctions as a metric — it is " +
+      "measurements. Do not read the difference between Dead Ends and Junctions as a metric - it is " +
       "Degree-4 plus 2, restated.",
   )
   printLegendEntry(
@@ -734,14 +734,14 @@ function printLegend() {
       `per maze, where n=${benchmarkIterations} leaves the estimate noisy.`,
   )
 
-  printLegendSection("Table 3a — Route geometry")
+  printLegendSection("Table 3a - Route geometry")
 
   printLegendEntry(
     "Path Len, Path P5/P95:",
     "Cells on the unique start-to-destination route: the mean, with the 5th and 95th percentiles in " +
       "their own columns. The unavoidable ideal path, not any route an agent found. Every maze is a " +
       "spanning tree, so exactly one route exists between any two cells. The spread matters as much as the " +
-      "mean — an agent faces one draw, not the average.",
+      "mean - an agent faces one draw, not the average.",
   )
   printLegendEntry(
     "Path (%):",
@@ -750,13 +750,13 @@ function printLegend() {
   )
   printLegendEntry(
     "Error Margin:",
-    "Area minus Path Len — every cell off the winning route. It is 1 - Path (%) restated as a " +
+    "Area minus Path Len - every cell off the winning route. It is 1 - Path (%) restated as a " +
       "count, and it is the space an agent must search through and pay to leave.",
   )
   printLegendEntry(
     "W-Branch, W-Branch P5/P95:",
     "Depth of the deepest single off-path branch, counted in cells from the route: the mean, with " +
-      "percentiles in their own columns. Depth, not size — a branch that forks holds more cells " +
+      "percentiles in their own columns. Depth, not size - a branch that forks holds more cells " +
       "than its depth, so 2L below is the cost of walking that deepest line in and back out, and a " +
       "branch that must be explored in full costs more than that. The most expensive single wrong " +
       "turn is therefore at least this, not exactly this.",
@@ -769,7 +769,7 @@ function printLegend() {
       "outcomes average out. Clamped at 100 to guard rounding when both averages are near zero.",
   )
 
-  printLegendSection("Table 3b — Cost model")
+  printLegendSection("Table 3b - Cost model")
 
   printLegendEntry(
     "Budget (Decay):",
@@ -780,13 +780,13 @@ function printLegend() {
   printLegendEntry(
     "Conservative:",
     "Cost of single-move play: P + 2*(M/2) = P + M = area. This equals Budget exactly, at every " +
-      "level, by construction — which is why it is not printed as a column.",
+      "level, by construction - which is why it is not printed as a column.",
   )
   printLegendEntry(
     "Batching:",
     "Cost of the same journey retracing at 4 cells per turn: P + 1.25*(M/2). 4 is the top of " +
-      "suggestedMovesPerTurn, which is guidance rather than a limit — observed agents submit longer " +
-      "batches over known ground and they apply — so this is an upper bound on batching cost, not " +
+      "suggestedMovesPerTurn, which is guidance rather than a limit - observed agents submit longer " +
+      "batches over known ground and they apply - so this is an upper bound on batching cost, not " +
       "an expected value.",
   )
   printLegendEntry(
@@ -797,11 +797,11 @@ function printLegend() {
       "than where batching does. Conservative play pays " +
       "L in + L out = 2L; batching pays L in + L/4 out = 1.25L. Nothing caps a batch at 4: " +
       "suggestedMovesPerTurn only suggests it, and batch depth is really limited by how far the " +
-      "next moves can be deduced — over fully mapped ground that can be the whole retrace. 1.25L " +
+      "next moves can be deduced - over fully mapped ground that can be the whole retrace. 1.25L " +
       "is therefore a ceiling on what batching costs, so Error Budget below understates the " +
       "tolerance a good batcher actually has. Forward deduction does not appear " +
       "here as a lower cost per branch. Because the destination is known, deduction mainly identifies " +
-      "which branches the route cannot use — so it shows up as fewer branches entered, not cheaper " +
+      "which branches the route cannot use - so it shows up as fewer branches entered, not cheaper " +
       "traversal of the ones entered. Entering a branch that could have been proven dead is a " +
       "context-disregard violation, not an efficient traversal. There is likewise no cheaper case " +
       "from shared history: a branch any player has mapped exposes cellType: dead-end, so " +
@@ -809,10 +809,10 @@ function printLegend() {
   )
   printLegendEntry(
     "Error Budget (Turns):",
-    "Budget minus Batching — decay the batching agent never spends. Since conservative cost equals " +
+    "Budget minus Batching - decay the batching agent never spends. Since conservative cost equals " +
       "Budget exactly, a conservative agent's error budget is zero at every level, and this column " +
       "is therefore the batching agent's entire tolerance for going wrong: penalties, extra " +
-      "branches, wasted turns. It is not idle capacity to spend on something — every turn costs " +
+      "branches, wasted turns. It is not idle capacity to spend on something - every turn costs " +
       "decay and the level ends on arrival. Distinct from Error Margin despite the similar name: " +
       "margin is cells of off-path space in Table 3a; this is decay units of tolerance. They are " +
       "joined by Error Budget = 0.375 * Error Margin, so this column is a scaled restatement rather " +
@@ -829,17 +829,17 @@ function printLegend() {
     "W-Branch Cost, Explore-All Cost:",
     "Projected turns as floor(1.25L) - floor(2L), where L is W-Branch and Error Margin " +
       "respectively. Explore-All Cost exceeds the available margin in every row under both " +
-      "strategies — exhaustive exploration is never affordable at any level. Small averaged margins " +
+      "strategies - exhaustive exploration is never affordable at any level. Small averaged margins " +
       "can display 0 - 0 even when individual samples had a short branch.",
   )
 
-  printLegendSection("Table 3c — Minimum winning speed")
+  printLegendSection("Table 3c - Minimum winning speed")
 
   printLegendEntry(
     "Min Win Speed:",
     "s_min = (P + M/2) / Budget, where P is Path Length and M is Error Margin. " +
       "Equivalently U/Budget with U = (P + Budget)/2, the unique cells a conservative " +
-      "agent has visited at break-even — the whole path plus half the off-path space, " +
+      "agent has visited at break-even - the whole path plus half the off-path space, " +
       "typically 70-80% of the maze, not half of anything a reader would count. Cannot " +
       "exceed 1.0000: one turn, one decay unit, at most one new cell, so U <= D always. " +
       "Reaches exactly 1.0000 only when Error Margin is zero, so conservative play is " +
@@ -874,12 +874,12 @@ function printLegend() {
   printLegendEntry(
     "Seed:",
     "the one PRNG seed both ports use for this run, derived fresh each invocation unless " +
-      "TAPOO_BENCH_SEED pins it — copy the printed value into that variable to reproduce a run exactly. " +
+      "TAPOO_BENCH_SEED pins it - copy the printed value into that variable to reproduce a run exactly. " +
       "Printed once at the top of the report, beside the run's other identifying metadata.",
   )
   printLegendEntry(
     "Check:",
-    "not a benchmark metric — a pass/fail assertion. Every generated maze's decoded adjacency is " +
+    "not a benchmark metric - a pass/fail assertion. Every generated maze's decoded adjacency is " +
       "hashed and compared, case by case and sample by sample, between Go and TypeScript. Any single " +
       "difference fails the run and reports the first case and sample index where the two diverged.",
   )
@@ -914,7 +914,7 @@ function printDerivedFormulaLegend() {
     "Route percentages:",
     "Path (%) = 100*Path Len (Cells) / Area (Cells). Error Margin (Cells) = Area (Cells) - " +
       "Path Len (Cells). W-Branch (% of Margin) = min(100, 100*W-Branch (Depth) / " +
-      "Error Margin (Cells)) — a depth over a cell count, so read it as how far the worst branch " +
+      "Error Margin (Cells)) - a depth over a cell count, so read it as how far the worst branch " +
       "reaches into the off-path space rather than what share of it that branch holds.",
   )
   printLegendEntry(
@@ -940,7 +940,7 @@ function printDerivedFormulaLegend() {
   printLegendEntry(
     "Failure threshold:",
     "An agent fails when it explores more than 1/c of the off-path space. c = 2.00 for " +
-      "single-move play. Batching lowers c — 1.25 at depth 4, less at greater depth — so " +
+      "single-move play. Batching lowers c - 1.25 at depth 4, less at greater depth - so " +
       "the threshold rises with batch depth. Independent of area, path length and margin.",
   )
   printLegendEntry(
@@ -979,14 +979,14 @@ function printDifficultyCalibration() {
   printLegendEntry(
     "Forward deduction:",
     "does not change c. Because the destination is known, deduction identifies branches the route " +
-      "cannot use, so it lowers f — the fraction of off-path space entered — rather than the cost " +
+      "cannot use, so it lowers f - the fraction of off-path space entered - rather than the cost " +
       "of traversing a branch once entered. An agent that could prove a branch dead and entered " +
       "anyway has committed a context-disregard violation, not paid a cheaper price.",
   )
   printWrapped(
     console.info,
     "This holds at every level. A conservative agent must find the route having searched under half " +
-      "the maze's dead ends whether the maze is 70 cells or 1600 — the same test at every difficulty.",
+      "the maze's dead ends whether the maze is 70 cells or 1600 - the same test at every difficulty.",
   )
   printWrapped(
     console.info,
@@ -1042,7 +1042,7 @@ function printReportReadingGuide() {
   printWrapped(
     console.info,
     "Parity means the two ports agree, not that either is correct. The structural validation " +
-      "line covers correctness of form — tree, connected, closed — but not of intent. " +
+      "line covers correctness of form - tree, connected, closed - but not of intent. " +
       "Tables 3b and 3c are projections from a cost model, not measurements: no agent " +
       `has been run. Every figure is a mean over ${benchmarkIterations} samples unless ` +
       "a percentile column says otherwise.",
@@ -1059,7 +1059,7 @@ function printReportReadingGuide() {
       "its budget. Nothing about real agent behaviour is assumed: the exploration fraction is " +
       "derived from the strategy, not guessed. Single-move play pays 2 turns per off-path cell, " +
       "so it breaks even having entered half of them; batching pays less per cell, so it breaks " +
-      "even having entered more. Both figures are thresholds, not predictions — an agent below " +
+      "even having entered more. Both figures are thresholds, not predictions - an agent below " +
       "its line has already lost.",
   )
   console.info("")
@@ -1074,7 +1074,7 @@ function printReportReadingGuide() {
       "away from 1.0000 so that a displayed value never contradicts its " +
       "classification. Benchmark speeds are derived from route geometry; gameplay speeds " +
       "are measured from actual cells and decay. " +
-      "Same format, different status — do not compare one against the other as though they were " +
+      "Same format, different status - do not compare one against the other as though they were " +
       "the same kind of number.",
   )
   printLegendSection("----------------------------------------------------\n")
@@ -1093,7 +1093,7 @@ function printLegendSection(title) {
 }
 
 // wrapWords breaks text into lines no wider than width, computed rather than hand-broken so callers
-// stay editable prose — hand-wrapped strings drift out of alignment the first time anyone reworks a
+// stay editable prose - hand-wrapped strings drift out of alignment the first time anyone reworks a
 // sentence, and the misalignment is invisible until the report is run.
 function wrapWords(text, width) {
   const lines = []
@@ -1155,8 +1155,8 @@ function printLegendEntry(label, text) {
   )
 }
 
-// printWrapped wraps a plain (unlabeled) message to legendLineWidth via wrapWords — the same width
-// printLegendEntry uses — so free-standing explanatory text (like the sensitivity case's) reads at
+// printWrapped wraps a plain (unlabeled) message to legendLineWidth via wrapWords - the same width
+// printLegendEntry uses - so free-standing explanatory text (like the sensitivity case's) reads at
 // the same measure as the rest of the report instead of running the terminal's full width.
 function printWrapped(log, text) {
   log(wrapWords(text, legendLineWidth).join("\n"))
@@ -1171,7 +1171,7 @@ function groupCaveat(groupName) {
     groupName === "BenchmarkMazeBranchingByShape"
   ) {
     // The rows are a geometry ladder, not a device model: grids are written down directly, and the
-    // widest (400x4, 160x10) are ratios no viewport would ever produce. That is deliberate — it is
+    // widest (400x4, 160x10) are ratios no viewport would ever produce. That is deliberate - it is
     // what lets a row isolate shape. Which of them a real screen could actually play is a separate
     // question, and it is the Preferred column that answers it.
     return (
@@ -1179,7 +1179,7 @@ function groupCaveat(groupName) {
       "branching. Grids are written down directly rather than derived from a screen, and the widest " +
       "ladders are ratios no display would produce, so a row isolates geometry. Area and bias are " +
       "dependent at a given level, so rows with the same area keep the same bias and max corridor. " +
-      "The Preferred column measures each row against the report's 'Viewport used:' line — a 70x45 " +
+      "The Preferred column measures each row against the report's 'Viewport used:' line - a 70x45 " +
       "cell grid, which every level below fits by area, so a too-big row is always a statement " +
       "about its ratio rather than its size."
     )
@@ -1238,7 +1238,7 @@ function printCostModelNote() {
       "landing there, so the inbound leg is normally one cell per turn. Conservative traversal pays " +
       "L in + L out = 2L; batching traversal pays L in + L/4 out = 1.25L because the outbound leg " +
       "retraces cells already in filteredTraversalHistory, where 4 is suggestedMovesPerTurn's top " +
-      "end rather than a cap — real batches run longer over known ground, so 1.25L bounds the cost " +
+      "end rather than a cap - real batches run longer over known ground, so 1.25L bounds the cost " +
       "from above. Forward " +
       "deduction shows up as fewer branches entered, not cheaper traversal of an entered branch. " +
       "A mapped branch exposes cellType: dead-end in shared history, so entering it again is a " +
@@ -1253,7 +1253,7 @@ function printMinWinSpeedNote() {
     "The final traversal speed of a single-move agent that exactly exhausts its budget: " +
       "s_min = (P + M/2) / Budget. Below this line a conservative agent has already explored " +
       "more than half the off-path space and cannot finish; at or above it, it can. The half " +
-      "is derived from the strategy — single-move play pays 2 turns per off-path cell — not " +
+      "is derived from the strategy - single-move play pays 2 turns per off-path cell - not " +
       "assumed from behaviour. s_min rises as batching improves, reaching exactly 1.0000 in " +
       "the limit of perfect retrace batching, and never exceeding it: retracing visits no new " +
       "cells, so it lowers the denominator without raising the numerator. Exceeding 1.0000 " +
@@ -1307,7 +1307,7 @@ function printHashComparisonTable(goReport, frontendReport) {
 
 // printCaseTable renders a case-keyed table with the key column headed "Case" instead of "(index)".
 // Rows are keyed by case name so console.table shows the name in that column rather than a row
-// number, but the label itself is fixed inside console.table with no option to set it — so the one
+// number, but the label itself is fixed inside console.table with no option to set it - so the one
 // header cell is rewritten on the way out. "Case" is padded to the width of "(index)" so the box
 // rules still line up, and stdout is restored immediately afterwards.
 function printCaseTable(rows) {
@@ -1327,7 +1327,7 @@ function printReportHeader(metadata) {
   console.info("──────────────────────────────────────────────────────────────")
   console.info(`commit:         ${metadata.commit}`)
   if (metadata.worktree === "dirty") {
-    console.info("* warning:       dirty worktree — commit SHA does not fully describe the code that produced this report.")
+    console.info("* warning:       dirty worktree - commit SHA does not fully describe the code that produced this report.")
   }
   console.info(`go:             ${metadata.goVersion}`)
   console.info(`node:           ${metadata.nodeVersion}`)
@@ -1348,12 +1348,12 @@ function printStandaloneReport(title, report, metadata) {
   console.info(`\n${title}`)
 
   for (const [groupName, group] of report.groups) {
-    console.info(`\nTable 1 — Case definitions (${groupName})`)
+    console.info(`\nTable 1 - Case definitions (${groupName})`)
     printGroupCaveat(groupName)
     printCaseTable(caseDefinitionRows(group.summaries))
 
     console.info(
-      `\nTable 2 — Branching distribution (${report.name}, ${mazesPerCaseText(group.iterations)})`,
+      `\nTable 2 - Branching distribution (${report.name}, ${mazesPerCaseText(group.iterations)})`,
     )
     printBranchingDistributionNote()
     printCaseTable(branchingDistributionRows(group.summaries))
@@ -1371,13 +1371,13 @@ function printComparisonReport(goReport, frontendReport, hashCheck, metadata) {
       continue
     }
 
-    console.info(`\nTable 1 — Case definitions (${groupName})`)
+    console.info(`\nTable 1 - Case definitions (${groupName})`)
     printGroupCaveat(groupName)
     printCaseTable(caseDefinitionRows(goGroup.summaries))
 
     if (hashCheck?.matched) {
       console.info(
-        `\nTable 2 — Branching distribution (verified identical across ports, ` +
+        `\nTable 2 - Branching distribution (verified identical across ports, ` +
           `${mazesPerCaseText(goGroup.iterations)})`,
       )
       printBranchingDistributionNote()
@@ -1386,11 +1386,11 @@ function printComparisonReport(goReport, frontendReport, hashCheck, metadata) {
       continue
     }
 
-    console.info(`\nTable 2 — Branching distribution (Go, ${mazesPerCaseText(goGroup.iterations)})`)
+    console.info(`\nTable 2 - Branching distribution (Go, ${mazesPerCaseText(goGroup.iterations)})`)
     printBranchingDistributionNote()
     printCaseTable(branchingDistributionRows(goGroup.summaries))
     console.info(
-      `Table 2 — Branching distribution (TypeScript, ${mazesPerCaseText(frontendGroup.iterations)})`,
+      `Table 2 - Branching distribution (TypeScript, ${mazesPerCaseText(frontendGroup.iterations)})`,
     )
     printBranchingDistributionNote()
     printCaseTable(branchingDistributionRows(frontendGroup.summaries))
@@ -1406,21 +1406,21 @@ function mazesPerCaseText(iterations) {
 
 // printHashCheckResult reports the pass/fail outcome of compareHashSequences (parity-harness/bench-compare.mjs). On failure it headlines
 // the very first divergence point (case + sample index) across the whole sweep, then a per-case
-// breakdown of how many of that case's samples mismatched — enough to tell whether the drift is
+// breakdown of how many of that case's samples mismatched - enough to tell whether the drift is
 // isolated to one case or pervasive.
 function printHashCheckResult(hashCheck) {
-  console.info("\nTable 4 — Structure parity")
+  console.info("\nTable 4 - Structure parity")
   if (hashCheck.matched) {
     console.info(
       `Structure parity: PASS\n  ${benchmarkIterations * hashCheck.caseCount} sample pairs across ` +
-        `${hashCheck.caseCount} cases — Go and TypeScript matched every sample.`,
+        `${hashCheck.caseCount} cases - Go and TypeScript matched every sample.`,
     )
     return
   }
 
   const { case: firstCase, index, goHash, frontendHash } = hashCheck.firstMismatch
   console.error(
-    `Structure parity: FAIL\n  First difference — case "${firstCase}", ` +
+    `Structure parity: FAIL\n  First difference - case "${firstCase}", ` +
       `sample #${index}: Go ${goHash} != TypeScript ${frontendHash}.`,
   )
   for (const [caseName, { mismatches, total }] of hashCheck.mismatchByCase) {
@@ -1429,7 +1429,7 @@ function printHashCheckResult(hashCheck) {
 }
 
 // printShapeFitParity asserts the two ports agree on every Preferred value. Each port answers by
-// calling its own selector — Go's GetMazeDimensions, TypeScript's getMazeDimensions — so this is a
+// calling its own selector - Go's GetMazeDimensions, TypeScript's getMazeDimensions - so this is a
 // real comparison of two implementations rather than of one value copied twice, and it is the only
 // check in this report that exercises dimension *selection*. The hash parity above compares mazes
 // carved into dimensions the benchmark hands both ports, so it cannot see a selector disagreement
@@ -1458,7 +1458,7 @@ function printShapeFitParity(goReport, frontendReport) {
   console.info("")
   if (disagreements.length === 0) {
     console.info(
-      `Shape selection parity: PASS\n  ${goPreferred.size} cases — both selectors agree on every ` +
+      `Shape selection parity: PASS\n  ${goPreferred.size} cases - both selectors agree on every ` +
         "Preferred value.",
     )
     return
@@ -1475,7 +1475,7 @@ function printStructuralValidation(result) {
   console.info("\nStructural validation")
   if (result.matched) {
     console.info(
-      `Structural validation: PASS\n  ${result.total} mazes — edges == area-1, connected, acyclic, border closed.`,
+      `Structural validation: PASS\n  ${result.total} mazes - edges == area-1, connected, acyclic, border closed.`,
     )
     return
   }
@@ -1601,8 +1601,8 @@ export function renderBenchmarkCharts(report, options = {}) {
   const columns = 2
   const titleSuffix = options.filterLabel ? ` (${options.filterLabel})` : ""
   const allCharts = [
-    { title: `Table 2 — Branching distribution${titleSuffix}`, metrics: branchingCharts },
-    { title: `Table 3 — Navigation summaries${titleSuffix}`, metrics: navigationCharts },
+    { title: `Table 2 - Branching distribution${titleSuffix}`, metrics: branchingCharts },
+    { title: `Table 3 - Navigation summaries${titleSuffix}`, metrics: navigationCharts },
     { title: `Shape relationships${titleSuffix}`, metrics: relationshipCharts },
   ]
   const sectionHeights = allCharts.map(({ metrics }) => {
@@ -1807,7 +1807,7 @@ function parseGoBenchmarkLine(line) {
   const metrics = parseReportedMetrics(metricText)
 
   // Key order is display order: console.table renders keys as inserted. Inputs first, then the
-  // headline outcome with its own spread beside it, then the cross-check — so a row reads left to
+  // headline outcome with its own spread beside it, then the cross-check - so a row reads left to
   // right as "these knobs produced this branching". ns/op is captured by the regex above (needed to
   // parse the line at all) but dropped here: it only reflects generation speed, not maze-generation
   // logic, and was never a valid cross-language comparison.
@@ -1942,7 +1942,7 @@ function configuredBenchmarkIterations() {
 
 // configuredBenchmarkSeed is the one shared seed both ports' PRNG use for this run. Derived fresh
 // each invocation (Date.now()) so coverage grows across runs instead of staying pinned to one static
-// maze sequence forever — a fixed seed would only ever test that one slice of the generation space,
+// maze sequence forever - a fixed seed would only ever test that one slice of the generation space,
 // letting drift that only shows up elsewhere stay invisible. TAPOO_BENCH_SEED pins a specific value
 // to reproduce a past run exactly (the report always prints the seed it used).
 function configuredBenchmarkSeed() {

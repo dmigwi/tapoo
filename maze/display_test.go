@@ -287,8 +287,8 @@ func TestDrawMazeColorsOnlyTheVisitedTrail(t *testing.T) {
 
 	// fill() decides the foreground per segment. It must key off the visited marker alone: every
 	// banner and status string in constants.go begins with a space, so a check based on "is this
-	// traversable" instead recoloured the whole UI — including overlay lines that pass their own
-	// colour — to the player colour.
+	// traversable" instead recoloured the whole UI - including overlay lines that pass their own
+	// colour - to the player colour.
 	t.Run("leaves banner text in the default color when no cell is visited", func(t *testing.T) {
 		t.Parallel()
 
@@ -382,7 +382,7 @@ func TestPlayerMovementLeavesAPaddedVisitedTrail(t *testing.T) {
 // TestRuntimeMazeConcurrentAccessIsRaceFree pins the invariant the RuntimeMaze lock exists for: the
 // keyboard goroutine marks visited cells through PlayerMovement while the render goroutine walks the
 // same grid through RenderUI, so both paths must be serialised. Run under -race, it fails if either
-// side drops the lock — the original defect was a renderer holding the grid outside it.
+// side drops the lock - the original defect was a renderer holding the grid outside it.
 func TestRuntimeMazeConcurrentAccessIsRaceFree(t *testing.T) {
 	t.Parallel()
 

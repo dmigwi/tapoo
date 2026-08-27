@@ -40,7 +40,7 @@ type (
 // contract. GenerateMaze/GenerateMazeWithProfile accept one as an optional trailing argument,
 // defaulting to secureRandomIndex when omitted, so tests can substitute a seeded, deterministic
 // generator (e.g. an xorshift128 implementation living in the test file) instead of crypto/rand.
-// Production code must never pass one — the default is what keeps maze layouts genuinely
+// Production code must never pass one - the default is what keeps maze layouts genuinely
 // unpredictable there.
 type PRNGGenerator func(limit int) (int, error)
 
@@ -219,7 +219,7 @@ func reweightMaze(data [][]string, currentWeight WallWeight) ([][]string, error)
 // passageGlyph returns a cellPathWidth-wide passage segment: blank when marker is zero, or the
 // marker surrounded by space padding otherwise. Every writable maze cell slot goes through this so
 // its width stays consistent regardless of whether it is blank or visited. The padding is derived
-// from cellPathWidth rather than hardcoded, so a marker glyph always keeps a leading space — the
+// from cellPathWidth rather than hardcoded, so a marker glyph always keeps a leading space - the
 // invariant isTraversable relies on.
 func passageGlyph(marker rune) string {
 	if marker == 0 {
@@ -231,8 +231,8 @@ func passageGlyph(marker rune) string {
 }
 
 // isTraversable returns true when the segment is an open passage rather than a wall. Callers only
-// ever pass the slot between two cells — PlayerMovement's probe, and replaceChar's neighbours during
-// generation — never a cell centre, so it never sees a visited marker and the leading-space check is
+// ever pass the slot between two cells - PlayerMovement's probe, and replaceChar's neighbours during
+// generation - never a cell centre, so it never sees a visited marker and the leading-space check is
 // enough. The name reads as broader than that on purpose: what a caller wants to know is whether it
 // may move through the segment.
 func isTraversable(item string) bool {

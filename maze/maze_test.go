@@ -163,7 +163,7 @@ func TestGenerateMazeRepeatable(t *testing.T) {
 	}
 }
 
-// newXorshift128Generator returns a small, deterministic maze.PRNGGenerator for tests — mirrors
+// newXorshift128Generator returns a small, deterministic maze.PRNGGenerator for tests - mirrors
 // frontend/app/maze.test.ts's createXorshift128Generator algorithm exactly (same standard 4-word
 // xorshift128 state update, same 32-bit word arithmetic) so both codebases' test suites inject the
 // same generator rather than each rolling their own. Using uint32 throughout keeps every shift a
@@ -190,7 +190,7 @@ func newXorshift128Generator(seed int) maze.PRNGGenerator {
 // TestGenerateMazeDeterministicWithFixedGenerator swaps secureRandomIndex for a seeded generator
 // (newXorshift128Generator above) instead of exercising real crypto/rand, mirroring
 // frontend/app/maze.test.ts's "generates a deterministic maze layout for a fixed random source" test
-// with the same xorshift128 algorithm — proving GenerateMaze's new optional generator parameter
+// with the same xorshift128 algorithm - proving GenerateMaze's new optional generator parameter
 // actually makes layout generation fully reproducible.
 func TestGenerateMazeDeterministicWithFixedGenerator(t *testing.T) {
 	t.Parallel()

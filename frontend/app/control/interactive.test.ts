@@ -251,7 +251,7 @@ describe("interactive control mode", () => {
   it("ignores keyboard shortcuts while typing inside a form control nested in the terminal app", () => {
     // The agent-config form's text inputs live inside elements.app's own DOM subtree (even in
     // interactive mode), so isMazeControlFocused alone would treat them as "focused enough" to
-    // dispatch game shortcuts — a space typed into a player name field must not pause the game.
+    // dispatch game shortcuts - a space typed into a player name field must not pause the game.
     const restartButton = createButton({ action: "restart" })
     const nestedInput = document.createElement("input")
     const elements = {
@@ -378,7 +378,7 @@ describe("interactive control mode", () => {
     mode.bindActionDispatch(vi.fn(), readState, vi.fn(), testGameControls())
 
     // Batch traversal-speed classification (Trailblazer/Navigator/Backtracker) does not apply to a
-    // human moving one cell at a time, so this label carries no rate or class — just the name.
+    // human moving one cell at a time, so this label carries no rate or class - just the name.
     expect(mode.readCurrentPlayer?.()).toBe("Self")
   })
 })

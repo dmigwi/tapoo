@@ -94,7 +94,7 @@ describe("prompt preview content", () => {
     const warning = bodyOf(promptPreview.duplicateToolCallHeading)
 
     // Comparing against the builder's own output (not a transcribed copy) is what guarantees this
-    // can't drift from the real mid-turn warning — same as the system-prompt test above.
+    // can't drift from the real mid-turn warning - same as the system-prompt test above.
     expect(warning).toBe(
       buildDuplicateToolCallMessage([
         { id: "call_1", function: { name: AGENT_CONTEXT_TOOLS[0].function.name } },

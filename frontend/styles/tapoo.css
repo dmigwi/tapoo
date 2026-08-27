@@ -512,7 +512,7 @@ body {
 
 /* Ordered before the narrower 480px block below on purpose: both set .privacy-panel's padding at
    equal specificity, and max-width queries only cascade correctly (narrower wins) when the wider
-   one appears first in source order — the 720px block further down the file also touches
+   one appears first in source order - the 720px block further down the file also touches
    .top-bar/.terminal-app/.placeholder-page, but .privacy-panel is kept here instead of there so its
    own cascade with the 480px/270px rules below stays correct without relying on that block's
    position relative to this whole group. */
@@ -572,7 +572,7 @@ body {
 
 /* Covers the terminal with the same unavailable-page.svg artwork placeholder-art uses standalone,
    for the case where even the too-small status text can no longer render in full (see
-   terminalCanDisplayText, dom.ts) — an opaque background so the (now unreadable) text underneath
+   terminalCanDisplayText, dom.ts) - an opaque background so the (now unreadable) text underneath
    never bleeds through. */
 .terminal-zoom-placeholder {
   position: absolute;
@@ -730,7 +730,7 @@ body {
   position: absolute;
   left: 50%;
   bottom: calc(var(--safe-bottom) + 12px);
-  /* Above .terminal-zoom-placeholder's z-index: 5 — an active touch button (e.g. Reset Progress,
+  /* Above .terminal-zoom-placeholder's z-index: 5 - an active touch button (e.g. Reset Progress,
      the one control a too-small level > 1 screen offers, per canShowRestart) must stay reachable
      over that placeholder, not buried under it. updateTouchControls already decides on its own
      whether this is shown at all, so raising it here only affects buttons already meant to be
@@ -1077,7 +1077,7 @@ body {
 /* The info gate (info-gate.ts) is the one overlay that cannot be dismissed, so unlike
    .agent-config-form below it covers the terminal rather than floating over it: the scrim is what
    makes everything beneath uninteractable while consent is pending. It stops at the terminal edge
-   on purpose — the top-bar nav stays usable, and the other page raises the same gate anyway. */
+   on purpose - the top-bar nav stays usable, and the other page raises the same gate anyway. */
 .info-gate {
   position: absolute;
   inset: 0;
@@ -1110,8 +1110,8 @@ body {
   color: var(--text);
   display: grid;
   /* Roomier than the agent dialogs on purpose. Those are forms a returning user skims; this one
-     asks for consent to delete data, and the four parts — what happened, what it costs, what will
-     go, and the button that does it — each need to register separately rather than read as one
+     asks for consent to delete data, and the four parts - what happened, what it costs, what will
+     go, and the button that does it - each need to register separately rather than read as one
      block of text. */
   gap: 18px;
   padding: 24px 22px 20px;
@@ -1119,7 +1119,7 @@ body {
 
 /* An h2 rather than a styled strong: this is the dialog's accessible name (aria-labelledby) and
    the heading of its content, so it should carry that role natively. h2 rather than h1 because the
-   gate is transient — making a hidden element the page's only top-level heading would mean the
+   gate is transient - making a hidden element the page's only top-level heading would mean the
    outline changed depending on whether stale data happened to exist. The margins and font-size a
    heading brings are reset here; the panel's own grid gap owns the spacing. */
 .info-gate__title {
@@ -1195,7 +1195,7 @@ body {
   display: grid;
   /* minmax(0, 1fr) rather than the implicit auto track. An auto track's minimum is the largest
      min-content contribution among its items, and a form control reports its intrinsic character
-     width there — so the column can size itself wider than the panel and every field overflows
+     width there - so the column can size itself wider than the panel and every field overflows
      together. Capping the minimum at 0 lets the track follow the panel, and the items inside
      (which carry their own min-width: 0) follow the track. */
   grid-template-columns: minmax(0, 1fr);
@@ -1256,7 +1256,7 @@ body {
 }
 
 /* min-width: 0 opts these grid items out of the automatic minimum size. A grid or flex item
-   defaults to min-width: auto, meaning it will not shrink below its content's min-content width —
+   defaults to min-width: auto, meaning it will not shrink below its content's min-content width -
    and Safari derives a text input's min-content width from its intrinsic size (roughly 20
    characters) rather than treating it as shrinkable. The field track then refuses to narrow, and
    the control overflows the panel's fixed 520px. Chrome reports a near-zero min-content width for
@@ -1277,7 +1277,7 @@ body {
   width: 100%;
 }
 
-/* Pairs the reasoning-effort dropdown with the echo-back-reasoning toggle horizontally, 1:2 —
+/* Pairs the reasoning-effort dropdown with the echo-back-reasoning toggle horizontally, 1:2 -
    the dropdown's few short words need far less room than the toggle's wrapping on/off label text.
    Each .agent-config-form__field child keeps its own internal grid layout, just placed side by
    side instead of stacked with the rest of the form's fields. */
@@ -1468,7 +1468,7 @@ body {
   border-color: var(--target);
 }
 
-/* Reuses the info-badge's themed tooltip mechanic (see its comment above) for these two buttons —
+/* Reuses the info-badge's themed tooltip mechanic (see its comment above) for these two buttons -
    same data-tooltip-driven content, just anchored to a 32px square button instead of a round badge. */
 .agent-config-form__header-add::after,
 .agent-config-form__header-remove::after {

@@ -49,7 +49,7 @@ try {
   if (elements) {
     const mode = pageControlMode(elements)
     // Only swaps which page view is visible. Until it runs the visible view is the "page is not
-    // available" placeholder, and layering a consent prompt on that would read as a failure — so
+    // available" placeholder, and layering a consent prompt on that would read as a failure - so
     // the terminal shell is shown first and the gate sits over it. The game itself does not start
     // until startGame runs, which is what the gate actually holds back.
     prepareTerminalAppForBootstrap()
@@ -58,7 +58,7 @@ try {
     // until any acknowledgement resolves.
     //
     // startGame carries its own fallback because it can run from a click handler, and a throw
-    // there escapes the try/catch around this block — the browser routes it to window.onerror
+    // there escapes the try/catch around this block - the browser routes it to window.onerror
     // instead. Wrapping here rather than inside the gate keeps one definition of failure handling
     // for both the gated and ungated paths.
     const startGame = (): void => {

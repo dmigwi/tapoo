@@ -57,20 +57,20 @@ function createAgent(overrides: Partial<AgentApiSeatConfig> = {}): AgentApiSeatC
 }
 
 const expectedAgentPrompt = [
-  "You are Blue and your traversal speed currently classifies as navigator. You are holding the 1.0000 baseline: reaching exactly one new cell for every decay unit spent. Nothing in the maze pins you there — a turn whose moves all land is charged one unit whether it reached one new cell or several cells, and even a forced retreat can be batched into a single turn. Raise the rate by batching longer predictions into unvisited cells, as far as you can prove the moves will apply.",
+  "You are Blue and your traversal speed currently classifies as navigator. You are holding the 1.0000 baseline speed: reaching exactly one new cell for every decay unit spent. Nothing in the maze pins you there - a turn whose moves all land is charged one unit whether it reached one new cell or several cells, and even a forced retreat can be batched into a single turn. Raise the rate by batching longer predictions into unvisited cells, as far as you can prove the moves will apply.",
   "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for current status, score, decayUnitsRemaining, and the previous prediction outcome.",
   "The maze is randomly generated at the start of each level with exactly one path to the destination. For the current level, maze dimensions and wall/open-exit structure are fixed once generated.",
   `When present in filteredTraversalHistory, playerName ${CONFIG.runtime.interactivePlayerName} marks the start cell.`,
-  "Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own. currentCell is the position you landed on after applying the valid moves from the previous turn; at the start of each level, currentCell matches the start-cell.",
+  "Use openMoves from filteredTraversalHistory entries to build a local map; entries recorded by other players are just as trustworthy as your own. currentCell is where the previous turn's valid moves ended, whoever played it; at the start of each level, currentCell matches the start-cell.",
   "Your primary objective is to reach destinationCell, the level's fixed target position, with the highest traversal speed. cellType start-cell and target-cell label the start and destination cells respectively. Every openMoves entry is a candidate direction and includes the reached cell's visitStatus as guidance for choosing that move; get_maze_structure defines what each value means. Each turn, prefer an unvisited neighbor of currentCell before weighing distance to destinationCell; when none is adjacent, move through explored neighbors to reach one. Treat moves into cells whose visitStatus is backtracking or oscillating as the exhausted dead-end region to move away from; moves into cells with explored or unvisited status point back toward useful search.",
-  "Retreat cues are cells reached by openMoves whose visitStatus is backtracking or oscillating. A dead-end cell is set to backtracking visitStatus on first visit, then oscillating if revisited again. During deliberate retreat, revisiting a cell already in filteredTraversalHistory is not a mistake, although it adds no new-cell progress. Once a retreat cue appears, use filteredTraversalHistory to search earlier visited cells for an unexplored branch point, maybe within or beyond historyWindowRadius, so keep retreating through explored cells until a later turn's filteredTraversalHistory brings it into view. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined row and col differences for each candidate, not just one axis \u2014 a cell closer on one axis can be equally far or farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
+  "Retreat cues are cells reached by openMoves whose visitStatus is backtracking or oscillating. A dead-end cell is set to backtracking visitStatus on first visit, then oscillating if revisited again. During deliberate retreat, revisiting a cell already in filteredTraversalHistory is not a mistake, although it adds no new-cell progress. Once a retreat cue appears, use filteredTraversalHistory to search earlier visited cells for an unexplored branch point, maybe within or beyond historyWindowRadius, so keep retreating through explored cells until a later turn's filteredTraversalHistory brings it into view. When judging whether one candidate cell is closer to destinationCell than another, compare the full combined row and col differences for each candidate, not just one axis - a cell closer on one axis can be equally far or farther away overall once the other axis is considered. By design, the maze never guarantees a direct route from start to destination; the only valid path may require moving away from the target before turning towards it.",
   "Use lastMoveStatus to understand the outcome and chargedMovesCount for the exact score-decay impact from that outcome.",
-  "A turn with any valid moves costs a constant 1-unit decay charge regardless of how many submitted moves apply. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid — no progress at all — the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a warning) costs a fixed 3 decay units with no moves applied — the costliest outcome of all.",
-  "Those charges are what spend decayUnitsRemaining, and every turn spends at least one of them, so it caps how many turns you have left — fewer than that whenever a turn takes a penalty. get_last_prediction_outcome reports its current value and what running out of it means.",
+  "A turn with any valid moves costs a constant 1-unit decay charge regardless of how many submitted moves apply. If replay then reaches an invalid move, that adds a 1-unit penalty, for a total charge of 2. If the very first submitted move is already invalid - no progress at all - the turn instead costs a flat 2-unit decay charge. A malformed response (invalid JSON, an unknown tool request, or ignoring a warning) costs a fixed 3 decay units with no moves applied - the costliest outcome of all.",
+  "Those charges are what spend decayUnitsRemaining, and every turn spends at least one of them, so it caps how many turns you have left - fewer than that whenever a turn takes a penalty. get_last_prediction_outcome reports its current value and what running out of it means.",
   "One way to raise a traversal speed above 1.0000 is to build a picture of the maze around your current cell using filteredTraversalHistory and the static maze dimensions.",
   "The openMoves in the filteredTraversalHistory entry matching currentCell are a natural place to start when extracting high-confidence multi-move predictions. With enough of that picture assembled, you can often find several consecutive moves that are all certain to apply without producing an invalid-move. You could also invent a better way to keep raising it.",
   "Submitted moves execute in order until the destination is reached or the first invalid move (a wall collision or out-of-bounds step) is hit.",
-  "lastMoveStatus reached-target or status won means the game is complete — stop predicting.",
+  "lastMoveStatus reached-target or status won means the game is complete - stop predicting.",
 ].join(" ")
 
 const expectedResponseSchema: AgentExpectedResponseSchema = {
@@ -130,8 +130,9 @@ describe("agent context", () => {
     const actionResult = buildMazeActionResult("Blue", {
       lastPlayerName: "Blue",
       lastMoveStatus: "applied",
+      lastReplayStartCell: null,
       lastReplayStartIndex: 0,
-      lastSubmittedMoves: ["0:MoveRight"],
+      lastSubmittedMoves: ["MoveRight"],
       lastAppliedMoveIndex: 0,
       visitedBefore: false,
       chargedMovesCount: 1,
@@ -154,7 +155,7 @@ describe("agent context", () => {
           cell: { row: 0, col: 0 },
           cellType: "start-cell",
           // (0,1) is in history with one open exit and one visit, so every way out of it has been
-          // taken — backtracking, not merely explored.
+          // taken - backtracking, not merely explored.
           openMoves: { MoveRight: { row: 0, col: 1, visitStatus: "backtracking" } },
         },
         {
@@ -183,7 +184,8 @@ describe("agent context", () => {
       lastMoveStatus: "applied",
       predictionStatus: null,
       lastReplayStartIndex: 0,
-      lastSubmittedMoves: ["0:MoveRight"],
+      lastReplayStartCell: null,
+      lastSubmittedMoves: ["MoveRight"],
       lastAppliedMoveIndex: 0,
       chargedMovesCount: 1,
     })
@@ -193,7 +195,7 @@ describe("agent context", () => {
     const state = createState()
     const toolHandlers = buildAgentToolHandlers(snapshotAgentState(state), null, createAgent())
 
-    // Mutate the live state after the snapshot was taken — a push (in place) and reassignments
+    // Mutate the live state after the snapshot was taken - a push (in place) and reassignments
     // (new references), mirroring exactly how game.ts mutates State mid-round.
     state.traversalHistory.push(agentVisit(0, 2, "Blue", ["MoveRight"]))
     state.playerPosition = { x: 3, y: 1 }
@@ -225,7 +227,7 @@ describe("agent context", () => {
       .get_last_prediction_outcome({})).toMatchObject({ decayUnitsRemaining: 0 })
   })
 
-  // suggestedMovesPerTurn is a static configured range, not derived from maze dimensions — it stays
+  // suggestedMovesPerTurn is a static configured range, not derived from maze dimensions - it stays
   // the same even in the unreachable case where dimensions are missing.
   it("suggests the same static moves-per-turn range regardless of maze dimensions", () => {
     const toolHandlers = buildAgentToolHandlers(
@@ -341,12 +343,12 @@ describe("agent context", () => {
   })
 
   // The costs block prices a turn; this line names what those charges draw down and points at the
-  // tool that reports the balance. Deliberately short — get_last_prediction_outcome already
+  // tool that reports the balance. Deliberately short - get_last_prediction_outcome already
   // documents decayUnitsRemaining and the loss condition, so restating either here would only give
   // the two places a chance to disagree.
   //
   // The negative assertions pin claims earlier drafts made and that must not return:
-  //   - that a turn's charge is independent of how many moves it carries (it tracks the outcome —
+  //   - that a turn's charge is independent of how many moves it carries (it tracks the outcome -
   //     a batch stopped at a wall costs more than one that lands),
   //   - that the budget should be weighed against the distance to destinationCell (reads as licence
   //     to beeline, contradicting the retreat guidance in this same prompt),
@@ -446,14 +448,23 @@ describe("buildAgentPersonaPrompt", () => {
     expect(description).toContain("have been reaching more than 1.0000 new cells for every decay unit spent")
     // The stance: keep climbing, not keep the label. Reaching trailblazer at the minimum rate and
     // then coasting is what produced observed oscillation between classes, because any rate above
-    // 1.0000 reads as trailblazer and the margin at the edge is one costly turn wide.
+    // 1.0000 reads as trailblazer.
     expect(description).toContain("Your current speed is a floor you have cleared, not a target to settle on")
-    expect(description).toContain("the closer the rate sits to 1.0000, the smaller that margin is")
+    // The branch argues from what a correct batch earns, not from what a wrong one costs. A draft
+    // that led with the penalty ("a guess that fails costs the partial-invalid charge", "the
+    // shorter proven one is the correct answer") was withdrawn: it reads as an argument for playing
+    // safe, and conservative play is exactly what cannot reach this class. The mechanism is the
+    // incentive - a clean turn is charged once however far it reaches, so each further proven move
+    // is a free new cell.
+    expect(description).toContain("a clean turn is charged once however far it reaches")
+    expect(description).toContain("carries its new cell at no extra charge")
     expect(description).toContain("Keep raising it with every batch you can prove")
+    expect(description).not.toContain("it is a guess")
+    expect(description).not.toContain("not a concession")
     expect(description).not.toContain("Hold that standard")
     // The toContain assertions above span the array-element boundaries on purpose. Each branch is
     // one .join(" ") over elements, so a stray "+" between two of them fuses the adjoining words
-    // ("speedis a floor") — matching across the seam is what catches that.
+    // ("speedis a floor") - matching across the seam is what catches that.
   })
 
   // backtracker is below the baseline, navigator sits on it. One shared message told an agent
@@ -469,7 +480,7 @@ describe("buildAgentPersonaPrompt", () => {
     expect(description).not.toContain("holding the 1.0000 baseline")
   })
 
-  // Traversal speed is first visits over decay units spent — a spend-efficiency ratio, and one that
+  // Traversal speed is first visits over decay units spent - a spend-efficiency ratio, and one that
   // says nothing authoritative about "gaining" anything. Nothing in this game credits an agent for
   // a cell: score only decays (scoring.ts subtracts units from maxScore). Every branch therefore
   // states the measured ratio and stops there, rather than describing a return.

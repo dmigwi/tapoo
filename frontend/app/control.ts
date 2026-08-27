@@ -19,9 +19,13 @@ import type {
   State,
 } from "./types"
 
-// normalizeSubmittedMoves formats replayed commands into the stable stepNumber:MoveAction shape.
+// normalizeSubmittedMoves returns the replayed commands as submitted. The entries used to carry an
+// "<index>:" prefix, which duplicated information the array position already holds and gave the
+// report a second shape for a move - one a model mistook for what had actually been sent, deciding
+// a turn had failed because the prefix was part of the submission. Nothing indexes by the string
+// any more: lastReplayStartIndex and lastAppliedMoveIndex point into this array directly.
 function normalizeSubmittedMoves(moves: MoveAction[]): string[] {
-  return moves.map((move, index) => `${index}:${move}`)
+  return [...moves]
 }
 
 // buildMazeActionResult stores only the replay details that are not already available on State.

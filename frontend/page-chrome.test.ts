@@ -115,7 +115,7 @@ describe("relativeAge", () => {
   })
 
   // Every consumer treats the build stamp as a real instant. A non-finite one must not reach the
-  // footer as "NaN secs" — config.ts rejects an unparseable define, and this is the second line of
+  // footer as "NaN secs" - config.ts rejects an unparseable define, and this is the second line of
   // defence for any other caller of the exported helper.
   it("reads zero rather than NaN when handed a non-instant", () => {
     const now = Date.parse("2026-08-25T12:00:00Z")
@@ -138,7 +138,7 @@ describe("applyPageVersion updated segment", () => {
   // The <time> element publishes a real datetime. Rendering it around a template that no longer
   // asks for the age would claim a timestamp the visible text never shows.
   // The module snapshots PAGE_UPDATED_TEMPLATE at import time, so the template has to be replaced
-  // before page-chrome loads — mutating CONFIG afterwards cannot reach the captured constant.
+  // before page-chrome loads - mutating CONFIG afterwards cannot reach the captured constant.
   it("omits the time element when the template has no {updated} slot", async () => {
     const host = document.createElement("small")
     host.setAttribute("data-page-version", "")
@@ -165,7 +165,7 @@ describe("applyPageVersion updated segment", () => {
 
 describe("footer width budget", () => {
   // The footer must hold one line at 375px: 343px of room at ~9.2px per character leaves 37. This
-  // asserts the character budget rather than pixels, which jsdom cannot measure — but it is the
+  // asserts the character budget rather than pixels, which jsdom cannot measure - but it is the
   // thing that actually regressed twice, by adding words the line had no room for.
   const MAX_FOOTER_CHARACTERS = 37
 

@@ -1,7 +1,7 @@
 import type { Elements } from "./types"
 
 // InfoGateContent is every word the gate displays. Copy arrives from the caller rather than from
-// CONFIG so this module stays usable for any future consent case — the moment it reaches into
+// CONFIG so this module stays usable for any future consent case - the moment it reaches into
 // CONFIG for one caller's strings, it stops being a gate and becomes that caller's dialog.
 export type InfoGateContent = {
   title: string
@@ -18,7 +18,7 @@ export type InfoGateContent = {
 // The gate cannot be dismissed, and that is the contract rather than an implementation detail:
 // there is no close control, no backdrop-click handler, and no Escape binding, because the only
 // outcomes are proceeding or leaving the page. A caller that wants a dismissable dialog wants a
-// different component — do not add a cancel path here, since every existing caller relies on
+// different component - do not add a cancel path here, since every existing caller relies on
 // onProceed being reachable only through deliberate consent.
 //
 // Callers own what proceeding means. This module performs no side effect of its own beyond showing

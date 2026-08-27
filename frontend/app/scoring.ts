@@ -36,7 +36,7 @@ export function calculateMaxScore(totalCells: number): number {
 }
 
 // calculateElapsedDecayUnits converts elapsed wall-clock time into the decay units charged so far
-// for an interactive round — the same raw figure calculateElapsedScore subtracts from the max score.
+// for an interactive round - the same raw figure calculateElapsedScore subtracts from the max score.
 export function calculateElapsedDecayUnits(elapsedMs: number, decayIntervalPerCellMs: number): number {
   return Math.floor((elapsedMs * timing.scoreDecayRate) / decayIntervalPerCellMs)
 }
@@ -82,7 +82,7 @@ export function calculateScoreRetentionUnits(
 
 // formatTraversalSpeedLabel renders the speed a round actually achieved together with the
 // classification it earned, e.g. "3.1230 (Trailblazer)". Only an achieved speed carries a
-// classification — a delta between two rounds is a difference, not a pace, so deltas stay bare
+// classification - a delta between two rounds is a difference, not a pace, so deltas stay bare
 // numbers.
 function formatTraversalSpeedLabel(traversalSpeedUnits: number): string {
   const speedClass = resolveTraversalSpeedClass(traversalSpeedUnits)
@@ -138,7 +138,7 @@ export function buildAgentWinSummary(
 
   // Lead with the pace actually achieved so the headline number is comparable across every maze
   // size, then follow it with how that pace stacks up against the stored records.
-  return `${formatTraversalSpeedLabel(currentSpeedUnits)} — ${comparison}`
+  return `${formatTraversalSpeedLabel(currentSpeedUnits)} - ${comparison}`
 }
 
 // resolveWinScore converts one completed round into the summary and stored win metrics.
@@ -161,7 +161,7 @@ export function resolveWinScore(input: WinScoreInput): WinScoreResult {
 
   // Agent-api wins report traversal speed rather than the request count they used to. These
   // records survive level progression, and maze area grows with every level, so request counts
-  // from two different levels were never comparable — a bigger maze needs more requests no matter
+  // from two different levels were never comparable - a bigger maze needs more requests no matter
   // how well it was played, which made "new record" partly a measure of maze size. Speed is a
   // rate, so growing the maze grows both the cells reached and the units spent and leaves the
   // comparison intact. It also separates a batching run from a single-stepping one that happened
@@ -307,7 +307,7 @@ function selectWinSummaryTemplate(
   previousComparison: WinSummaryPreviousComparison,
   bestComparison: WinSummaryBestComparison,
 ): string {
-  // No previous record means no best record either — restore keeps the pair atomic — so the only
+  // No previous record means no best record either - restore keeps the pair atomic - so the only
   // reachable outcome is a new record, with no delta to compare against.
   if (previousComparison === "none") {
     return messages.winSummary.noPrevious

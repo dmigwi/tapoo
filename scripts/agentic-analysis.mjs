@@ -9,7 +9,7 @@ import { basename } from "node:path"
 // Every question returns strictly true or false, never null. A question quantified over an empty set
 // answers false rather than being vacuously true: "all of none complied" is not compliance, and
 // reporting it as such would credit a model that never submitted a prediction. A false always means
-// "not observed in this sample", never "incapable" — that distinction lives in how results are read,
+// "not observed in this sample", never "incapable" - that distinction lives in how results are read,
 // which is why no third answer value exists to carry it.
 //
 // Adding a question means writing a function and listing it in CAPABILITIES or VIOLATIONS. Every
@@ -33,7 +33,7 @@ const stepFrom = (key, move) => {
 
 // parsePrediction recovers the moves array a model submitted, mirroring the three tiers
 // frontend/app/agent/protocol.ts accepts: bare JSON, a fenced block, or a trailing object after
-// prose. The tier matters on its own — it is what C1.Q1 scores — so it is returned, not discarded.
+// prose. The tier matters on its own - it is what C1.Q1 scores - so it is returned, not discarded.
 function parsePrediction(content) {
   if (!content?.trim()) {
     return null
@@ -71,7 +71,7 @@ function buildContext(path) {
   const { entries } = JSON.parse(readFileSync(path, "utf8"))
 
   // Logs written before the turn counter landed have no turn field, so turn boundaries are inferred
-  // from predictions instead — exactly one closes each turn. Without this every entry collapses onto
+  // from predictions instead - exactly one closes each turn. Without this every entry collapses onto
   // turn 0 and the per-turn questions pass trivially.
   const hasTurnField = entries.some((entry) => "turn" in entry)
 
@@ -119,7 +119,7 @@ function buildContext(path) {
 
       for (const tool of details.tools ?? []) {
         // Logs record tools flat as { name, description }; the wire format nests them under
-        // `function`. Accepting either keeps declaredTools populated — an empty set would make every
+        // `function`. Accepting either keeps declaredTools populated - an empty set would make every
         // legitimate call look hallucinated.
         const name = tool.name ?? tool.function?.name
         if (name) {
@@ -518,8 +518,8 @@ function resourceWaste(context) {
     arrivals.set(cell, (arrivals.get(cell) ?? 0) + 1)
   }
 
-  // A spanning tree lets a complete depth-first exploration touch a cell once per exit — in and back
-  // out of each branch — so exceeding the exit count, not matching it, is what cannot be justified.
+  // A spanning tree lets a complete depth-first exploration touch a cell once per exit - in and back
+  // out of each branch - so exceeding the exit count, not matching it, is what cannot be justified.
   const excessVisits = [...arrivals].some(
     ([cell, count]) => exitsOf(context, cell) !== null && count > exitsOf(context, cell).size,
   )
@@ -580,7 +580,7 @@ const VIOLATIONS = [
 ]
 
 // A capability needs every question answered yes; a violation needs only one. The assertion is not
-// defensive noise — a question returning anything but a boolean would silently skew both rules.
+// defensive noise - a question returning anything but a boolean would silently skew both rules.
 function aggregate(answers, kind) {
   const values = Object.values(answers)
   if (!values.every((value) => value === true || value === false)) {

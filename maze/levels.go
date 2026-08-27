@@ -86,7 +86,7 @@ func chooseBestMazeDimensions(candidates []Dimensions, terminalSize Dimensions) 
 //
 // The repair exists because a level's exact area is an arithmetic target, not a guarantee that the
 // number factorizes into a drawable rectangle. A prime area offers only 1 x area, which fails the
-// minimum-dimension check outright, so the level would be unplayable at any terminal size — not for
+// minimum-dimension check outright, so the level would be unplayable at any terminal size - not for
 // want of room, but because of the number itself. Each level owns the band from its own target up to
 // the next level's, so a nearby area inside that band keeps the level drawable without borrowing
 // difficulty from the level above.

@@ -20,14 +20,14 @@ const { generation, maze: mazeConfig, scoring } = CONFIG
 // integer in [0, limit). generateMaze/getStartPosition/chooseNextCell all default to getPRNGInt but
 // accept one of these explicitly so tests can substitute a seeded, deterministic generator (e.g. an
 // xorshift128 or PCG32 implementation living in the test file) instead of fighting crypto.getRandomValues
-// output directly. Production code must never pass one — the default is what keeps maze layouts
+// output directly. Production code must never pass one - the default is what keeps maze layouts
 // genuinely unpredictable there.
 export type PRNGGenerator = (limit: number) => number
 
 // getPRNGInt returns a bounded, cryptographically random integer in [0, limit) for maze generation
-// — callers use it as an array index, a probability threshold, or a cell number, depending on the
+// - callers use it as an array index, a probability threshold, or a cell number, depending on the
 // call site. Using
-// crypto.getRandomValues rather than Math.random keeps maze layouts genuinely unpredictable —
+// crypto.getRandomValues rather than Math.random keeps maze layouts genuinely unpredictable -
 // worthwhile even for a game, since a guessable layout would blunt the challenge, and it means
 // no swap is needed later if the project grows into a context where that unpredictability
 // becomes a real security property rather than just a gameplay one.
@@ -522,7 +522,7 @@ function chooseNextCell(
     // Prefer the candidate with the fewest remaining unvisited neighbors of its own. A
     // low-neighbor-count cell gets "used up" cleanly by visiting it now, leaving nothing behind
     // for some later, unrelated branch to claim and retroactively turn this cell into a
-    // junction. This is the mechanism that actually controls branching — unlike corridor length
+    // junction. This is the mechanism that actually controls branching - unlike corridor length
     // or turn direction, neighbor count directly predicts whether a cell will be orphaned.
     let leastPopulated: PathStep[] = []
     let fewestRemaining = Infinity
@@ -645,17 +645,17 @@ function optimizeMaze(
 // generateMaze carves the maze, then returns the grid plus start and target positions.
 //
 // The target is deliberately chosen as the single farthest cell from the start, by tree
-// distance, across the entire maze — not an arbitrary or independently-random pick. Because a
+// distance, across the entire maze - not an arbitrary or independently-random pick. Because a
 // perfect maze is a spanning tree, and `path` here always mirrors the exact tree-path from
 // `startCell` to whichever cell the DFS currently stands on, tracking `path.length`'s running
 // maximum re-derives every cell's true distance from the start as it's first visited. The
 // classic graph-theory guarantee for trees is that the farthest node from any fixed point is
-// always an endpoint of the tree's longest possible path (its diameter) — so `startCell` and
+// always an endpoint of the tree's longest possible path (its diameter) - so `startCell` and
 // `finalCell` are always as far apart as the maze's shape allows, regardless of where the
 // randomly-chosen `startCell` happens to land.
 // profileOverride carves under a caller-supplied profile instead of the one getNavigationProfile
 // derives from area. Gameplay always omits it; it exists for measurement, since the profile is a
-// pure function of area and nothing else can hold the grid fixed while moving a knob — which is what
+// pure function of area and nothing else can hold the grid fixed while moving a knob - which is what
 // separates a knob's effect from the grid's own.
 export function generateMaze(
   dimensions: LevelDimensions,

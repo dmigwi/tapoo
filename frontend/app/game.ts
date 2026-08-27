@@ -150,7 +150,7 @@ function restoreClock(totalCells: number, remainingMs: number): GameClock {
   // interactiveDecayIntervalPerCellMs sizes score decay for interactive mode; for agent-api mode
   // the clock only exists to drive the destination blink animation (see clock.blink()), which
   // depends solely on elapsed() and never reads levelDurationMs, so reusing the same figure here
-  // is inert bookkeeping — it just keeps this reload round-trip self-consistent with the value
+  // is inert bookkeeping - it just keeps this reload round-trip self-consistent with the value
   // used when the round started (see restartGame below).
   const totalDurationMs = totalCells * timing.interactiveDecayIntervalPerCellMs
   const clampedRemainingMs = Math.max(0, Math.min(totalDurationMs, remainingMs))
@@ -201,16 +201,16 @@ function cancelScheduledRoundPersist(): void {
 // The "round" and "state" scopes write to two browser stores with different survival guarantees,
 // and level/wallWeight deliberately live in both:
 //   - sessionStorage (saveActiveRoundSnapshot, always written) holds the exact state of the
-//     currently active round — maze, traversal history, positions, score, level, wallWeight — so
+//     currently active round - maze, traversal history, positions, score, level, wallWeight - so
 //     a same-tab refresh can restore it. It's wiped when the tab/browser closes.
 //   - localStorage (saveGameProgress, "state" scope only) holds just level and wallWeight as
 //     durable defaults for the *next* round, since sessionStorage won't survive closing the
 //     browser or the round finishing (win/loss clears its snapshot).
 // "round" is used for frequent per-move writes (cheap, sessionStorage only); "state" is used for
-// checkpoints worth syncing to the durable copy too — level changes, wins, wall-weight cycling,
+// checkpoints worth syncing to the durable copy too - level changes, wins, wall-weight cycling,
 // pause/exit. This keeps the two copies from ever drifting apart. At boot (bootstrapGame), the
 // localStorage values are only ever used as the fallback when no valid sessionStorage round
-// exists to resume — removing either copy would break a real case: closing the browser (loses
+// exists to resume - removing either copy would break a real case: closing the browser (loses
 // sessionStorage) or a same-tab refresh mid-round (needs a self-contained round snapshot without
 // reaching into a separate store).
 function persistNow(scope: PersistenceScope): void {
@@ -235,7 +235,7 @@ let lastReportedInvariant: string | null = null
 // reportStateInvariant records an impossible status/state combination without interrupting play.
 // Throwing was the alternative, but renderState runs on the blink interval and nothing in game.ts
 // catches, so the error would reach the global handler in tapoo.ts and swap the whole game for
-// placeholder art — turning a recoverable inconsistency into a lost round, which matters most
+// placeholder art - turning a recoverable inconsistency into a lost round, which matters most
 // during unattended agent runs. Logging instead keeps the violation beside the gameplay it came
 // from in the downloadable log, and stateInvariantError stays directly asserted in status.test.ts.
 function reportStateInvariant(): void {
@@ -302,7 +302,7 @@ function noValidRoundExists(snapshot: PersistedRound | null): boolean {
 
 // restoredRestartLevel keeps a corrupt or absent stored floor from reaching state. It is validated
 // here rather than in isValidPersistedRound because a bad value must not discard an otherwise good
-// round — and because startRound raises every round to this floor, so an implausible one would make
+// round - and because startRound raises every round to this floor, so an implausible one would make
 // the game unplayable rather than merely wrong.
 function restoredRestartLevel(level: number | undefined): number {
   return typeof level === "number" && Number.isInteger(level) && level >= 1
@@ -351,7 +351,7 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
   state.clock = restoreClock(totalCells, snapshot.remainingMs)
 
   // A reload only interrupts a round a human was actively playing. Interactive score decays with
-  // elapsed time, so resuming a round nobody is watching would silently burn it — the pause waits
+  // elapsed time, so resuming a round nobody is watching would silently burn it - the pause waits
   // for the player to resume deliberately. Every other combination keeps the status it was saved
   // with: an agent-api round is charged per request rather than per second and has no human present
   // to press resume, so pausing it only strands the run, while a round already paused or awaiting
@@ -404,7 +404,7 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
   }
 
   const totalCells = dimensions.area
-  // interactiveDecayIntervalPerCellMs sizes the clock for both modes — see restoreClock's comment
+  // interactiveDecayIntervalPerCellMs sizes the clock for both modes - see restoreClock's comment
   // for why agent-api mode's clock only needs a self-consistent duration, not a mode-specific one.
   state.clock = new GameClock(totalCells * timing.interactiveDecayIntervalPerCellMs)
   state.score = calculateMaxScore(totalCells)
@@ -421,7 +421,7 @@ function startRound(requestedLevel: number, persist = true): boolean {
   }
 
   // restartLevel is a floor, not just a restart target: no round may open below where this session
-  // says games begin. Applied here rather than at each call site so every entry point obeys it —
+  // says games begin. Applied here rather than at each call site so every entry point obeys it -
   // a restore from stored progress, a retry, and a viewport bailout included. Progression above the
   // floor is untouched, since a level already past it is its own maximum.
   const level = Math.max(requestedLevel, state.restartLevel)
@@ -469,47 +469,21 @@ function restartGame(): boolean {
   return startRound(state.restartLevel, false)
 }
 
-// stopActiveRound freezes a game that is actually playing, so state can be changed underneath it.
-// Nothing else: no mode-specific handling, and no status written when there was nothing to stop.
-//
-// Paused in both modes. await-agent is not the agent-api equivalent of a pause — it means play has
-// no enabled agent seat to run (see awaitAgent below, and the dispatch in control/agent-api.ts),
-// which is untrue of a round an agent was mid-turn on. Stopping such a round is a pause, and
-// paused is also what lets it resume by the ordinary route.
-//
-// The running check is the only condition, and it is checked here rather than delegated to
-// awaitAgent/pauseGame, whose own guards can decline — pauseGame additionally requires a clock
-// (canTrackDestinationVisibility) — leaving a live round running behind a caller that believed it
-// had stopped.
-function stopActiveRound(): boolean {
-  if (!isRunningStatus(state.status)) {
-    return false
-  }
-
-  // Optional because a running round without a clock is possible in principle; the status change
-  // below is what actually stops play, and it must happen either way.
-  state.clock?.pause()
-  state.status = "paused"
-  persistNow("state")
-  return true
-}
-
 // setRestartLevel moves the floor every round opens at or above, returning whether it changed.
 //
-// The round in progress is stopped first. A level chosen mid-play would otherwise sit inert until
-// something happened to call startRound, and the score would keep decaying against a round the
-// player has mentally already left. Stopping makes the change take effect at a moment the player
-// chose, rather than at whatever moment the game next happens to restart.
+// It does not stop the round, and does not need to: every overlay that can reach this pauses a
+// running game when it opens (pauseIfRunning in control/agent.ts), so by the time a level is
+// applied the round is already stopped. Pausing again here would be a second owner of the same
+// rule, and pausing on apply would leave the score decaying for as long as the dialog stayed open -
+// which is the case the overlay-level pause exists to cover.
 function setRestartLevel(level: number): boolean {
   if (!Number.isInteger(level) || level < 1 || level === state.restartLevel) {
     return false
   }
 
-  stopActiveRound()
   state.restartLevel = level
-  // After the assignment, not before: stopActiveRound's own persist ran while the old value was
-  // still in state. "round" rather than "state" because only the round snapshot carries this —
-  // rewriting durable progress here would be a side effect nobody asked for.
+  // "round" rather than "state" because only the round snapshot carries this - rewriting durable
+  // progress here would be a side effect nobody asked for.
   persistNow("round")
   return true
 }
@@ -633,7 +607,7 @@ function dispatchControl(
 // handleResize revalidates the active or persisted round against the viewport. Also treated as
 // too-small: pinch-zoom past viewport.pinchZoomTooCloseScale. Pinch-zoom never changes
 // getBoundingClientRect()/layout viewport size (viewportFitStatus's only inputs), so it's invisible
-// to that check on its own — window.visualViewport.scale is what actually reports it, and its
+// to that check on its own - window.visualViewport.scale is what actually reports it, and its
 // resize event already drives this same handler.
 function handleResize(): void {
   if (!runtimeElements) {
@@ -668,7 +642,7 @@ function handleResize(): void {
     const snapshot = loadPersistedSnapshotWithFallbacks(state.controlMode)
     const validRoundWasRestored = noValidRoundExists(snapshot.round) === false
     if (!validRoundWasRestored) {
-      // No persisted round to restore, but the viewport may already be big enough for a fresh one —
+      // No persisted round to restore, but the viewport may already be big enough for a fresh one -
       // e.g. a brand-new session that never had a round to lose, or one whose bootstrap measurement
       // was corrected after fonts finished loading. Self-heal instead of leaving the too-small screen
       // up until the user manually resets progress.
@@ -694,7 +668,7 @@ export function bootstrapGame(
   window.addEventListener("pagehide", () => { persistNow("state") })
   // getTerminalSize measures real font metrics (dom.ts); a bootstrap that runs before web fonts
   // finish loading can decide against a stale, fallback-font measurement. No resize event fires
-  // when fonts swap in, so re-run the same check once they settle — same pattern as
+  // when fonts swap in, so re-run the same check once they settle - same pattern as
   // page-chrome.ts's document.fonts?.ready.then(syncMenuMode).
   void document.fonts?.ready.then(handleResize)
 
@@ -735,7 +709,7 @@ export function bootstrapGame(
 
   // Agent-api's own dispatch loop (control/agent-api.ts) always calls commitTurn with both real
   // values already computed for that turn; interactive mode never supplies either. traversalSpeedUnits
-  // is optional on AgentApiTurnResolutionDeps itself — handleWin already branches on its presence —
+  // is optional on AgentApiTurnResolutionDeps itself - handleWin already branches on its presence -
   // so there's nothing to default here beyond the trivial charged-count fallback.
   const commitTurn = isAgentApiMode(controlMode.name)
     ? (chargedMovesCount = 0, traversalSpeedUnits?: number) => commitAgentApiTurn({

@@ -76,7 +76,7 @@ describe("showInfoGate", () => {
     expect(onProceed).toHaveBeenCalledTimes(1)
   })
 
-  // A callback that throws does not propagate out of .click() — the browser routes it to
+  // A callback that throws does not propagate out of .click() - the browser routes it to
   // window.onerror instead. That is why callers wrap their own continuation (see tapoo.ts) rather
   // than relying on a try/catch around the click, and why the gate is already hidden and unbound
   // by the time the throw happens.
@@ -101,7 +101,7 @@ describe("showInfoGate", () => {
     window.removeEventListener("error", onError)
 
     // The throw really did happen and really did escape to window.onerror rather than to the
-    // caller of dispatchEvent — the whole reason the continuation needs its own try/catch.
+    // caller of dispatchEvent - the whole reason the continuation needs its own try/catch.
     expect(caught.map((error) => error.message)).toEqual(["continuation failed"])
     expect(attempts).toBe(1)
     expect(elements.infoGate.hidden).toBe(true)

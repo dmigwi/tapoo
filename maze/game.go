@@ -87,8 +87,8 @@ func (mazeData *RuntimeMaze) advance(rowDelta, columnDelta int) bool {
 	return true
 }
 
-// initLevelRoundInfo installs a freshly loaded level — its grid together with the player's starting
-// cell — under one write lock, so no move can land against a half-swapped level.
+// initLevelRoundInfo installs a freshly loaded level - its grid together with the player's starting
+// cell - under one write lock, so no move can land against a half-swapped level.
 //
 // It initialises a round and is only valid at a level boundary. Because it seeds playerLivePos from
 // config.StartPosition, calling it part-way through a round discards wherever the player had walked

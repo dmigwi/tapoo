@@ -96,7 +96,7 @@ export function createInteractiveMode(
   // handleKeydown routes keyboard gestures through the same command vocabulary. The agent-config
   // form and delete dialog live inside elements.app's DOM subtree even in interactive mode, so
   // isMazeControlFocused alone would treat typing in them (e.g. a space in a player name) as a
-  // game shortcut — Space/Escape would pause the round mid-edit. isFormControlTarget excludes
+  // game shortcut - Space/Escape would pause the round mid-edit. isFormControlTarget excludes
   // those editable targets first, mirroring the same guard in agent.ts's keydown handler.
   const handleKeydown = (
     event: KeyboardEvent,
