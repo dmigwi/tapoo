@@ -133,7 +133,7 @@ export function buildAgentPersonaPrompt(
   if (speedClass === "backtracker") { // backtracker
     return [
       `You are ${playerName} and your traversal speed currently classifies as backtracker.`,
-      "You are reaching fewer new cells than the decay units you spend, below the 1.0000 baseline.",
+      "You are reaching fewer new cells than the decay units you spend, below the 1.0000 baseline speed.",
       "Climb back by batching moves that reach unvisited cells: a retrace-only turn costs the same",
       "decay as any other while adding no new-cell progress.",
     ].join(" ")
@@ -147,7 +147,7 @@ export function buildAgentPersonaPrompt(
   // charged once, which is the answer to that drag rather than a reason to accept it.
   return [ // navigator
     `You are ${playerName} and your traversal speed currently classifies as navigator.`,
-    "You are holding the 1.0000 baseline: reaching exactly one new cell for every decay unit spent. Nothing in the maze",
+    "You are holding the 1.0000 baseline speed: reaching exactly one new cell for every decay unit spent. Nothing in the maze",
     "pins you there - a turn whose moves all land is charged one unit whether it reached one new cell or",
     "several cells, and even a forced retreat can be batched into a single turn. Raise the rate by batching longer",
     "predictions into unvisited cells, as far as you can prove the moves will apply.",
