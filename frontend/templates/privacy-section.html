@@ -21,23 +21,23 @@
         mode, where every enabled agent seat plays on your behalf in turn, each asking the agent API
         endpoint you configured for that seat what to move next. Profiling is what AI Agent mode
         exists for; Interactive mode is the same maze without an agent in the seat. In both modes,
-        session state stays on your device; Tapoo sends no data to a remote service unless you
-        enable at least one agent seat.
+        session state stays on your device; Tapoo sends no gameplay context to agent endpoints
+        unless you enable at least one agent seat.
       </p>
 
       <h2>Data Tapoo Stores</h2>
       <p>
         Tapoo uses <code>localStorage</code> to keep durable game preferences such as level, wall
         weight, score-retention metrics, optional AI Agent seat configuration, and the first-run
-        acknowledgement of this Privacy Policy. Each configured agent seat holds the display name
+        acknowledgement of this Privacy Policy. Each configured agent seat holds the player name
         you gave it, the model name, the endpoint URL, which provider dialect that endpoint
         speaks, the reasoning-effort setting, how often the seat may issue a request, and whether
         Echo Back Reasoning is enabled for it, plus a creation timestamp used to tell one occupant
         of a seat from the next. Some providers also require a bearer token or API key, and some
         need extra request headers. Those values are stored alongside the rest of the agent's
-        configuration under the same light obfuscation described below - they are recoverable by
-        anyone with access to your browser profile, so only enter a credential or header value you
-        would accept being read that way.
+        configuration under the same light obfuscation. Anyone with access to your local browser
+        profile or this site's local browser data can recover them, so only enter a credential or
+        header value you would accept being read that way.
       </p>
       <p>
         Tapoo uses <code>sessionStorage</code> for the active round snapshot, per-tab AI Agent
@@ -59,20 +59,22 @@
         game controls. If IndexedDB is unavailable, Tapoo falls back to
         <code>sessionStorage</code> for logs, and AI Agent mode is then capped at level
         {{fallbackAgentApiMaxLevel}}: starting a higher level shows a storage notice instead of
-        playing it. The cap exists because browsers limit <code>sessionStorage</code> to roughly
-        5MB per site, which a single high level's logs can exceed on their own - past that limit
-        the browser refuses further writes and the log stops recording the run it is meant to
-        describe. Interactive mode is not affected by that cap, and no cap applies at all when
-        IndexedDB is available. A second limit is unrelated to storage and applies in both modes:
-        a level is only played if its maze fits the visible area, so a window too small for the
-        level shows a screen-room notice until it is enlarged.
+        playing it. The cap exists because browsers often limit <code>sessionStorage</code> to only
+        a few MB per site or session, which a single high level's logs can exceed on their own -
+        past that limit the browser refuses further writes and the log stops recording the run it
+        is meant to describe. Interactive mode is not affected by that cap, and no cap applies at
+        all when IndexedDB is available. A second limit is unrelated to storage and applies in both
+        modes: a level is only played if its maze fits the visible area, so a window too small for
+        the level shows a screen-room notice until it is enlarged.
       </p>
       <p>
-        All of this remains on your device unless you clear it through browser settings or use
-        Tapoo controls such as Reset Progress. Stored values are lightly obfuscated to reduce
-        casual tampering, but this is not strong encryption for gameplay data. Every stored entry
-        is also tagged with Tapoo's storage schema version, which is separate from the app version
-        named above. Upgrading Tapoo to a new schema version does not migrate entries left over
+        All of this remains on your device unless you clear it through browser settings or use the
+        matching Tapoo control: Reset Progress clears progress, Clear Tapoo Logs clears logs, and
+        removing an agent clears that agent's saved configuration. Stored values are lightly
+        obfuscated to reduce casual tampering, but this is not strong encryption for gameplay data.
+        Every stored entry is also tagged with Tapoo's storage schema version, which is separate 
+        from the app version named above.
+        Upgrading Tapoo to a new schema version does not migrate entries left over
         from an older one, and the upgraded page cannot read them. Instead, the next time you open
         Tapoo it tells you how many leftover entries exist and which version wrote them, and asks
         you to confirm before removing them. Nothing is deleted until you confirm, and confirming
@@ -82,22 +84,38 @@
 
       <h2>Third-Party Sharing (AI Agent Mode)</h2>
       <p>
-        AI Agent mode sends gameplay context to the agent API endpoints you configure.
-        That context may include the current cell, destination cell, player names
-        (user-chosen in-game nicknames), model name, allowed moves, submitted moves,
-        score, level, and traversal history - each entry recording a visited cell and,
-        for that cell, every open exit mapped to its neighbouring cell and whether that
-        neighbour has already been visited. It also includes the raw counts behind a
-        traversal-speed classification - unique cells visited and decay units charged
-        this level (turns taken is included too, for context only) - and the
-        classification itself: a rate (unique cells visited divided by decay units
-        charged) below 1.0000 is <code>Backtracker</code>, exactly 1.0000 is <code>Navigator</code>,
-        and above 1.0000 is <code>Trailblazer</code>. An agent starts out as a Trailblazer and
-        is expected to maintain that rank throughout the game. The rank is shown in the
-        agent seat roster in your browser and included in the prompt sent to the
-        configured agent endpoint. If Echo Back Reasoning is enabled for an agent, its own
-        previously returned reasoning content is also included in later requests within
-        the same turn, sent back to that same endpoint.
+        AI Agent mode sends gameplay context to the agent API endpoints you configure. That context
+        may include the current cell, destination cell, maze dimensions, player names (user-chosen
+        in-game nicknames), allowed moves, submitted moves, score, level, round status, and a
+        filtered local traversal history - each entry recording a visited cell near the current cell
+        and, for that cell, every open exit mapped to its neighbouring cell with a visit-status
+        signal such as unvisited, explored, backtracking, or oscillating. It also carries the
+        previous prediction's outcome: which submitted moves applied, what they cost, and where the
+        replay started. One maze is shared by every seat, so the names recorded in that history -
+        the other seats' names and the interactive player's - are sent to each configured endpoint
+        along with the seat's own.
+      </p>
+      <p>
+        It also includes the raw counts behind a traversal speed classification - unique cells
+        visited against decay units charged during this level (turns taken is included too).
+        Traversal speed is the rate of new maze progress made against the error cost in decay units.
+        It measures whether the agent's progress is strong enough to survive wrong turns, hallucinations,
+        and other AI Agent mistakes. A rate below 1.0000 is <code>backtracker</code>, exactly 1.0000
+        is <code>navigator</code>, and above 1.0000 is <code>trailblazer</code>. Trailblazer agents
+        have the strongest observed margin for surviving their own mistakes. The rank is shown in
+        the agent seat roster in your browser and included in the prompt sent to the configured
+        agent endpoint.
+      </p>
+      <p>
+        Every request also carries the settings you gave that seat: the model name, the
+        reasoning-effort level, and - where the provider needs them - the bearer token or API key
+        and any extra request headers you entered. A seat's credential is sent only to the endpoint
+        you entered it against, never to another seat's. The prompt itself is not personalised: it
+        varies with the state of the run rather than with who you are, and every variant of it,
+        along with the tool definitions and the required response format, is published in full on
+        the Agent Prompts page. If Echo Back Reasoning is enabled for an agent, its own previously
+        returned reasoning content is also included in later requests within the same turn, sent
+        back to that same endpoint.
       </p>
       <p>
         Only configure endpoints you trust. External endpoints may receive network
