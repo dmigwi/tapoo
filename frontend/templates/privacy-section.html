@@ -3,16 +3,26 @@
     <article class="privacy-panel">
       <p class="privacy-eyebrow">Privacy Policy</p>
       <h1 id="privacy-title">Tapoo Privacy Policy</h1>
+
+      <h2>Introduction</h2>
       <p>
-        Tapoo is a browser-based maze game where you, or a configured AI agent, guide a
-        player through a maze to a target.
+        Tapoo <code>v{{softwareVersion}}</code> is a browser-based AI agent behavior profiler tool.
+        It works by having an agent guide a player through a maze to a target - a task built around
+        structured uncertainty, where the target position is known but the success route through the
+        maze is purposely ambiguous. Tapoo records what the agent does under that uncertainty. The
+        maze is a real game you can play yourself in the Interactive mode, but the reason it exists
+        is the AI Agent's output record it produces: the material a behavior profile is built from,
+        one per agent reviewed. A profile is a record of what a single agent was observed to do -
+        the capabilities it demonstrated and the violations it committed - both read from that
+        agent's own output rather than inferred from anything else.
       </p>
       <p>
-        Tapoo <code>v{{softwareVersion}}</code> supports two control modes: Interactive mode,
-        where you play directly, and AI Agent mode, where every enabled agent seat plays on your
-        behalf in turn, each asking the agent API endpoint you configured for that seat what to
-        move next. In both modes, gameplay state stays on your device; Tapoo sends no data to a
-        remote service unless you enable at least one agent seat.
+        Tapoo supports two control modes: Interactive mode, where you play directly, and AI Agent
+        mode, where every enabled agent seat plays on your behalf in turn, each asking the agent API
+        endpoint you configured for that seat what to move next. Profiling is what AI Agent mode
+        exists for; Interactive mode is the same maze without an agent in the seat. In both modes,
+        session state stays on your device; Tapoo sends no data to a remote service unless you
+        enable at least one agent seat.
       </p>
 
       <h2>Data Tapoo Stores</h2>
@@ -39,18 +49,19 @@
         play being counted against the other's.
       </p>
       <p>
-        Tapoo Logs are stored in <code>IndexedDB</code> when available. They are the record of a
-        game: every request sent to an agent endpoint and every response it returned, the encoded
-        maze each level started from, the moves replayed and what they cost, and the timing and
-        context around each turn. They exist to be read back - downloaded and analysed after a
-        run, or compared between runs - not merely to explain a fault. Logs stay on your device,
+        Tapoo Logs are stored in <code>IndexedDB</code> when available. They are the profiler's
+        primary output rather than a debugging side effect: every request sent to an agent endpoint
+        and every response it returned, the encoded maze each level started from, the moves replayed
+        and what they cost, and the timing and context around each turn. This is the material a
+        behavior profile is built from, so they exist to be read back - downloaded and analysed
+        after a run, or compared between runs and between agents. Logs stay on your device,
         are scoped to the current browser tab session, and can be downloaded or cleared from the
         game controls. If IndexedDB is unavailable, Tapoo falls back to
         <code>sessionStorage</code> for logs, and AI Agent mode is then capped at level
         {{fallbackAgentApiMaxLevel}}: starting a higher level shows a storage notice instead of
         playing it. The cap exists because browsers limit <code>sessionStorage</code> to roughly
         5MB per site, which a single high level's logs can exceed on their own - past that limit
-        the browser refuses further writes and the log stops recording the game it is meant to
+        the browser refuses further writes and the log stops recording the run it is meant to
         describe. Interactive mode is not affected by that cap, and no cap applies at all when
         IndexedDB is available. A second limit is unrelated to storage and applies in both modes:
         a level is only played if its maze fits the visible area, so a window too small for the

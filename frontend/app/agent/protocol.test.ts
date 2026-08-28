@@ -105,6 +105,7 @@ describe("agent protocol", () => {
   it("compacts a logged tool result to the fields a reader cannot recompute", () => {
     const original =
       "{\"level\":54,\"currentCell\":{\"row\":16,\"col\":0},\"destinationCell\":{\"row\":18,\"col\":21},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":17,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{\"MoveUp\":{\"row\":16,\"col\":0,\"visitStatus\":\"explored\"}}},{\"playerName\":\"Bumi\",\"cell\":{\"row\":16,\"col\":0},\"cellType\":\"corridor\",\"openMoves\":{\"MoveUp\":{\"row\":15,\"col\":0,\"visitStatus\":\"unvisited\"},\"MoveDown\":{\"row\":17,\"col\":0,\"visitStatus\":\"backtracking\"}}}]}"
+    const originalChecksum = "0x44b258c3b72f4437"
 
     const compacted =
       "{\"currentCell\":[16,0],\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":[17,0],\"openMoves\":[[\"MoveUp\",\"explored\"]]},{\"playerName\":\"Bumi\",\"cell\":[16,0],\"openMoves\":[[\"MoveUp\",\"unvisited\"],[\"MoveDown\",\"backtracking\"]]}]}"
@@ -116,7 +117,7 @@ describe("agent protocol", () => {
 
     expect(logged.content).toBe(compacted)
     // Checksummed against what was actually sent, since the logged form is lossy on its face.
-    expect(logged.content_checksum).toBe(checksumLoggedDescription(original))
+    expect(logged.content_checksum).toBe(originalChecksum)
     // 472 -> 224 chars on this two-entry sample. The saving is what the change is for: this result
     // is re-sent on every follow-up request of a turn, against a sessionStorage budget shared with
     // the round snapshot, and a log that outgrew it used to take the session's record with it.

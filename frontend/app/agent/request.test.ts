@@ -20,13 +20,14 @@ import type {
   State,
 } from "../types"
 
-// structureToolResult is the get_maze_structure payload these fixtures expect, kept in one place so
-// the trimmed copy and its checksum cannot disagree about what was trimmed.
-// compactedStructureToolResult is what the log keeps: the same result with every field a reader can
-// recompute removed. Written out rather than derived so a change to the compaction has to be stated
-// here too, instead of the fixture silently agreeing with whatever the code now produces.
-function compactedStructureToolResult(): string {
-  return "{\"currentCell\":[0,0],\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":[0,0],\"openMoves\":[]}]}"
+// structureToolResult is the get_maze_structure payload these fixtures expect.
+// compactedStructureToolResult is what the log keeps: compacted content plus the checksum of the
+// full original payload the model received. Both are written out so contract changes are explicit.
+function compactedStructureToolResult(): { content: string; content_checksum: string } {
+  return {
+    content_checksum: "0x36ee2bf1b3527c1e",
+    content: "{\"currentCell\":[0,0],\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":[0,0],\"openMoves\":[]}]}",
+  }
 }
 
 function structureToolResult(): string {
@@ -481,8 +482,7 @@ describe("agent request service", () => {
           tool_name: "get_maze_structure",
           // The logged copy: cells as [row, col], openMoves as [move, status] pairs, cellType
           // recomputed by the reader. Checksummed against the full result the model was sent.
-          content_checksum: checksumLoggedDescription(structureToolResult()),
-          content: compactedStructureToolResult(),
+          ...compactedStructureToolResult(),
         },
       ],
     })
@@ -659,8 +659,7 @@ describe("agent request service", () => {
           tool_name: "get_maze_structure",
           // The logged copy: cells as [row, col], openMoves as [move, status] pairs, cellType
           // recomputed by the reader. Checksummed against the full result the model was sent.
-          content_checksum: checksumLoggedDescription(structureToolResult()),
-          content: compactedStructureToolResult(),
+          ...compactedStructureToolResult(),
         },
       ],
     })
