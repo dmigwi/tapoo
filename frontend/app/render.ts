@@ -168,9 +168,16 @@ function rowsWithSpacer(...rows: ScreenLine[]): ScreenLine[] {
 // only offer Reset Progress when canShowRestart agrees it would help (updateTouchControls hides the
 // button itself on the same condition) - level 1 has no smaller level to fall back to, so promising
 // it there would be a control with no button behind it.
+//
+// The offer is also mode-specific: the restart level is only reachable from the agent-api page's
+// settings dialog, so only that mode is told to lower it - and there it is the more reliable fix,
+// since Reset Progress reopens at that same floor.
 function tooSmallRows(state: State): ScreenLine[] {
+  const withReset = isAgentApiMode(state.controlMode)
+    ? messages.tooSmallActionMessageWithReset.agentApi
+    : messages.tooSmallActionMessageWithReset.interactive
   const actionMessage = canShowRestart(state.status, state.level)
-    ? messages.tooSmallActionMessageWithReset
+    ? withReset
     : messages.tooSmallActionMessage
 
   return [

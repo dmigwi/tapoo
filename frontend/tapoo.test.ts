@@ -181,22 +181,32 @@ describe("tapoo entrypoint", () => {
     const scenario = await mountGateScenario([staleKey])
 
     // The terminal shell is revealed so the gate has something to sit over, but the game itself
-    // has not started and the stale entry is untouched.
+    // has not started and the stale entry is untouched. The first gate raised is the privacy one -
+    // the stale gate deletes data, so its own question comes after the policy governing it.
     expect(scenario.prepareTerminalAppForBootstrap).toHaveBeenCalledTimes(1)
     expect(scenario.infoGate.hidden).toBe(false)
     expect(scenario.bootstrapGame).not.toHaveBeenCalled()
     expect(scenario.initTapooLogs).not.toHaveBeenCalled()
+    expect(scenario.infoGateDetail.textContent).toBe(INFO_GATE_NOTICES.privacyPolicy.detail)
     expect(window.localStorage.getItem(staleKey)).toBe("old")
 
     scenario.infoGateProceed.click()
 
-    expect(window.localStorage.getItem(staleKey)).toBeNull()
+    // The privacy gate is answered first, so the stale entry survives this click: the deletion is
+    // the next gate's, and it happens only once the policy covering it has been accepted.
+    expect(window.localStorage.getItem(staleKey)).toBe("old")
     expect(scenario.bootstrapGame).not.toHaveBeenCalled()
     expect(scenario.initTapooLogs).not.toHaveBeenCalled()
-    expect(scenario.infoGateDetail.textContent).toBe(INFO_GATE_NOTICES.privacyPolicy.detail)
+    expect(scenario.infoGateDetail.textContent).toBe(
+      INFO_GATE_NOTICES.staleStorage.detailTemplate
+        .replace("{items}", "1 entry")
+        .replace("{versions}", "version (0.1)"),
+    )
     expect(scenario.infoGate.hidden).toBe(false)
 
     scenario.infoGateProceed.click()
+
+    expect(window.localStorage.getItem(staleKey)).toBeNull()
 
     await vi.waitFor(() => {
       expect(scenario.bootstrapGame).toHaveBeenCalledTimes(1)

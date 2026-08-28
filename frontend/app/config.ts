@@ -150,7 +150,20 @@ export const CONFIG: AppConfig = {
     // base case that's always true; tooSmallActionMessageWithReset adds the option only for the
     // case canShowRestart actually allows it - see tooSmallRows (render.ts) for the selection.
     tooSmallActionMessage: "Make more screen room on zoom out.",
-    tooSmallActionMessageWithReset: "Make screen room on zoom out, or Reset Progress.",
+    // Both stay short: this text only ever appears on a viewport already too small for the maze,
+    // where a longer sentence is the first thing to be clipped. The agent-api line drops the
+    // zoom-out advice the interactive one carries, because tooSmallMessage above has already said
+    // the level needs more screen room - repeating it costs the words that name the fix only this
+    // mode has.
+    //
+    // "before Reset Progress" rather than "or" is the accurate order. restartGame reopens at
+    // state.restartLevel, so resetting while the floor is above what the window can draw puts the
+    // player straight back on this screen - the level has to come down first for the reset to land
+    // anywhere playable.
+    tooSmallActionMessageWithReset: {
+      interactive: "Make screen room on zoom out, or Reset Progress.",
+      agentApi: "Lower the restart level before Reset Progress.",
+    },
     storageLimitMessage: "Level {level} needs more storage space!",
     storageLimitActionMessage:
       "This browser session can play agent levels up to {maxLevel} with fallback storage. "+

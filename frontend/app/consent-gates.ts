@@ -22,6 +22,46 @@ import type { Elements } from "./types"
 //
 // A second gate is another pair of functions in this file, not another module.
 
+// requireAcknowledgement is the single entry point the page boot calls: it runs onProceed once every
+// gate that applies has been answered, and never before. Callers ask "may the game start" and get
+// one answer, rather than having to know which gates exist or how many there are - adding a third
+// gate is an edit here, not at every call site.
+//
+// The order is deliberate, not incidental. The privacy policy is acknowledged first because the
+// stale-data gate deletes data, and deleting is itself something done with a user's data: doing it
+// before they have accepted the policy that governs it would be acting first and asking afterwards.
+// Consent, then the operation it covers. Running them in sequence rather than together also keeps
+// each question answerable on its own - the overlay shows one gate at a time, and two stacked
+// acknowledgements read as one prompt with two buttons.
+//
+// Both gates are pass-through when they do not apply, so an ordinary start with acknowledged
+// storage and no stale keys reaches onProceed synchronously, with no overlay frame in between.
+//
+// Each gate answers "is this already satisfied": true means carry on, false means it has put an
+// overlay up and this pass stops there. Answering one re-enters here from the top rather than
+// continuing where it left off, so the gates are re-evaluated in order every time and a gate can
+// never be skipped because an earlier one happened to run first. The recursion terminates because
+// every pass either satisfies a gate for good or stops at the one it showed.
+export function requireAcknowledgement(
+  elements: Elements,
+  onProceed: () => void,
+): void {
+  // Restarts this function rather than resuming after the gate that called it, so answering one
+  // question re-asks every question in order and no gate can be passed over just incase new
+  // changes were introduced in the midist of resolving the gates.
+  const recheck = (): void => requireAcknowledgement(elements, onProceed)
+
+  if (!requirePrivacyPolicyAcknowledgement(elements, recheck)) {
+    return
+  }
+
+  if (!requireStaleDataAcknowledgement(elements, recheck)) {
+    return
+  }
+
+  onProceed()
+}
+
 // staleDataGateContent turns the key census into the words the gate shows. Only counts and version
 // numbers are used: no stored value is read, because this build cannot interpret a schema an older
 // version wrote, and reading one just to describe it would reintroduce exactly that hazard.
@@ -52,20 +92,22 @@ function staleDataGateContent(summary: StaleStorageSummary): InfoGateContent {
 // Nothing is deleted until the user has been shown what will go. clearStaleStorageVersions
 // swallows its own storage failures, so the only way onProceed is skipped is the user never
 // proceeding.
-export function requireStaleDataAcknowledgement(
+function requireStaleDataAcknowledgement(
   elements: Elements,
-  onProceed: () => void,
-): void {
+  onAcknowledged: () => void,
+): boolean {
   const summary = staleStorageSummary()
   if (summary.itemCount === 0) {
-    onProceed()
-    return
+    return true
   }
 
   showInfoGate(elements, staleDataGateContent(summary), () => {
     clearStaleStorageVersions()
-    onProceed()
+    onAcknowledged()
   })
+  // False, because the answer is not in yet: returning true here would let the caller start the
+  // game behind an overlay the user has not answered.
+  return false
 }
 
 // privacyPolicyGateContent adapts the privacy notice to the reusable info-gate shape.
@@ -84,17 +126,17 @@ function privacyPolicyGateContent(): InfoGateContent {
 // browser profile, that Tapoo keeps data on their device. It covers everything Tapoo stores rather
 // than one mechanism: the gate was raised when logs moved to IndexedDB, but progress and agent
 // configuration were already being kept, and the answer does not change if a backend does.
-export function requirePrivacyPolicyAcknowledgement(
+function requirePrivacyPolicyAcknowledgement(
   elements: Elements,
-  onProceed: () => void,
-): void {
+  onAcknowledged: () => void,
+): boolean {
   if (privacyPolicyAcknowledged()) {
-    onProceed()
-    return
+    return true
   }
 
   showInfoGate(elements, privacyPolicyGateContent(), () => {
     savePrivacyPolicyAcknowledgement()
-    onProceed()
+    onAcknowledged()
   })
+  return false
 }

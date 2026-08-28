@@ -5,10 +5,7 @@ import { getGameElements } from "./app/dom"
 import { prepareTerminalAppForBootstrap, showPlaceholderArt } from "./app/fallback-policy"
 import { initTapooLogs, tapooDownloadLogs } from "./app/logs"
 import { bootstrapGame } from "./app/game"
-import {
-  requirePrivacyPolicyAcknowledgement,
-  requireStaleDataAcknowledgement,
-} from "./app/consent-gates"
+import { requireAcknowledgement } from "./app/consent-gates"
 import { applyPageText, applyPageVersion, initTopMenus } from "./page-chrome"
 import type { Elements, MazeActionControl, MazeControlModeName } from "./app/types"
 
@@ -82,9 +79,7 @@ try {
       }
     }
 
-    requireStaleDataAcknowledgement(elements, () => {
-      requirePrivacyPolicyAcknowledgement(elements, startGame)
-    })
+    requireAcknowledgement(elements, startGame)
   }
 } catch (error) {
   showPlaceholderArt(pageModeName(), error)

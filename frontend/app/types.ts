@@ -873,7 +873,12 @@ export type AppConfig = {
     agentAwaitAction: DisplayMsg
     tooSmallMessage: string
     tooSmallActionMessage: string
-    tooSmallActionMessageWithReset: string
+    // Split by mode because the ways out differ: only the agent-api page exposes the restart level,
+    // and on that page lowering it is usually the fix, since Reset Progress reopens at that floor.
+    tooSmallActionMessageWithReset: {
+      interactive: string
+      agentApi: string
+    }
     storageLimitMessage: string
     storageLimitActionMessage: string
     // Per-mode: only agent-api has a turn count to show. See config.ts.

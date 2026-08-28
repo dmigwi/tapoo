@@ -951,7 +951,7 @@ describe("render", () => {
     // Level 1 has no lower level to fall back to, so canShowRestart already hides the Reset
     // Progress button here (asserted below) - the text must not promise an action with no button.
     expect(text).toContain(messages.tooSmallActionMessage)
-    expect(text).not.toContain(messages.tooSmallActionMessageWithReset)
+    expect(text).not.toContain(messages.tooSmallActionMessageWithReset.interactive)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -1012,7 +1012,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain("Level 2 needs more screen room!")
-    expect(text).toContain(messages.tooSmallActionMessageWithReset)
+    expect(text).toContain(messages.tooSmallActionMessageWithReset.interactive)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -1028,6 +1028,32 @@ describe("render", () => {
       ),
     ).toBe(true)
     expect(elements.touchControls.hidden).toBe(false)
+  })
+
+  // The two modes are told different things because their ways out differ. Only the agent-api page
+  // exposes the restart level, and there lowering it is the reliable fix: Reset Progress reopens at
+  // that same floor, so a floor above what the window can draw returns the player to this screen.
+  it("tells an agent-api player to lower the restart level, not just to reset", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        level: 2,
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain("Level 2 needs more screen room!")
+    expect(text).toContain(messages.tooSmallActionMessageWithReset.agentApi)
+    expect(text).not.toContain(messages.tooSmallActionMessageWithReset.interactive)
   })
 
   it("keeps the zoom placeholder hidden when the too-small status text still fits", () => {
@@ -1170,7 +1196,7 @@ describe("render", () => {
     // Too-small has no maze/controls on screen to give navigation instructions about.
     expect(text).not.toContain(messages.navigation.interactive.compact)
     expect(text).toContain("Level 2 needs more screen room!")
-    expect(text).toContain(messages.tooSmallActionMessageWithReset)
+    expect(text).toContain(messages.tooSmallActionMessageWithReset.interactive)
     expect(elements.touchControls.hidden).toBe(false)
   })
 

@@ -943,6 +943,41 @@ describe("bootstrapGame", () => {
   // here as well would give one rule two owners, and pausing only on apply would leave the score
   // decaying for as long as the dialog stayed open. That the gear itself pauses is asserted in
   // control/agent.test.ts, where the overlay lives.
+  // A shrinking window is not a decision to abandon a game. Blocking a level marks it unplayable and
+  // stops the clock; it does not clear the maze, the trail walked so far, or the score. The whole
+  // suite passed while this state was being destroyed, so the behaviour is pinned here directly.
+  it("keeps the round in memory when the viewport blocks the level", async () => {
+    const harness = await bootstrapHarness({
+      // The round is 2x1; the second measurement cannot hold it, so the resize blocks the level.
+      dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }, null],
+      round: createHorizontalRound(),
+      terminalSizes: [
+        { numCols: 20, numRows: 20 },
+        { numCols: 1, numRows: 1 },
+        { numCols: 1, numRows: 1 },
+      ],
+    })
+
+    const playing = latestRenderedState(harness.render)
+    expect(playing.status).toBe("running")
+    const maze = playing.maze
+    const history = playing.traversalHistory.length
+    const score = playing.score
+
+    window.dispatchEvent(new Event("resize"))
+
+    const blocked = latestRenderedState(harness.render)
+    // The level really is blocked - without this the assertions below pass on a round that was
+    // never interrupted, which is how the first version of this test missed the bug entirely.
+    expect(blocked.status).toBe("too-small")
+    expect(blocked.maze).toBe(maze)
+    expect(blocked.traversalHistory).toHaveLength(history)
+    expect(blocked.score).toBe(score)
+    // The round is still the same attempt: bumping cumulativeRoundCount here used to end it, and
+    // that is also half of the fingerprint the agent-api loop checks before every turn.
+    expect(blocked.cumulativeRoundCount).toBe(playing.cumulativeRoundCount)
+  })
+
   it("leaves an interactive round alone when the floor moves", async () => {
     const harness = await bootstrapHarness({})
     expect(latestRenderedState(harness.render).status).toBe("running")
