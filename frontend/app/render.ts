@@ -1,6 +1,6 @@
 import { CONFIG } from "./config"
+import { isBelowMinimumViewport } from "./dom"
 import { shouldDrawDestination } from "./control/turn-resolution"
-import { terminalCanDisplayText } from "./dom"
 import {
   calculateScoreRetentionUnits,
   retentionUnitsToDisplayPercent,
@@ -400,6 +400,15 @@ function buildScreenLines(
 
 // updateTouchControls shows only the touch controls that make sense for the current state.
 function updateTouchControls(elements: Elements, state: State): void {
+  // Nothing is offered under the placeholder. Status alone does not settle this: too-small still
+  // shows Reset Progress above level 1, which is the right offer on a merely undersized window but
+  // not behind an opaque cover, where it would be an invisible control the player can still hit.
+  if (isBelowMinimumViewport(elements)) {
+    elements.touchButtons.forEach((button) => { button.hidden = true })
+    elements.touchControls.hidden = true
+    return
+  }
+
   const showMoveControls = isInteractiveMode(state.controlMode) && isRunningStatus(state.status)
   // Keyed by data-action so adding a control is one entry here rather than another branch. The
   // lookup deliberately fails closed: an action with no entry stays hidden, so a button wired into
@@ -477,18 +486,21 @@ function updateAgentConfigForm(elements: Elements, state: State): void {
 }
 
 // updateZoomPlaceholder swaps to the same artwork placeholder-art.html uses standalone once the
-// too-small status text (built into screenLines like any other content, so it's still there
-// underneath) can no longer render in full - see terminalCanDisplayText, dom.ts. Checked against
-// tooSmallMessage specifically ("Level {level} needs more screen room!"), the line that matters
-// most: it's shorter than tooSmallActionMessage, so it stays readable a little further into a
-// pinch-zoom before the placeholder takes over.
+// viewport is narrower than the layout supports. The too-small status text is still built into
+// screenLines like any other content and sits underneath; the placeholder covers it because below
+// this width #terminal-screen (white-space: pre, overflow: hidden) clips rather than wraps, so what
+// shows is a truncated sentence rather than a message.
+//
+// The threshold is a width, not a string. It used to ask whether tooSmallMessage in particular would
+// fit, which tied the switch-over point to the wording of one line - rewording it moved the
+// threshold, and the line measured was not the longest one on that screen anyway.
 function updateZoomPlaceholder(elements: Elements, state: State): void {
-  const needsPlaceholder =
-    isTooSmallStatus(state.status) &&
-    !terminalCanDisplayText(
-      elements,
-      messages.tooSmallMessage.replace("{level}", String(state.level)),
-    )
+  // Not gated on status. A viewport below the supported minimum cannot show a maze or a message in
+  // any state, and pairing this with too-small alone left storage-limit uncovered: that screen kept
+  // rendering text into a window too narrow to hold it, with its controls live underneath.
+  // acceptsGameControls is already status-blind for the same reason, so the cover and the input
+  // block now turn on together instead of on different conditions.
+  const needsPlaceholder = isBelowMinimumViewport(elements)
 
   elements.zoomPlaceholder.hidden = !needsPlaceholder
   // hidden alone removes it from the accessibility tree while true, but the template's static

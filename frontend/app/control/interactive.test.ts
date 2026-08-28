@@ -212,6 +212,49 @@ describe("interactive control mode", () => {
     expect(commitTurn).not.toHaveBeenCalled()
   })
 
+  // Below the supported minimum the zoom placeholder covers the screen, and it is opaque. Without
+  // this the buttons underneath stay clickable and the shortcuts still move a player nobody can see
+  // on a maze nobody can read - the game responding to input it is not showing the result of.
+  it("ignores buttons and shortcuts below the minimum supported viewport", () => {
+    const restartButton = createButton({ action: "restart" })
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [restartButton],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [],
+      touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
+      infoGateProceed: document.createElement("button"),
+    }
+    elements.app.tabIndex = 0
+    elements.app.append(restartButton)
+    document.body.append(elements.app)
+    // Narrower than minSupportedWidth. A non-zero reading, since zeros mean "not measured yet" and
+    // are deliberately not treated as too small.
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: 320, bottom: 480,
+      width: 320, height: 480, toJSON: () => ({}),
+    })
+    const dispatch = vi.fn()
+
+    const mode = createInteractiveMode(elements)
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn(), testGameControls())
+
+    elements.app.focus()
+    restartButton.click()
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
+
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+
   it("handles human controls only while the terminal app is focused", () => {
     const restartButton = createButton({ action: "restart" })
     const elements = {

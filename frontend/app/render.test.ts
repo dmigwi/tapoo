@@ -1056,11 +1056,72 @@ describe("render", () => {
     expect(text).not.toContain(messages.tooSmallActionMessageWithReset.interactive)
   })
 
-  it("keeps the zoom placeholder hidden when the too-small status text still fits", () => {
+  // Behind the placeholder there is nothing to operate, so nothing is offered. too-small on its own
+  // still shows Reset Progress above level 1 - correct on a merely undersized window, wrong under an
+  // opaque cover where it is an invisible control that still responds to a tap.
+  it("offers no touch controls below the supported minimum", () => {
     const elements = createElements()
     vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
-      x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 200,
-      width: 400, height: 200, toJSON: () => ({}),
+      x: 0, y: 0, top: 0, left: 0, right: 320, bottom: 480,
+      width: 320, height: 480, toJSON: () => ({}),
+    })
+
+    render(elements, createState({ level: 4, status: "too-small" }))
+
+    expect(elements.touchControls.hidden).toBe(true)
+    expect(elements.touchButtons.every((button) => button.hidden)).toBe(true)
+  })
+
+  // The cover is not tied to too-small. storage-limit renders its own message, and below the
+  // supported minimum that message clips exactly like any other - with its controls live beneath an
+  // opaque overlay. Every status is covered because none of them can be shown at this size.
+  it.each(["too-small", "storage-limit", "running"] as const)(
+    "covers the screen below the supported minimum in %s status",
+    (status) => {
+      const elements = createElements()
+      vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+        x: 0, y: 0, top: 0, left: 0, right: 320, bottom: 480,
+        width: 320, height: 480, toJSON: () => ({}),
+      })
+
+      render(elements, createState({ status }))
+
+      expect(elements.zoomPlaceholder.hidden).toBe(false)
+    },
+  )
+
+  // Both dimensions are checked, and either failing is enough. A window can be wide and only a few
+  // lines tall - a desktop browser dragged short, or a phone in landscape with the keyboard up -
+  // and a maze needs room in both directions.
+  it.each([
+    { name: "too narrow", width: CONFIG.viewport.minSupportedWidth - 1, height: 700 },
+    { name: "too short", width: 400, height: CONFIG.viewport.minSupportedHeight - 1 },
+  ])("shows the zoom placeholder when the viewport is $name", ({ width, height }) => {
+    const elements = createElements()
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: width, bottom: height,
+      width, height, toJSON: () => ({}),
+    })
+
+    render(
+      elements,
+      createState({
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    expect(elements.zoomPlaceholder.hidden).toBe(false)
+  })
+
+  it("keeps the zoom placeholder hidden while the viewport still meets the supported minimum", () => {
+    const elements = createElements()
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 700,
+      width: 400, height: 700, toJSON: () => ({}),
     })
 
     render(

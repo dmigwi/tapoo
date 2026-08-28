@@ -572,7 +572,7 @@ body {
 
 /* Covers the terminal with the same unavailable-page.svg artwork placeholder-art uses standalone,
    for the case where even the too-small status text can no longer render in full (see
-   terminalCanDisplayText, dom.ts) - an opaque background so the (now unreadable) text underneath
+   isBelowMinimumViewport, status.ts) - an opaque background so the (now unreadable) text underneath
    never bleeds through. */
 .terminal-zoom-placeholder {
   position: absolute;

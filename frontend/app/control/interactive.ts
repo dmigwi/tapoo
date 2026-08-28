@@ -9,7 +9,7 @@ import type {
 import { isSuccessfulMoveStatus } from "../status"
 import {
   isFormControlTarget,
-  isMazeControlFocused,
+  acceptsGameControls,
   releaseAllActionBindings,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
@@ -67,7 +67,7 @@ export function createInteractiveMode(
     dispatch: MazeActionDispatch,
     commitTurn: (chargedMovesCount?: number) => void,
   ): void => {
-    if (!isMazeControlFocused(elements)) {
+    if (!acceptsGameControls(elements)) {
       return
     }
 
@@ -95,7 +95,7 @@ export function createInteractiveMode(
 
   // handleKeydown routes keyboard gestures through the same command vocabulary. The agent-config
   // form and delete dialog live inside elements.app's DOM subtree even in interactive mode, so
-  // isMazeControlFocused alone would treat typing in them (e.g. a space in a player name) as a
+  // focus alone would treat typing in them (e.g. a space in a player name) as a
   // game shortcut - Space/Escape would pause the round mid-edit. isFormControlTarget excludes
   // those editable targets first, mirroring the same guard in agent.ts's keydown handler.
   const handleKeydown = (
@@ -107,7 +107,7 @@ export function createInteractiveMode(
       return
     }
 
-    if (!isMazeControlFocused(elements)) {
+    if (!acceptsGameControls(elements)) {
       return
     }
 

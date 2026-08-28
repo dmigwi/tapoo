@@ -38,7 +38,7 @@ import {
 } from "../agent/seats"
 import {
   isFormControlTarget,
-  isMazeControlFocused,
+  acceptsGameControls,
   releaseAllActionBindings,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
@@ -1244,7 +1244,7 @@ export function createAgentMode(
       const bindSessionButtons = (buttons: HTMLButtonElement[]): void => {
         buttons.forEach((button) => {
           const onClick = (): void => {
-            if (!isMazeControlFocused(elements)) {
+            if (!acceptsGameControls(elements)) {
               return
             }
 
@@ -1285,7 +1285,7 @@ export function createAgentMode(
           return
         }
 
-        if (!isMazeControlFocused(elements)) {
+        if (!acceptsGameControls(elements)) {
           return
         }
 

@@ -10,7 +10,7 @@ import {
   commitInteractiveTurn,
   refreshRunningRoundFrame,
 } from "./control/turn-resolution"
-import { getTerminalSize } from "./dom"
+import { getTerminalSize, isBelowMinimumViewport } from "./dom"
 import {
   generateMaze,
   getMazeDimensions,
@@ -159,12 +159,22 @@ function restoreClock(totalCells: number, remainingMs: number): GameClock {
   return clock
 }
 
+// awaitingAgentWhenBlocked carries one bit of the status a block replaced. Blocking overwrites
+// state.status, and the recovery that redraws the round runs on a later resize event with no other
+// record of what was interrupted. Only the agent-api wait is worth keeping: every other interrupted
+// status resolves to the same pause once the round itself has been replaced, but that wait is the
+// difference between an overlay that names the missing seat and one that offers a resume the mode
+// cannot honour. Only ever read while the status is still blocked, which only blockLevel produces,
+// so it cannot be consulted after it has gone stale.
+let awaitingAgentWhenBlocked = false
+
 // blockLevel marks a level unplayable in the current browser environment - the viewport is too small,
 // or fallback log storage is capped - without touching the round behind it.
 //
 // The clock is paused rather than dropped, so score stops decaying while play is impossible but the
 // remaining time is still there when the round resumes.
 function blockLevel(level: number, status: "too-small" | "storage-limit"): void {
+  awaitingAgentWhenBlocked = isAwaitAgentStatus(state.status)
   state.status = status
   state.level = level
   state.clock?.pause()
@@ -475,10 +485,15 @@ function redrawRoundForViewport(level: number): boolean {
     return false
   }
 
+  const wasRunning = isRunningStatus(state.status)
+  const wasAwaitingAgent = isTooSmallStatus(state.status)
+    ? awaitingAgentWhenBlocked
+    : isAwaitAgentStatus(state.status)
+
   // A resize can reach here mid-round, and the new maze replaces the one being played: progress
   // within the level is gone. Logged because nothing else records it - a resize is not an action
   // the player associates with losing a round, so without this the loss has no visible cause.
-  if (isRunningStatus(state.status)) {
+  if (wasRunning) {
     logTapooDiagnostic(state.controlMode, "warn", "Viewport change redrew the round; progress in it was discarded.", {
       level,
       cumulativeRoundCount: state.cumulativeRoundCount,
@@ -488,7 +503,26 @@ function redrawRoundForViewport(level: number): boolean {
     })
   }
 
-  return startRoundWithDimensions(dimensions)
+  if (!startRoundWithDimensions(dimensions)) {
+    return false
+  }
+
+  // startRoundWithDimensions always leaves the replacement round running, which is only right when
+  // the round it replaced was running too. Reaching here from any other status - paused, won, lost,
+  // await-agent, or the too-small block being lifted - means nobody asked to play right now, and a
+  // running round starts spending score against a player who may not even be looking at the page.
+  // Hold it instead and let them start the round themselves.
+  if (!wasRunning) {
+    // await-agent before paused, because in agent-api mode the two are not interchangeable: resuming
+    // a pause moves straight to running, and with no enabled seat the poll loop only bounces it back
+    // to await-agent. Restoring the state it was actually in keeps the overlay honest about what the
+    // round is waiting for - a seat to be enabled, not a keypress.
+    if (!wasAwaitingAgent || !awaitAgent()) {
+      pauseGame()
+    }
+  }
+
+  return true
 }
 
 // restartGame clears persisted progress and restarts from the configured opening level.
@@ -658,7 +692,13 @@ function handleResize(): void {
   // Forced straight to the worst case when pinched in too close: no maze-cell-grid size could fix
   // a visible area that's too small on its own terms, so there's nothing for redrawRoundForViewport
   // (below) to usefully retry against.
-  const fitStatus = pinchZoomTooClose
+  // Below the supported minimum the window cannot hold a maze of any shape, so it joins pinch-zoom
+  // in going straight to the worst case: there is nothing for redrawRoundForViewport to retry
+  // against. Routing it through the status rather than checking the viewport at each surface is
+  // what keeps the app's answer to "can this be played" in one place - the touch controls, the
+  // status text and the placeholder then all follow from state.status instead of re-deriving it.
+  const viewportBelowMinimum = isBelowMinimumViewport(runtimeElements)
+  const fitStatus = pinchZoomTooClose || viewportBelowMinimum
     ? "too-small-all"
     : viewportFitStatus(state.mazeDimensions, getTerminalSize(runtimeElements))
 
@@ -675,7 +715,9 @@ function handleResize(): void {
   // Also gated on !pinchZoomTooClose: restoring (or self-healing a fresh) round while still
   // pinched in past the threshold would just re-trigger too-small on the very next check, so stay
   // on the too-small screen until the zoom itself eases rather than churning through this each call.
-  if (!viewportRoundResolved && !pinchZoomTooClose && isTooSmallStatus(state.status)) {
+  // Also gated on the minimum: recovering into a window still below it would only re-trigger the
+  // block on the next check, exactly as a pinch that has not eased would.
+  if (!viewportRoundResolved && !pinchZoomTooClose && !viewportBelowMinimum && isTooSmallStatus(state.status)) {
     const snapshot = loadPersistedSnapshotWithFallbacks(state.controlMode)
     const validRoundWasRestored = noValidRoundExists(snapshot.round) === false
     if (!validRoundWasRestored) {

@@ -448,6 +448,8 @@ export const CONFIG: AppConfig = {
   },
   // Viewport thresholds translate measured DOM space into logical maze room.
   viewport: {
+    minSupportedWidth: 350,
+    minSupportedHeight: 475,
     compactWidth: 540,
     compactHeight: 520,
     terminalHeightInset: 5,

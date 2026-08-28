@@ -675,7 +675,7 @@ export type TerminalElements = {
   touchButtons: HTMLButtonElement[]
   // zoomPlaceholder covers the terminal with the same unavailable-page.svg artwork
   // placeholder-art.html uses standalone, for the case where the too-small status text itself
-  // can no longer render in full (see terminalCanDisplayText, dom.ts) - a real error condition
+  // can no longer render in full (see isBelowMinimumViewport, status.ts) - a real error condition
   // like a broken bootstrap uses the separate top-level #placeholder-art instead.
   zoomPlaceholder: HTMLElement
   // The info gate overlay (info-gate.ts). It lives in TerminalElements rather than AgentElements
@@ -1032,6 +1032,8 @@ export type AppConfig = {
     agentApiConnectionErrorRetryDelayMs: number
   }
   viewport: {
+    minSupportedWidth: number
+    minSupportedHeight: number
     compactWidth: number
     compactHeight: number
     terminalSampleWidth: number

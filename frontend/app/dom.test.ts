@@ -150,8 +150,8 @@ describe("dom", () => {
     expect(getTerminalSize(elements)).toEqual({ numCols: 22, numRows: 11 })
   })
 
-  it("reports whether a line of text fits the raw character-column width, not the maze-cell width", async () => {
-    const { getGameElements, terminalCanDisplayText, terminalCharacterColumns } = await import("./dom")
+  it("counts raw character columns, not maze cells", async () => {
+    const { getGameElements, terminalCharacterColumns } = await import("./dom")
     const elements = getGameElements()
     if (!elements) {
       throw new Error("expected terminal elements")
@@ -169,12 +169,7 @@ describe("dom", () => {
       toJSON: () => ({}),
     }))
 
-    // terminalCanDisplayText adds a 10-character buffer on top of the raw text length before
-    // comparing against the available columns, so the fit boundary sits 10 characters short of the
-    // raw column count itself (20), not at it.
     expect(terminalCharacterColumns(elements)).toBe(20)
-    expect(terminalCanDisplayText(elements, "A".repeat(10))).toBe(true)
-    expect(terminalCanDisplayText(elements, "A".repeat(11))).toBe(false)
   })
 
   it("uses actual drawable room for very small terminal measurements", async () => {
