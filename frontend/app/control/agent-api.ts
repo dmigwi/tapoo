@@ -646,7 +646,7 @@ export function handleAgentTurnLoop({
         chargedMovesCount,
         preCommitState.turnCount + 1,
       )
-    // A turn that could not record its own counters must not be committed. State.turnCount would
+      // A turn that could not record its own counters must not be committed. State.turnCount would
       // advance past the levelTurnCount still in storage, and agentTurnCountMismatch reads that gap as
       // a genuine divergence on the next turn - answering it with a full restart that discards the
       // round and every preference with it. sessionStorage is shared with the growing Tapoo log, so
