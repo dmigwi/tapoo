@@ -3,7 +3,7 @@ import { createInteractiveMode } from "./app/control/interactive"
 import { CONFIG } from "./app/config"
 import { getGameElements } from "./app/dom"
 import { prepareTerminalAppForBootstrap, showPlaceholderArt } from "./app/fallback-policy"
-import { initTapooLogs, tapooDownloadLogs, tapooResetLogs } from "./app/logs"
+import { initTapooLogs, tapooDownloadLogs } from "./app/logs"
 import { bootstrapGame } from "./app/game"
 import { requireStaleDataAcknowledgement } from "./app/consent-gates"
 import { applyPageText, applyPageVersion, initTopMenus } from "./page-chrome"
@@ -22,10 +22,14 @@ function pageModeName(): MazeControlModeName {
   return document.body.dataset.tapooControlMode === agentApiMode ? agentApiMode : CONFIG.runtime.controlModes.interactive
 }
 
-// tapooDownloadLogs and tapooResetLogs are attached without the __ prefix so the build's
-// --mangle-props=^__ rule does not rename them; they remain callable from DevTools console.
+// tapooDownloadLogs is attached without the __ prefix so the build's --mangle-props=^__ rule does
+// not rename it; it remains callable from the DevTools console.
+//
+// tapooResetLogs is deliberately NOT exposed. Downloading a log is read-only, but a global that
+// wipes one is a second way to destroy the session's record - reachable by any script on the page,
+// and indistinguishable afterwards from the reset button. Clearing the log now has exactly one
+// entry point: the Tapoo logs reset button.
 ;(window as unknown as Record<string, unknown>)["tapooDownloadLogs"] = () => tapooDownloadLogs(pageModeName())
-;(window as unknown as Record<string, unknown>)["tapooResetLogs"] = () => tapooResetLogs(pageModeName())
 
 window.addEventListener("error", (event) => {
   showPlaceholderArt(pageModeName(), event.error)

@@ -1484,6 +1484,45 @@ describe("bootstrapGame", () => {
     expect(latestRenderedState(harness.render).status).toBe("running")
   })
 
+  // A round in progress disappeared with an empty log and no way to tell what had happened. Both
+  // paths that discard a live round now say so, because neither is an action the player associates
+  // with losing progress: one is a rejected snapshot at startup, the other a window resize.
+  it("logs the level and turn when a persisted round is rejected at startup", async () => {
+    const harness = await bootstrapHarness({
+      persistedSnapshots: [
+        {
+          preferences: { level: 4, wallWeight: 1 },
+          // area disagrees with numCols * numRows, which isValidPersistedRound rejects.
+          round: {
+            level: 4,
+            mazeDimensions: { numCols: 2, numRows: 1, area: 99 },
+            maze: createHorizontalRound().maze,
+            startPosition: { x: 1, y: 1 },
+            playerPosition: { x: 1, y: 1 },
+            startCell: { row: 0, col: 0 },
+            traversalHistory: [selfVisit(0, 0)],
+            finalPosition: { x: 3, y: 1 },
+            wallWeight: 1,
+            status: "running",
+            score: 200,
+            lastRoundScore: 0,
+            remainingMs: 1500,
+            winSummary: "",
+            turnCount: 7,
+            cumulativeRoundCount: 3,
+          },
+        },
+      ],
+    })
+
+    const rejection = harness.appendTapooLogEntry.mock.calls
+      .map(([, entry]) => entry as { payload?: string; details?: Record<string, unknown> })
+      .find((entry) => entry.payload === "Persisted round rejected; starting a fresh maze.")
+
+    expect(rejection, "no diagnostic recorded for the discarded round").toBeDefined()
+    expect(rejection?.details).toMatchObject({ level: 4, turnCount: 7, cumulativeRoundCount: 3 })
+  })
+
   it("restores a persisted round in paused mode once the viewport fits again", async () => {
     const persistedRound: PersistedRound = {
       level: 1,

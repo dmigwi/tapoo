@@ -141,13 +141,13 @@ describe("bench report helpers", () => {
 
   it("formats minimum winning speed rows with conservative break-even speed", () => {
     expect(minWinSpeedRows(summaries).area70_10x7).toEqual({
-      "Conservative (No Batching) Min Win Speed": "0.9871",
+      "Conservative (No Batching) Min Win Speed": "0.9871x",
     })
   })
 
   it("reports only the conservative minimum winning speed reference line", () => {
     expect(minWinSpeedRows(summaries).area100_10x10).toEqual({
-      "Conservative (No Batching) Min Win Speed": "0.9900",
+      "Conservative (No Batching) Min Win Speed": "0.9900x",
     })
   })
 

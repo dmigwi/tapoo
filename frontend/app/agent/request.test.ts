@@ -20,6 +20,19 @@ import type {
   State,
 } from "../types"
 
+// structureToolResult is the get_maze_structure payload these fixtures expect, kept in one place so
+// the trimmed copy and its checksum cannot disagree about what was trimmed.
+// compactedStructureToolResult is what the log keeps: the same result with every field a reader can
+// recompute removed. Written out rather than derived so a change to the compaction has to be stated
+// here too, instead of the fixture silently agreeing with whatever the code now produces.
+function compactedStructureToolResult(): string {
+  return "{\"currentCell\":[0,0],\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":[0,0],\"openMoves\":[]}]}"
+}
+
+function structureToolResult(): string {
+  return "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}"
+}
+
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt = buildMazeActionPrompt("Blue", "trailblazer", true)
@@ -331,8 +344,8 @@ describe("agent request service", () => {
           role: "tool",
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
-          content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}",
+          // The wire payload, not the log: the model still receives the tool result in full.
+          content: structureToolResult(),
         },
       ],
       tools: uncalledTools(["get_maze_structure"]),
@@ -464,8 +477,10 @@ describe("agent request service", () => {
           role: "tool",
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
-          content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}",
+          // The logged copy: cells as [row, col], openMoves as [move, status] pairs, cellType
+          // recomputed by the reader. Checksummed against the full result the model was sent.
+          content_checksum: checksumLoggedDescription(structureToolResult()),
+          content: compactedStructureToolResult(),
         },
       ],
     })
@@ -509,6 +524,10 @@ describe("agent request service", () => {
     expect(levelStarted.details).toEqual({
       startPosition: { x: 1, y: 1 },
       finalPosition: { x: 1, y: 1 },
+      // Recorded once here rather than in every turn's get_maze_structure result: both are fixed
+      // for the level, and a reader needs them to expand the compacted per-turn results.
+      destinationCell: { row: 0, col: 0 },
+      historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
       maze: {
         index_chars: ["|", "---", "   ", "\n"],
         structure_checksum: "0x279d74cddf9d2e85",
@@ -636,8 +655,10 @@ describe("agent request service", () => {
           role: "tool",
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
-          content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}",
+          // The logged copy: cells as [row, col], openMoves as [move, status] pairs, cellType
+          // recomputed by the reader. Checksummed against the full result the model was sent.
+          content_checksum: checksumLoggedDescription(structureToolResult()),
+          content: compactedStructureToolResult(),
         },
       ],
     })

@@ -21,6 +21,7 @@ import {
 import type {
   AgentApiConfig,
   AgentApiSeatConfig,
+  AgentTurnStatsResult,
   AgentApiSessionMetrics,
   MazeControlModeName,
   PersistedGameSetup,
@@ -497,14 +498,22 @@ function loadPersistedAgentSessionMetrics(): AgentApiSessionMetrics[] {
   }
 }
 
-function savePersistedAgentSessionMetrics(stats: AgentApiSessionMetrics[]): void {
+// Returns false when the write did not land. Most storage here is best-effort, but this payload is
+// not: levelTurnCount is one half of the (level, cumulativeRoundCount, turnCount) fingerprint whose
+// other half lives in memory as State.turnCount. Swallowing a failure here froze the persisted half
+// while the in-memory half kept advancing, which the agent-api loop then read as a genuine
+// divergence and answered with a full restart - wiping the round, the preferences and the session's
+// log. sessionStorage is shared with the Tapoo log, which grows every turn, so the quota that
+// triggers this is reached by ordinary long play rather than by anything the player did.
+function savePersistedAgentSessionMetrics(stats: AgentApiSessionMetrics[]): boolean {
   try {
     window.sessionStorage.setItem(
       storageKey(agentApiModeName, storageConfig.suffixes.sessionMetrics),
       encodeStoredPayload(normalizeAgentSessionMetrics(stats)),
     )
+    return true
   } catch {
-    // Ignore storage failures so live agent stats remain best-effort only.
+    return false
   }
 }
 
@@ -639,7 +648,7 @@ export function recordAgentTurnStats(
   cumulativeRoundCount: number,
   chargedDecayUnits: number,
   levelTurnCount: number,
-): AgentApiSeatConfig {
+): AgentTurnStatsResult {
   let updatedAgent: AgentApiSeatConfig = turnAgent
   let foundTurnAgent = false
 
@@ -685,8 +694,10 @@ export function recordAgentTurnStats(
   // counters are still returned so this turn can finish reporting against them, but nothing is
   // written back: persisting a row for an agent that no longer has a config would recreate the
   // orphan mergeAgentSessionMetrics prunes, and hand it to whoever occupies the seat next.
-  savePersistedAgentSessionMetrics(agentSessionMetricsFromRuntimeConfigs(nextConfigs))
-  return updatedAgent
+  // Reported, not swallowed: the caller must not advance State.turnCount past a levelTurnCount that
+  // never reached storage, or the next turn reads the gap as a real divergence and restarts.
+  const persisted = savePersistedAgentSessionMetrics(agentSessionMetricsFromRuntimeConfigs(nextConfigs))
+  return { agent: updatedAgent, persisted }
 }
 
 // resetAgentRoundStats rebinds every configured agent to a fresh round with zeroed per-round
@@ -997,6 +1008,13 @@ export function loadPersistedSnapshot(
 }
 
 // clearPersistedSnapshot clears both long-lived preferences and the active round.
+//
+// It does NOT clear the log, and must not: this runs from restartGame, which the agent-api loop
+// triggers by itself on a turn-count mismatch. That path logs why it is restarting and then restarts
+// - so clearing here erased the one entry explaining the reset, along with every entry leading up to
+// it, leaving a wiped session with no record of what happened. The log is a record of the session,
+// not part of the game state a reset owns. Only tapooResetLogs clears it, and only the Tapoo logs
+// reset button calls that.
 export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   try {
     window.localStorage.removeItem(
@@ -1010,7 +1028,6 @@ export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   }
 
   clearPersistedRound(modeName)
-  clearTapooLog(modeName)
 }
 
 // Tapoo log persistence. Logs are scoped to the browser tab session: they survive page reloads
@@ -1047,7 +1064,9 @@ export function appendTapooLogEntry(modeName: MazeControlModeName, entry: unknow
   saveTapooLog(modeName, [...loadTapooLog<unknown>(modeName), entry])
 }
 
-// clearTapooLog removes the persisted log snapshot from sessionStorage; called by tapooResetLogs
+// clearTapooLog removes the persisted log snapshot from sessionStorage. tapooResetLogs is its only
+// caller, and the Tapoo logs reset button is that function's only caller in turn - no game action
+// reaches this, so a round can never take the session's record down with it.
 // so a deliberate reset clears both the in-memory buffer and its sessionStorage copy.
 export function clearTapooLog(modeName: MazeControlModeName): void {
   try {

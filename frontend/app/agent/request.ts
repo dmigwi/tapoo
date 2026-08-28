@@ -20,6 +20,7 @@ import {
   serializeToolResult,
 } from "./protocol"
 import { PROVIDER_ADAPTERS } from "./providers"
+import { cellCoordinateFromGridPoint } from "../traversal"
 import type { ProviderAdapter } from "./providers"
 import {
   formatPlayerStatusLabel,
@@ -104,9 +105,16 @@ function logAgentLevelStarted(
     return
   }
 
+  // destinationCell and historyWindowRadius are logged here, once, rather than in every turn's
+  // get_maze_structure result: neither changes for the life of a level, and repeating them cost a
+  // line of the log on every request of every turn. A reader needs them to expand the compacted
+  // per-turn results (see compactLoggedToolResult), so they belong beside the maze those results
+  // describe. level is not repeated either - every log entry is already stamped with it.
   logTapooDiagnostic(CONFIG.runtime.controlModes.agentApi, "info", "Agent level started.", {
     startPosition: stateSnapshot.startPosition,
     finalPosition: stateSnapshot.finalPosition,
+    destinationCell: cellCoordinateFromGridPoint(stateSnapshot.finalPosition),
+    historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
     maze: encodedMazeForLogs,
   })
 }
@@ -192,8 +200,11 @@ async function requestChatTurn(
     requestCount,
     agentMode,
     reasoning: reasoningEffort,
-    // The full accumulated conversation is sent on every provider request. Static prompts are
-    // previewed after the first request, while assistant/tool context stays available in full.
+    // The full accumulated conversation is sent on every provider request, which is exactly why the
+    // logged copy is not: prompts, tool descriptions and tool results are each previewed with a
+    // checksum after the first request of a level, so a turn's log cost no longer multiplies by how
+    // many requests that turn took. Assistant messages stay whole - they carry the model's own
+    // output and requested calls, which no replay can reconstruct.
     messages: messages.map((msg) => previewLoggedMessage(msg, keepFull)),
     tools: tools.map((tool) => previewLoggedTool(tool, keepFull)),
   })

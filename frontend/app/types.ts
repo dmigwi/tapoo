@@ -491,6 +491,15 @@ export type AgentSeat = {
   readonly agent: AgentApiSeatConfig | null
 }
 
+// AgentTurnStatsResult pairs the agent's post-turn counters with whether they reached storage.
+// persisted is not advisory: levelTurnCount is half of the round fingerprint the agent-api loop
+// checks, so committing a turn after a failed write leaves the two halves permanently apart and the
+// next turn answers that with a full restart.
+export type AgentTurnStatsResult = {
+  agent: AgentApiSeatConfig
+  persisted: boolean
+}
+
 // MazeActionResult stores only the previous command/replay outcome; live maze facts stay in State.
 export type MazeActionResult = {
   lastPlayerName?: string

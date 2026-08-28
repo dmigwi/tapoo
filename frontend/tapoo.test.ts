@@ -150,7 +150,6 @@ describe("tapoo entrypoint", () => {
     vi.doMock("./app/logs", () => ({
       initTapooLogs,
       tapooDownloadLogs: vi.fn(),
-      tapooResetLogs: vi.fn(),
     }))
 
     await import("./tapoo")
@@ -185,6 +184,18 @@ describe("tapoo entrypoint", () => {
     expect(scenario.bootstrapGame).toHaveBeenCalledTimes(1)
     expect(scenario.initTapooLogs).toHaveBeenCalledTimes(1)
     expect(scenario.infoGate.hidden).toBe(true)
+  })
+
+  // Downloading a log reads it; resetting one destroys it. Only the Tapoo logs reset button may do
+  // the second, so no global is published for it - a page script calling window.tapooResetLogs()
+  // would wipe the session's record with nothing afterwards to distinguish it from a button press.
+  it("publishes a console hook for downloading logs but never for clearing them", async () => {
+    const scenario = await mountGateScenario([])
+    scenario.infoGateProceed.click()
+
+    const globals = window as unknown as Record<string, unknown>
+    expect(typeof globals.tapooDownloadLogs).toBe("function")
+    expect(globals.tapooResetLogs).toBeUndefined()
   })
 
   it("uses the agent-api page mode when configured in html", async () => {

@@ -292,6 +292,16 @@ function noValidRoundExists(snapshot: PersistedRound | null): boolean {
   }
 
   if (!isValidPersistedRound(snapshot)) {
+    // Logged because this discards a round the player was in the middle of. Silently starting a
+    // fresh maze left the loss indistinguishable from a restart the player triggered, with nothing
+    // afterwards to say a snapshot had even been rejected.
+    logTapooDiagnostic(state.controlMode, "error", "Persisted round rejected; starting a fresh maze.", {
+      level: snapshot.level,
+      cumulativeRoundCount: snapshot.cumulativeRoundCount,
+      turnCount: snapshot.turnCount,
+      mazeDimensions: snapshot.mazeDimensions,
+      traversalHistoryLength: snapshot.traversalHistory?.length,
+    })
     clearPersistedRound(state.controlMode)
     return true
   }
@@ -449,6 +459,19 @@ function redrawRoundForViewport(level: number): boolean {
   const dimensions = getMazeDimensions(level, getTerminalSize(runtimeElements))
   if (!dimensions) {
     return false
+  }
+
+  // A resize can reach here mid-round, and the new maze replaces the one being played: progress
+  // within the level is gone. Logged because nothing else records it - a resize is not an action
+  // the player associates with losing a round, so without this the loss has no visible cause.
+  if (isRunningStatus(state.status)) {
+    logTapooDiagnostic(state.controlMode, "warn", "Viewport change redrew the round; progress in it was discarded.", {
+      level,
+      cumulativeRoundCount: state.cumulativeRoundCount,
+      turnCount: state.turnCount,
+      previousDimensions: state.mazeDimensions,
+      nextDimensions: dimensions,
+    })
   }
 
   return startRoundWithDimensions(dimensions)

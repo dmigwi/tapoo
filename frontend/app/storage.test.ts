@@ -6,7 +6,9 @@ import {
   clearPersistedRound,
   clearPersistedSnapshot,
   clearStaleStorageVersions,
+  clearTapooLog,
   disableAgentApiConfigForNetworkError,
+  loadTapooLog,
   loadAgentApiSeatConfigs,
   loadPersistedAgentApiConfigs,
   loadPersistedSnapshot,
@@ -16,6 +18,7 @@ import {
   saveActiveRoundSnapshot,
   saveGameProgress,
   savePersistedAgentApiConfigs,
+  saveTapooLog,
   staleStorageSummary,
 } from "./storage"
 // The real guard rather than a local copy: loadPersistedSnapshot takes it from its caller, so a copy
@@ -220,6 +223,63 @@ describe("storage", () => {
     expect(loadPersistedAgentApiConfigs()).toEqual([])
   })
 
+  // The reported incident: a long agent session reset itself with no user action and an empty log.
+  // sessionStorage is shared between the Tapoo log, the round snapshot and these metrics, and the
+  // log grows every turn. Once the quota is reached the metrics write fails; swallowing that froze
+  // levelTurnCount while State.turnCount kept advancing, and the agent-api loop reads that gap as a
+  // genuine divergence and answers it with a full restart.
+  it("reports a failed metrics write instead of silently freezing the fingerprint", () => {
+    const agent = {
+      seatId: 1,
+      sessionId: 1_700_000_000_000,
+      playerName: "Blue",
+      model: "m",
+      endpoint: endpoint("/api/agents/a/move"),
+      api: "ollama" as const,
+      reasoningEffort: "none" as const,
+      enabled: true,
+    }
+    savePersistedAgentApiConfigs([agent])
+
+    expect(recordAgentTurnStats(agent, 1, 0, 1, 1).persisted).toBe(true)
+
+    const setItem = vi.spyOn(window.sessionStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError")
+    })
+    try {
+      expect(recordAgentTurnStats(agent, 1, 0, 1, 2).persisted).toBe(false)
+    } finally {
+      setItem.mockRestore()
+    }
+  })
+
+  // A reset wiped the log along with the round, and that erased the evidence of why. restartGame is
+  // the only caller of clearPersistedSnapshot, and the agent-api loop triggers it on its own after a
+  // turn-count mismatch: it logs the reason, restarts, and the restart deleted that entry plus every
+  // entry before it. A downloaded log then reads "entries": [] with nothing to explain the loss.
+  it("leaves the log intact when progress is reset", () => {
+    saveTapooLog(AGENT_MODE, [{ payload: "Agent request." }, { payload: "Agent response." }])
+
+    clearPersistedSnapshot(AGENT_MODE)
+
+    expect(loadTapooLog(AGENT_MODE)).toEqual([
+      { payload: "Agent request." },
+      { payload: "Agent response." },
+    ])
+  })
+
+  // The log is session scope, not game scope: only the Tapoo logs reset button clears it, through
+  // tapooResetLogs, whose sole storage-side entry point is this function.
+  it("clears the log only through its own entry point", () => {
+    saveTapooLog(AGENT_MODE, [{ payload: "Agent request." }])
+    // Another mode's reset is not this mode's reset.
+    clearTapooLog(MODE)
+    expect(loadTapooLog(AGENT_MODE)).toHaveLength(1)
+
+    clearTapooLog(AGENT_MODE)
+    expect(loadTapooLog(AGENT_MODE)).toEqual([])
+  })
+
   it("never lets a refilled seat inherit the previous occupant's session metrics", () => {
     // The cross-tab case sessionId exists for. Another tab deletes seat 1 and creates a new agent
     // in it; this tab never saw either event, so its sessionStorage still holds a row filed under
@@ -278,7 +338,7 @@ describe("storage", () => {
       7,
       4,
       1,
-    )
+    ).agent
 
     // Red's stored row is untouched: no turn, no decay charged against it.
     const storedRed = loadAgentApiSeatConfigs()[0]
@@ -546,7 +606,7 @@ describe("storage", () => {
     // A clean turn costs 1 decay unit; a turn that hit an invalid move costs 3. Requests count
     // one per turn either way, so the two counters deliberately diverge.
     const storedConfigsBeforeTurns = window.localStorage.getItem(agentStorageKey(agentConfigs))
-    const firstTurnAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 1, 1)
+    const firstTurnAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 1, 1).agent
     expect(firstTurnAgent).toMatchObject({
       gameLevel: 3, cumulativeRoundCount: 7, levelTurnCount: 1, turnCount: 1, decayUnitsCharged: 1,
     })
@@ -556,7 +616,7 @@ describe("storage", () => {
       gameLevel: 3, cumulativeRoundCount: 7, levelTurnCount: 1, turnCount: 0, decayUnitsCharged: 0,
     })
 
-    const secondTurnAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 3, 2)
+    const secondTurnAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 3, 2).agent
     expect(secondTurnAgent).toMatchObject({
       gameLevel: 3, cumulativeRoundCount: 7, levelTurnCount: 2, turnCount: 2, decayUnitsCharged: 4,
     })
@@ -605,7 +665,7 @@ describe("storage", () => {
     ])
     recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 12, 5)
 
-    const nextLevelAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 4, 7, 1, 1)
+    const nextLevelAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 4, 7, 1, 1).agent
 
     expect(nextLevelAgent).toMatchObject({
       gameLevel: 4, cumulativeRoundCount: 7, turnCount: 1, decayUnitsCharged: 1,
@@ -625,7 +685,7 @@ describe("storage", () => {
     ])
     recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 7, 12, 5)
 
-    const retryAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 8, 1, 1)
+    const retryAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 3, 8, 1, 1).agent
 
     expect(retryAgent).toMatchObject({
       gameLevel: 3, cumulativeRoundCount: 8, turnCount: 1, decayUnitsCharged: 1,
@@ -651,7 +711,7 @@ describe("storage", () => {
     recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 5, 12, 25, 9)
 
     // New session, different level, but the round counter happens to collide.
-    const postResetAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 1, 12, 1, 1)
+    const postResetAgent = recordAgentTurnStats(loadAgentApiSeatConfigs()[0], 1, 12, 1, 1).agent
 
     // Must NOT inherit the stale turnCount: 9 or decayUnitsCharged: 25 - gameLevel differing
     // (1 vs 5) is what catches this. If recordAgentTurnStats is ever "simplified" to compare only

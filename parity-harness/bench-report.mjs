@@ -343,7 +343,7 @@ function conservativeMinWinSpeed(summary) {
     return ""
   }
 
-  return traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(uniqueCells, budget))
+  return `${traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(uniqueCells, budget))}x`
 }
 
 // Mirrors frontend/app/agent/efficiency.ts calculateTraversalSpeedUnits().

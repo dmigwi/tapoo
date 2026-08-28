@@ -298,13 +298,31 @@ export function handleAgentTurnLoop({
   ): void => {
     const chargedMovesCount = agentMalformedPenaltyDecayUnits
     const preCommitState = __readState()
-    const updatedAgent = recordAgentTurnStats(
+    const { agent: updatedAgent, persisted } = recordAgentTurnStats(
       agent,
       preCommitState.level,
       preCommitState.cumulativeRoundCount,
       chargedMovesCount,
       preCommitState.turnCount + 1,
     )
+    // A turn that could not record its own counters must not be committed. State.turnCount would
+    // advance past the levelTurnCount still in storage, and agentTurnCountMismatch reads that gap as
+    // a genuine divergence on the next turn - answering it with a full restart that discards the
+    // round and every preference with it. sessionStorage is shared with the growing Tapoo log, so
+    // the quota behind this is reached by long play, not by anything the player did. Pausing keeps
+    // the round intact and puts the cause in the log where it can be seen.
+    if (!persisted) {
+      logTapooDiagnostic(runtime.controlModes.agentApi, "error", "Agent turn stats could not be saved; pausing instead of committing.", {
+        seatId: agent.seatId,
+        playerName: agent.playerName,
+        level: preCommitState.level,
+        cumulativeRoundCount: preCommitState.cumulativeRoundCount,
+        turnCount: preCommitState.turnCount,
+      })
+      __dispatch({ type: "pause" }, { playerName: runtime.interactivePlayerName })
+      return
+    }
+
     const playerStatus = playerStatusFor(updatedAgent, preCommitState)
     __commitAgentTurn(
       chargedMovesCount,
@@ -621,13 +639,31 @@ export function handleAgentTurnLoop({
           : "invalid-prediction"
 
       const preCommitState = __readState()
-      const updatedAgent = recordAgentTurnStats(
+      const { agent: updatedAgent, persisted } = recordAgentTurnStats(
         selectedAgent,
         preCommitState.level,
         preCommitState.cumulativeRoundCount,
         chargedMovesCount,
         preCommitState.turnCount + 1,
       )
+    // A turn that could not record its own counters must not be committed. State.turnCount would
+      // advance past the levelTurnCount still in storage, and agentTurnCountMismatch reads that gap as
+      // a genuine divergence on the next turn - answering it with a full restart that discards the
+      // round and every preference with it. sessionStorage is shared with the growing Tapoo log, so
+      // the quota behind this is reached by long play, not by anything the player did. Pausing keeps
+      // the round intact and puts the cause in the log where it can be seen.
+      if (!persisted) {
+        logTapooDiagnostic(runtime.controlModes.agentApi, "error", "Agent turn stats could not be saved; pausing instead of committing.", {
+          seatId: selectedAgent.seatId,
+          playerName: selectedAgent.playerName,
+          level: preCommitState.level,
+          cumulativeRoundCount: preCommitState.cumulativeRoundCount,
+          turnCount: preCommitState.turnCount,
+        })
+        __dispatch({ type: "pause" }, { playerName: runtime.interactivePlayerName })
+        return
+      }
+
       const playerStatus = playerStatusFor(updatedAgent, preCommitState)
       __commitAgentTurn(
         chargedMovesCount,
