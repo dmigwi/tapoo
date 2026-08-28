@@ -24,10 +24,10 @@ const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
 const VERSION_MAJOR = 2
 
 // VERSION_MINOR is the semantic minor version for the browser SPA runtime.
-const VERSION_MINOR = 4
+const VERSION_MINOR = 5
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 9
+const VERSION_PATCH = 0
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -66,7 +66,7 @@ export const CONFIG: AppConfig = {
     // page rather than only from its structured data.
     pageUpdatedTitleTemplate: "Last updated {updated}",
     contactLabel: "Contact",
-    privacyLabel: "Privacy",
+    privacyLabel: "Privacy Policy",
   },
   // Per-page labels and metadata consumed by static page chrome.
   pages: {
@@ -151,6 +151,10 @@ export const CONFIG: AppConfig = {
     // case canShowRestart actually allows it - see tooSmallRows (render.ts) for the selection.
     tooSmallActionMessage: "Make more screen room on zoom out.",
     tooSmallActionMessageWithReset: "Make screen room on zoom out, or Reset Progress.",
+    storageLimitMessage: "Level {level} needs more storage space!",
+    storageLimitActionMessage:
+      "This browser session can play agent levels up to {maxLevel} with fallback storage. "+
+      "Use a browser/device with IndexedDB storage to play higher levels.",
     // Split by mode, like navigation above it. {turn} is State.turnCount, which only
     // commitAgentApiTurn increments and which returns early outside agent-api - so an interactive
     // round rendered a permanent "Turn: 0". The field is not merely uninteresting there, it is
@@ -465,13 +469,33 @@ export const CONFIG: AppConfig = {
     // again - changing it moves the opening level for everyone.
     defaultRestartLevel: 1,
     storage: {
-      version: 4.9,
+      version: 5.0,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",
         sessionMetrics: "agentSessionMetrics",
         agentConfigs: "agentConfigs",
+        // Web Storage key suffixes. tapooLog is the fallback log backend's key; logSessionId is the
+        // tab session id, which is not mode-scoped - see tabStorageKey in storage.ts.
         tapooLog: "tapooLog",
+        logSessionId: "tapooLogSessionId",
+      },
+      log: {
+        // IndexedDB names, kept apart from the Web Storage suffixes above because they address a
+        // different namespace: these are object stores and indexes inside the log database, not keys
+        // in a storage area. Each index name doubles as its keyPath, so it must match the field of
+        // that name on StoredLogEntry (storage-logs.ts).
+        stores: {
+          entries: "entries",
+          sessions: "sessions",
+        },
+        indexes: {
+          sessionMode: "sessionMode",
+          modeName: "modeName",
+        },
+        heartbeatIntervalMs: 10 * 60 * 1_000, // 10 minutes.
+        staleSessionTtlMs: 60 * 60 * 1_000, // 60 minutes before a log session is classified as stale.
+        fallbackAgentApiMaxLevel: 22,
       },
     },
     promptWarningPrefix: "Warning:",
@@ -519,6 +543,24 @@ export const CONFIG: AppConfig = {
 // INFO_GATE_NOTICES collects every blocking acknowledgement Tapoo can raise, keyed by what it is
 // about. One entry today; the shape is a map so a second gate does not have to restructure this.
 export const INFO_GATE_NOTICES = {
+  // Shown once per browser profile, before Tapoo stores anything of its own. Deliberately about all
+  // of it - progress, agent seat configuration and gameplay logs - rather than about one storage
+  // mechanism: the acknowledgement is that data is kept on this device at all, which stays true if
+  // the backend behind it ever changes again.
+  privacyPolicy: {
+    title: "Tapoo stores data on this device!",
+    acknowledgement:
+      "Tapoo keeps your level progress, agent-seat configuration and gameplay logs in this "+
+      "browser's storage, where you can download or clear them with game controls.",
+    detail: "Confirm you have read the Privacy Policy.",
+    // Relative, so it resolves under whatever path the site is served from - the build writes
+    // privacy.html beside the terminal pages rather than at a fixed absolute URL.
+    link: {
+      href: "privacy.html",
+      label: "Privacy Policy",
+    },
+    proceedLabel: "I have read the Privacy Policy",
+  },
   // Shown before anything an older storage schema left behind is deleted.
   staleStorage: {
     title: "Incompatible old Tapoo data detected!",
@@ -548,11 +590,6 @@ export const PAGE_COPYRIGHT_TEXT = CONFIG.chrome.pageVersionTemplate
 // rebuilding a Date, so what is shown is literally part of the same string stamped into the
 // structured data - no timezone conversion can drift between the two. UTC is stated explicitly
 // because the reader's timezone is unknown and an unlabelled wall-clock time invites a wrong guess.
-// PAGE_UPDATED_TEMPLATE is left unresolved because its value is not fixed at build time: the
-// footer states an age, which only the reader's clock can settle, so page-chrome.ts fills it on
-// every page load.
-export const PAGE_UPDATED_TEMPLATE = CONFIG.chrome.pageUpdatedTemplate
-
 // PAGE_UPDATED_AT is the deployment instant in full ISO form, for <time datetime> - the same
 // string JSON-LD's dateModified carries, so the machine-readable value on the page and in the
 // structured data cannot drift apart.
@@ -567,6 +604,9 @@ export const PAGE_UPDATED_TITLE = CONFIG.chrome.pageUpdatedTitleTemplate
 export const WALL_WEIGHTS = Object.keys(CONFIG.maze.walls)
   .map((weight) => Number(weight))
   .sort((left, right) => left - right) as WallWeight[]
+
+export const STORE_PRIVACY_ACK = "tapoo.PrivacyAcknowledged.v1"
+export const STORE_DB_NAME = `tapoo.v${CONFIG.runtime.storage.version}.logs`
 
 // STORE_ENCODING_PREFIX marks the storage schema version embedded in every encoded payload.
 export const STORE_ENCODING_PREFIX = `tapoo:v${CONFIG.runtime.storage.version}:`

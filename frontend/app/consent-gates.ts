@@ -1,6 +1,12 @@
 import { INFO_GATE_NOTICES } from "./config"
 import { showInfoGate } from "./info-gate"
-import { clearStaleStorageVersions, staleStorageSummary } from "./storage"
+import {
+  clearStaleStorageVersions,
+  privacyPolicyAcknowledged,
+  savePrivacyPolicyAcknowledgement,
+  staleStorageSummary,
+} from "./storage"
+
 import type { InfoGateContent } from "./info-gate"
 import type { StaleStorageSummary } from "./storage"
 import type { Elements } from "./types"
@@ -58,6 +64,37 @@ export function requireStaleDataAcknowledgement(
 
   showInfoGate(elements, staleDataGateContent(summary), () => {
     clearStaleStorageVersions()
+    onProceed()
+  })
+}
+
+// privacyPolicyGateContent adapts the privacy notice to the reusable info-gate shape.
+function privacyPolicyGateContent(): InfoGateContent {
+  const notice = INFO_GATE_NOTICES.privacyPolicy
+  return {
+    title: notice.title,
+    message: notice.acknowledgement,
+    detail: notice.detail,
+    link: notice.link,
+    proceedLabel: notice.proceedLabel,
+  }
+}
+
+// requirePrivacyPolicyAcknowledgement holds gameplay until the player has acknowledged, once per
+// browser profile, that Tapoo keeps data on their device. It covers everything Tapoo stores rather
+// than one mechanism: the gate was raised when logs moved to IndexedDB, but progress and agent
+// configuration were already being kept, and the answer does not change if a backend does.
+export function requirePrivacyPolicyAcknowledgement(
+  elements: Elements,
+  onProceed: () => void,
+): void {
+  if (privacyPolicyAcknowledged()) {
+    onProceed()
+    return
+  }
+
+  showInfoGate(elements, privacyPolicyGateContent(), () => {
+    savePrivacyPolicyAcknowledgement()
     onProceed()
   })
 }

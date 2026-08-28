@@ -1146,6 +1146,16 @@ body {
   display: none;
 }
 
+.info-gate__link {
+  color: var(--accent);
+  line-height: 1.65;
+  text-decoration: underline;
+}
+
+.info-gate__link[hidden] {
+  display: none;
+}
+
 .info-gate__actions {
   display: flex;
   justify-content: flex-end;

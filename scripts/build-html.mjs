@@ -179,7 +179,10 @@ async function loadRuntimeConfig() {
 async function buildPage(layout, sharedPartials, page) {
   // The page's own template is rendered first: values inserted into the layout are not scanned
   // again, so a placeholder inside pageContent would otherwise survive into the output verbatim.
-  const rendered = render(await readTemplate(page.pageContent), page)
+  // Shared partials are in scope here as well as in the layout, so a page's own body can use a
+  // build-time value - the privacy policy quotes the agent-api level cap that way, rather than
+  // leaving a number that only appears once scripting runs.
+  const rendered = render(await readTemplate(page.pageContent), { ...sharedPartials, ...page })
   const pageContent = indentHtml(rendered, "      ").replace(
     promptBlocksSlot,
     page.promptBlocks ?? "",
@@ -260,6 +263,10 @@ await mkdir(publicDirectory, { recursive: true })
 const ogImageUrl = `${urlPath}images/og-image.png`
 sharedPartials.ogImageUrl = ogImageUrl
 sharedPartials.dataBuildKey = dataBuildKey(STORE_BLEND_KEY, STORE_ENCODING_PREFIX, APP_VERSION)
+// Baked rather than filled by data-config-key at runtime: the privacy policy has to read correctly
+// with scripting off, and "capped at level :" is worse than no sentence at all. Taken from the same
+// config the game enforces it from, so the two cannot disagree.
+sharedPartials.fallbackAgentApiMaxLevel = String(runtimeConfig.runtime.storage.log.fallbackAgentApiMaxLevel)
 
 const website = {
   "@type": "WebSite",
@@ -306,8 +313,15 @@ const buildDate = validTimestamp(process.env.TAPOO_BUILD_DATE) ?? new Date().toI
 // softwareVersion carries the revision as semver build metadata (2.4.6+01279f4), so the app version
 // and the exact commit that produced it stay one identifier. The hash is absent when the build has
 // no git and no GITHUB_SHA, in which case the plain version is still correct.
+//
+// It is shown to readers, not only to machines. A downloaded Tapoo log is evidence about a run, and
+// evidence is only reproducible if the exact build that produced it can be named - a version line
+// alone cannot distinguish two builds of the same version whose prompts or scoring differ. The
+// privacy page carries it because that page is always reachable and is not cleared by a reset, so
+// there is one place a reader can always check whether the build changed under them.
 const commitHash = process.env.TAPOO_COMMIT_HASH ?? ""
 const softwareVersion = commitHash ? `${APP_VERSION}+${commitHash}` : APP_VERSION
+sharedPartials.softwareVersion = softwareVersion
 
 await Promise.all([
   buildPage(layout, sharedPartials, {

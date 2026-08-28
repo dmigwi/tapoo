@@ -2,7 +2,6 @@ import {
   CONFIG,
   PAGE_COPYRIGHT_TEXT,
   PAGE_UPDATED_AT,
-  PAGE_UPDATED_TEMPLATE,
   PAGE_UPDATED_TITLE,
 } from "./app/config"
 import {
@@ -149,8 +148,8 @@ export function applyPageVersion(): void {
   // The age only renders where the template asked for it. A template edited to drop {updated}
   // would otherwise show its own literal text in a <time> element that still carries a real
   // datetime - a timestamp claimed but not shown. Dropping the run keeps the two honest.
-  const hasUpdatedSlot = PAGE_UPDATED_TEMPLATE.includes("{updated}")
-  const updatedText = PAGE_UPDATED_TEMPLATE.replace(
+  const hasUpdatedSlot = CONFIG.chrome.pageUpdatedTemplate.includes("{updated}")
+  const updatedText = CONFIG.chrome.pageUpdatedTemplate.replace(
     "{updated}",
     relativeAge(Date.parse(PAGE_UPDATED_AT), Date.now()),
   )

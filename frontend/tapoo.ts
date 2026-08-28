@@ -5,7 +5,10 @@ import { getGameElements } from "./app/dom"
 import { prepareTerminalAppForBootstrap, showPlaceholderArt } from "./app/fallback-policy"
 import { initTapooLogs, tapooDownloadLogs } from "./app/logs"
 import { bootstrapGame } from "./app/game"
-import { requireStaleDataAcknowledgement } from "./app/consent-gates"
+import {
+  requirePrivacyPolicyAcknowledgement,
+  requireStaleDataAcknowledgement,
+} from "./app/consent-gates"
 import { applyPageText, applyPageVersion, initTopMenus } from "./page-chrome"
 import type { Elements, MazeActionControl, MazeControlModeName } from "./app/types"
 
@@ -58,8 +61,8 @@ try {
     // until startGame runs, which is what the gate actually holds back.
     prepareTerminalAppForBootstrap()
 
-    // initTapooLogs seeds from sessionStorage, so it waits with the rest: nothing reads storage
-    // until any acknowledgement resolves.
+    // initTapooLogs touches IndexedDB/sessionStorage, so it waits with the rest: nothing reads log
+    // storage until every acknowledgement resolves.
     //
     // startGame carries its own fallback because it can run from a click handler, and a throw
     // there escapes the try/catch around this block - the browser routes it to window.onerror
@@ -67,14 +70,21 @@ try {
     // for both the gated and ungated paths.
     const startGame = (): void => {
       try {
-        initTapooLogs(mode.name)
-        bootstrapGame(mode, elements)
+        void initTapooLogs(mode.name)
+          .then(() => {
+            bootstrapGame(mode, elements)
+          })
+          .catch((error) => {
+            showPlaceholderArt(pageModeName(), error)
+          })
       } catch (error) {
         showPlaceholderArt(pageModeName(), error)
       }
     }
 
-    requireStaleDataAcknowledgement(elements, startGame)
+    requireStaleDataAcknowledgement(elements, () => {
+      requirePrivacyPolicyAcknowledgement(elements, startGame)
+    })
   }
 } catch (error) {
   showPlaceholderArt(pageModeName(), error)

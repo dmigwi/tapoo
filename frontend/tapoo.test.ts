@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { INFO_GATE_NOTICES, STORE_PRIVACY_ACK } from "./app/config"
 import type * as FallbackPolicy from "./app/fallback-policy"
 
 const pageChrome = {
@@ -52,7 +53,12 @@ describe("tapoo entrypoint", () => {
     })
   })
 
+  function acknowledgePrivacyPolicy(): void {
+    window.localStorage.setItem(STORE_PRIVACY_ACK, "true")
+  }
+
   it("boots the game on import", async () => {
+    acknowledgePrivacyPolicy()
     const bootstrapGame = vi.fn()
     const getGameElements = vi.fn(() => ({ app: {} }))
     const showPlaceholderArt = vi.fn()
@@ -82,6 +88,9 @@ describe("tapoo entrypoint", () => {
 
     await import("./tapoo")
 
+    await vi.waitFor(() => {
+      expect(bootstrapGame).toHaveBeenCalledTimes(1)
+    })
     expect(bootstrapGame).toHaveBeenCalledTimes(1)
     expect(bootstrapGame).toHaveBeenCalledWith(interactiveMode, { app: {} })
     expect(pageChrome.applyPageText).toHaveBeenCalledTimes(1)
@@ -121,11 +130,12 @@ describe("tapoo entrypoint", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail,
+      infoGateLink: document.createElement("a"),
       infoGateProceed,
     }
 
     const bootstrapGame = vi.fn()
-    const initTapooLogs = vi.fn()
+    const initTapooLogs = vi.fn(() => Promise.resolve())
     const prepareTerminalAppForBootstrap = vi.fn()
     const interactiveMode = {
       bindActionDispatch: vi.fn(),
@@ -181,6 +191,16 @@ describe("tapoo entrypoint", () => {
     scenario.infoGateProceed.click()
 
     expect(window.localStorage.getItem(staleKey)).toBeNull()
+    expect(scenario.bootstrapGame).not.toHaveBeenCalled()
+    expect(scenario.initTapooLogs).not.toHaveBeenCalled()
+    expect(scenario.infoGateDetail.textContent).toBe(INFO_GATE_NOTICES.privacyPolicy.detail)
+    expect(scenario.infoGate.hidden).toBe(false)
+
+    scenario.infoGateProceed.click()
+
+    await vi.waitFor(() => {
+      expect(scenario.bootstrapGame).toHaveBeenCalledTimes(1)
+    })
     expect(scenario.bootstrapGame).toHaveBeenCalledTimes(1)
     expect(scenario.initTapooLogs).toHaveBeenCalledTimes(1)
     expect(scenario.infoGate.hidden).toBe(true)
@@ -199,6 +219,7 @@ describe("tapoo entrypoint", () => {
   })
 
   it("uses the agent-api page mode when configured in html", async () => {
+    acknowledgePrivacyPolicy()
     const bootstrapGame = vi.fn()
     const elements = { app: {} }
     const showPlaceholderArt = vi.fn()
@@ -229,6 +250,9 @@ describe("tapoo entrypoint", () => {
 
     await import("./tapoo")
 
+    await vi.waitFor(() => {
+      expect(bootstrapGame).toHaveBeenCalledWith(agentMode, elements)
+    })
     expect(bootstrapGame).toHaveBeenCalledWith(agentMode, elements)
     expect(showPlaceholderArt).not.toHaveBeenCalled()
   })
@@ -253,6 +277,7 @@ describe("tapoo entrypoint", () => {
   })
 
   it("shows placeholder art when bootstrap throws an unknown Error", async () => {
+    acknowledgePrivacyPolicy()
     const failure = new Error("unexpected bootstrap failure")
     const showPlaceholderArt = vi.fn()
 
@@ -279,10 +304,14 @@ describe("tapoo entrypoint", () => {
 
     await import("./tapoo")
 
+    await vi.waitFor(() => {
+      expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
+    })
     expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
   })
 
   it("shows placeholder art when bootstrap throws a known fallback Error", async () => {
+    acknowledgePrivacyPolicy()
     const failure = new Error("missing required element: terminal-body")
     const showPlaceholderArt = vi.fn()
 
@@ -309,10 +338,14 @@ describe("tapoo entrypoint", () => {
 
     await import("./tapoo")
 
+    await vi.waitFor(() => {
+      expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
+    })
     expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
   })
 
   it("reports a later invariant failure through the placeholder art", async () => {
+    acknowledgePrivacyPolicy()
     const failure = new Error("agent move dispatch must return feedback")
     const showPlaceholderArt = vi.fn()
 

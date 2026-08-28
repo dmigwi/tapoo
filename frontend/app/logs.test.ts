@@ -39,14 +39,14 @@ function createXorshift128Generator(seed: number): PRNGGenerator {
 
 // These tests keep the in-memory Tapoo log export/reset behavior intentionally small.
 describe("tapoo logs", () => {
-  beforeEach(() => {
-    initTapooLogs("interactive")
+  beforeEach(async () => {
+    await initTapooLogs("interactive")
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
-    tapooResetLogs("interactive")
+    await tapooResetLogs("interactive")
   })
 
   it("resets in-memory logs before downloading them", async () => {
@@ -71,7 +71,7 @@ describe("tapoo logs", () => {
     })
 
     logTapooDiagnostic("interactive", "info", "before reset", { source: "test" })
-    tapooDownloadLogs("interactive")
+    await tapooDownloadLogs("interactive")
 
     expect(createObjectURL).toHaveBeenCalledTimes(1)
     const firstDownload = captured.blob
@@ -104,8 +104,8 @@ describe("tapoo logs", () => {
       /\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}[+-]\d{2}-\d{2}/,
     )
 
-    tapooResetLogs("interactive")
-    tapooDownloadLogs("interactive")
+    await tapooResetLogs("interactive")
+    await tapooDownloadLogs("interactive")
 
     expect(createObjectURL).toHaveBeenCalledTimes(2)
     const resetDownload = captured.blob
@@ -124,18 +124,18 @@ describe("tapoo logs", () => {
     expect(resetPayload.entries).toEqual([])
   })
 
-  it("persists log entries to sessionStorage and clears them on reset", () => {
+  it("persists log entries to sessionStorage and clears them on reset", async () => {
     logTapooDiagnostic("interactive", "info", "first entry")
     logTapooDiagnostic("interactive", "warn", "second entry")
 
     expect(loadTapooLog("interactive")).toHaveLength(2)
 
-    tapooResetLogs("interactive")
+    await tapooResetLogs("interactive")
 
     expect(loadTapooLog("interactive")).toHaveLength(0)
   })
 
-  it("notifies subscribers when log availability changes", () => {
+  it("notifies subscribers when log availability changes", async () => {
     const listener = vi.fn()
     const unsubscribe = subscribeTapooLogs(listener)
 
@@ -147,7 +147,7 @@ describe("tapoo logs", () => {
     expect(listener).toHaveBeenLastCalledWith(1)
     expect(tapooLogCount()).toBe(1)
 
-    tapooResetLogs("interactive")
+    await tapooResetLogs("interactive")
 
     expect(listener).toHaveBeenLastCalledWith(0)
     expect(tapooLogCount()).toBe(0)
@@ -160,13 +160,13 @@ describe("tapoo logs", () => {
 })
 
 describe("log context stamping", () => {
-  afterEach(() => {
+  afterEach(async () => {
     setTapooLogContext({ turnCount: 0, level: 0, cumulativeRoundCount: 0 })
-    tapooResetLogs("interactive")
+    await tapooResetLogs("interactive")
   })
 
-  it("stamps every entry with the turn, level, and game set when it was written", () => {
-    initTapooLogs("interactive")
+  it("stamps every entry with the turn, level, and game set when it was written", async () => {
+    await initTapooLogs("interactive")
 
     setTapooLogContext({ turnCount: 4, level: 2, cumulativeRoundCount: 9 })
     logTapooDiagnostic("interactive", "info", "Agent request.")
@@ -191,11 +191,11 @@ describe("log context stamping", () => {
     ])
   })
 
-  it("resets the turn, level, and game when logs are cleared", () => {
-    initTapooLogs("interactive")
+  it("resets the turn, level, and game when logs are cleared", async () => {
+    await initTapooLogs("interactive")
 
     setTapooLogContext({ turnCount: 7, level: 3, cumulativeRoundCount: 12 })
-    tapooResetLogs("interactive")
+    await tapooResetLogs("interactive")
     logTapooDiagnostic("interactive", "info", "after reset")
 
     const entries = loadTapooLog<{ turn: number; level: number; game: number }>("interactive")

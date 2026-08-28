@@ -8,42 +8,63 @@
         player through a maze to a target.
       </p>
       <p>
-        The current Tapoo version (shown at the bottom of this page) supports two control
-        modes: Interactive mode, where you play directly, and AI Agent mode, where a
-        configured agent API endpoint plays on your behalf. In both modes, gameplay state
-        stays on your device; Tapoo sends no data to a remote service unless you configure
-        AI Agent mode to request predictions from an agent API endpoint.
+        Tapoo <code>v{{softwareVersion}}</code> supports two control modes: Interactive mode,
+        where you play directly, and AI Agent mode, where every enabled agent seat plays on your
+        behalf in turn, each asking the agent API endpoint you configured for that seat what to
+        move next. In both modes, gameplay state stays on your device; Tapoo sends no data to a
+        remote service unless you enable at least one agent seat.
       </p>
 
       <h2>Data Tapoo Stores</h2>
       <p>
-        Tapoo uses <code>localStorage</code> to keep durable game preferences such as
-        level, wall weight, score-retention metrics, optional AI Agent configuration, and
-        Tapoo Logs. Each configured AI Agent's stored configuration also includes its own
-        turn count and decay units charged for the current level and round; the
-        traversal-speed classification described below is computed from those counts on
-        demand, not stored separately. If you supply a bearer token or API key, or any
-        extra request headers, when configuring an agent, those values are stored
-        alongside the rest of the agent's configuration under the same light obfuscation
-        described below - they are recoverable by anyone with access to your browser
-        profile, so only enter a credential or header value you would accept being read
-        that way.
-        Tapoo Logs capture
-        requests and responses exchanged during play, stay only on your device (never
-        sent over the network), and can be downloaded or cleared from the game controls.
-        Tapoo also uses <code>sessionStorage</code> for the active round snapshot so a
-        refresh can restore the current maze session.
+        Tapoo uses <code>localStorage</code> to keep durable game preferences such as level, wall
+        weight, score-retention metrics, optional AI Agent seat configuration, and the first-run
+        acknowledgement of this Privacy Policy. Each configured agent seat holds the display name
+        you gave it, the model name, the endpoint URL, which provider dialect that endpoint
+        speaks, the reasoning-effort setting, how often the seat may issue a request, and whether
+        Echo Back Reasoning is enabled for it, plus a creation timestamp used to tell one occupant
+        of a seat from the next. Some providers also require a bearer token or API key, and some
+        need extra request headers. Those values are stored alongside the rest of the agent's
+        configuration under the same light obfuscation described below - they are recoverable by
+        anyone with access to your browser profile, so only enter a credential or header value you
+        would accept being read that way.
       </p>
       <p>
-        All of this remains on your device unless you clear it through browser settings
-        or use Tapoo controls such as Reset Progress. Stored values are lightly obfuscated
-        to reduce casual tampering, but this is not strong encryption for gameplay data.
-        Every stored entry is also tagged with Tapoo's storage schema version, separate
-        from the app version shown at the bottom of this page. Upgrading Tapoo to a new
-        schema version does not migrate entries left over from an older one, and the
-        upgraded page cannot read them. Instead, the next time you open Tapoo it tells you
-        how many leftover entries exist and which version wrote them, and asks you to
-        confirm before removing them. Nothing is deleted until you confirm, and confirming
+        Tapoo uses <code>sessionStorage</code> for the active round snapshot, per-tab AI Agent
+        session metrics, and the tab-session ID used to scope Tapoo Logs. Those session metrics
+        are per seat and per tab: whether the seat is switched on, whether a network error
+        switched it off and when, the level and round it last played, and the turns and score
+        decay it has accumulated in that round. They are kept apart from the durable seat
+        configuration above so that two tabs can play different games at once without one tab's
+        play being counted against the other's.
+      </p>
+      <p>
+        Tapoo Logs are stored in <code>IndexedDB</code> when available. They are the record of a
+        game: every request sent to an agent endpoint and every response it returned, the encoded
+        maze each level started from, the moves replayed and what they cost, and the timing and
+        context around each turn. They exist to be read back - downloaded and analysed after a
+        run, or compared between runs - not merely to explain a fault. Logs stay on your device,
+        are scoped to the current browser tab session, and can be downloaded or cleared from the
+        game controls. If IndexedDB is unavailable, Tapoo falls back to
+        <code>sessionStorage</code> for logs, and AI Agent mode is then capped at level
+        {{fallbackAgentApiMaxLevel}}: starting a higher level shows a storage notice instead of
+        playing it. The cap exists because browsers limit <code>sessionStorage</code> to roughly
+        5MB per site, which a single high level's logs can exceed on their own - past that limit
+        the browser refuses further writes and the log stops recording the game it is meant to
+        describe. Interactive mode is not affected by that cap, and no cap applies at all when
+        IndexedDB is available. A second limit is unrelated to storage and applies in both modes:
+        a level is only played if its maze fits the visible area, so a window too small for the
+        level shows a screen-room notice until it is enlarged.
+      </p>
+      <p>
+        All of this remains on your device unless you clear it through browser settings or use
+        Tapoo controls such as Reset Progress. Stored values are lightly obfuscated to reduce
+        casual tampering, but this is not strong encryption for gameplay data. Every stored entry
+        is also tagged with Tapoo's storage schema version, which is separate from the app version
+        named above. Upgrading Tapoo to a new schema version does not migrate entries left over
+        from an older one, and the upgraded page cannot read them. Instead, the next time you open
+        Tapoo it tells you how many leftover entries exist and which version wrote them, and asks
+        you to confirm before removing them. Nothing is deleted until you confirm, and confirming
         does clear previously stored preferences and AI Agent configuration, including any
         credential or header values saved with an agent.
       </p>
@@ -82,8 +103,11 @@
 
       <h2>Your Choices and Controls</h2>
       <p>
-        You can reset game progress, download Tapoo Logs, or clear Tapoo Logs from the
-        game controls. When leftover data from an older storage schema version is present,
+        You can reset game progress, download Tapoo Logs for the current tab session, or
+        clear Tapoo Logs from the game controls. Clearing Tapoo Logs removes the current
+        tab-session logs and stale same-mode log sessions that have not updated their
+        activity timestamp for at least 60 minutes. When leftover data from an older
+        storage schema version is present,
         Tapoo asks you to confirm its removal before the game loads; this is a notice
         rather than a choice to keep that data while playing, since the upgraded page
         cannot read it either way. Declining simply means not continuing, and the data

@@ -99,6 +99,7 @@ function createElements(): Elements {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     touchButtons,
   }

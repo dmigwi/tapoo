@@ -169,7 +169,7 @@ export type AgentApiSeatConfig = AgentApiConfig & AgentApiSessionMetrics
 // --Shared Runtime Types--
 
 // Shared runtime types live here so rendering, control, storage, and generation stay aligned.
-export type GameStatus = PersistedGameStatus | "boot" | "too-small"
+export type GameStatus = PersistedGameStatus | "boot" | "too-small" | "storage-limit"
 
 // CellCoordinate represents one logical cell position using zero-based row and column indexes.
 // It stays independent from RenderGridPoint because the two spaces scale differently: a single
@@ -500,6 +500,46 @@ export type AgentTurnStatsResult = {
   persisted: boolean
 }
 
+// --- Tapoo log storage ---
+
+// TapooLogBackend names where log entries are actually being kept. IndexedDB is preferred and
+// sessionStorage is the fallback for browsers that block or lack it; the two differ in capacity by
+// three orders of magnitude, so which one is live decides how much play can be logged - see
+// runtime.storage.log.fallbackAgentApiMaxLevel.
+export type TapooLogBackend = "indexed-db" | "session-storage"
+
+// StoredLogEntry is one logged entry as IndexedDB holds it. sessionMode is the composite the
+// sessionMode index is built over, and its name must stay identical to that index's name and
+// keyPath - see the createIndex calls in storage-logs.ts.
+export type StoredLogEntry = {
+  id?: number
+  sessionId: string
+  sessionMode: string
+  modeName: MazeControlModeName
+  entry: LogEntry
+}
+
+// StoredLogSession is the per-(tab, mode) lease that makes cleanup possible. IndexedDB is shared by
+// every tab and outlives all of them, so a closed tab's entries would otherwise stay forever with
+// nothing left to claim them. lastSeenAt is refreshed while a tab is live; once it stops moving the
+// session is stale, and a later reset sweeps its entries along with the current tab's.
+export type StoredLogSession = {
+  id: string
+  sessionId: string
+  modeName: MazeControlModeName
+  createdAt: number
+  lastSeenAt: number
+}
+
+// TapooLogStoreState is what every log-store operation reports back: which backend served it, how
+// many entries this tab holds, and how many other sessions are stale. Returned rather than read
+// separately so a caller cannot act on counts from before its own write.
+export type TapooLogStoreState = {
+  backend: TapooLogBackend
+  currentLogCount: number
+  staleLogSessionCount: number
+}
+
 // MazeActionResult stores only the previous command/replay outcome; live maze facts stay in State.
 export type MazeActionResult = {
   lastPlayerName?: string
@@ -644,6 +684,7 @@ export type TerminalElements = {
   infoGateTitle: HTMLElement
   infoGateMessage: HTMLElement
   infoGateDetail: HTMLElement
+  infoGateLink: HTMLAnchorElement
   infoGateProceed: HTMLButtonElement
 }
 
@@ -766,9 +807,20 @@ export type LogEntry = {
 export type InfoGateNotice = {
   title: string
   acknowledgement: string
-  // detailTemplate's placeholders are filled by the caller, which is the only place the counts and
-  // their singular/plural wording are known.
+  // Two spellings of the same line, and only one applies to a given gate. detailTemplate carries
+  // placeholders the caller fills, because it is the only place the counts and their
+  // singular/plural wording are known; detail is the fixed form, for a gate whose supporting line
+  // never varies. A gate that used detailTemplate with nothing to substitute would invite a reader
+  // to look for the substitution.
   detailTemplate?: string
+  detail?: string
+  // A page the reader should be able to open before answering. Optional because most gates have
+  // nothing to point at; the privacy gate does, and asking someone to confirm they have read a
+  // policy without offering a way to reach it is not a real question.
+  link?: {
+    href: string
+    label: string
+  }
   proceedLabel: string
 }
 
@@ -822,6 +874,8 @@ export type AppConfig = {
     tooSmallMessage: string
     tooSmallActionMessage: string
     tooSmallActionMessageWithReset: string
+    storageLimitMessage: string
+    storageLimitActionMessage: string
     // Per-mode: only agent-api has a turn count to show. See config.ts.
     runningStatus: {
       interactive: DisplayMsg
@@ -1000,6 +1054,23 @@ export type AppConfig = {
         winMetrics: string
         sessionMetrics: string
         tapooLog: string
+        logSessionId: string
+      }
+      log: {
+        // Object-store and index names for the IndexedDB log database. Each index name is also its
+        // keyPath and the field it reads on a stored entry: one string, so an index can never be
+        // built over a property that does not exist - which is what silently returned no rows.
+        stores: {
+          entries: string
+          sessions: string
+        }
+        indexes: {
+          sessionMode: string
+          modeName: string
+        }
+        heartbeatIntervalMs: number
+        staleSessionTtlMs: number
+        fallbackAgentApiMaxLevel: number
       }
     }
     promptWarningPrefix: string

@@ -13,8 +13,20 @@ function gateElements(): Elements {
     infoGateTitle: document.createElement("strong"),
     infoGateMessage: document.createElement("p"),
     infoGateDetail: document.createElement("p"),
+    infoGateLink: document.createElement("a"),
     infoGateProceed: document.createElement("button"),
   } as unknown as Elements
+}
+
+// A gate that asks whether a policy has been read has to offer a way to reach it; these pin that the
+// link is rendered when supplied, hidden when not, and opened without handing the new page a
+// window.opener reference back into the gated one.
+const contentWithLink: InfoGateContent = {
+  title: "Tapoo stores data on this device!",
+  message: "Tapoo keeps progress, agent configuration and logs in this browser's storage.",
+  detail: "Confirm that you have read the Privacy Policy before proceeding.",
+  link: { href: "privacy.html", label: "Read the Privacy Policy" },
+  proceedLabel: "I have read the Privacy Policy",
 }
 
 const content: InfoGateContent = {
@@ -37,6 +49,30 @@ describe("showInfoGate", () => {
     expect(elements.infoGateDetail.hidden).toBe(false)
     expect(elements.infoGateProceed.textContent).toBe(content.proceedLabel)
     expect(elements.infoGate.hidden).toBe(false)
+  })
+
+  it("renders a supplied link and opens it without a window.opener handle", () => {
+    const elements = gateElements()
+
+    showInfoGate(elements, contentWithLink, vi.fn())
+
+    expect(elements.infoGateLink.textContent).toBe("Read the Privacy Policy")
+    expect(elements.infoGateLink.getAttribute("href")).toBe("privacy.html")
+    expect(elements.infoGateLink.hidden).toBe(false)
+    // The gate blocks the page behind it and cannot be dismissed, so navigating in place would
+    // strand the reader with no way back to the question.
+    expect(elements.infoGateLink.target).toBe("_blank")
+    expect(elements.infoGateLink.rel).toBe("noopener noreferrer")
+  })
+
+  it("hides the link when the gate has nothing to point at", () => {
+    const elements = gateElements()
+
+    showInfoGate(elements, content, vi.fn())
+
+    expect(elements.infoGateLink.hidden).toBe(true)
+    expect(elements.infoGateLink.textContent).toBe("")
+    expect(elements.infoGateLink.getAttribute("href")).toBe("")
   })
 
   it("hides the detail line when the caller has nothing concrete to add", () => {

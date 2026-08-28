@@ -51,6 +51,7 @@ export function getGameElements(): Elements | null {
     infoGateTitle: mustElement<HTMLElement>("info-gate-title"),
     infoGateMessage: mustElement<HTMLElement>("info-gate-message"),
     infoGateDetail: mustElement<HTMLElement>("info-gate-detail"),
+    infoGateLink: mustElement<HTMLAnchorElement>("info-gate-link"),
     infoGateProceed: mustElement<HTMLButtonElement>("info-gate-proceed"),
     systemPalette: mustElement<HTMLElement>("system-palette"),
     systemSettings: mustElement<HTMLButtonElement>("system-settings"),

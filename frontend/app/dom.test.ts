@@ -39,6 +39,7 @@ function setupTerminalDom(): void {
     <strong id="info-gate-title"></strong>
     <p id="info-gate-message"></p>
     <p id="info-gate-detail" hidden></p>
+    <a id="info-gate-link" hidden></a>
     <button id="info-gate-proceed"></button>
     <div id="system-palette"></div>
     <button id="system-settings"></button>

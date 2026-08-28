@@ -1,5 +1,5 @@
 import { GameClock } from "./clock"
-import { logTapooDiagnostic } from "./logs"
+import { isTapooLogStorageFallback, logTapooDiagnostic } from "./logs"
 import {
   CONFIG,
   WALL_WEIGHTS,
@@ -159,9 +159,10 @@ function restoreClock(totalCells: number, remainingMs: number): GameClock {
   return clock
 }
 
-// applyTooSmallState clears the active round when the viewport can no longer fit it.
-function applyTooSmallState(level: number): void {
-  state.status = "too-small"
+// applyBlockedLevelState clears the in-memory active round when the requested level cannot be played in the
+// current browser environment: either the viewport is too small or fallback log storage is capped.
+function applyBlockedLevelState(level: number, status: "too-small" | "storage-limit"): void {
+  state.status = status
   state.level = level
   state.mazeDimensions = null
   state.maze = null
@@ -176,6 +177,14 @@ function applyTooSmallState(level: number): void {
   state.cumulativeRoundCount += 1
   state.winSummary = ""
   state.clock = null
+}
+
+function agentLevelExceedsFallbackStorage(level: number): boolean {
+  return (
+    isAgentApiMode(state.controlMode) &&
+    isTapooLogStorageFallback() &&
+    level > runtime.storage.log.fallbackAgentApiMaxLevel
+  )
 }
 
 // persistedRoundFitsViewport checks whether a saved round still fits the viewport.
@@ -327,8 +336,14 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
   state.restartLevel = restoredRestartLevel(snapshot.restartLevel)
 
   if (!persistedRoundFitsViewport(snapshot)) {
-    applyTooSmallState(snapshot.level)
+    applyBlockedLevelState(snapshot.level, "too-small")
     state.wallWeight = snapshot.wallWeight
+    persistProgressOnly()
+    return
+  }
+
+  if (agentLevelExceedsFallbackStorage(snapshot.level)) {
+    applyBlockedLevelState(snapshot.level, "storage-limit")
     persistProgressOnly()
     return
   }
@@ -436,11 +451,19 @@ function startRound(requestedLevel: number, persist = true): boolean {
   // floor is untouched, since a level already past it is its own maximum.
   const level = Math.max(requestedLevel, state.restartLevel)
 
+  if (agentLevelExceedsFallbackStorage(level)) {
+    applyBlockedLevelState(level, "storage-limit")
+    if (persist) {
+      persistProgressOnly()
+    }
+    return true
+  }
+
   const terminalSize = getTerminalSize(runtimeElements)
   const dimensions = getMazeDimensions(level, terminalSize)
 
   if (!dimensions) {
-    applyTooSmallState(level)
+    applyBlockedLevelState(level, "too-small")
     if (persist) {
       persistNow("state")
     }
@@ -653,7 +676,7 @@ function handleResize(): void {
       viewportRoundResolved = true
     } else {
       saveActiveRoundSnapshot(state.controlMode, state)
-      applyTooSmallState(state.level)
+      applyBlockedLevelState(state.level, "too-small")
       persistProgressOnly()
     }
   }

@@ -837,7 +837,7 @@ describe("agent api turn loop", () => {
   })
 
   it("records malformed responses with the fixed mistake decay", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -1138,7 +1138,7 @@ describe("agent api turn loop", () => {
   })
 
   it("disables the agent after fetch failures without score decay", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockRejectedValue(new TypeError("network failed")),
@@ -1199,7 +1199,7 @@ describe("agent api turn loop", () => {
   })
 
   it("recovers after a single connection-error retry and completes the turn normally", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     const fetchMock = vi
       .fn()
       .mockRejectedValueOnce(new TypeError("network failed"))
@@ -1259,7 +1259,7 @@ describe("agent api turn loop", () => {
   })
 
   it("warns the model and recovers after one token-limit-exhaustion retry", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({

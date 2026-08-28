@@ -84,6 +84,7 @@ function createElements(): RenderElements {
     infoGateTitle: document.createElement("strong"),
     infoGateMessage: document.createElement("p"),
     infoGateDetail: document.createElement("p"),
+    infoGateLink: document.createElement("a"),
     infoGateProceed: document.createElement("button"),
     touchButtons,
     agentConfigForm,
@@ -957,6 +958,39 @@ describe("render", () => {
       .map((button) => button.dataset.action ?? button.dataset.move)
 
     expect(visibleLabels).toEqual([])
+    expect(elements.touchControls.hidden).toBe(true)
+  })
+
+  it("shows storage-limit messaging when fallback logs cannot support the requested agent level", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        level: CONFIG.runtime.storage.log.fallbackAgentApiMaxLevel + 1,
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "storage-limit",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(
+      messages.storageLimitMessage.replace(
+        "{level}",
+        String(CONFIG.runtime.storage.log.fallbackAgentApiMaxLevel + 1),
+      ),
+    )
+    expect(text).toContain(
+      messages.storageLimitActionMessage.replace(
+        "{maxLevel}",
+        String(CONFIG.runtime.storage.log.fallbackAgentApiMaxLevel),
+      ),
+    )
     expect(elements.touchControls.hidden).toBe(true)
   })
 

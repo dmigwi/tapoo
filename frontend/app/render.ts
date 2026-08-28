@@ -15,6 +15,7 @@ import {
   isLostStatus,
   isPausedStatus,
   isRunningStatus,
+  isStorageLimitStatus,
   isTooSmallStatus,
   isWonStatus,
 } from "./status"
@@ -262,7 +263,7 @@ function scorePercent(state: State): number {
 }
 
 // overlayRows builds the centered pause, win, loss, or too-small overlay lines.
-function overlayRows(elements: Elements, state: State): ScreenLine[] {
+function overlayRows(state: State): ScreenLine[] {
   if (isAwaitAgentStatus(state.status) && isAgentApiMode(state.controlMode)) {
     return [
       centeredTextRow(messages.agentAwaitMessage, "status"),
@@ -306,6 +307,16 @@ function overlayRows(elements: Elements, state: State): ScreenLine[] {
     return tooSmallRows(state)
   }
 
+  if (isStorageLimitStatus(state.status)) {
+    const msg = messages.storageLimitMessage
+    const msgAction = messages.storageLimitActionMessage
+    const maxLevel = String(CONFIG.runtime.storage.log.fallbackAgentApiMaxLevel)
+    return [
+      centeredTextRow(msg.replace("{level}", String(state.level)), "status"),
+      centeredTextRow(msgAction.replace("{maxLevel}", maxLevel)),
+    ]
+  }
+
   return []
 }
 
@@ -322,7 +333,7 @@ function applyOverlayToMaze(
     className: "screen-text",
   }))
 
-  const overlay = overlayRows(elements, state)
+  const overlay = overlayRows(state)
   if (overlay.length === 0) {
     return screenMaze
   }
@@ -367,8 +378,7 @@ function buildScreenLines(
     : [centeredTextRow(navigationText(state)), emptyTextRow()]
 
   if (mazeLines.length === 0) {
-    lines.push(...rowsWithSpacer(...overlayRows(elements, state)))
-
+    lines.push(...rowsWithSpacer(...overlayRows(state)))
     return lines
   }
 

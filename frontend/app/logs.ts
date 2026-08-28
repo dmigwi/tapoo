@@ -1,6 +1,14 @@
-import { appendTapooLogEntry, clearTapooLog, loadTapooLog } from "./storage"
 import type { LogEntry, LogLevel, MazeControlModeName, State } from "./types"
 import { APP_VERSION, CONFIG } from "./config"
+import {
+  appendTapooLogStoreEntry,
+  appendTapooLogStoreFallbackEntrySynchronously,
+  clearCurrentAndStaleTapooLogStoreEntries,
+  initTapooLogStore,
+  loadCurrentTapooLogStoreEntries,
+  refreshCurrentTapooLogStoreLease,
+  tapooLogStoreBackend,
+} from "./storage-logs"
 
 type LogStateListener = (logCount: number) => void
 
@@ -13,6 +21,10 @@ const loggedDescriptionPreviewLength = 25
 // logCount tracks how many entries are stored without holding the full payloads in memory.
 // Seeded by initTapooLogs once the page mode is known; zero until then.
 let logCount = 0
+let staleLogSessionCount = 0
+let heartbeatTimer: number | null = null
+let activeModeName: MazeControlModeName | null = null
+let writeQueue: Promise<void> = Promise.resolve()
 
 // currentTurn stamps every entry written while one agent turn resolves. A turn issues several
 // provider requests before its prediction lands, and nothing else in an entry identifies which
@@ -34,6 +46,48 @@ function notifyLogStateListeners(): void {
   logStateListeners.forEach((listener) => {
     listener(logCount)
   })
+}
+
+function updateLogState(currentCount: number, staleCount: number): void {
+  logCount = currentCount
+  staleLogSessionCount = staleCount
+  syncTapooLogHeartbeat()
+  notifyLogStateListeners()
+}
+
+function clearTapooLogHeartbeat(): void {
+  if (heartbeatTimer === null) {
+    return
+  }
+
+  window.clearInterval(heartbeatTimer)
+  heartbeatTimer = null
+}
+
+function syncTapooLogHeartbeat(): void {
+  if (!activeModeName || logCount === 0) {
+    clearTapooLogHeartbeat()
+    return
+  }
+
+  if (heartbeatTimer !== null) {
+    return
+  }
+
+  heartbeatTimer = window.setInterval(() => {
+    if (!activeModeName || logCount === 0) {
+      clearTapooLogHeartbeat()
+      return
+    }
+
+    void refreshCurrentTapooLogStoreLease(activeModeName).then((state) => {
+      updateLogState(state.currentLogCount, state.staleLogSessionCount)
+    })
+  }, CONFIG.runtime.storage.log.heartbeatIntervalMs)
+}
+
+async function flushTapooLogWrites(): Promise<void> {
+  await writeQueue
 }
 
 // localTimestampParts returns filename-safe local time pieces shared by log entries and downloads.
@@ -142,11 +196,12 @@ export function encodeMazeForLog(maze: string[][]): EncodedMazeForLog {
   return { index_chars, structure_checksum: fnv1a64Checksum(structure), structure }
 }
 
-// initTapooLogs seeds the in-memory log count from sessionStorage entries that survived a page
-// reload for the given mode. Call once at page startup after the control mode is resolved.
-export function initTapooLogs(modeName: MazeControlModeName): void {
-  logCount = loadTapooLog<unknown>(modeName).length
-  notifyLogStateListeners()
+// initTapooLogs seeds the in-memory log counters from the active storage backend after the control
+// mode is known. IndexedDB is async, but startup awaits this before binding controls.
+export async function initTapooLogs(modeName: MazeControlModeName): Promise<void> {
+  activeModeName = modeName
+  const state = await initTapooLogStore(modeName)
+  updateLogState(state.currentLogCount, state.staleLogSessionCount)
 }
 
 // setTapooLogContext marks which turn, level, and game subsequent entries belong to, reading all
@@ -161,9 +216,8 @@ export function setTapooLogContext(
   currentGame = state.cumulativeRoundCount
 }
 
-// logTapooDiagnostic appends one entry to sessionStorage and increments the in-memory count.
-// The full payload is never held in memory; only the count is, so large request/response bodies
-// accumulated over many turns do not grow the JS heap.
+// logTapooDiagnostic queues one entry to the active log store. Callers never await it: request and
+// gameplay paths should not stall on IndexedDB, while download/reset flush the queue before reading.
 export function logTapooDiagnostic(
   modeName: MazeControlModeName,
   log: LogLevel,
@@ -182,26 +236,45 @@ export function logTapooDiagnostic(
   if (details !== undefined) {
     entry.details = details
   }
-  appendTapooLogEntry(modeName, entry)
-  logCount += 1
+  const fallbackState = appendTapooLogStoreFallbackEntrySynchronously(modeName, entry)
+  if (fallbackState) {
+    updateLogState(fallbackState.currentLogCount, fallbackState.staleLogSessionCount)
+    return
+  }
 
-  notifyLogStateListeners()
+  writeQueue = writeQueue
+    .then(() => appendTapooLogStoreEntry(modeName, entry))
+    .then((state) => {
+      updateLogState(state.currentLogCount, state.staleLogSessionCount)
+    })
+    .catch(() => {
+      // A failed log write must not break future writes. The next entry starts a fresh queue link.
+    })
 }
 
-// tapooResetLogs clears the sessionStorage log snapshot for the given mode and resets the count.
-export function tapooResetLogs(modeName: MazeControlModeName): void {
-  clearTapooLog(modeName)
-  logCount = 0
+// tapooResetLogs clears the current tab-session logs plus stale sessions for the same mode.
+export async function tapooResetLogs(modeName: MazeControlModeName): Promise<void> {
+  await flushTapooLogWrites()
+  const state = await clearCurrentAndStaleTapooLogStoreEntries(modeName)
   currentTurn = 0
   currentLevel = 0
   currentGame = 0
-
-  notifyLogStateListeners()
+  updateLogState(state.currentLogCount, state.staleLogSessionCount)
 }
 
 // tapooLogCount reports whether reset controls have anything meaningful to clear.
 export function tapooLogCount(): number {
   return logCount
+}
+
+// tapooResettableLogCount includes stale same-mode sessions because reset is the one user-triggered
+// cleanup path for them; download stays current-session only and should use tapooLogCount.
+export function tapooResettableLogCount(): number {
+  return logCount + staleLogSessionCount
+}
+
+export function isTapooLogStorageFallback(): boolean {
+  return tapooLogStoreBackend() === "session-storage"
 }
 
 // subscribeTapooLogs notifies UI surfaces whenever the log count changes.
@@ -214,11 +287,12 @@ export function subscribeTapooLogs(listener: LogStateListener): () => void {
   }
 }
 
-// tapooDownloadLogs reads the full log payload from sessionStorage on demand and triggers a
-// JSON file download. Reading only at download time means memory usage stays flat during gameplay.
+// tapooDownloadLogs reads the current tab-session payload on demand and triggers a JSON file
+// download. Reading only at download time means memory usage stays flat during gameplay.
 // Attach to window in the page entry point so it survives property mangling and tree-shaking.
-export function tapooDownloadLogs(modeName: MazeControlModeName): void {
-  const entries = loadTapooLog<LogEntry>(modeName)
+export async function tapooDownloadLogs(modeName: MazeControlModeName): Promise<void> {
+  await flushTapooLogWrites()
+  const entries = await loadCurrentTapooLogStoreEntries(modeName)
   const payload = {
     name: "tapoo",
     version: APP_VERSION,

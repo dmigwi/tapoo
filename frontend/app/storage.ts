@@ -2,6 +2,7 @@ import {
   CONFIG,
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
+  STORE_PRIVACY_ACK,
 } from "./config"
 import {
   hasValidAgentPlayerName,
@@ -42,11 +43,20 @@ type PersistableProgressState = PersistedGameSetup & PersistedWinMetrics
 // Shared storage helpers.
 
 // storageKey namespaces browser persistence by mode and schema version so stale payloads are ignored.
-function storageKey(
+export function storageKey(
   modeName: MazeControlModeName,
   suffix: string,
 ): string {
   return `tapoo.v${storageConfig.version}.${modeName}.${suffix}`
+}
+
+// tabStorageKey is storageKey without the mode segment, for the few values a browser tab owns as a
+// whole rather than per control mode. The log session id is the only one: a tab is one session even
+// if the player navigates between the interactive and agent-api pages within it, and the mode is
+// recorded on each entry instead, so entries stay partitioned by (session, mode) without the session
+// itself splitting in two.
+export function tabStorageKey(suffix: string): string {
+  return `tapoo.v${storageConfig.version}.${suffix}`
 }
 
 // StaleStorageSummary describes what an older schema version left behind, in the only terms that
@@ -174,14 +184,14 @@ function xorStoredPayload(payloadBytes: Uint8Array): Uint8Array {
 }
 
 // encodeStoredPayload serializes and obfuscates values before persistence.
-function encodeStoredPayload(value: unknown): string {
+export function encodeStoredPayload(value: unknown): string {
   const jsonPayload = JSON.stringify(value)
   const payloadBytes = new TextEncoder().encode(jsonPayload)
   return `${STORE_ENCODING_PREFIX}${toBase64(xorStoredPayload(payloadBytes))}`
 }
 
 // decodeStoredPayload reverses the browser storage encoding back into JSON.
-function decodeStoredPayload<T>(encodedPayload: string): T | null {
+export function decodeStoredPayload<T>(encodedPayload: string): T | null {
   const payloadBytes = encodedPayload.startsWith(STORE_ENCODING_PREFIX)
     ? (() => {
         const encodedCipherText = encodedPayload.slice(STORE_ENCODING_PREFIX.length)
@@ -1028,6 +1038,33 @@ export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   }
 
   clearPersistedRound(modeName)
+}
+
+// --- Privacy acknowledgement ---
+
+// IndexedDB outlives the tab, so logs kept there sit on disk until something deletes them - unlike
+// the sessionStorage backend, which the browser cleared on close. That is a change in what Tapoo
+// retains about a play session, so it is gated behind an explicit acknowledgement recorded in
+// localStorage: durable on purpose, since asking once per tab would train the answer out of meaning
+// anything. A blocked read reports "not acknowledged" and the gate shows again, which errs toward
+// asking twice rather than storing without consent.
+export function privacyPolicyAcknowledged(): boolean {
+  try {
+    return window.localStorage.getItem(STORE_PRIVACY_ACK) === "true"
+  } catch {
+    return false
+  }
+}
+
+// Recorded only after the gate is accepted. A failed write means the gate reappears next load; it
+// must never fail open, because the acknowledgement is the only thing separating durable logging
+// from logging the player did not agree to.
+export function savePrivacyPolicyAcknowledgement(): void {
+  try {
+    window.localStorage.setItem(STORE_PRIVACY_ACK, "true")
+  } catch {
+    // If durable acknowledgement storage is blocked, the user may see the gate again next load.
+  }
 }
 
 // Tapoo log persistence. Logs are scoped to the browser tab session: they survive page reloads

@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { CONFIG, INFO_GATE_NOTICES } from "./config"
-import { requireStaleDataAcknowledgement } from "./consent-gates"
+import { CONFIG, INFO_GATE_NOTICES, STORE_PRIVACY_ACK } from "./config"
+import {
+  requirePrivacyPolicyAcknowledgement,
+  requireStaleDataAcknowledgement,
+} from "./consent-gates"
 import type { Elements } from "./types"
 
 // createMemoryStorage mirrors storage.test.ts's stub: this jsdom config exposes no real storage,
@@ -37,6 +40,7 @@ function gateElements(): Elements {
     infoGateTitle: document.createElement("strong"),
     infoGateMessage: document.createElement("p"),
     infoGateDetail: document.createElement("p"),
+    infoGateLink: document.createElement("a"),
     infoGateProceed: document.createElement("button"),
   } as unknown as Elements
 }
@@ -129,5 +133,45 @@ describe("requireStaleDataAcknowledgement", () => {
         .replace("{items}", "2 entries")
         .replace("{versions}", "version (0.1)"),
     )
+  })
+})
+
+describe("requirePrivacyPolicyAcknowledgement", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: createMemoryStorage(),
+    })
+  })
+
+  it("shows the IndexedDB logs privacy gate until the user acknowledges it", () => {
+    const elements = gateElements()
+    elements.infoGate.hidden = true
+    const onProceed = vi.fn()
+
+    requirePrivacyPolicyAcknowledgement(elements, onProceed)
+
+    expect(elements.infoGate.hidden).toBe(false)
+    expect(elements.infoGateTitle.textContent).toBe(INFO_GATE_NOTICES.privacyPolicy.title)
+    expect(elements.infoGateMessage.textContent).toBe(INFO_GATE_NOTICES.privacyPolicy.acknowledgement)
+    expect(elements.infoGateDetail.textContent).toBe(INFO_GATE_NOTICES.privacyPolicy.detail)
+    expect(onProceed).not.toHaveBeenCalled()
+
+    elements.infoGateProceed.click()
+
+    expect(onProceed).toHaveBeenCalledTimes(1)
+    expect(window.localStorage.getItem(STORE_PRIVACY_ACK)).toBe("true")
+  })
+
+  it("proceeds synchronously once the IndexedDB logs gate was already acknowledged", () => {
+    const elements = gateElements()
+    elements.infoGate.hidden = true
+    window.localStorage.setItem(STORE_PRIVACY_ACK, "true")
+    const onProceed = vi.fn()
+
+    requirePrivacyPolicyAcknowledgement(elements, onProceed)
+
+    expect(onProceed).toHaveBeenCalledTimes(1)
+    expect(elements.infoGate.hidden).toBe(true)
   })
 })

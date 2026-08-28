@@ -95,6 +95,7 @@ describe("interactive control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -158,6 +159,7 @@ describe("interactive control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -191,6 +193,7 @@ describe("interactive control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -224,6 +227,7 @@ describe("interactive control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     const outsideInput = document.createElement("input")
@@ -267,6 +271,7 @@ describe("interactive control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.tabIndex = 0
@@ -305,6 +310,7 @@ describe("interactive control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -337,6 +343,7 @@ describe("interactive control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
 
@@ -363,6 +370,7 @@ describe("interactive control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
 

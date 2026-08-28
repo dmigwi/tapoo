@@ -306,9 +306,11 @@ describe("agent request service", () => {
   beforeEach(() => {
     vi.spyOn(console, "info").mockImplementation(() => {})
     vi.spyOn(console, "warn").mockImplementation(() => {})
+    vi.stubGlobal("indexedDB", undefined)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
@@ -388,7 +390,7 @@ describe("agent request service", () => {
   })
 
   it("logs the level's first request in full at round 1 only, previewing later rounds", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const fetchMock = vi
       .fn()
@@ -487,7 +489,7 @@ describe("agent request service", () => {
   })
 
   it("logs the encoded maze before the level's first request", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(successfulResponse(JSON.stringify({ moves: ["MoveRight"] }))),
@@ -538,7 +540,7 @@ describe("agent request service", () => {
   })
 
   it("stamps every request/response entry with the maze level being played", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const fetchMock = vi
       .fn()
@@ -556,7 +558,7 @@ describe("agent request service", () => {
   })
 
   it("previews the repeated system/user prompt and tool descriptions in a later turn, every round", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const fetchMock = vi
       .fn()
@@ -1494,7 +1496,7 @@ describe("agent request service", () => {
     // no payload is re-served, just a reminder naming that specific call.
     // Round 3 (agentMode: warned): model re-requests it again despite the reminder - second
     // violation: the turn fails as malformed-response instead of reminding indefinitely.
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const allToolCalls = agentContextTools.map(({ function: { name } }, i) => ({
       id: `call_${i}`,
@@ -1550,7 +1552,7 @@ describe("agent request service", () => {
     // Logs land in sessionStorage and are user-downloadable, so a credential reaching one of them
     // would be a real leak, not an ephemeral one. Both sentinels are deliberately distinctive
     // strings unlikely to appear anywhere else in a request/response payload.
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const credentialSentinel = "sk-redaction-sentinel-credential-000111"
     const extraHeadersSentinel = "redaction-sentinel-extra-header-222333"

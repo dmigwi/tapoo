@@ -73,6 +73,14 @@ export function isAwaitAgentStatus(
   return status === "await-agent"
 }
 
+// isStorageLimitStatus identifies the runtime-only state shown when fallback storage cannot safely
+// support the requested agent level.
+export function isStorageLimitStatus(
+  status: GameStatus,
+): status is "storage-limit" {
+  return status === "storage-limit"
+}
+
 // isRunningStatus narrows a status value to the active gameplay state.
 export function isRunningStatus(
   status: GameStatus,
@@ -235,8 +243,12 @@ export function stateInvariantError(state: State): string | null {
     return `invalid game state: ${state.status} status requires an active round`
   }
 
-  // Boot and too-small are non-round screens, so retaining maze data there risks stale redraws.
-  if ((isTooSmallStatus(state.status) || state.status === "boot") && hasActiveRoundState(state)) {
+  // Boot, too-small, and storage-limit are non-round screens, so retaining maze data there risks
+  // stale redraws.
+  if (
+    (isTooSmallStatus(state.status) || isStorageLimitStatus(state.status) || state.status === "boot") &&
+    hasActiveRoundState(state)
+  ) {
     return `invalid game state: ${state.status} status cannot keep an active round`
   }
 
