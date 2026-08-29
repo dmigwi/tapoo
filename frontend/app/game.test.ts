@@ -1602,11 +1602,25 @@ describe("bootstrapGame", () => {
     expect(latestRenderedState(harness.render).status).toBe("await-agent")
   })
 
+  // loggedInvariants picks the state-invariant reports out of everything an agent-api round logs.
+  function loggedInvariants(
+    harness: GameHarness,
+  ): Array<{ log: string; payload: string }> {
+    return harness.appendTapooLogEntry.mock.calls
+      .map(([, entry]) => entry as { log: string; payload: string })
+      .filter((entry) => entry.payload.startsWith("invalid game state:"))
+  }
+
   // A round in progress disappeared with an empty log and no way to tell what had happened. Both
   // paths that discard a live round now say so, because neither is an action the player associates
   // with losing progress: one is a rejected snapshot at startup, the other a window resize.
   it("logs the level and turn when a persisted round is rejected at startup", async () => {
     const harness = await bootstrapHarness({
+      // Agent-api, because Tapoo Logs are the agent profiler's record: logTapooRecordEntry drops
+      // anything written under interactive mode, so that is the only mode where a diagnostic about
+      // a discarded round can be observed at all.
+      mode: CONFIG.runtime.controlModes.agentApi,
+      agentConfigs: [enabledAgentConfig()],
       persistedSnapshots: [
         {
           preferences: { level: 4, wallWeight: 1 },
@@ -1928,7 +1942,10 @@ describe("bootstrapGame", () => {
   // path. cycle-walls is the render trigger because it is the one action that redraws without
   // touching either the status or the clock, so it cannot repair the violation under test.
   it("logs an inconsistent state instead of throwing out of the render path", async () => {
-    const harness = await bootstrapHarness()
+    const harness = await bootstrapHarness({
+      mode: CONFIG.runtime.controlModes.agentApi,
+      agentConfigs: [enabledAgentConfig()],
+    })
     const state = latestRenderedState(harness.render)
 
     // Paused status while the clock still runs. Throwing here used to reach the global handler in
@@ -1938,17 +1955,22 @@ describe("bootstrapGame", () => {
 
     harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
 
-    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(1)
-    const [, entry] = harness.appendTapooLogEntry.mock.calls[0] as [string, { log: string; payload: string }]
-    expect(entry.log).toBe("error")
-    expect(entry.payload).toBe("invalid game state: paused status requires a paused clock")
+    // Filtered rather than counted: an agent-api round writes its own entries around this one, and
+    // asserting on the total would make this test fail whenever unrelated logging changed.
+    const violations = loggedInvariants(harness)
+    expect(violations).toHaveLength(1)
+    expect(violations[0].log).toBe("error")
+    expect(violations[0].payload).toBe("invalid game state: paused status requires a paused clock")
     // The round keeps playing: rendering continued past the violation rather than aborting.
     expect(harness.render.mock.calls.length).toBeGreaterThan(rendersBeforeViolation)
     expect(latestRenderedState(harness.render).wallWeight).toBe(2)
   })
 
   it("reports a repeated violation once but still reports a different one", async () => {
-    const harness = await bootstrapHarness()
+    const harness = await bootstrapHarness({
+      mode: CONFIG.runtime.controlModes.agentApi,
+      agentConfigs: [enabledAgentConfig()],
+    })
     const state = latestRenderedState(harness.render)
 
     state.status = "paused"
@@ -1957,7 +1979,7 @@ describe("bootstrapGame", () => {
 
     // renderState runs on the blink cadence, so an unfixed violation would append entries several
     // times a second and bury the gameplay history it sits beside.
-    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(1)
+    expect(loggedInvariants(harness)).toHaveLength(1)
 
     // Suppression is keyed on the message, not on having reported once: a violation that changes
     // into a different one is still news, so it has to appear.
@@ -1965,8 +1987,8 @@ describe("bootstrapGame", () => {
     state.clock?.pause()
     harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
 
-    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(2)
-    const [, entry] = harness.appendTapooLogEntry.mock.calls[1] as [string, { payload: string }]
-    expect(entry.payload).toBe("invalid game state: running status requires an active clock")
+    const violations = loggedInvariants(harness)
+    expect(violations).toHaveLength(2)
+    expect(violations[1].payload).toBe("invalid game state: running status requires an active clock")
   })
 })

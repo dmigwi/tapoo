@@ -6,10 +6,10 @@ import {
   clearStaleTapooLogDatabases,
   currentTapooLogSessionId,
   initTapooLogStore,
+  isTapooLogStorageFallback,
   loadCurrentTapooLogStoreEntries,
   refreshCurrentTapooLogStoreLease,
   resetTapooLogStoreForTests,
-  tapooLogStoreBackend,
 } from "./storage-logs"
 import { loadTapooLog, tabStorageKey } from "./storage"
 import { CONFIG, STORE_DB_NAME, staleTapooLogDatabaseName } from "./config"
@@ -568,7 +568,7 @@ describe("IndexedDB Tapoo log store", () => {
     // session's log down without a trace. The entry has to land somewhere, and the backend it
     // landed in has to be what the caller is told.
     expect(state.backend).toBe("session-storage")
-    expect(tapooLogStoreBackend()).toBe("session-storage")
+    expect(isTapooLogStorageFallback()).toBe(true)
     expect(loadTapooLog<LogEntry>("agent-api")).toEqual([
       expect.objectContaining({ payload: "after the quota filled" }),
     ])

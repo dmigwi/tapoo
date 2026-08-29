@@ -554,10 +554,8 @@ export async function clearStaleTapooLogDatabases(versions: readonly string[]): 
   })))
 }
 
-// Which backend the last open actually produced. Read by the UI to explain the reduced level cap
-// that applies when only sessionStorage is available.
-export function tapooLogStoreBackend(): TapooLogBackend {
-  return backend
+export function isTapooLogStorageFallback(): boolean {
+  return backend === "session-storage"
 }
 
 // Clears the module's cached handle, backend and session id. Exported for tests alone: the cached

@@ -7,7 +7,6 @@ import {
   initTapooLogStore,
   loadCurrentTapooLogStoreEntries,
   refreshCurrentTapooLogStoreLease,
-  tapooLogStoreBackend,
 } from "./storage-logs"
 import type { EncodedMaze, LogEntry, LogLevel, MazeControlModeName, State } from "./types"
 
@@ -162,10 +161,6 @@ export function tapooLogCount(): number {
 // cleanup path for them; download stays current-session only and should use tapooLogCount.
 export function tapooResettableLogCount(): number {
   return logCount + staleLogSessionCount
-}
-
-export function isTapooLogStorageFallback(): boolean {
-  return tapooLogStoreBackend() === "session-storage"
 }
 
 // --- Log Lifecycle ---

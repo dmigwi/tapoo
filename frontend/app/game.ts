@@ -1,5 +1,5 @@
 import { GameClock } from "./clock"
-import { isTapooLogStorageFallback, logTapooRecordEntry } from "./logs"
+import { logTapooRecordEntry } from "./logs"
 import {
   CONFIG,
   WALL_WEIGHTS,
@@ -43,6 +43,7 @@ import {
   saveGameProgress,
   saveActiveRoundSnapshot,
 } from "./storage"
+import { isTapooLogStorageFallback } from "./storage-logs" 
 import {
   cellCoordinateFromGridPoint,
   cloneMazeDimensions,
