@@ -51,6 +51,7 @@ export function getGameElements(): Elements | null {
     infoGateTitle: mustElement<HTMLElement>("info-gate-title"),
     infoGateMessage: mustElement<HTMLElement>("info-gate-message"),
     infoGateDetail: mustElement<HTMLElement>("info-gate-detail"),
+    infoGateLink: mustElement<HTMLAnchorElement>("info-gate-link"),
     infoGateProceed: mustElement<HTMLButtonElement>("info-gate-proceed"),
     systemPalette: mustElement<HTMLElement>("system-palette"),
     systemSettings: mustElement<HTMLButtonElement>("system-settings"),
@@ -109,16 +110,27 @@ export function terminalCharacterColumns(elements: Elements): number {
   return Math.floor(rect.width / charWidth)
 }
 
-// terminalCanDisplayText reports whether a single line of text would render in full at the
-// terminal's current size. #terminal-screen is white-space: pre (never wraps) and overflow:
-// hidden (clips rather than scrolls), so a line longer than this is silently cut off, not just
-// visually cramped - this is the line beyond which showing text at all stops being useful. The
-// +10 is a deliberate safety margin: the raw character-column count is an approximation (a sampled
-// average char width applied uniformly, not this specific string's actual glyph widths, letter
-// spacing, or centering padding), so treating "just barely fits" as "doesn't" avoids a line that
-// clips by a character or two despite this check saying it was fine.
-export function terminalCanDisplayText(elements: Elements, text: string): boolean {
-  return (text.length + 10) <= terminalCharacterColumns(elements)
+// isBelowMinimumViewport is the single test the app answers "is this viewport too small to show
+// anything useful" with. It takes the measurement itself rather than accepting width and height from
+// a caller: two callers could otherwise measure different things - the body, the screen, the visual
+// viewport - and disagree about the same window. One reading, one answer.
+//
+// It lives here rather than beside the other status predicates because it reads the DOM, which is
+// what this module is for; status.ts stays free of it and can be reasoned about without a document.
+//
+// Either dimension failing is enough. A window can be wide and only a few lines tall - a desktop
+// browser dragged short, or a phone in landscape with the keyboard up - and a maze needs both.
+export function isBelowMinimumViewport(elements: Elements): boolean {
+  const { width, height } = elements.body.getBoundingClientRect()
+  // An unmeasured element reports zeros - before first layout, or while detached - and that is not
+  // the same as a small one. Reporting "too small" there would blank the screen and refuse input on
+  // the strength of a measurement that has not happened yet, so an absent reading is treated as no
+  // evidence rather than as evidence against.
+  if (width === 0 || height === 0) {
+    return false
+  }
+
+  return width < viewport.minSupportedWidth || height < viewport.minSupportedHeight
 }
 
 // getTerminalSize converts DOM measurements into logical maze dimensions.

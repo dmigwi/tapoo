@@ -32,6 +32,7 @@ const ALL_STATUSES = valuesOf<GameStatus>({
   "lost": true,
   "await-agent": true,
   "too-small": true,
+  "storage-limit": true,
 })
 
 // PERSISTABLE_STATUSES mirrors PersistedGameStatus as runtime values, so the guard below can check
@@ -156,6 +157,7 @@ describe("isTooSmallStatus", () => {
     ["won", false],
     ["lost", false],
     ["await-agent", false],
+    ["storage-limit", false],
   ])("returns %s for the %s status", (status, expected) => {
     expect(isTooSmallStatus(status)).toBe(expected)
   })
@@ -215,6 +217,7 @@ describe("canProceedStatus", () => {
     ["running", false],
     // No maze is drawn in either of these, so there is no round to advance.
     ["too-small", false],
+    ["storage-limit", false],
     ["boot", false],
   ])("returns %s for the %s status", (status, expected) => {
     expect(canProceedStatus(status)).toBe(expected)
@@ -239,6 +242,7 @@ describe("canShowWallsStatus", () => {
     // Reweighting mid-round would redraw the maze under the player.
     ["running", false],
     ["too-small", false],
+    ["storage-limit", false],
     ["boot", false],
   ])("returns %s for the %s status", (status, expected) => {
     expect(canShowWallsStatus(status)).toBe(expected)
@@ -264,6 +268,7 @@ describe("canShowRestart", () => {
     ["running", false],
     // Nothing exists to restart before the first round is built.
     ["boot", false],
+    ["storage-limit", false],
   ])("returns %s for the %s status at level 1", (status, expected) => {
     expect(canShowRestart(status, 1)).toBe(expected)
   })
@@ -308,6 +313,7 @@ describe("canPersistRoundStatus", () => {
     // Neither has a round to restore: boot precedes the first maze, too-small discarded it.
     ["boot", false],
     ["too-small", false],
+    ["storage-limit", false],
   ])("returns %s for the %s status", (status, expected) => {
     expect(canPersistRoundStatus(status)).toBe(expected)
   })
@@ -366,12 +372,15 @@ describe("stateInvariantError", () => {
     ).toBe("invalid game state: running status requires an active round")
   })
 
-  it("rejects boot and too-small states that still keep active round data", () => {
+  it("rejects boot, too-small, and storage-limit states that still keep active round data", () => {
     expect(stateInvariantError(createState({ status: "boot", clock: null }))).toBe(
       "invalid game state: boot status cannot keep an active round",
     )
     expect(stateInvariantError(createState({ status: "too-small", clock: null }))).toBe(
       "invalid game state: too-small status cannot keep an active round",
+    )
+    expect(stateInvariantError(createState({ status: "storage-limit", clock: null }))).toBe(
+      "invalid game state: storage-limit status cannot keep an active round",
     )
   })
 })

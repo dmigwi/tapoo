@@ -2,6 +2,7 @@ import {
   CONFIG,
   STORE_BLEND_KEY,
   STORE_ENCODING_PREFIX,
+  STORE_PRIVACY_ACK,
 } from "./config"
 import {
   hasValidAgentPlayerName,
@@ -21,6 +22,7 @@ import {
 import type {
   AgentApiConfig,
   AgentApiSeatConfig,
+  AgentTurnStatsResult,
   AgentApiSessionMetrics,
   MazeControlModeName,
   PersistedGameSetup,
@@ -41,11 +43,20 @@ type PersistableProgressState = PersistedGameSetup & PersistedWinMetrics
 // Shared storage helpers.
 
 // storageKey namespaces browser persistence by mode and schema version so stale payloads are ignored.
-function storageKey(
+export function storageKey(
   modeName: MazeControlModeName,
   suffix: string,
 ): string {
   return `tapoo.v${storageConfig.version}.${modeName}.${suffix}`
+}
+
+// tabStorageKey is storageKey without the mode segment, for the few values a browser tab owns as a
+// whole rather than per control mode. The log session id is the only one: a tab is one session even
+// if the player navigates between the interactive and agent-api pages within it, and the mode is
+// recorded on each entry instead, so entries stay partitioned by (session, mode) without the session
+// itself splitting in two.
+export function tabStorageKey(suffix: string): string {
+  return `tapoo.v${storageConfig.version}.${suffix}`
 }
 
 // StaleStorageSummary describes what an older schema version left behind, in the only terms that
@@ -173,14 +184,14 @@ function xorStoredPayload(payloadBytes: Uint8Array): Uint8Array {
 }
 
 // encodeStoredPayload serializes and obfuscates values before persistence.
-function encodeStoredPayload(value: unknown): string {
+export function encodeStoredPayload(value: unknown): string {
   const jsonPayload = JSON.stringify(value)
   const payloadBytes = new TextEncoder().encode(jsonPayload)
   return `${STORE_ENCODING_PREFIX}${toBase64(xorStoredPayload(payloadBytes))}`
 }
 
 // decodeStoredPayload reverses the browser storage encoding back into JSON.
-function decodeStoredPayload<T>(encodedPayload: string): T | null {
+export function decodeStoredPayload<T>(encodedPayload: string): T | null {
   const payloadBytes = encodedPayload.startsWith(STORE_ENCODING_PREFIX)
     ? (() => {
         const encodedCipherText = encodedPayload.slice(STORE_ENCODING_PREFIX.length)
@@ -497,14 +508,22 @@ function loadPersistedAgentSessionMetrics(): AgentApiSessionMetrics[] {
   }
 }
 
-function savePersistedAgentSessionMetrics(stats: AgentApiSessionMetrics[]): void {
+// Returns false when the write did not land. Most storage here is best-effort, but this payload is
+// not: levelTurnCount is one half of the (level, cumulativeRoundCount, turnCount) fingerprint whose
+// other half lives in memory as State.turnCount. Swallowing a failure here froze the persisted half
+// while the in-memory half kept advancing, which the agent-api loop then read as a genuine
+// divergence and answered with a full restart - wiping the round, the preferences and the session's
+// log. sessionStorage is shared with the Tapoo log, which grows every turn, so the quota that
+// triggers this is reached by ordinary long play rather than by anything the player did.
+function savePersistedAgentSessionMetrics(stats: AgentApiSessionMetrics[]): boolean {
   try {
     window.sessionStorage.setItem(
       storageKey(agentApiModeName, storageConfig.suffixes.sessionMetrics),
       encodeStoredPayload(normalizeAgentSessionMetrics(stats)),
     )
+    return true
   } catch {
-    // Ignore storage failures so live agent stats remain best-effort only.
+    return false
   }
 }
 
@@ -639,7 +658,7 @@ export function recordAgentTurnStats(
   cumulativeRoundCount: number,
   chargedDecayUnits: number,
   levelTurnCount: number,
-): AgentApiSeatConfig {
+): AgentTurnStatsResult {
   let updatedAgent: AgentApiSeatConfig = turnAgent
   let foundTurnAgent = false
 
@@ -685,8 +704,10 @@ export function recordAgentTurnStats(
   // counters are still returned so this turn can finish reporting against them, but nothing is
   // written back: persisting a row for an agent that no longer has a config would recreate the
   // orphan mergeAgentSessionMetrics prunes, and hand it to whoever occupies the seat next.
-  savePersistedAgentSessionMetrics(agentSessionMetricsFromRuntimeConfigs(nextConfigs))
-  return updatedAgent
+  // Reported, not swallowed: the caller must not advance State.turnCount past a levelTurnCount that
+  // never reached storage, or the next turn reads the gap as a real divergence and restarts.
+  const persisted = savePersistedAgentSessionMetrics(agentSessionMetricsFromRuntimeConfigs(nextConfigs))
+  return { agent: updatedAgent, persisted }
 }
 
 // resetAgentRoundStats rebinds every configured agent to a fresh round with zeroed per-round
@@ -997,6 +1018,13 @@ export function loadPersistedSnapshot(
 }
 
 // clearPersistedSnapshot clears both long-lived preferences and the active round.
+//
+// It does NOT clear the log, and must not: this runs from restartGame, which the agent-api loop
+// triggers by itself on a turn-count mismatch. That path logs why it is restarting and then restarts
+// - so clearing here erased the one entry explaining the reset, along with every entry leading up to
+// it, leaving a wiped session with no record of what happened. The log is a record of the session,
+// not part of the game state a reset owns. Only tapooResetLogs clears it, and only the Tapoo logs
+// reset button calls that.
 export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   try {
     window.localStorage.removeItem(
@@ -1010,7 +1038,33 @@ export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   }
 
   clearPersistedRound(modeName)
-  clearTapooLog(modeName)
+}
+
+// --- Privacy acknowledgement ---
+
+// IndexedDB outlives the tab, so logs kept there sit on disk until something deletes them - unlike
+// the sessionStorage backend, which the browser cleared on close. That is a change in what Tapoo
+// retains about a play session, so it is gated behind an explicit acknowledgement recorded in
+// localStorage: durable on purpose, since asking once per tab would train the answer out of meaning
+// anything. A blocked read reports "not acknowledged" and the gate shows again, which errs toward
+// asking twice rather than storing without consent.
+export function privacyPolicyAcknowledged(): boolean {
+  try {
+    return window.localStorage.getItem(STORE_PRIVACY_ACK) === "true"
+  } catch {
+    return false
+  }
+}
+
+// Recorded only after the gate is accepted. A failed write means the gate reappears next load; it
+// must never fail open, because the acknowledgement is the only thing separating durable logging
+// from logging the player did not agree to.
+export function savePrivacyPolicyAcknowledgement(): void {
+  try {
+    window.localStorage.setItem(STORE_PRIVACY_ACK, "true")
+  } catch {
+    // If durable acknowledgement storage is blocked, the user may see the gate again next load.
+  }
 }
 
 // Tapoo log persistence. Logs are scoped to the browser tab session: they survive page reloads
@@ -1047,7 +1101,9 @@ export function appendTapooLogEntry(modeName: MazeControlModeName, entry: unknow
   saveTapooLog(modeName, [...loadTapooLog<unknown>(modeName), entry])
 }
 
-// clearTapooLog removes the persisted log snapshot from sessionStorage; called by tapooResetLogs
+// clearTapooLog removes the persisted log snapshot from sessionStorage. tapooResetLogs is its only
+// caller, and the Tapoo logs reset button is that function's only caller in turn - no game action
+// reaches this, so a round can never take the session's record down with it.
 // so a deliberate reset clears both the in-memory buffer and its sessionStorage copy.
 export function clearTapooLog(modeName: MazeControlModeName): void {
   try {

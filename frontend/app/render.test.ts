@@ -84,6 +84,7 @@ function createElements(): RenderElements {
     infoGateTitle: document.createElement("strong"),
     infoGateMessage: document.createElement("p"),
     infoGateDetail: document.createElement("p"),
+    infoGateLink: document.createElement("a"),
     infoGateProceed: document.createElement("button"),
     touchButtons,
     agentConfigForm,
@@ -950,13 +951,46 @@ describe("render", () => {
     // Level 1 has no lower level to fall back to, so canShowRestart already hides the Reset
     // Progress button here (asserted below) - the text must not promise an action with no button.
     expect(text).toContain(messages.tooSmallActionMessage)
-    expect(text).not.toContain(messages.tooSmallActionMessageWithReset)
+    expect(text).not.toContain(messages.tooSmallActionMessageWithReset.interactive)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
       .map((button) => button.dataset.action ?? button.dataset.move)
 
     expect(visibleLabels).toEqual([])
+    expect(elements.touchControls.hidden).toBe(true)
+  })
+
+  it("shows storage-limit messaging when fallback logs cannot support the requested agent level", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        level: CONFIG.runtime.storage.log.fallbackAgentApiMaxLevel + 1,
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "storage-limit",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain(
+      messages.storageLimitMessage.replace(
+        "{level}",
+        String(CONFIG.runtime.storage.log.fallbackAgentApiMaxLevel + 1),
+      ),
+    )
+    expect(text).toContain(
+      messages.storageLimitActionMessage.replace(
+        "{maxLevel}",
+        String(CONFIG.runtime.storage.log.fallbackAgentApiMaxLevel),
+      ),
+    )
     expect(elements.touchControls.hidden).toBe(true)
   })
 
@@ -978,7 +1012,7 @@ describe("render", () => {
     const text = normalizeScreenText(elements.screen.textContent)
 
     expect(text).toContain("Level 2 needs more screen room!")
-    expect(text).toContain(messages.tooSmallActionMessageWithReset)
+    expect(text).toContain(messages.tooSmallActionMessageWithReset.interactive)
 
     const visibleLabels = elements.touchButtons
       .filter((button) => !button.hidden)
@@ -996,11 +1030,98 @@ describe("render", () => {
     expect(elements.touchControls.hidden).toBe(false)
   })
 
-  it("keeps the zoom placeholder hidden when the too-small status text still fits", () => {
+  // The two modes are told different things because their ways out differ. Only the agent-api page
+  // exposes the restart level, and there lowering it is the reliable fix: Reset Progress reopens at
+  // that same floor, so a floor above what the window can draw returns the player to this screen.
+  it("tells an agent-api player to lower the restart level, not just to reset", () => {
+    const elements = createElements()
+
+    render(
+      elements,
+      createState({
+        controlMode: CONFIG.runtime.controlModes.agentApi,
+        level: 2,
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    const text = normalizeScreenText(elements.screen.textContent)
+
+    expect(text).toContain("Level 2 needs more screen room!")
+    expect(text).toContain(messages.tooSmallActionMessageWithReset.agentApi)
+    expect(text).not.toContain(messages.tooSmallActionMessageWithReset.interactive)
+  })
+
+  // Behind the placeholder there is nothing to operate, so nothing is offered. too-small on its own
+  // still shows Reset Progress above level 1 - correct on a merely undersized window, wrong under an
+  // opaque cover where it is an invisible control that still responds to a tap.
+  it("offers no touch controls below the supported minimum", () => {
     const elements = createElements()
     vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
-      x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 200,
-      width: 400, height: 200, toJSON: () => ({}),
+      x: 0, y: 0, top: 0, left: 0, right: 320, bottom: 480,
+      width: 320, height: 480, toJSON: () => ({}),
+    })
+
+    render(elements, createState({ level: 4, status: "too-small" }))
+
+    expect(elements.touchControls.hidden).toBe(true)
+    expect(elements.touchButtons.every((button) => button.hidden)).toBe(true)
+  })
+
+  // The cover is not tied to too-small. storage-limit renders its own message, and below the
+  // supported minimum that message clips exactly like any other - with its controls live beneath an
+  // opaque overlay. Every status is covered because none of them can be shown at this size.
+  it.each(["too-small", "storage-limit", "running"] as const)(
+    "covers the screen below the supported minimum in %s status",
+    (status) => {
+      const elements = createElements()
+      vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+        x: 0, y: 0, top: 0, left: 0, right: 320, bottom: 480,
+        width: 320, height: 480, toJSON: () => ({}),
+      })
+
+      render(elements, createState({ status }))
+
+      expect(elements.zoomPlaceholder.hidden).toBe(false)
+    },
+  )
+
+  // Both dimensions are checked, and either failing is enough. A window can be wide and only a few
+  // lines tall - a desktop browser dragged short, or a phone in landscape with the keyboard up -
+  // and a maze needs room in both directions.
+  it.each([
+    { name: "too narrow", width: CONFIG.viewport.minSupportedWidth - 1, height: 700 },
+    { name: "too short", width: 400, height: CONFIG.viewport.minSupportedHeight - 1 },
+  ])("shows the zoom placeholder when the viewport is $name", ({ width, height }) => {
+    const elements = createElements()
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: width, bottom: height,
+      width, height, toJSON: () => ({}),
+    })
+
+    render(
+      elements,
+      createState({
+        mazeDimensions: null,
+        maze: null,
+        playerPosition: null,
+        finalPosition: null,
+        status: "too-small",
+      }),
+    )
+
+    expect(elements.zoomPlaceholder.hidden).toBe(false)
+  })
+
+  it("keeps the zoom placeholder hidden while the viewport still meets the supported minimum", () => {
+    const elements = createElements()
+    vi.spyOn(elements.body, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 700,
+      width: 400, height: 700, toJSON: () => ({}),
     })
 
     render(
@@ -1136,7 +1257,7 @@ describe("render", () => {
     // Too-small has no maze/controls on screen to give navigation instructions about.
     expect(text).not.toContain(messages.navigation.interactive.compact)
     expect(text).toContain("Level 2 needs more screen room!")
-    expect(text).toContain(messages.tooSmallActionMessageWithReset)
+    expect(text).toContain(messages.tooSmallActionMessageWithReset.interactive)
     expect(elements.touchControls.hidden).toBe(false)
   })
 

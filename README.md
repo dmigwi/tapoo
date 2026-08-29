@@ -139,11 +139,12 @@ If the persisted state cannot be read or validated, Tapoo falls back to default 
 The SPA stores gameplay state in browser storage:
 
 - `localStorage` for durable preferences such as level and wall weight, and for configured agent seats (including credentials, endpoints, and per-agent reasoning settings)
-- `sessionStorage` for the active round snapshot
+- `sessionStorage` for the active round snapshot, per-tab agent session metrics, and the tab-session ID used to scope Tapoo Logs
+- `IndexedDB` for Tapoo Logs when available; logs remain on the current device and are scoped to the current tab session for download/reset
 
-Every stored entry is tagged with the current storage schema version. On startup, Tapoo automatically discards any entries left over from an older schema version rather than attempting to migrate them - so upgrading Tapoo can silently reset previously stored preferences and agent configuration.
+Every stored entry is tagged with the current storage schema version. On startup, Tapoo detects entries left over from an older schema version and asks for acknowledgement before removing them rather than attempting to migrate them.
 
-Privacy note: browser storage stays on the current device unless the user clears it, resets progress, or removes configured agent data. Browser storage is lightly obfuscated to discourage casual tampering, but it should not be treated as strong encryption for personal data. When AI Agent play is configured, gameplay context such as player name, current cell, destination cell, submitted moves, score, level, and traversal history may be sent to the configured agent API endpoint.
+Privacy note: browser storage stays on the current device unless the user clears it, resets progress, removes configured agent data, or downloads/shares Tapoo Logs. Browser storage is lightly obfuscated to discourage casual tampering, but it should not be treated as strong encryption for personal data. When AI Agent play is configured, gameplay context such as player name, current cell, destination cell, submitted moves, score, level, and traversal history may be sent to the configured agent API endpoint. If IndexedDB is unavailable, Tapoo falls back to smaller sessionStorage logs and may limit higher AI Agent levels.
 
 The deployed browser pages include a short privacy notice at `privacy.html`.
 

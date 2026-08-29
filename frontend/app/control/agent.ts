@@ -38,7 +38,7 @@ import {
 } from "../agent/seats"
 import {
   isFormControlTarget,
-  isMazeControlFocused,
+  acceptsGameControls,
   releaseAllActionBindings,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
@@ -54,9 +54,10 @@ import {
 import { CONFIG } from "../config"
 import {
   subscribeTapooLogs,
-  logTapooDiagnostic,
+  logTapooRecordEntry,
   tapooDownloadLogs,
   tapooLogCount,
+  tapooResettableLogCount,
   tapooResetLogs,
 } from "../logs"
 import { isAgentApiMode, isRunningStatus } from "../status"
@@ -78,7 +79,7 @@ function logAgentRoundCompletion({ __state, __agent, __playerStatus }: AgentRoun
     __playerStatus.decayUnitsCharged,
   )
 
-  logTapooDiagnostic(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
+  logTapooRecordEntry(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
     outcome,
     agent: {
       seatId: __agent.seatId,
@@ -909,14 +910,15 @@ export function createAgentMode(
 
       // bindLogButtons wires the reset and download controls to the agent-api log store.
       const bindLogButtons = (): void => {
-        // syncResetButton disables both log controls when there is nothing to act on.
+        // Reset also clears stale same-mode sessions, while download exports only this tab's logs.
         const syncResetButton = (): void => {
-          const hasLogs = tapooLogCount() > 0
+          const hasCurrentSessionLogs = tapooLogCount() > 0
+          const hasResettableLogs = tapooResettableLogCount() > 0
           if (elements.tapooLogsReset) {
-            elements.tapooLogsReset.disabled = !hasLogs
+            elements.tapooLogsReset.disabled = !hasResettableLogs
           }
           if (elements.tapooLogsDownload) {
-            elements.tapooLogsDownload.disabled = !hasLogs
+            elements.tapooLogsDownload.disabled = !hasCurrentSessionLogs
           }
         }
 
@@ -937,7 +939,7 @@ export function createAgentMode(
         if (resetButton) {
           const onClick = (): void => {
             showButtonFeedback(resetButton)
-            tapooResetLogs(runtime.controlModes.agentApi)
+            void tapooResetLogs(runtime.controlModes.agentApi)
           }
           buttonBindings.push({
             __button: resetButton,
@@ -950,7 +952,7 @@ export function createAgentMode(
         if (downloadButton) {
           const onClick = (): void => {
             showButtonFeedback(downloadButton)
-            tapooDownloadLogs(runtime.controlModes.agentApi)
+            void tapooDownloadLogs(runtime.controlModes.agentApi)
           }
           buttonBindings.push({
             __button: downloadButton,
@@ -1242,7 +1244,7 @@ export function createAgentMode(
       const bindSessionButtons = (buttons: HTMLButtonElement[]): void => {
         buttons.forEach((button) => {
           const onClick = (): void => {
-            if (!isMazeControlFocused(elements)) {
+            if (!acceptsGameControls(elements)) {
               return
             }
 
@@ -1283,7 +1285,7 @@ export function createAgentMode(
           return
         }
 
-        if (!isMazeControlFocused(elements)) {
+        if (!acceptsGameControls(elements)) {
           return
         }
 

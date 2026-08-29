@@ -118,6 +118,27 @@ function createMemoryStorage(): Storage {
   }
 }
 
+// createQuotaLimitedStorage is createMemoryStorage with one key made unwritable, raising the same
+// error a browser raises once its quota is exhausted. Nothing in storage.ts is mocked: the write
+// really runs, so this reproduces the production failure rather than simulating its return value -
+// a Tapoo log that has grown until the sessionStorage it shares with a seat's metrics is full.
+function createQuotaLimitedStorage(rejectedKeySuffix: string): Storage {
+  const storage = createMemoryStorage()
+  return {
+    getItem: (key) => storage.getItem(key),
+    setItem: (key, value) => {
+      if (key.endsWith(rejectedKeySuffix)) {
+        throw new DOMException("quota exceeded", "QuotaExceededError")
+      }
+      storage.setItem(key, value)
+    },
+    removeItem: (key) => { storage.removeItem(key) },
+    clear: () => { storage.clear() },
+    key: (index) => storage.key(index),
+    get length() { return storage.length },
+  }
+}
+
 describe("agent api turn loop", () => {
   beforeEach(() => {
     CONFIG.timing.agentApiResponseTimeoutMs = testAgentResponseTimeoutMs
@@ -411,6 +432,70 @@ describe("agent api turn loop", () => {
         chargedMovesCount: 2,
       }),
     )
+  })
+
+  // The bail this covers is the last link in a chain that cost a real round: a turn whose counters
+  // never reached storage, committed anyway, leaves State.turnCount one ahead of the levelTurnCount
+  // still on disk - and agentTurnCountMismatch reads that gap on the next turn as a genuine
+  // divergence, answering it with a full restart that discards the round and every preference with
+  // it. Pausing is what keeps a storage failure from escalating into lost progress.
+  it("pauses instead of committing a replayed turn whose stats could not be saved", async () => {
+    vi.stubGlobal("localStorage", createMemoryStorage())
+    vi.stubGlobal(
+      "sessionStorage",
+      createQuotaLimitedStorage(CONFIG.runtime.storage.suffixes.sessionMetrics),
+    )
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        message: {
+          role: "assistant",
+          content: "{\"moves\":[\"MoveRight\"]}",
+        },
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const dispatch = vi.fn() as MazeActionDispatch
+    const dispatchAgentAction = vi
+      .fn<(action: MazeAction) => MazeActionResult>()
+      .mockReturnValue(createActionResult({ lastMoveStatus: "applied", visitedBefore: false }))
+    const commitAgentTurn = vi.fn()
+    const onActionResult = vi.fn()
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: dispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState(),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    // The move itself replayed - the failure is in recording what it cost, not in playing it.
+    expect(dispatchAgentAction).toHaveBeenCalledWith({ type: "MoveRight" }, dispatch, "Blue")
+    expect(commitAgentTurn).not.toHaveBeenCalled()
+    expect(dispatch).toHaveBeenCalledWith(
+      { type: "pause" },
+      { playerName: CONFIG.runtime.interactivePlayerName },
+    )
+    // Nothing is reported as this turn's outcome either: a result carrying a charge that was never
+    // persisted would tell the next request a story storage cannot back up.
+    expect(onActionResult).not.toHaveBeenCalled()
+
+    // error, not warn: unlike a malformed prediction this is not the model's mistake, and the round
+    // stops until someone acts on it.
+    const failureEntry = loadTapooLog<{ payload: string; log: string }>(
+      CONFIG.runtime.controlModes.agentApi,
+    ).find((entry) => entry.payload === "Agent turn stats could not be saved; pausing instead of committing.")
+    expect(failureEntry?.log).toBe("error")
   })
 
   it.each([
@@ -837,7 +922,7 @@ describe("agent api turn loop", () => {
   })
 
   it("records malformed responses with the fixed mistake decay", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -882,6 +967,67 @@ describe("agent api turn loop", () => {
       CONFIG.runtime.controlModes.agentApi,
     ).find((entry) => entry.payload === "Malformed agent prediction response.")
     expect(malformedEntry?.log).toBe("warn")
+  })
+
+  // The same bail as the replay-loop test above, on the path that never replays a move: a rejected
+  // response still charges decay and still advances the turn, so an unsaved counter here leaves the
+  // identical gap between State.turnCount and the stored levelTurnCount that the next turn answers
+  // with a full restart. Covered separately because the two sites share no code.
+  it("pauses instead of committing a rejected response whose stats could not be saved", async () => {
+    vi.stubGlobal("localStorage", createMemoryStorage())
+    vi.stubGlobal(
+      "sessionStorage",
+      createQuotaLimitedStorage(CONFIG.runtime.storage.suffixes.sessionMetrics),
+    )
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: { role: "assistant", content: "{\"moves\":[\"MoveSideways\"]}" },
+        }),
+      }),
+    )
+
+    const dispatch = vi.fn() as MazeActionDispatch
+    const dispatchAgentAction = vi.fn()
+    const commitAgentTurn = vi.fn()
+    const onActionResult = vi.fn()
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: dispatch,
+      __dispatchAgentAction: dispatchAgentAction,
+      __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState(),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    // The response was read and rejected - the malformed prediction is still reported as the
+    // model's own mistake. What does not happen is charging it to a turn storage never recorded.
+    const malformedEntry = loadTapooLog<{ payload: string; log: string }>(
+      CONFIG.runtime.controlModes.agentApi,
+    ).find((entry) => entry.payload === "Malformed agent prediction response.")
+    expect(malformedEntry?.log).toBe("warn")
+
+    expect(commitAgentTurn).not.toHaveBeenCalled()
+    expect(onActionResult).not.toHaveBeenCalled()
+    expect(dispatch).toHaveBeenCalledWith(
+      { type: "pause" },
+      { playerName: CONFIG.runtime.interactivePlayerName },
+    )
+
+    const failureEntry = loadTapooLog<{ payload: string; log: string }>(
+      CONFIG.runtime.controlModes.agentApi,
+    ).find((entry) => entry.payload === "Agent turn stats could not be saved; pausing instead of committing.")
+    expect(failureEntry?.log).toBe("error")
   })
 
   it("persists the post-commit turnCount for a malformed response, not the turn's pre-request snapshot", async () => {
@@ -1138,7 +1284,7 @@ describe("agent api turn loop", () => {
   })
 
   it("disables the agent after fetch failures without score decay", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockRejectedValue(new TypeError("network failed")),
@@ -1199,7 +1345,7 @@ describe("agent api turn loop", () => {
   })
 
   it("recovers after a single connection-error retry and completes the turn normally", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     const fetchMock = vi
       .fn()
       .mockRejectedValueOnce(new TypeError("network failed"))
@@ -1259,7 +1405,7 @@ describe("agent api turn loop", () => {
   })
 
   it("warns the model and recovers after one token-limit-exhaustion retry", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({

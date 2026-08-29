@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createAgentMode } from "./agent"
 import { CONFIG } from "../config"
-import { logTapooDiagnostic, tapooResetLogs } from "../logs"
+import { logTapooRecordEntry, tapooResetLogs } from "../logs"
 import {
   loadAgentApiSeatConfigs,
   loadTapooLog,
@@ -257,6 +257,7 @@ function createAgentFormElements(): AgentFormElements {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     systemPalette,
     systemSettings,
@@ -411,10 +412,10 @@ describe("agent control mode", () => {
     vi.useFakeTimers()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     window.localStorage.clear()
     window.sessionStorage.clear()
-    tapooResetLogs("agent-api")
+    await tapooResetLogs("agent-api")
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
@@ -434,6 +435,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -539,6 +541,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
 
@@ -561,6 +564,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -612,6 +616,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -808,6 +813,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -883,6 +889,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -960,6 +967,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -1032,6 +1040,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -1127,6 +1136,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -1225,6 +1235,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -1317,7 +1328,7 @@ describe("agent control mode", () => {
     ).toHaveLength(CONFIG.agentConfig.maxSeats - 2)
   })
 
-  it("keeps log side buttons separate from maze actions", () => {
+  it("keeps log side buttons separate from maze actions", async () => {
     const elements = createAgentFormElements()
     const dispatch = vi.fn()
     const createObjectURL = vi.fn(() => "blob:tapoo-logs")
@@ -1340,17 +1351,17 @@ describe("agent control mode", () => {
     expect(elements.systemPalette?.hidden).toBe(false)
     expect(elements.tapooLogsReset?.disabled).toBe(true)
     expect(elements.tapooLogsDownload?.disabled).toBe(true)
-    logTapooDiagnostic("agent-api", "info", "downloadable log")
+    logTapooRecordEntry("agent-api", "info", "downloadable log")
     expect(elements.tapooLogsDownload?.disabled).toBe(false)
     elements.tapooLogsReset?.click()
-    logTapooDiagnostic("agent-api", "info", "downloadable log")
+    logTapooRecordEntry("agent-api", "info", "downloadable log")
     elements.tapooLogsDownload?.click()
 
     expect(dispatch).not.toHaveBeenCalled()
-    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => { expect(createObjectURL).toHaveBeenCalledTimes(1) })
   })
 
-  it("enables reset logs only while in-memory logs exist", () => {
+  it("enables reset logs only while in-memory logs exist", async () => {
     const elements = createAgentFormElements()
     vi.stubGlobal("fetch", vi.fn())
 
@@ -1365,14 +1376,14 @@ describe("agent control mode", () => {
     expect(elements.tapooLogsReset?.disabled).toBe(true)
     expect(elements.tapooLogsDownload?.disabled).toBe(true)
 
-    logTapooDiagnostic("agent-api", "info", "agent request")
+    logTapooRecordEntry("agent-api", "info", "agent request")
 
     expect(elements.tapooLogsReset?.disabled).toBe(false)
     expect(elements.tapooLogsDownload?.disabled).toBe(false)
 
     elements.tapooLogsReset?.click()
 
-    expect(elements.tapooLogsReset?.disabled).toBe(true)
+    await vi.waitFor(() => { expect(elements.tapooLogsReset?.disabled).toBe(true) })
     expect(elements.tapooLogsDownload?.disabled).toBe(true)
     expect(
       elements.tapooLogsReset?.classList.contains("tapoo-logs-control--acknowledged"),
@@ -2481,6 +2492,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     elements.app.focus = vi.fn()
@@ -2525,6 +2537,7 @@ describe("agent control mode", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     }
     const outsideInput = document.createElement("input")

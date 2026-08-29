@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type * as PageConfig from "./app/config"
 
-import { CONFIG, PAGE_COPYRIGHT_TEXT, PAGE_UPDATED_AT, PAGE_UPDATED_TEMPLATE } from "./app/config"
+import { CONFIG, PAGE_COPYRIGHT_TEXT, PAGE_UPDATED_AT } from "./app/config"
 import { applyPageText, applyPageVersion, relativeAge } from "./page-chrome"
 
 // Page-chrome tests call the focused hydration functions directly; tapoo.ts owns runtime startup.
@@ -137,8 +137,7 @@ describe("applyPageVersion updated segment", () => {
 
   // The <time> element publishes a real datetime. Rendering it around a template that no longer
   // asks for the age would claim a timestamp the visible text never shows.
-  // The module snapshots PAGE_UPDATED_TEMPLATE at import time, so the template has to be replaced
-  // before page-chrome loads - mutating CONFIG afterwards cannot reach the captured constant.
+  // This exercises the same CONFIG path production uses, instead of a duplicate exported alias.
   it("omits the time element when the template has no {updated} slot", async () => {
     const host = document.createElement("small")
     host.setAttribute("data-page-version", "")
@@ -147,7 +146,13 @@ describe("applyPageVersion updated segment", () => {
     vi.resetModules()
     vi.doMock("./app/config", async () => {
       const actual = await vi.importActual<typeof PageConfig>("./app/config")
-      return { ...actual, PAGE_UPDATED_TEMPLATE: "(no slot here)" }
+      return {
+        ...actual,
+        CONFIG: {
+          ...actual.CONFIG,
+          chrome: { ...actual.CONFIG.chrome, pageUpdatedTemplate: "(no slot here)" },
+        },
+      }
     })
 
     try {
@@ -175,7 +180,10 @@ describe("footer width budget", () => {
     const widestAges = [119 * SECOND, 119 * MINUTE, 47 * HOUR, 59 * DAY, 24 * 30 * DAY, 999 * DAY]
 
     for (const elapsed of widestAges) {
-      const updated = PAGE_UPDATED_TEMPLATE.replace("{updated}", relativeAge(now - elapsed, now))
+      const updated = CONFIG.chrome.pageUpdatedTemplate.replace(
+        "{updated}",
+        relativeAge(now - elapsed, now),
+      )
       const footer = `${PAGE_COPYRIGHT_TEXT} ${updated}`
       expect(footer.length, footer).toBeLessThanOrEqual(MAX_FOOTER_CHARACTERS)
     }

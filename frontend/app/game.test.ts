@@ -99,6 +99,7 @@ function createElements(): Elements {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
       infoGateProceed: document.createElement("button"),
     touchButtons,
   }
@@ -361,6 +362,7 @@ type GameHarness = {
   clearPersistedSnapshot: ReturnType<typeof vi.fn>
   clearPersistedRound: ReturnType<typeof vi.fn>
   elements: Elements
+  isBelowMinimumViewport: ReturnType<typeof vi.fn>
   generateMaze: ReturnType<typeof vi.fn>
   getMazeDimensions: ReturnType<typeof vi.fn>
   intervalCallback: (() => void) | null
@@ -457,6 +459,7 @@ async function bootstrapHarness({
   const clearPersistedSnapshot = vi.fn()
   const clearPersistedRound = vi.fn()
   const appendTapooLogEntry = vi.fn()
+  const isBelowMinimumViewport = vi.fn(() => false)
   const generateMaze = vi.fn(() => round)
   const reweightMaze = vi.fn(() => reweightedMaze ?? round.maze)
 
@@ -513,6 +516,11 @@ async function bootstrapHarness({
 
   vi.doMock("./dom", () => ({
     elements,
+    // The harness's elements are detached, so a real measurement reports zeros. Answering "not
+    // below minimum" keeps these tests about game behaviour rather than viewport size; the
+    // threshold itself is covered in render.test.ts and dom.test.ts. Returned below so a test that
+    // is about the minimum can flip it.
+    isBelowMinimumViewport,
     getTerminalSize: vi.fn(() => {
       const size =
         terminalSizes[Math.min(terminalSizeIndex, terminalSizes.length - 1)]
@@ -572,6 +580,7 @@ async function bootstrapHarness({
     clearPersistedSnapshot,
     clearPersistedRound,
     elements,
+    isBelowMinimumViewport,
     generateMaze,
     getMazeDimensions,
     intervalCallback,
@@ -616,6 +625,7 @@ describe("bootstrapGame", () => {
 
     vi.doMock("./dom", () => ({
       elements,
+      isBelowMinimumViewport: vi.fn(() => false),
       getTerminalSize: vi.fn(() => ({ numCols: 20, numRows: 20 })),
     }))
     vi.doMock("./maze", () => ({
@@ -684,6 +694,7 @@ describe("bootstrapGame", () => {
 
     vi.doMock("./dom", () => ({
       elements,
+      isBelowMinimumViewport: vi.fn(() => false),
       getTerminalSize: vi.fn(() => ({ numCols: 20, numRows: 20 })),
     }))
     vi.doMock("./maze", () => ({
@@ -745,6 +756,7 @@ describe("bootstrapGame", () => {
 
     vi.doMock("./dom", () => ({
       elements,
+      isBelowMinimumViewport: vi.fn(() => false),
       getTerminalSize: vi.fn(() => ({ numCols: 20, numRows: 20 })),
     }))
     vi.doMock("./maze", () => ({
@@ -806,6 +818,7 @@ describe("bootstrapGame", () => {
 
     vi.doMock("./dom", () => ({
       elements,
+      isBelowMinimumViewport: vi.fn(() => false),
       getTerminalSize: vi.fn(() => ({ numCols: 20, numRows: 20 })),
     }))
     vi.doMock("./maze", () => ({
@@ -861,6 +874,7 @@ describe("bootstrapGame", () => {
 
     vi.doMock("./dom", () => ({
       elements,
+      isBelowMinimumViewport: vi.fn(() => false),
       getTerminalSize: vi.fn(() => ({ numCols: 20, numRows: 20 })),
     }))
     vi.doMock("./maze", () => ({
@@ -942,6 +956,57 @@ describe("bootstrapGame", () => {
   // here as well would give one rule two owners, and pausing only on apply would leave the score
   // decaying for as long as the dialog stayed open. That the gear itself pauses is asserted in
   // control/agent.test.ts, where the overlay lives.
+  // A window below the supported minimum cannot hold a maze of any shape, so it goes straight to
+  // too-small rather than being offered to redrawRoundForViewport - there is nothing to retry
+  // against. Routing it through the status is what lets the touch controls and the placeholder
+  // follow from state.status instead of each re-deriving the viewport for itself.
+  it("blocks the level when the viewport drops below the supported minimum", async () => {
+    const harness = await bootstrapHarness({})
+    expect(latestRenderedState(harness.render).status).toBe("running")
+
+    harness.isBelowMinimumViewport.mockReturnValue(true)
+    window.dispatchEvent(new Event("resize"))
+
+    expect(latestRenderedState(harness.render).status).toBe("too-small")
+    // The round itself survives, as with any other block - only a deliberate restart clears it.
+    expect(latestRenderedState(harness.render).maze).not.toBeNull()
+  })
+
+  // A shrinking window is not a decision to abandon a game. Blocking a level marks it unplayable and
+  // stops the clock; it does not clear the maze, the trail walked so far, or the score. The whole
+  // suite passed while this state was being destroyed, so the behaviour is pinned here directly.
+  it("keeps the round in memory when the viewport blocks the level", async () => {
+    const harness = await bootstrapHarness({
+      // The round is 2x1; the second measurement cannot hold it, so the resize blocks the level.
+      dimensionsResults: [{ level: 1, numCols: 2, numRows: 1 }, null],
+      round: createHorizontalRound(),
+      terminalSizes: [
+        { numCols: 20, numRows: 20 },
+        { numCols: 1, numRows: 1 },
+        { numCols: 1, numRows: 1 },
+      ],
+    })
+
+    const playing = latestRenderedState(harness.render)
+    expect(playing.status).toBe("running")
+    const maze = playing.maze
+    const history = playing.traversalHistory.length
+    const score = playing.score
+
+    window.dispatchEvent(new Event("resize"))
+
+    const blocked = latestRenderedState(harness.render)
+    // The level really is blocked - without this the assertions below pass on a round that was
+    // never interrupted, which is how the first version of this test missed the bug entirely.
+    expect(blocked.status).toBe("too-small")
+    expect(blocked.maze).toBe(maze)
+    expect(blocked.traversalHistory).toHaveLength(history)
+    expect(blocked.score).toBe(score)
+    // The round is still the same attempt: bumping cumulativeRoundCount here used to end it, and
+    // that is also half of the fingerprint the agent-api loop checks before every turn.
+    expect(blocked.cumulativeRoundCount).toBe(playing.cumulativeRoundCount)
+  })
+
   it("leaves an interactive round alone when the floor moves", async () => {
     const harness = await bootstrapHarness({})
     expect(latestRenderedState(harness.render).status).toBe("running")
@@ -1387,7 +1452,9 @@ describe("bootstrapGame", () => {
     })
 
     const state = latestRenderedState(harness.render)
-    expect(state.status).toBe("running")
+    // Paused rather than running: the corrected measurement builds the round, but the player never
+    // asked for one to start, so the clock waits on them instead of spending score unattended.
+    expect(state.status).toBe("paused")
     expect(state.mazeDimensions).toEqual({ numCols: 2, numRows: 1, area: 2 })
     expect(harness.generateMaze).toHaveBeenCalledTimes(1)
   })
@@ -1458,7 +1525,7 @@ describe("bootstrapGame", () => {
     expect(state.status).toBe("too-small")
   })
 
-  it("resumes automatically once pinch-zoom eases back under the configured scale", async () => {
+  it("recovers to a paused round once pinch-zoom eases back under the configured scale", async () => {
     Object.defineProperty(window, "visualViewport", {
       configurable: true,
       value: { scale: 1, addEventListener: vi.fn() },
@@ -1481,7 +1548,111 @@ describe("bootstrapGame", () => {
 
     setVisualViewportScale(1)
     window.dispatchEvent(new Event("resize"))
-    expect(latestRenderedState(harness.render).status).toBe("running")
+    expect(latestRenderedState(harness.render).status).toBe("paused")
+  })
+
+  it("keeps agent-api in await-agent when a resize reshapes the round without blocking it", async () => {
+    const harness = await bootstrapHarness({
+      mode: CONFIG.runtime.controlModes.agentApi,
+      dimensionsResults: [
+        { level: 1, numCols: 4, numRows: 4 },
+        { level: 1, numCols: 1, numRows: 1 },
+      ],
+      // Only the width shrinks, so the fit is "too-small-width" rather than "too-small-all" and the
+      // reshape is attempted directly - the round never passes through the too-small block, which is
+      // what makes this the live-status case rather than the remembered-status one.
+      terminalSizes: [
+        { numCols: 20, numRows: 20 },
+        { numCols: 2, numRows: 20 },
+      ],
+    })
+
+    expect(latestRenderedState(harness.render).status).toBe("await-agent")
+
+    window.dispatchEvent(new Event("resize"))
+
+    const state = latestRenderedState(harness.render)
+    expect(state.status).toBe("await-agent")
+    expect(state.mazeDimensions).toEqual({ numCols: 1, numRows: 1, area: 1 })
+  })
+
+  it("holds a redrawn agent-api round in await-agent rather than pausing it", async () => {
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: { scale: 1, addEventListener: vi.fn() },
+    })
+
+    const harness = await bootstrapHarness({
+      mode: CONFIG.runtime.controlModes.agentApi,
+      dimensionsResults: [{ level: 1, numCols: 1, numRows: 1 }],
+      terminalSizes: [{ numCols: 20, numRows: 20 }],
+    })
+
+    // No enabled seat, so the mode parks itself here on its own.
+    expect(latestRenderedState(harness.render).status).toBe("await-agent")
+
+    setVisualViewportScale(CONFIG.viewport.pinchZoomTooCloseScale + 0.1)
+    window.dispatchEvent(new Event("resize"))
+    expect(latestRenderedState(harness.render).status).toBe("too-small")
+
+    setVisualViewportScale(1)
+    window.dispatchEvent(new Event("resize"))
+    // Not "paused": proceeding out of a pause runs the round, and with no enabled seat there is
+    // nothing to run it, so the overlay would promise a resume the mode cannot deliver.
+    expect(latestRenderedState(harness.render).status).toBe("await-agent")
+  })
+
+  // loggedInvariants picks the state-invariant reports out of everything an agent-api round logs.
+  function loggedInvariants(
+    harness: GameHarness,
+  ): Array<{ log: string; payload: string }> {
+    return harness.appendTapooLogEntry.mock.calls
+      .map(([, entry]) => entry as { log: string; payload: string })
+      .filter((entry) => entry.payload.startsWith("invalid game state:"))
+  }
+
+  // A round in progress disappeared with an empty log and no way to tell what had happened. Both
+  // paths that discard a live round now say so, because neither is an action the player associates
+  // with losing progress: one is a rejected snapshot at startup, the other a window resize.
+  it("logs the level and turn when a persisted round is rejected at startup", async () => {
+    const harness = await bootstrapHarness({
+      // Agent-api, because Tapoo Logs are the agent profiler's record: logTapooRecordEntry drops
+      // anything written under interactive mode, so that is the only mode where a diagnostic about
+      // a discarded round can be observed at all.
+      mode: CONFIG.runtime.controlModes.agentApi,
+      agentConfigs: [enabledAgentConfig()],
+      persistedSnapshots: [
+        {
+          preferences: { level: 4, wallWeight: 1 },
+          // area disagrees with numCols * numRows, which isValidPersistedRound rejects.
+          round: {
+            level: 4,
+            mazeDimensions: { numCols: 2, numRows: 1, area: 99 },
+            maze: createHorizontalRound().maze,
+            startPosition: { x: 1, y: 1 },
+            playerPosition: { x: 1, y: 1 },
+            startCell: { row: 0, col: 0 },
+            traversalHistory: [selfVisit(0, 0)],
+            finalPosition: { x: 3, y: 1 },
+            wallWeight: 1,
+            status: "running",
+            score: 200,
+            lastRoundScore: 0,
+            remainingMs: 1500,
+            winSummary: "",
+            turnCount: 7,
+            cumulativeRoundCount: 3,
+          },
+        },
+      ],
+    })
+
+    const rejection = harness.appendTapooLogEntry.mock.calls
+      .map(([, entry]) => entry as { payload?: string; details?: Record<string, unknown> })
+      .find((entry) => entry.payload === "Persisted round rejected; starting a fresh maze.")
+
+    expect(rejection, "no diagnostic recorded for the discarded round").toBeDefined()
+    expect(rejection?.details).toMatchObject({ level: 4, turnCount: 7, cumulativeRoundCount: 3 })
   })
 
   it("restores a persisted round in paused mode once the viewport fits again", async () => {
@@ -1639,7 +1810,7 @@ describe("bootstrapGame", () => {
     expect(state.traversalHistory).toEqual([selfVisit(0, 0)])
   })
 
-  it("auto-restarts a too-small game when the viewport fits again without a persisted round", async () => {
+  it("restarts a too-small game into a pause when the viewport fits again without a persisted round", async () => {
     const harness = await bootstrapHarness({
       dimensionsResults: [
         null,
@@ -1660,7 +1831,7 @@ describe("bootstrapGame", () => {
     window.dispatchEvent(new Event("resize"))
 
     const state = latestRenderedState(harness.render)
-    expect(state.status).toBe("running")
+    expect(state.status).toBe("paused")
     expect(state.level).toBe(1)
     expect(state.mazeDimensions).toEqual({ numCols: 2, numRows: 1, area: 2 })
     expect(harness.generateMaze).toHaveBeenCalledTimes(1)
@@ -1771,7 +1942,10 @@ describe("bootstrapGame", () => {
   // path. cycle-walls is the render trigger because it is the one action that redraws without
   // touching either the status or the clock, so it cannot repair the violation under test.
   it("logs an inconsistent state instead of throwing out of the render path", async () => {
-    const harness = await bootstrapHarness()
+    const harness = await bootstrapHarness({
+      mode: CONFIG.runtime.controlModes.agentApi,
+      agentConfigs: [enabledAgentConfig()],
+    })
     const state = latestRenderedState(harness.render)
 
     // Paused status while the clock still runs. Throwing here used to reach the global handler in
@@ -1781,17 +1955,22 @@ describe("bootstrapGame", () => {
 
     harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
 
-    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(1)
-    const [, entry] = harness.appendTapooLogEntry.mock.calls[0] as [string, { log: string; payload: string }]
-    expect(entry.log).toBe("error")
-    expect(entry.payload).toBe("invalid game state: paused status requires a paused clock")
+    // Filtered rather than counted: an agent-api round writes its own entries around this one, and
+    // asserting on the total would make this test fail whenever unrelated logging changed.
+    const violations = loggedInvariants(harness)
+    expect(violations).toHaveLength(1)
+    expect(violations[0].log).toBe("error")
+    expect(violations[0].payload).toBe("invalid game state: paused status requires a paused clock")
     // The round keeps playing: rendering continued past the violation rather than aborting.
     expect(harness.render.mock.calls.length).toBeGreaterThan(rendersBeforeViolation)
     expect(latestRenderedState(harness.render).wallWeight).toBe(2)
   })
 
   it("reports a repeated violation once but still reports a different one", async () => {
-    const harness = await bootstrapHarness()
+    const harness = await bootstrapHarness({
+      mode: CONFIG.runtime.controlModes.agentApi,
+      agentConfigs: [enabledAgentConfig()],
+    })
     const state = latestRenderedState(harness.render)
 
     state.status = "paused"
@@ -1800,7 +1979,7 @@ describe("bootstrapGame", () => {
 
     // renderState runs on the blink cadence, so an unfixed violation would append entries several
     // times a second and bury the gameplay history it sits beside.
-    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(1)
+    expect(loggedInvariants(harness)).toHaveLength(1)
 
     // Suppression is keyed on the message, not on having reported once: a violation that changes
     // into a different one is still news, so it has to appear.
@@ -1808,8 +1987,8 @@ describe("bootstrapGame", () => {
     state.clock?.pause()
     harness.runtime.dispatch({ type: "cycle-walls" }, { playerName: "Self" })
 
-    expect(harness.appendTapooLogEntry).toHaveBeenCalledTimes(2)
-    const [, entry] = harness.appendTapooLogEntry.mock.calls[1] as [string, { payload: string }]
-    expect(entry.payload).toBe("invalid game state: running status requires an active clock")
+    const violations = loggedInvariants(harness)
+    expect(violations).toHaveLength(2)
+    expect(violations[1].payload).toBe("invalid game state: running status requires an active clock")
   })
 })

@@ -169,7 +169,7 @@ export type AgentApiSeatConfig = AgentApiConfig & AgentApiSessionMetrics
 // --Shared Runtime Types--
 
 // Shared runtime types live here so rendering, control, storage, and generation stay aligned.
-export type GameStatus = PersistedGameStatus | "boot" | "too-small"
+export type GameStatus = PersistedGameStatus | "boot" | "too-small" | "storage-limit"
 
 // CellCoordinate represents one logical cell position using zero-based row and column indexes.
 // It stays independent from RenderGridPoint because the two spaces scale differently: a single
@@ -491,6 +491,75 @@ export type AgentSeat = {
   readonly agent: AgentApiSeatConfig | null
 }
 
+// AgentTurnStatsResult pairs the agent's post-turn counters with whether they reached storage.
+// persisted is not advisory: levelTurnCount is half of the round fingerprint the agent-api loop
+// checks, so committing a turn after a failed write leaves the two halves permanently apart and the
+// next turn answers that with a full restart.
+export type AgentTurnStatsResult = {
+  agent: AgentApiSeatConfig
+  persisted: boolean
+}
+
+// --- Tapoo log storage ---
+
+// TapooLogBackend names where log entries are actually being kept. IndexedDB is preferred and
+// sessionStorage is the fallback for browsers that block or lack it; the two differ in capacity by
+// three orders of magnitude, so which one is live decides how much play can be logged - see
+// runtime.storage.log.fallbackAgentApiMaxLevel.
+export type TapooLogBackend = "indexed-db" | "session-storage"
+
+// StoredLogEntry is one logged entry as IndexedDB holds it. entrySessionMode is the composite the
+// entries store indexes for per-tab/per-mode reads; mode-wide stale lookups live on StoredLogSession
+// instead, so entries do not duplicate a separate mode index. It also carries the session id the
+// entry belongs to, so no separate field repeats it - this is the many-rows store, and a field here
+// is paid for once per logged entry. entry is encoded with the same lightweight browser-storage
+// obfuscation used by localStorage/sessionStorage payloads.
+export type StoredLogEntry = {
+  id?: number
+  entrySessionMode: string
+  entry: string
+}
+
+// StoredLogSession is the per-(tab, mode) lease that makes cleanup possible. IndexedDB is shared by
+// every tab and outlives all of them, so a closed tab's entries would otherwise stay forever with
+// nothing left to claim them. lastSeenAt is refreshed while a tab is live; once it stops moving the
+// session is stale, and a later reset sweeps its entries along with the current tab's.
+// These fields stay plain because IndexedDB must query sessionModeName, compare lastSeenAt for stale
+// cleanup, and rebuild entrySessionMode keys from sessionId. Unlike log entries, this lease row is
+// small query metadata rather than gameplay/request payload.
+export type StoredLogSession = {
+  id: string
+  sessionId: string
+  sessionModeName: MazeControlModeName
+  createdAt: number
+  lastSeenAt: number
+}
+
+// TapooLogStoreState is what every log-store operation reports back: which backend served it, how
+// many entries this tab holds, and how many other sessions are stale. Returned rather than read
+// separately so a caller cannot act on counts from before its own write.
+export type TapooLogStoreState = {
+  backend: TapooLogBackend
+  currentLogCount: number
+  staleLogSessionCount: number
+}
+
+// EncodedMaze is fully self-contained: index_chars lists every distinct token the encoded maze
+// actually used, in first-seen order, with "\n" always appended last as the row separator. No
+// wallWeight or CONFIG lookup is needed to decode it - index_chars[Number(digit)] for every digit in
+// structure (including the separator digits) reconstructs the exact original printable maze text.
+export type EncodedMaze = {
+  index_chars: string[]
+  // structure_checksum lets offline consumers verify the compact structure string arrived intact
+  // before expanding it with index_chars. Fnva1-64bit checksum hash.
+  structure_checksum: string
+  // structure's exact length is (2R+1)(2C+1) + 2R for an R x C logical maze (renderCellStep 2: one
+  // digit per rendered cell, plus one row-separator digit per row boundary) - for a roughly square
+  // maze (R ~ C ~ sqrt(area)), that's well estimated from mazeDimensions.area alone as
+  // 4*area + 6*sqrt(area) + 1.
+  structure: string
+}
+
 // MazeActionResult stores only the previous command/replay outcome; live maze facts stay in State.
 export type MazeActionResult = {
   lastPlayerName?: string
@@ -626,7 +695,7 @@ export type TerminalElements = {
   touchButtons: HTMLButtonElement[]
   // zoomPlaceholder covers the terminal with the same unavailable-page.svg artwork
   // placeholder-art.html uses standalone, for the case where the too-small status text itself
-  // can no longer render in full (see terminalCanDisplayText, dom.ts) - a real error condition
+  // can no longer render in full (see isBelowMinimumViewport, status.ts) - a real error condition
   // like a broken bootstrap uses the separate top-level #placeholder-art instead.
   zoomPlaceholder: HTMLElement
   // The info gate overlay (info-gate.ts). It lives in TerminalElements rather than AgentElements
@@ -635,6 +704,7 @@ export type TerminalElements = {
   infoGateTitle: HTMLElement
   infoGateMessage: HTMLElement
   infoGateDetail: HTMLElement
+  infoGateLink: HTMLAnchorElement
   infoGateProceed: HTMLButtonElement
 }
 
@@ -757,9 +827,20 @@ export type LogEntry = {
 export type InfoGateNotice = {
   title: string
   acknowledgement: string
-  // detailTemplate's placeholders are filled by the caller, which is the only place the counts and
-  // their singular/plural wording are known.
+  // Two spellings of the same line, and only one applies to a given gate. detailTemplate carries
+  // placeholders the caller fills, because it is the only place the counts and their
+  // singular/plural wording are known; detail is the fixed form, for a gate whose supporting line
+  // never varies. A gate that used detailTemplate with nothing to substitute would invite a reader
+  // to look for the substitution.
   detailTemplate?: string
+  detail?: string
+  // A page the reader should be able to open before answering. Optional because most gates have
+  // nothing to point at; the privacy gate does, and asking someone to confirm they have read a
+  // policy without offering a way to reach it is not a real question.
+  link?: {
+    href: string
+    label: string
+  }
   proceedLabel: string
 }
 
@@ -812,7 +893,14 @@ export type AppConfig = {
     agentAwaitAction: DisplayMsg
     tooSmallMessage: string
     tooSmallActionMessage: string
-    tooSmallActionMessageWithReset: string
+    // Split by mode because the ways out differ: only the agent-api page exposes the restart level,
+    // and on that page lowering it is usually the fix, since Reset Progress reopens at that floor.
+    tooSmallActionMessageWithReset: {
+      interactive: string
+      agentApi: string
+    }
+    storageLimitMessage: string
+    storageLimitActionMessage: string
     // Per-mode: only agent-api has a turn count to show. See config.ts.
     runningStatus: {
       interactive: DisplayMsg
@@ -964,6 +1052,8 @@ export type AppConfig = {
     agentApiConnectionErrorRetryDelayMs: number
   }
   viewport: {
+    minSupportedWidth: number
+    minSupportedHeight: number
     compactWidth: number
     compactHeight: number
     terminalSampleWidth: number
@@ -991,6 +1081,25 @@ export type AppConfig = {
         winMetrics: string
         sessionMetrics: string
         tapooLog: string
+        logSessionId: string
+      }
+      log: {
+        // Object-store and index names for the IndexedDB log database. Each store owns the index
+        // labels built over its records. Each index string is also its keyPath, so an index can never
+        // be built over a property that does not exist - which silently returns no rows.
+        stores: {
+          logEntries: {
+            label: string
+            sessionModeIndex: string
+          }
+          logSessions: {
+            label: string
+            modeNameIndex: string
+          }
+        }
+        heartbeatIntervalMs: number
+        staleSessionTtlMs: number
+        fallbackAgentApiMaxLevel: number
       }
     }
     promptWarningPrefix: string

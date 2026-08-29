@@ -3,9 +3,9 @@ import { createInteractiveMode } from "./app/control/interactive"
 import { CONFIG } from "./app/config"
 import { getGameElements } from "./app/dom"
 import { prepareTerminalAppForBootstrap, showPlaceholderArt } from "./app/fallback-policy"
-import { initTapooLogs, tapooDownloadLogs, tapooResetLogs } from "./app/logs"
+import { initTapooLogs, tapooDownloadLogs } from "./app/logs"
 import { bootstrapGame } from "./app/game"
-import { requireStaleDataAcknowledgement } from "./app/consent-gates"
+import { requireAcknowledgement } from "./app/consent-gates"
 import { applyPageText, applyPageVersion, initTopMenus } from "./page-chrome"
 import type { Elements, MazeActionControl, MazeControlModeName } from "./app/types"
 
@@ -22,10 +22,14 @@ function pageModeName(): MazeControlModeName {
   return document.body.dataset.tapooControlMode === agentApiMode ? agentApiMode : CONFIG.runtime.controlModes.interactive
 }
 
-// tapooDownloadLogs and tapooResetLogs are attached without the __ prefix so the build's
-// --mangle-props=^__ rule does not rename them; they remain callable from DevTools console.
+// tapooDownloadLogs is attached without the __ prefix so the build's --mangle-props=^__ rule does
+// not rename it; it remains callable from the DevTools console.
+//
+// tapooResetLogs is deliberately NOT exposed. Downloading a log is read-only, but a global that
+// wipes one is a second way to destroy the session's record - reachable by any script on the page,
+// and indistinguishable afterwards from the reset button. Clearing the log now has exactly one
+// entry point: the Tapoo logs reset button.
 ;(window as unknown as Record<string, unknown>)["tapooDownloadLogs"] = () => tapooDownloadLogs(pageModeName())
-;(window as unknown as Record<string, unknown>)["tapooResetLogs"] = () => tapooResetLogs(pageModeName())
 
 window.addEventListener("error", (event) => {
   showPlaceholderArt(pageModeName(), event.error)
@@ -54,23 +58,22 @@ try {
     // until startGame runs, which is what the gate actually holds back.
     prepareTerminalAppForBootstrap()
 
-    // initTapooLogs seeds from sessionStorage, so it waits with the rest: nothing reads storage
-    // until any acknowledgement resolves.
+    // initTapooLogs opens the agent-api log stream, but it still waits with the rest:
+    // nothing reads or creates log storage until every acknowledgement resolves.
     //
-    // startGame carries its own fallback because it can run from a click handler, and a throw
-    // there escapes the try/catch around this block - the browser routes it to window.onerror
-    // instead. Wrapping here rather than inside the gate keeps one definition of failure handling
-    // for both the gated and ungated paths.
+    // startGame can run later from a click handler, outside this block's try/catch. Keeping the
+    // promise catch here gives gated and ungated startup the same placeholder fallback.
     const startGame = (): void => {
-      try {
-        initTapooLogs(mode.name)
-        bootstrapGame(mode, elements)
-      } catch (error) {
-        showPlaceholderArt(pageModeName(), error)
-      }
+      void initTapooLogs()
+        .then(() => {
+          bootstrapGame(mode, elements)
+        })
+        .catch((error) => {
+          showPlaceholderArt(pageModeName(), error)
+        })
     }
 
-    requireStaleDataAcknowledgement(elements, startGame)
+    requireAcknowledgement(elements, startGame)
   }
 } catch (error) {
   showPlaceholderArt(pageModeName(), error)

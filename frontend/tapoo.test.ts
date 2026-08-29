@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { INFO_GATE_NOTICES, STORE_PRIVACY_ACK } from "./app/config"
 import type * as FallbackPolicy from "./app/fallback-policy"
 
 const pageChrome = {
@@ -52,7 +53,12 @@ describe("tapoo entrypoint", () => {
     })
   })
 
+  function acknowledgePrivacyPolicy(): void {
+    window.localStorage.setItem(STORE_PRIVACY_ACK, "true")
+  }
+
   it("boots the game on import", async () => {
+    acknowledgePrivacyPolicy()
     const bootstrapGame = vi.fn()
     const getGameElements = vi.fn(() => ({ app: {} }))
     const showPlaceholderArt = vi.fn()
@@ -82,6 +88,9 @@ describe("tapoo entrypoint", () => {
 
     await import("./tapoo")
 
+    await vi.waitFor(() => {
+      expect(bootstrapGame).toHaveBeenCalledTimes(1)
+    })
     expect(bootstrapGame).toHaveBeenCalledTimes(1)
     expect(bootstrapGame).toHaveBeenCalledWith(interactiveMode, { app: {} })
     expect(pageChrome.applyPageText).toHaveBeenCalledTimes(1)
@@ -121,11 +130,12 @@ describe("tapoo entrypoint", () => {
       infoGateTitle: document.createElement("strong"),
       infoGateMessage: document.createElement("p"),
       infoGateDetail,
+      infoGateLink: document.createElement("a"),
       infoGateProceed,
     }
 
     const bootstrapGame = vi.fn()
-    const initTapooLogs = vi.fn()
+    const initTapooLogs = vi.fn(() => Promise.resolve())
     const prepareTerminalAppForBootstrap = vi.fn()
     const interactiveMode = {
       bindActionDispatch: vi.fn(),
@@ -150,7 +160,6 @@ describe("tapoo entrypoint", () => {
     vi.doMock("./app/logs", () => ({
       initTapooLogs,
       tapooDownloadLogs: vi.fn(),
-      tapooResetLogs: vi.fn(),
     }))
 
     await import("./tapoo")
@@ -172,22 +181,55 @@ describe("tapoo entrypoint", () => {
     const scenario = await mountGateScenario([staleKey])
 
     // The terminal shell is revealed so the gate has something to sit over, but the game itself
-    // has not started and the stale entry is untouched.
+    // has not started and the stale entry is untouched. The first gate raised is the privacy one -
+    // the stale gate deletes data, so its own question comes after the policy governing it.
     expect(scenario.prepareTerminalAppForBootstrap).toHaveBeenCalledTimes(1)
     expect(scenario.infoGate.hidden).toBe(false)
     expect(scenario.bootstrapGame).not.toHaveBeenCalled()
     expect(scenario.initTapooLogs).not.toHaveBeenCalled()
+    expect(scenario.infoGateDetail.textContent).toBe(INFO_GATE_NOTICES.privacyPolicy.detail)
     expect(window.localStorage.getItem(staleKey)).toBe("old")
 
     scenario.infoGateProceed.click()
 
+    // The privacy gate is answered first, so the stale entry survives this click: the deletion is
+    // the next gate's, and it happens only once the policy covering it has been accepted.
+    expect(window.localStorage.getItem(staleKey)).toBe("old")
+    expect(scenario.bootstrapGame).not.toHaveBeenCalled()
+    expect(scenario.initTapooLogs).not.toHaveBeenCalled()
+    expect(scenario.infoGateDetail.textContent).toBe(
+      INFO_GATE_NOTICES.staleStorage.detailTemplate
+        .replace("{items}", "1 entry")
+        .replace("{versions}", "version (0.1)"),
+    )
+    expect(scenario.infoGate.hidden).toBe(false)
+
+    scenario.infoGateProceed.click()
+
     expect(window.localStorage.getItem(staleKey)).toBeNull()
+
+    await vi.waitFor(() => {
+      expect(scenario.bootstrapGame).toHaveBeenCalledTimes(1)
+    })
     expect(scenario.bootstrapGame).toHaveBeenCalledTimes(1)
     expect(scenario.initTapooLogs).toHaveBeenCalledTimes(1)
     expect(scenario.infoGate.hidden).toBe(true)
   })
 
+  // Downloading a log reads it; resetting one destroys it. Only the Tapoo logs reset button may do
+  // the second, so no global is published for it - a page script calling window.tapooResetLogs()
+  // would wipe the session's record with nothing afterwards to distinguish it from a button press.
+  it("publishes a console hook for downloading logs but never for clearing them", async () => {
+    const scenario = await mountGateScenario([])
+    scenario.infoGateProceed.click()
+
+    const globals = window as unknown as Record<string, unknown>
+    expect(typeof globals.tapooDownloadLogs).toBe("function")
+    expect(globals.tapooResetLogs).toBeUndefined()
+  })
+
   it("uses the agent-api page mode when configured in html", async () => {
+    acknowledgePrivacyPolicy()
     const bootstrapGame = vi.fn()
     const elements = { app: {} }
     const showPlaceholderArt = vi.fn()
@@ -218,6 +260,9 @@ describe("tapoo entrypoint", () => {
 
     await import("./tapoo")
 
+    await vi.waitFor(() => {
+      expect(bootstrapGame).toHaveBeenCalledWith(agentMode, elements)
+    })
     expect(bootstrapGame).toHaveBeenCalledWith(agentMode, elements)
     expect(showPlaceholderArt).not.toHaveBeenCalled()
   })
@@ -242,6 +287,7 @@ describe("tapoo entrypoint", () => {
   })
 
   it("shows placeholder art when bootstrap throws an unknown Error", async () => {
+    acknowledgePrivacyPolicy()
     const failure = new Error("unexpected bootstrap failure")
     const showPlaceholderArt = vi.fn()
 
@@ -268,10 +314,14 @@ describe("tapoo entrypoint", () => {
 
     await import("./tapoo")
 
+    await vi.waitFor(() => {
+      expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
+    })
     expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
   })
 
   it("shows placeholder art when bootstrap throws a known fallback Error", async () => {
+    acknowledgePrivacyPolicy()
     const failure = new Error("missing required element: terminal-body")
     const showPlaceholderArt = vi.fn()
 
@@ -298,10 +348,14 @@ describe("tapoo entrypoint", () => {
 
     await import("./tapoo")
 
+    await vi.waitFor(() => {
+      expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
+    })
     expect(showPlaceholderArt).toHaveBeenCalledWith("interactive", failure)
   })
 
   it("reports a later invariant failure through the placeholder art", async () => {
+    acknowledgePrivacyPolicy()
     const failure = new Error("agent move dispatch must return feedback")
     const showPlaceholderArt = vi.fn()
 

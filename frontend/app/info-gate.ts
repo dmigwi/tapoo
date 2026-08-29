@@ -10,6 +10,12 @@ export type InfoGateContent = {
   // (a count, a list of what is affected). An acknowledgement that names what it covers is worth
   // more than one that does not, but not every gate has something to name.
   detail?: string
+  // link is a page the reader may need before they can answer honestly - the privacy policy, for a
+  // gate that asks whether they have read it. Rendered as an ordinary anchor and hidden when absent.
+  link?: {
+    href: string
+    label: string
+  }
   proceedLabel: string
 }
 
@@ -32,6 +38,14 @@ export function showInfoGate(
   elements.infoGateMessage.textContent = content.message
   elements.infoGateDetail.textContent = content.detail ?? ""
   elements.infoGateDetail.hidden = !content.detail
+  // Opened in a new tab on purpose: the gate cannot be dismissed and blocks the page behind it, so
+  // navigating away in place would strand the reader with no way back to the question. rel is set
+  // with it because target="_blank" hands the opened page a window.opener reference otherwise.
+  elements.infoGateLink.textContent = content.link?.label ?? ""
+  elements.infoGateLink.href = content.link?.href ?? ""
+  elements.infoGateLink.target = content.link ? "_blank" : ""
+  elements.infoGateLink.rel = content.link ? "noopener noreferrer" : ""
+  elements.infoGateLink.hidden = !content.link
   elements.infoGateProceed.textContent = content.proceedLabel
 
   const onClick = (): void => {

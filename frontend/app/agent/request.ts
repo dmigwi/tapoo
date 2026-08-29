@@ -1,5 +1,4 @@
-import { logTapooDiagnostic, setTapooLogContext } from "../logs"
-import type { EncodedMazeForLog } from "../logs"
+import { logTapooRecordEntry, setTapooLogContext } from "../logs"
 import { CONFIG } from "../config"
 import { describeProviderHttpFailure } from "./config"
 import {
@@ -20,6 +19,7 @@ import {
   serializeToolResult,
 } from "./protocol"
 import { PROVIDER_ADAPTERS } from "./providers"
+import { cellCoordinateFromGridPoint } from "../traversal"
 import type { ProviderAdapter } from "./providers"
 import {
   formatPlayerStatusLabel,
@@ -29,6 +29,7 @@ import {
 import type {
   AgentChatMessage,
   AgentApiSeatConfig,
+  EncodedMaze,
   AgentPredictionFailure,
   AgentPredictionRequest,
   AgentPredictionResult,
@@ -92,7 +93,7 @@ type ToolServicingResult =
 // and "warned" follows an all-duplicate tool-call response.
 type AgentMode = "predict" | "tools" | "warned"
 
-export type EncodedMazeForLevelStart = EncodedMazeForLog & {
+export type EncodedMazeForLevelStart = EncodedMaze & {
   dimensions: MazeDimensions
 }
 
@@ -104,9 +105,16 @@ function logAgentLevelStarted(
     return
   }
 
-  logTapooDiagnostic(CONFIG.runtime.controlModes.agentApi, "info", "Agent level started.", {
+  // destinationCell and historyWindowRadius are logged here, once, rather than in every turn's
+  // get_maze_structure result: neither changes for the life of a level, and repeating them cost a
+  // line of the log on every request of every turn. A reader needs them to expand the compacted
+  // per-turn results (see compactLoggedToolResult), so they belong beside the maze those results
+  // describe. level is not repeated either - every log entry is already stamped with it.
+  logTapooRecordEntry(CONFIG.runtime.controlModes.agentApi, "info", "Agent level started.", {
     startPosition: stateSnapshot.startPosition,
     finalPosition: stateSnapshot.finalPosition,
+    destinationCell: cellCoordinateFromGridPoint(stateSnapshot.finalPosition),
+    historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
     maze: encodedMazeForLogs,
   })
 }
@@ -185,15 +193,18 @@ async function requestChatTurn(
   // rather than an undefined value reaching a provider adapter.
   const reasoningEffort = agent.reasoningEffort ?? CONFIG.agentConfig.reasoningEffortDefaults[agent.api]
 
-  logTapooDiagnostic(agentApiModeName, "info", "Agent request.", {
+  logTapooRecordEntry(agentApiModeName, "info", "Agent request.", {
     endpoint: endpointDisplay,
     player,
     api: agent.api,
     requestCount,
     agentMode,
     reasoning: reasoningEffort,
-    // The full accumulated conversation is sent on every provider request. Static prompts are
-    // previewed after the first request, while assistant/tool context stays available in full.
+    // The full accumulated conversation is sent on every provider request, which is exactly why the
+    // logged copy is not: prompts, tool descriptions and tool results are each previewed with a
+    // checksum after the first request of a level, so a turn's log cost no longer multiplies by how
+    // many requests that turn took. Assistant messages stay whole - they carry the model's own
+    // output and requested calls, which no replay can reconstruct.
     messages: messages.map((msg) => previewLoggedMessage(msg, keepFull)),
     tools: tools.map((tool) => previewLoggedTool(tool, keepFull)),
   })
@@ -201,7 +212,7 @@ async function requestChatTurn(
   const msgBody = adapter.buildBody({ model: agent.model, messages, tools, wantsPredictionFormat, reasoningEffort })
   
   // credential and extraHeaders reach only buildHeaders - never the log above, never the assembled
-  // body, and never anything else that could flow into logTapooDiagnostic (see request storage in
+  // body, and never anything else that could flow into logTapooRecordEntry (see request storage in
   // logs.ts; log entries land in sessionStorage and are user-downloadable).
   const response = await fetch(agent.endpoint, {
     body: JSON.stringify(msgBody),
@@ -233,7 +244,7 @@ async function requestChatTurn(
   }
 
   const rawResponseBody: unknown = await response.json()
-  logTapooDiagnostic(agentApiModeName, "info", "Agent response.", {
+  logTapooRecordEntry(agentApiModeName, "info", "Agent response.", {
     endpoint: endpointDisplay,
     payload: rawResponseBody,
   })

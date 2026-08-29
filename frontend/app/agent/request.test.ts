@@ -20,6 +20,20 @@ import type {
   State,
 } from "../types"
 
+// structureToolResult is the get_maze_structure payload these fixtures expect.
+// compactedStructureToolResult is what the log keeps: compacted content plus the checksum of the
+// full original payload the model received. Both are written out so contract changes are explicit.
+function compactedStructureToolResult(): { content: string; content_checksum: string } {
+  return {
+    content_checksum: "0x36ee2bf1b3527c1e",
+    content: "{\"currentCell\":[0,0],\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":[0,0],\"openMoves\":[]}]}",
+  }
+}
+
+function structureToolResult(): string {
+  return "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}"
+}
+
 const endpoint = "https://agents.example/chat"
 const model = "qwen3.6:27b"
 const prompt = buildMazeActionPrompt("Blue", "trailblazer", true)
@@ -293,9 +307,11 @@ describe("agent request service", () => {
   beforeEach(() => {
     vi.spyOn(console, "info").mockImplementation(() => {})
     vi.spyOn(console, "warn").mockImplementation(() => {})
+    vi.stubGlobal("indexedDB", undefined)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
@@ -331,8 +347,8 @@ describe("agent request service", () => {
           role: "tool",
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
-          content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}",
+          // The wire payload, not the log: the model still receives the tool result in full.
+          content: structureToolResult(),
         },
       ],
       tools: uncalledTools(["get_maze_structure"]),
@@ -375,7 +391,7 @@ describe("agent request service", () => {
   })
 
   it("logs the level's first request in full at round 1 only, previewing later rounds", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const fetchMock = vi
       .fn()
@@ -464,15 +480,16 @@ describe("agent request service", () => {
           role: "tool",
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
-          content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}",
+          // The logged copy: cells as [row, col], openMoves as [move, status] pairs, cellType
+          // recomputed by the reader. Checksummed against the full result the model was sent.
+          ...compactedStructureToolResult(),
         },
       ],
     })
   })
 
   it("logs the encoded maze before the level's first request", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(successfulResponse(JSON.stringify({ moves: ["MoveRight"] }))),
@@ -509,6 +526,10 @@ describe("agent request service", () => {
     expect(levelStarted.details).toEqual({
       startPosition: { x: 1, y: 1 },
       finalPosition: { x: 1, y: 1 },
+      // Recorded once here rather than in every turn's get_maze_structure result: both are fixed
+      // for the level, and a reader needs them to expand the compacted per-turn results.
+      destinationCell: { row: 0, col: 0 },
+      historyWindowRadius: CONFIG.runtime.modelConfig.manhattanDistance,
       maze: {
         index_chars: ["|", "---", "   ", "\n"],
         structure_checksum: "0x279d74cddf9d2e85",
@@ -519,7 +540,7 @@ describe("agent request service", () => {
   })
 
   it("stamps every request/response entry with the maze level being played", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const fetchMock = vi
       .fn()
@@ -537,7 +558,7 @@ describe("agent request service", () => {
   })
 
   it("previews the repeated system/user prompt and tool descriptions in a later turn, every round", async () => {
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const fetchMock = vi
       .fn()
@@ -636,8 +657,9 @@ describe("agent request service", () => {
           role: "tool",
           tool_call_id: "call_structure",
           tool_name: "get_maze_structure",
-          content:
-            "{\"level\":1,\"currentCell\":{\"row\":0,\"col\":0},\"destinationCell\":{\"row\":8,\"col\":7},\"historyWindowRadius\":4,\"filteredTraversalHistory\":[{\"playerName\":\"Self\",\"cell\":{\"row\":0,\"col\":0},\"cellType\":\"start-cell\",\"openMoves\":{}}]}",
+          // The logged copy: cells as [row, col], openMoves as [move, status] pairs, cellType
+          // recomputed by the reader. Checksummed against the full result the model was sent.
+          ...compactedStructureToolResult(),
         },
       ],
     })
@@ -1473,7 +1495,7 @@ describe("agent request service", () => {
     // no payload is re-served, just a reminder naming that specific call.
     // Round 3 (agentMode: warned): model re-requests it again despite the reminder - second
     // violation: the turn fails as malformed-response instead of reminding indefinitely.
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const allToolCalls = agentContextTools.map(({ function: { name } }, i) => ({
       id: `call_${i}`,
@@ -1529,7 +1551,7 @@ describe("agent request service", () => {
     // Logs land in sessionStorage and are user-downloadable, so a credential reaching one of them
     // would be a real leak, not an ephemeral one. Both sentinels are deliberately distinctive
     // strings unlikely to appear anywhere else in a request/response payload.
-    tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
+    await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
 
     const credentialSentinel = "sk-redaction-sentinel-credential-000111"
     const extraHeadersSentinel = "redaction-sentinel-extra-header-222333"

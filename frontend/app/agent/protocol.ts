@@ -104,14 +104,98 @@ export function serializeToolResult(result: unknown): string {
   return typeof result === "string" ? result : JSON.stringify(result)
 }
 
+// compactLoggedToolResult rewrites a get_maze_structure result into the smallest form that still
+// reconstructs the original exactly. get_maze_structure is by far the largest thing a turn logs -
+// ~8 KB at the 41-entry maximum the historyWindowRadius allows - and the accumulated tool results
+// are re-sent on every follow-up request in a turn, so the same history lands in the log two or
+// three times over. sessionStorage is capped by the browser and shared with the round snapshot, so a
+// log that outgrows it used to take the session's record down with it.
+//
+// Three changes, each reversing by arithmetic or by counting rather than by inference:
+//   - openMoves becomes [[move, visitStatus], ...]. Each neighbour's row/col is the entry's own cell
+//     plus that move's delta, so the coordinates are recomputed rather than stored. An array of
+//     pairs rather than an object keeps the ordering explicit and reads the same in any language.
+//   - every cell becomes [row, col]. Notation only; nothing is dropped.
+//   - cellType goes. dead-end/corridor/junction is the openMoves count, and target-cell is a compare
+//     against destinationCell, which is still in the payload. start-cell alone needs the level's
+//     start position, which the level-start maze entry already records.
+//
+// The model still receives the expanded form: it is given the coordinates precisely so it does not
+// have to do this arithmetic. This is the logged copy alone, and previewLoggedMessage checksums the
+// original so any reconstruction can be proved byte-identical rather than merely plausible.
+//
+// Anything unparseable, or shaped differently from what is expected, is returned untouched rather
+// than guessed at - a tool result that cannot be read is still evidence of what was sent.
+type LoggedMazeStructure = {
+  currentCell?: { row: number; col: number }
+  filteredTraversalHistory?: {
+    playerName?: string
+    cell?: { row: number; col: number }
+    openMoves?: Record<string, { visitStatus?: string }>
+  }[]
+}
+
+function compactCell(cell: { row: number; col: number } | undefined): [number, number] | undefined {
+  return cell ? [cell.row, cell.col] : undefined
+}
+
+function compactLoggedToolResult(content: string | undefined): string | undefined {
+  if (!content || !content.includes("\"filteredTraversalHistory\"")) {
+    return content
+  }
+
+  try {
+    const parsed = JSON.parse(content) as LoggedMazeStructure
+    if (!Array.isArray(parsed.filteredTraversalHistory)) {
+      return content
+    }
+
+    // Built explicitly rather than spread: level, destinationCell and historyWindowRadius are fixed
+    // for a level, so they are logged once by logAgentLevelStarted instead of on every request of
+    // every turn - and level is on every log entry anyway. Constructing the object by hand means a
+    // new field has to be considered here rather than riding along unnoticed.
+    return JSON.stringify({
+      currentCell: compactCell(parsed.currentCell),
+      // cellType is dropped by rebuilding the entry from the fields that stay, rather than by
+      // deleting it: an added field then has to be considered here instead of riding along unseen.
+      filteredTraversalHistory: parsed.filteredTraversalHistory.map((entry) => ({
+        playerName: entry.playerName,
+        cell: compactCell(entry.cell),
+        openMoves: Object.entries(entry.openMoves ?? {}).map(([move, neighbor]) => [move, neighbor?.visitStatus]),
+      })),
+    })
+  } catch {
+    return content
+  }
+}
+
 // previewLoggedMessage trims only static prompt messages; request-specific context stays intact. The
 // checksum is computed from the original, untrimmed content, so it stays stable across both the
 // keepFull and preview cases and lets a downloaded log prove the content didn't drift mid-experiment
 // or between games.
+//
+// Tool results are compacted rather than trimmed - see compactLoggedToolResult. They are the largest
+// thing a turn writes, but they are also the record of what the model was actually shown, so the
+// entries stay and only the fields a replay can regenerate are dropped.
 export function previewLoggedMessage(
   message: AgentChatMessage,
   keepFull: boolean,
 ): AgentChatMessage & { content_checksum?: string } {
+  if (message.role === "tool") {
+    const compacted = compactLoggedToolResult(message.content)
+    if (compacted === message.content) {
+      return message
+    }
+
+    // Checksummed against the original: the compact form is lossy on paper, so the log still has to
+    // be able to prove what was sent.
+    return {
+      ...message,
+      content_checksum: checksumLoggedDescription(message.content),
+      content: compacted,
+    }
+  }
+
   if (message.role !== "system" && message.role !== "user") {
     return message
   }

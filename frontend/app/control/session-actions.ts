@@ -1,3 +1,4 @@
+import { isBelowMinimumViewport } from "../dom"
 import type { Elements, MazeAction, SessionAction } from "../types"
 
 // SessionMazeAction keeps the shared browser-only session actions grouped together.
@@ -46,6 +47,20 @@ export function releaseAllActionBindings({
   __removeAppFocus()
   __setAttached(false)
   __onAfterRelease?.()
+}
+
+// acceptsGameControls answers whether human input should reach the game at all. Two conditions, both
+// about whether the player can see what they would be acting on:
+//
+//   - the terminal app must hold focus, so typing in an agent form is not read as a game shortcut;
+//   - the viewport must be at least the supported minimum, because below it the zoom placeholder
+//     covers the screen. That cover is opaque: without this, every touch button underneath stays
+//     clickable and every shortcut still moves a player nobody can see, on a maze nobody can read.
+//
+// Shared by both control modes rather than repeated in each keydown handler, so a mode cannot be
+// given input rules the other does not have.
+export function acceptsGameControls(elements: Elements): boolean {
+  return isMazeControlFocused(elements) && !isBelowMinimumViewport(elements)
 }
 
 // isMazeControlFocused keeps human keyboard/button controls scoped to the terminal app.
