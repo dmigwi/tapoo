@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createAgentMode } from "./agent"
 import { CONFIG } from "../config"
-import { logTapooDiagnostic, tapooResetLogs } from "../logs"
+import { logTapooRecordEntry, tapooResetLogs } from "../logs"
 import {
   loadAgentApiSeatConfigs,
   loadTapooLog,
@@ -1351,10 +1351,10 @@ describe("agent control mode", () => {
     expect(elements.systemPalette?.hidden).toBe(false)
     expect(elements.tapooLogsReset?.disabled).toBe(true)
     expect(elements.tapooLogsDownload?.disabled).toBe(true)
-    logTapooDiagnostic("agent-api", "info", "downloadable log")
+    logTapooRecordEntry("agent-api", "info", "downloadable log")
     expect(elements.tapooLogsDownload?.disabled).toBe(false)
     elements.tapooLogsReset?.click()
-    logTapooDiagnostic("agent-api", "info", "downloadable log")
+    logTapooRecordEntry("agent-api", "info", "downloadable log")
     elements.tapooLogsDownload?.click()
 
     expect(dispatch).not.toHaveBeenCalled()
@@ -1376,7 +1376,7 @@ describe("agent control mode", () => {
     expect(elements.tapooLogsReset?.disabled).toBe(true)
     expect(elements.tapooLogsDownload?.disabled).toBe(true)
 
-    logTapooDiagnostic("agent-api", "info", "agent request")
+    logTapooRecordEntry("agent-api", "info", "agent request")
 
     expect(elements.tapooLogsReset?.disabled).toBe(false)
     expect(elements.tapooLogsDownload?.disabled).toBe(false)

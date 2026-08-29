@@ -58,25 +58,19 @@ try {
     // until startGame runs, which is what the gate actually holds back.
     prepareTerminalAppForBootstrap()
 
-    // initTapooLogs touches IndexedDB/sessionStorage, so it waits with the rest: nothing reads log
-    // storage until every acknowledgement resolves.
+    // initTapooLogs opens the agent-api log stream, but it still waits with the rest:
+    // nothing reads or creates log storage until every acknowledgement resolves.
     //
-    // startGame carries its own fallback because it can run from a click handler, and a throw
-    // there escapes the try/catch around this block - the browser routes it to window.onerror
-    // instead. Wrapping here rather than inside the gate keeps one definition of failure handling
-    // for both the gated and ungated paths.
+    // startGame can run later from a click handler, outside this block's try/catch. Keeping the
+    // promise catch here gives gated and ungated startup the same placeholder fallback.
     const startGame = (): void => {
-      try {
-        void initTapooLogs(mode.name)
-          .then(() => {
-            bootstrapGame(mode, elements)
-          })
-          .catch((error) => {
-            showPlaceholderArt(pageModeName(), error)
-          })
-      } catch (error) {
-        showPlaceholderArt(pageModeName(), error)
-      }
+      void initTapooLogs()
+        .then(() => {
+          bootstrapGame(mode, elements)
+        })
+        .catch((error) => {
+          showPlaceholderArt(pageModeName(), error)
+        })
     }
 
     requireAcknowledgement(elements, startGame)

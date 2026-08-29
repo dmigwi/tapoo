@@ -1,5 +1,5 @@
 import { GameClock } from "./clock"
-import { isTapooLogStorageFallback, logTapooDiagnostic } from "./logs"
+import { isTapooLogStorageFallback, logTapooRecordEntry } from "./logs"
 import {
   CONFIG,
   WALL_WEIGHTS,
@@ -256,7 +256,7 @@ function reportStateInvariant(): void {
 
   lastReportedInvariant = invariantError
   if (invariantError) {
-    logTapooDiagnostic(state.controlMode, "error", invariantError, {
+    logTapooRecordEntry(state.controlMode, "error", invariantError, {
       status: state.status,
       clockPaused: state.clock?.isPaused ?? null,
       level: state.level,
@@ -305,7 +305,7 @@ function noValidRoundExists(snapshot: PersistedRound | null): boolean {
     // Logged because this discards a round the player was in the middle of. Silently starting a
     // fresh maze left the loss indistinguishable from a restart the player triggered, with nothing
     // afterwards to say a snapshot had even been rejected.
-    logTapooDiagnostic(state.controlMode, "error", "Persisted round rejected; starting a fresh maze.", {
+    logTapooRecordEntry(state.controlMode, "error", "Persisted round rejected; starting a fresh maze.", {
       level: snapshot.level,
       cumulativeRoundCount: snapshot.cumulativeRoundCount,
       turnCount: snapshot.turnCount,
@@ -494,7 +494,7 @@ function redrawRoundForViewport(level: number): boolean {
   // within the level is gone. Logged because nothing else records it - a resize is not an action
   // the player associates with losing a round, so without this the loss has no visible cause.
   if (wasRunning) {
-    logTapooDiagnostic(state.controlMode, "warn", "Viewport change redrew the round; progress in it was discarded.", {
+    logTapooRecordEntry(state.controlMode, "warn", "Viewport change redrew the round; progress in it was discarded.", {
       level,
       cumulativeRoundCount: state.cumulativeRoundCount,
       turnCount: state.turnCount,

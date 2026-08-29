@@ -6,7 +6,7 @@ import { agentRequestIntervalMs } from "../agent/config"
 import { calculateTraversalSpeedUnits, getBatchEfficiencyMetrics } from "../agent/efficiency"
 import { snapshotAgentState } from "../agent/state-snapshot"
 import type { AgentStateSnapshot } from "../agent/state-snapshot"
-import { encodeMazeForLog, logTapooDiagnostic } from "../logs"
+import { encodeMazeForLog, logTapooRecordEntry } from "../logs"
 import { agentForCurrentRound, recordAgentTurnStats } from "../storage"
 import { isLostStatus, isRunningStatus, isWonStatus } from "../status"
 import { cellCoordinateFromGridPoint, cloneMazeDimensions } from "../traversal"
@@ -142,7 +142,7 @@ export function handleAgentTurnLoop({
   
     __onActiveAgentChange?.(null)
     if (logTransition) {
-      logTapooDiagnostic(runtime.controlModes.agentApi, "warn", "Agent API awaiting an enabled seat.", {
+      logTapooRecordEntry(runtime.controlModes.agentApi, "warn", "Agent API awaiting an enabled seat.", {
         configuredSeats: __readAgentConfigs().length,
       })
     }
@@ -174,7 +174,7 @@ export function handleAgentTurnLoop({
   // from a different game output than the one it's reasoning about. A restart is the only response
   // that guarantees that never happens.
   const resetAfterAgentStateMismatch = (agent: AgentApiSeatConfig, currentState: State): void => {
-    logTapooDiagnostic(runtime.controlModes.agentApi, "error", "Agent turn count mismatch; resetting game state.", {
+    logTapooRecordEntry(runtime.controlModes.agentApi, "error", "Agent turn count mismatch; resetting game state.", {
       seatId: agent.seatId,
       playerName: agent.playerName,
       stateTurnCount: currentState.turnCount,
@@ -267,7 +267,7 @@ export function handleAgentTurnLoop({
     }
 
     __onActiveAgentChange?.(null)
-    logTapooDiagnostic(runtime.controlModes.agentApi, "error", "Agent disabled after network error.", {
+    logTapooRecordEntry(runtime.controlModes.agentApi, "error", "Agent disabled after network error.", {
       seatId: agent.seatId,
       sessionId: agent.sessionId,
       playerName: agent.playerName,
@@ -312,7 +312,7 @@ export function handleAgentTurnLoop({
     // the quota behind this is reached by long play, not by anything the player did. Pausing keeps
     // the round intact and puts the cause in the log where it can be seen.
     if (!persisted) {
-      logTapooDiagnostic(runtime.controlModes.agentApi, "error", "Agent turn stats could not be saved; pausing instead of committing.", {
+      logTapooRecordEntry(runtime.controlModes.agentApi, "error", "Agent turn stats could not be saved; pausing instead of committing.", {
         seatId: agent.seatId,
         playerName: agent.playerName,
         level: preCommitState.level,
@@ -378,7 +378,7 @@ export function handleAgentTurnLoop({
       // comment). malformed-response means the model returned something Tapoo couldn't use (bad
       // JSON, a hallucinated tool call); that's an anticipated, handled deviation charged its own
       // decay penalty below, not a system failure, so it stays a warning.
-      logTapooDiagnostic(
+      logTapooRecordEntry(
         runtime.controlModes.agentApi,
         isRejectedAgentResponseReason(failure.reason) ? "warn" : "error",
         failure.diagnostic.message,
@@ -489,7 +489,7 @@ export function handleAgentTurnLoop({
     // changed state in the meantime; the retry should still see exactly what the turn started with.
     const retryAttempt = await requestAgentPrediction(agent, stateSnapshot, null)
     if (retryAttempt.ok) {
-      logTapooDiagnostic(runtime.controlModes.agentApi, "warn", "Recovered after a connection-error retry.")
+      logTapooRecordEntry(runtime.controlModes.agentApi, "warn", "Recovered after a connection-error retry.")
       return retryAttempt
     }
 
@@ -653,7 +653,7 @@ export function handleAgentTurnLoop({
       // the quota behind this is reached by long play, not by anything the player did. Pausing keeps
       // the round intact and puts the cause in the log where it can be seen.
       if (!persisted) {
-        logTapooDiagnostic(runtime.controlModes.agentApi, "error", "Agent turn stats could not be saved; pausing instead of committing.", {
+        logTapooRecordEntry(runtime.controlModes.agentApi, "error", "Agent turn stats could not be saved; pausing instead of committing.", {
           seatId: selectedAgent.seatId,
           playerName: selectedAgent.playerName,
           level: preCommitState.level,

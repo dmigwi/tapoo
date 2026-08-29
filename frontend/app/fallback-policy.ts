@@ -1,4 +1,4 @@
-import { logTapooDiagnostic } from "./logs"
+import { logTapooRecordEntry } from "./logs"
 import type { MazeControlModeName } from "./types"
 
 // PlaceholderArtErrorPolicy describes stable failures that should replace the terminal view.
@@ -44,7 +44,7 @@ function placeholderArtErrorPolicy(error: Error): PlaceholderArtErrorPolicy | nu
 // logPlaceholderFallback records the original Error so production debugging keeps the stack trace.
 function logPlaceholderFallback(modeName: MazeControlModeName, error: Error): void {
   const reason = placeholderArtErrorPolicy(error)?.reason ?? unknownFallbackReason
-  logTapooDiagnostic(modeName, "error", reason, error)
+  logTapooRecordEntry(modeName, "error", reason, error)
 }
 
 // showPageView keeps terminal and placeholder visibility mutually exclusive.

@@ -1,5 +1,6 @@
 import { INFO_GATE_NOTICES } from "./config"
 import { showInfoGate } from "./info-gate"
+import { clearStaleTapooLogDatabases } from "./storage-logs"
 import {
   clearStaleStorageVersions,
   privacyPolicyAcknowledged,
@@ -27,7 +28,7 @@ import type { Elements } from "./types"
 // one answer, rather than having to know which gates exist or how many there are - adding a third
 // gate is an edit here, not at every call site.
 //
-// The order is deliberate, not incidental. The privacy policy is acknowledged first because the
+// The order is deliberate. The privacy policy gate is acknowledged first because the
 // stale-data gate deletes data, and deleting is itself something done with a user's data: doing it
 // before they have accepted the policy that governs it would be acting first and asking afterwards.
 // Consent, then the operation it covers. Running them in sequence rather than together also keeps
@@ -103,6 +104,11 @@ function requireStaleDataAcknowledgement(
 
   showInfoGate(elements, staleDataGateContent(summary), () => {
     clearStaleStorageVersions()
+    // Not awaited, and deliberately after the synchronous clear: the Tapoo Logs database an older
+    // version wrote is removed on the same confirmation, but a delete that another tab is blocking
+    // must not hold the game behind a tab the user may never close. Its own failures resolve rather
+    // than reject, so nothing here can leave the gate unanswered.
+    void clearStaleTapooLogDatabases(summary.versions)
     onAcknowledged()
   })
   // False, because the answer is not in yet: returning true here would let the caller start the

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { loadTapooLog } from "./storage"
-import { APP_VERSION } from "./config"
+import { APP_VERSION, CONFIG } from "./config"
 import { generateMaze } from "./maze"
 import type { PRNGGenerator } from "./maze"
 import {
@@ -9,8 +9,9 @@ import {
   encodeMazeForLog,
   fnv1a64Checksum,
   initTapooLogs,
-  logTapooDiagnostic,
+  logTapooRecordEntry,
   subscribeTapooLogs,
+  syncTapooLogHeartbeat,
   tapooDownloadLogs,
   tapooLogCount,
   setTapooLogContext,
@@ -18,7 +19,10 @@ import {
   trimLoggedDescription,
 } from "./logs"
 import { createMazeDimensions } from "./traversal"
-import type { EncodedMazeForLog } from "./logs"
+import type * as StorageLogs from "./storage-logs"
+import type { EncodedMaze } from "./types"
+
+type StorageLogsModule = typeof StorageLogs
 
 function createXorshift128Generator(seed: number): PRNGGenerator {
   let [x, y, z, w] = [seed || 1, 362436069, 521288629, 88675123]
@@ -40,13 +44,14 @@ function createXorshift128Generator(seed: number): PRNGGenerator {
 // These tests keep the in-memory Tapoo log export/reset behavior intentionally small.
 describe("tapoo logs", () => {
   beforeEach(async () => {
-    await initTapooLogs("interactive")
+    await initTapooLogs()
   })
 
   afterEach(async () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
-    await tapooResetLogs("interactive")
+    vi.useRealTimers()
+    await tapooResetLogs("agent-api")
   })
 
   it("resets in-memory logs before downloading them", async () => {
@@ -70,8 +75,8 @@ describe("tapoo logs", () => {
       downloadedFilename = this.download
     })
 
-    logTapooDiagnostic("interactive", "info", "before reset", { source: "test" })
-    await tapooDownloadLogs("interactive")
+    logTapooRecordEntry("agent-api", "info", "before reset", { source: "test" })
+    await tapooDownloadLogs("agent-api")
 
     expect(createObjectURL).toHaveBeenCalledTimes(1)
     const firstDownload = captured.blob
@@ -80,7 +85,7 @@ describe("tapoo logs", () => {
     }
     expect(downloadedFilename).toMatch(
       new RegExp(
-        `^tapoo-v${APP_VERSION.replaceAll(".", "\\.")}-interactive-logs-\\d+\\.json$`,
+        `^tapoo-v${APP_VERSION.replaceAll(".", "\\.")}-agent-api-logs-\\d+\\.json$`,
       ),
     )
     const downloadedText = await firstDownload.text()
@@ -93,7 +98,7 @@ describe("tapoo logs", () => {
     }
     expect(downloadedPayload.name).toBe("tapoo")
     expect(downloadedPayload.version).toBe(APP_VERSION)
-    expect(downloadedPayload.mode).toBe("interactive")
+    expect(downloadedPayload.mode).toBe("agent-api")
     expect(downloadedPayload.entries).toHaveLength(1)
     expect(downloadedText).toContain("before reset")
     expect(downloadedText).toMatch(/"epochMs": \d+(\.\d+)?/)
@@ -104,8 +109,8 @@ describe("tapoo logs", () => {
       /\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}[+-]\d{2}-\d{2}/,
     )
 
-    await tapooResetLogs("interactive")
-    await tapooDownloadLogs("interactive")
+    await tapooResetLogs("agent-api")
+    await tapooDownloadLogs("agent-api")
 
     expect(createObjectURL).toHaveBeenCalledTimes(2)
     const resetDownload = captured.blob
@@ -120,19 +125,19 @@ describe("tapoo logs", () => {
     }
     expect(resetPayload.name).toBe("tapoo")
     expect(resetPayload.version).toBe(APP_VERSION)
-    expect(resetPayload.mode).toBe("interactive")
+    expect(resetPayload.mode).toBe("agent-api")
     expect(resetPayload.entries).toEqual([])
   })
 
   it("persists log entries to sessionStorage and clears them on reset", async () => {
-    logTapooDiagnostic("interactive", "info", "first entry")
-    logTapooDiagnostic("interactive", "warn", "second entry")
+    logTapooRecordEntry("agent-api", "info", "first entry")
+    logTapooRecordEntry("agent-api", "warn", "second entry")
 
-    expect(loadTapooLog("interactive")).toHaveLength(2)
+    expect(loadTapooLog("agent-api")).toHaveLength(2)
 
-    await tapooResetLogs("interactive")
+    await tapooResetLogs("agent-api")
 
-    expect(loadTapooLog("interactive")).toHaveLength(0)
+    expect(loadTapooLog("agent-api")).toHaveLength(0)
   })
 
   it("notifies subscribers when log availability changes", async () => {
@@ -142,37 +147,95 @@ describe("tapoo logs", () => {
     expect(listener).toHaveBeenLastCalledWith(0)
     expect(tapooLogCount()).toBe(0)
 
-    logTapooDiagnostic("interactive", "warn", "something happened")
+    logTapooRecordEntry("agent-api", "warn", "something happened")
 
     expect(listener).toHaveBeenLastCalledWith(1)
     expect(tapooLogCount()).toBe(1)
 
-    await tapooResetLogs("interactive")
+    await tapooResetLogs("agent-api")
 
     expect(listener).toHaveBeenLastCalledWith(0)
     expect(tapooLogCount()).toBe(0)
 
     unsubscribe()
-    logTapooDiagnostic("interactive", "info", "after unsubscribe")
+    logTapooRecordEntry("agent-api", "info", "after unsubscribe")
 
     expect(listener).toHaveBeenCalledTimes(3)
+  })
+
+  it("does not write Tapoo Logs under interactive mode", async () => {
+    await initTapooLogs()
+    logTapooRecordEntry("interactive", "info", "interactive event")
+
+    expect(loadTapooLog("interactive")).toHaveLength(0)
+    expect(tapooLogCount()).toBe(0)
+  })
+
+  it("loads existing agent-api log state while running on an interactive page", async () => {
+    logTapooRecordEntry("agent-api", "info", "agent-api event")
+
+    await initTapooLogs()
+    logTapooRecordEntry("interactive", "info", "interactive event")
+
+    expect(loadTapooLog("agent-api")).toHaveLength(1)
+    expect(loadTapooLog("interactive")).toHaveLength(0)
+    expect(tapooLogCount()).toBe(1)
+  })
+
+  it("heartbeats existing agent logs while the current page is not running agent-api play", () => {
+    vi.useFakeTimers()
+    const setInterval = vi.spyOn(window, "setInterval")
+    const clearInterval = vi.spyOn(window, "clearInterval")
+
+    syncTapooLogHeartbeat({ controlMode: "agent-api", status: "paused" })
+
+    expect(setInterval).not.toHaveBeenCalled()
+
+    logTapooRecordEntry("agent-api", "info", "stored log")
+    syncTapooLogHeartbeat({ controlMode: "agent-api", status: "paused" })
+
+    expect(setInterval).toHaveBeenCalledTimes(1)
+
+    syncTapooLogHeartbeat({ controlMode: "agent-api", status: "running" })
+
+    expect(clearInterval).toHaveBeenCalledTimes(1)
+
+    syncTapooLogHeartbeat({ controlMode: "agent-api", status: "paused" })
+
+    expect(setInterval).toHaveBeenCalledTimes(2)
+
+    syncTapooLogHeartbeat({ controlMode: "interactive", status: "running" })
+
+    expect(setInterval).toHaveBeenCalledTimes(2)
+  })
+
+  it("uses an interactive page heartbeat to keep existing agent-api logs fresh", async () => {
+    vi.useFakeTimers()
+
+    logTapooRecordEntry("agent-api", "info", "agent-api event")
+    await initTapooLogs()
+
+    syncTapooLogHeartbeat({ controlMode: "interactive", status: "running" })
+    await vi.advanceTimersByTimeAsync(CONFIG.runtime.storage.log.heartbeatIntervalMs)
+
+    expect(tapooLogCount()).toBe(1)
   })
 })
 
 describe("log context stamping", () => {
   afterEach(async () => {
     setTapooLogContext({ turnCount: 0, level: 0, cumulativeRoundCount: 0 })
-    await tapooResetLogs("interactive")
+    await tapooResetLogs("agent-api")
   })
 
   it("stamps every entry with the turn, level, and game set when it was written", async () => {
-    await initTapooLogs("interactive")
+    await initTapooLogs()
 
     setTapooLogContext({ turnCount: 4, level: 2, cumulativeRoundCount: 9 })
-    logTapooDiagnostic("interactive", "info", "Agent request.")
-    logTapooDiagnostic("interactive", "info", "Agent response.")
+    logTapooRecordEntry("agent-api", "info", "Agent request.")
+    logTapooRecordEntry("agent-api", "info", "Agent response.")
     setTapooLogContext({ turnCount: 5, level: 2, cumulativeRoundCount: 9 })
-    logTapooDiagnostic("interactive", "info", "Agent request.")
+    logTapooRecordEntry("agent-api", "info", "Agent request.")
 
     // One turn issues several requests, and a level issues several turns, so entries group by
     // all three rather than mapping 1:1 to any one - without level and game, a downloaded log
@@ -183,7 +246,7 @@ describe("log context stamping", () => {
       level: number
       game: number
       payload: string
-    }>("interactive")
+    }>("agent-api")
     expect(entries.map((entry) => [entry.turn, entry.level, entry.game])).toEqual([
       [4, 2, 9],
       [4, 2, 9],
@@ -192,13 +255,13 @@ describe("log context stamping", () => {
   })
 
   it("resets the turn, level, and game when logs are cleared", async () => {
-    await initTapooLogs("interactive")
+    await initTapooLogs()
 
     setTapooLogContext({ turnCount: 7, level: 3, cumulativeRoundCount: 12 })
-    await tapooResetLogs("interactive")
-    logTapooDiagnostic("interactive", "info", "after reset")
+    await tapooResetLogs("agent-api")
+    logTapooRecordEntry("agent-api", "info", "after reset")
 
-    const entries = loadTapooLog<{ turn: number; level: number; game: number }>("interactive")
+    const entries = loadTapooLog<{ turn: number; level: number; game: number }>("agent-api")
     expect(entries).toHaveLength(1)
     expect(entries[0].turn).toBe(0)
     expect(entries[0].level).toBe(0)
@@ -273,7 +336,7 @@ function decodeMazeForLogInTest({
   index_chars,
   structure,
   structure_checksum,
-}: EncodedMazeForLog): string[][] {
+}: EncodedMaze): string[][] {
   if (structure_checksum !== fnv1a64Checksum(structure)) {
     throw new Error("encoded maze structure checksum mismatch")
   }
@@ -386,5 +449,95 @@ describe("encodeMazeForLog", () => {
       structure: corruptedStructure,
       structure_checksum: fnv1a64Checksum(corruptedStructure),
     })).toThrow("encoded maze contains invalid token index: 9")
+  })
+})
+
+// These drive the heartbeat against a lease refresh the test controls, which the rest of the file
+// cannot do: it runs against the real store, where a refresh settles immediately and there is no
+// window in which a second tick could overlap the first.
+describe("heartbeat lease refresh", () => {
+  afterEach(() => {
+    vi.resetModules()
+    vi.doUnmock("./storage-logs")
+    vi.useRealTimers()
+  })
+
+  // Loads a fresh copy of logs.ts with the lease refresh replaced, and gives it one stored entry so
+  // the heartbeat has something to protect.
+  async function heartbeatHarness(refresh: () => Promise<unknown>) {
+    vi.resetModules()
+    vi.doMock("./storage-logs", async () => ({
+      ...(await vi.importActual<StorageLogsModule>("./storage-logs")),
+      refreshCurrentTapooLogStoreLease: vi.fn(refresh),
+    }))
+
+    const logs = await import("./logs")
+    const store = await import("./storage-logs")
+    vi.useFakeTimers()
+    logs.logTapooRecordEntry("agent-api", "info", "something worth protecting")
+    logs.syncTapooLogHeartbeat({ controlMode: "agent-api", status: "paused" })
+
+    return { logs, refreshMock: vi.mocked(store.refreshCurrentTapooLogStoreLease) }
+  }
+
+  it("drops a tick that lands while the previous lease refresh is still open", async () => {
+    let release: () => void = () => {}
+    const { refreshMock } = await heartbeatHarness(() => new Promise<unknown>((resolve) => {
+      release = (): void => { resolve({ backend: "indexed-db", currentLogCount: 1, staleLogSessionCount: 0 }) }
+    }))
+
+    await vi.advanceTimersByTimeAsync(CONFIG.runtime.storage.log.heartbeatIntervalMs)
+    expect(refreshMock).toHaveBeenCalledTimes(1)
+
+    // Second tick with the first still open. Queuing it would put two read-modify-writes on the same
+    // lease row in flight at once.
+    await vi.advanceTimersByTimeAsync(CONFIG.runtime.storage.log.heartbeatIntervalMs)
+    expect(refreshMock).toHaveBeenCalledTimes(1)
+
+    release()
+    await vi.advanceTimersByTimeAsync(CONFIG.runtime.storage.log.heartbeatIntervalMs)
+    expect(refreshMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("keeps ticking after a lease refresh fails instead of stalling on it", async () => {
+    const { refreshMock } = await heartbeatHarness(() =>
+      Promise.reject(new Error("database connection is closing")))
+
+    await vi.advanceTimersByTimeAsync(CONFIG.runtime.storage.log.heartbeatIntervalMs)
+    expect(refreshMock).toHaveBeenCalledTimes(1)
+
+    // A pending flag left set would stop the heartbeat for good after one failure.
+    await vi.advanceTimersByTimeAsync(CONFIG.runtime.storage.log.heartbeatIntervalMs)
+    expect(refreshMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("contains a failed lease refresh instead of letting it reach the page error handler", async () => {
+    // Reached through globalThis rather than the process global: this project has no @types/node,
+    // and the rejection is observable here only because vitest runs on Node.
+    const nodeProcess = (globalThis as unknown as {
+      process: {
+        on: (event: string, listener: (reason: unknown) => void) => void
+        off: (event: string, listener: (reason: unknown) => void) => void
+      }
+    }).process
+    const escaped: unknown[] = []
+    const onUnhandled = (reason: unknown): void => { escaped.push(reason) }
+    nodeProcess.on("unhandledRejection", onUnhandled)
+
+    try {
+      await heartbeatHarness(() => Promise.reject(new Error("database connection is closing")))
+      await vi.advanceTimersByTimeAsync(CONFIG.runtime.storage.log.heartbeatIntervalMs)
+
+      // Real timers and a macrotask: Node reports an unhandled rejection at the end of the turn it
+      // was left in, so the check has to leave the fake-timer turn to see one.
+      vi.useRealTimers()
+      await new Promise((resolve) => { setTimeout(resolve, 0) })
+
+      // tapoo.ts turns an unhandled rejection into showPlaceholderArt, which replaces the whole
+      // game. A lease renewal the next tick would have retried must never cost a round in progress.
+      expect(escaped).toEqual([])
+    } finally {
+      nodeProcess.off("unhandledRejection", onUnhandled)
+    }
   })
 })

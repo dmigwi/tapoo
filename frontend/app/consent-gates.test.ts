@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { CONFIG, INFO_GATE_NOTICES, STORE_PRIVACY_ACK } from "./config"
+import { CONFIG, INFO_GATE_NOTICES, STORE_DB_NAME, STORE_PRIVACY_ACK, staleTapooLogDatabaseName } from "./config"
 import { requireAcknowledgement } from "./consent-gates"
 import type { Elements } from "./types"
 
@@ -93,6 +93,35 @@ describe("stale data gate", () => {
 
     expect(window.localStorage.getItem(staleKey)).toBeNull()
     expect(onProceed).toHaveBeenCalledTimes(1)
+  })
+
+  // The Tapoo Logs database is named after the schema version that wrote it, so an upgrade abandons
+  // it rather than migrating it - and the Web Storage sweep cannot see IndexedDB at all. Without
+  // this the gate would count a handful of keys, delete them, and silently leave behind the largest
+  // thing Tapoo stores, unreachable by any reset the user can perform afterwards.
+  it("removes the log database of every version it offered to clear", () => {
+    const elements = gateElements()
+    const deletedDatabases: string[] = []
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        deleteDatabase: (name: string) => {
+          deletedDatabases.push(name)
+          return { onsuccess: null, onerror: null, onblocked: null }
+        },
+      },
+    })
+    window.localStorage.setItem("tapoo.v4.82.interactive.gameSetup", "old")
+    window.sessionStorage.setItem("tapoo.v3.agent-api.tapooLog", "older")
+
+    requireAcknowledgement(elements, vi.fn())
+    elements.infoGateProceed.click()
+
+    expect(deletedDatabases).toEqual([
+      staleTapooLogDatabaseName("3"),
+      staleTapooLogDatabaseName("4.82"),
+    ])
+    expect(deletedDatabases).not.toContain(STORE_DB_NAME)
   })
 
   // The census reaches the copy intact, including the dotted version a naive split would truncate.

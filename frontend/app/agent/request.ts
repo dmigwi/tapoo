@@ -1,5 +1,4 @@
-import { logTapooDiagnostic, setTapooLogContext } from "../logs"
-import type { EncodedMazeForLog } from "../logs"
+import { logTapooRecordEntry, setTapooLogContext } from "../logs"
 import { CONFIG } from "../config"
 import { describeProviderHttpFailure } from "./config"
 import {
@@ -30,6 +29,7 @@ import {
 import type {
   AgentChatMessage,
   AgentApiSeatConfig,
+  EncodedMaze,
   AgentPredictionFailure,
   AgentPredictionRequest,
   AgentPredictionResult,
@@ -93,7 +93,7 @@ type ToolServicingResult =
 // and "warned" follows an all-duplicate tool-call response.
 type AgentMode = "predict" | "tools" | "warned"
 
-export type EncodedMazeForLevelStart = EncodedMazeForLog & {
+export type EncodedMazeForLevelStart = EncodedMaze & {
   dimensions: MazeDimensions
 }
 
@@ -110,7 +110,7 @@ function logAgentLevelStarted(
   // line of the log on every request of every turn. A reader needs them to expand the compacted
   // per-turn results (see compactLoggedToolResult), so they belong beside the maze those results
   // describe. level is not repeated either - every log entry is already stamped with it.
-  logTapooDiagnostic(CONFIG.runtime.controlModes.agentApi, "info", "Agent level started.", {
+  logTapooRecordEntry(CONFIG.runtime.controlModes.agentApi, "info", "Agent level started.", {
     startPosition: stateSnapshot.startPosition,
     finalPosition: stateSnapshot.finalPosition,
     destinationCell: cellCoordinateFromGridPoint(stateSnapshot.finalPosition),
@@ -193,7 +193,7 @@ async function requestChatTurn(
   // rather than an undefined value reaching a provider adapter.
   const reasoningEffort = agent.reasoningEffort ?? CONFIG.agentConfig.reasoningEffortDefaults[agent.api]
 
-  logTapooDiagnostic(agentApiModeName, "info", "Agent request.", {
+  logTapooRecordEntry(agentApiModeName, "info", "Agent request.", {
     endpoint: endpointDisplay,
     player,
     api: agent.api,
@@ -212,7 +212,7 @@ async function requestChatTurn(
   const msgBody = adapter.buildBody({ model: agent.model, messages, tools, wantsPredictionFormat, reasoningEffort })
   
   // credential and extraHeaders reach only buildHeaders - never the log above, never the assembled
-  // body, and never anything else that could flow into logTapooDiagnostic (see request storage in
+  // body, and never anything else that could flow into logTapooRecordEntry (see request storage in
   // logs.ts; log entries land in sessionStorage and are user-downloadable).
   const response = await fetch(agent.endpoint, {
     body: JSON.stringify(msgBody),
@@ -244,7 +244,7 @@ async function requestChatTurn(
   }
 
   const rawResponseBody: unknown = await response.json()
-  logTapooDiagnostic(agentApiModeName, "info", "Agent response.", {
+  logTapooRecordEntry(agentApiModeName, "info", "Agent response.", {
     endpoint: endpointDisplay,
     payload: rawResponseBody,
   })

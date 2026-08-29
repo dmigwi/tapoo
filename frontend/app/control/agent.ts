@@ -54,7 +54,7 @@ import {
 import { CONFIG } from "../config"
 import {
   subscribeTapooLogs,
-  logTapooDiagnostic,
+  logTapooRecordEntry,
   tapooDownloadLogs,
   tapooLogCount,
   tapooResettableLogCount,
@@ -79,7 +79,7 @@ function logAgentRoundCompletion({ __state, __agent, __playerStatus }: AgentRoun
     __playerStatus.decayUnitsCharged,
   )
 
-  logTapooDiagnostic(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
+  logTapooRecordEntry(runtime.controlModes.agentApi, "info", `Agent level ${outcome}.`, {
     outcome,
     agent: {
       seatId: __agent.seatId,

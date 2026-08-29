@@ -621,7 +621,28 @@ export const WALL_WEIGHTS = Object.keys(CONFIG.maze.walls)
   .sort((left, right) => left - right) as WallWeight[]
 
 export const STORE_PRIVACY_ACK = "tapoo.PrivacyAcknowledged.v1"
-export const STORE_DB_NAME = `tapoo.v${CONFIG.runtime.storage.version}.logs`
+
+// logDatabaseName is the one place the database-name pattern is written. Deliberately not exported:
+// a namer that takes any version is a way to address any database, and only two names are ever
+// legitimate - the current one and an older one being deleted. Both are exported below with the
+// version they may name already decided, so nothing outside this file chooses one.
+function logDatabaseName(version: string | number): string {
+  return `tapoo.v${version}.logs`
+}
+
+// The log database this build opens. Tied to the configured storage version, so it cannot be pointed
+// somewhere else by a caller.
+export const STORE_DB_NAME = logDatabaseName(CONFIG.runtime.storage.version)
+
+// staleTapooLogDatabaseName names a log database an older schema version left behind, and null for
+// the current one. The name is the only handle IndexedDB offers for deleting a database, so the
+// sweep has to build one - but it builds it from versions parsed out of leftover storage keys, and a
+// bad parse there would otherwise hand it the live log's name. The guard is what makes that
+// unreachable rather than merely unlikely.
+export function staleTapooLogDatabaseName(version: string): string | null {
+  const name = logDatabaseName(version)
+  return name === STORE_DB_NAME ? null : name
+}
 
 // STORE_ENCODING_PREFIX marks the storage schema version embedded in every encoded payload.
 export const STORE_ENCODING_PREFIX = `tapoo:v${CONFIG.runtime.storage.version}:`

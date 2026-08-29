@@ -540,6 +540,22 @@ export type TapooLogStoreState = {
   staleLogSessionCount: number
 }
 
+// EncodedMaze is fully self-contained: index_chars lists every distinct token the encoded maze
+// actually used, in first-seen order, with "\n" always appended last as the row separator. No
+// wallWeight or CONFIG lookup is needed to decode it - index_chars[Number(digit)] for every digit in
+// structure (including the separator digits) reconstructs the exact original printable maze text.
+export type EncodedMaze = {
+  index_chars: string[]
+  // structure_checksum lets offline consumers verify the compact structure string arrived intact
+  // before expanding it with index_chars. Fnva1-64bit checksum hash.
+  structure_checksum: string
+  // structure's exact length is (2R+1)(2C+1) + 2R for an R x C logical maze (renderCellStep 2: one
+  // digit per rendered cell, plus one row-separator digit per row boundary) - for a roughly square
+  // maze (R ~ C ~ sqrt(area)), that's well estimated from mazeDimensions.area alone as
+  // 4*area + 6*sqrt(area) + 1.
+  structure: string
+}
+
 // MazeActionResult stores only the previous command/replay outcome; live maze facts stay in State.
 export type MazeActionResult = {
   lastPlayerName?: string

@@ -1,5 +1,6 @@
 import { CONFIG } from "./config"
 import { isBelowMinimumViewport } from "./dom"
+import { syncTapooLogHeartbeat } from "./logs"
 import { shouldDrawDestination } from "./control/turn-resolution"
 import {
   calculateScoreRetentionUnits,
@@ -545,4 +546,5 @@ export function render(
   updateTopMenuControls(elements, state)
   updateAgentConfigForm(elements, state)
   updateZoomPlaceholder(elements, state)
+  syncTapooLogHeartbeat(state)
 }
