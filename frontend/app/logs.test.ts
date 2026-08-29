@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { loadTapooLog } from "./storage"
+import { loadTapooLog, saveTapooLog } from "./storage"
 import { APP_VERSION, CONFIG } from "./config"
 import { generateMaze } from "./maze"
 import type { PRNGGenerator } from "./maze"
@@ -138,6 +138,34 @@ describe("tapoo logs", () => {
     await tapooResetLogs("agent-api")
 
     expect(loadTapooLog("agent-api")).toHaveLength(0)
+  })
+
+  it("names the download after the first entry that carries a real timestamp", async () => {
+    const anchors: HTMLAnchorElement[] = []
+    const createElement = document.createElement.bind(document)
+    vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
+      const element = createElement(tagName)
+      if (tagName === "a") {
+        anchors.push(element as HTMLAnchorElement)
+      }
+      return element
+    })
+    vi.stubGlobal("URL", { createObjectURL: () => "blob:log", revokeObjectURL: () => {} })
+
+    // A placeholder standing in for a record that would not decode carries out-of-domain -1 values.
+    // Reading epochMs straight off entries[0] would name the file after a timestamp of zero.
+    logTapooRecordEntry("agent-api", "error", "unreadable log record: stored value did not decode")
+    const entries = loadTapooLog<{ epochMs: number }>("agent-api")
+    entries[0].epochMs = -1
+    saveTapooLog("agent-api", entries)
+    logTapooRecordEntry("agent-api", "info", "a real entry")
+
+    await tapooDownloadLogs("agent-api")
+
+    const [, second] = loadTapooLog<{ epochMs: number }>("agent-api")
+    expect(anchors[0]?.download).toBe(
+      `tapoo-v${APP_VERSION}-agent-api-logs-${Math.round(second.epochMs / 1000)}.json`,
+    )
   })
 
   it("notifies subscribers when log availability changes", async () => {

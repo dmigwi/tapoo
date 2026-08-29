@@ -27,7 +27,7 @@ const VERSION_MAJOR = 2
 const VERSION_MINOR = 5
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
-const VERSION_PATCH = 0
+const VERSION_PATCH = 1
 
 // APP_VERSION is kept private because only the composed page copyright text is rendered.
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
@@ -484,7 +484,7 @@ export const CONFIG: AppConfig = {
     // again - changing it moves the opening level for everyone.
     defaultRestartLevel: 1,
     storage: {
-      version: 5.0,
+      version: 5.1,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",
@@ -498,15 +498,17 @@ export const CONFIG: AppConfig = {
       log: {
         // IndexedDB names, kept apart from the Web Storage suffixes above because they address a
         // different namespace: these are object stores and indexes inside the log database, not keys
-        // in a storage area. Each index name doubles as its keyPath, so it must match the field of
-        // that name on StoredLogEntry (storage-logs.ts).
+        // in a storage area. Each store owns the index labels built on its records, and each index
+        // name doubles as the keyPath field stored on that record (storage-logs.ts).
         stores: {
-          entries: "entries",
-          sessions: "sessions",
-        },
-        indexes: {
-          sessionMode: "sessionMode",
-          modeName: "modeName",
+          logEntries: {
+            label: "logEntries",
+            sessionModeIndex: "entrySessionMode",
+          },
+          logSessions: {
+            label: "logSessions",
+            modeNameIndex: "sessionModeName",
+          },
         },
         heartbeatIntervalMs: 10 * 60 * 1_000, // 10 minutes.
         staleSessionTtlMs: 60 * 60 * 1_000, // 60 minutes before a log session is classified as stale.

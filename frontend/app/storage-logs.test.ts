@@ -11,8 +11,8 @@ import {
   refreshCurrentTapooLogStoreLease,
   resetTapooLogStoreForTests,
 } from "./storage-logs"
-import { loadTapooLog, tabStorageKey } from "./storage"
-import { CONFIG, STORE_DB_NAME, staleTapooLogDatabaseName } from "./config"
+import { loadTapooLog, storageKey, tabStorageKey } from "./storage"
+import { CONFIG, STORE_DB_NAME, STORE_ENCODING_PREFIX, staleTapooLogDatabaseName } from "./config"
 import type { LogEntry } from "./types"
 
 type FakeRequest<T> = {
@@ -24,7 +24,8 @@ type FakeRequest<T> = {
   onupgradeneeded?: () => void
 }
 
-const SESSIONS_STORE_NAME = CONFIG.runtime.storage.log.stores.sessions
+const SESSIONS_STORE_NAME = CONFIG.runtime.storage.log.stores.logSessions.label
+const ENTRIES_STORE_NAME = CONFIG.runtime.storage.log.stores.logEntries.label
 
 function createMemoryStorage(): Storage {
   const values = new Map<string, string>()
@@ -243,6 +244,10 @@ class FakeDatabase {
   readSessions(): Array<Record<string, unknown>> {
     return [...(this.records.get(SESSIONS_STORE_NAME)?.values() ?? [])] as Array<Record<string, unknown>>
   }
+
+  readEntries(): Array<Record<string, unknown>> {
+    return [...(this.records.get(ENTRIES_STORE_NAME)?.values() ?? [])] as Array<Record<string, unknown>>
+  }
 }
 
 type FakeIndexedDb = {
@@ -374,6 +379,76 @@ describe("IndexedDB Tapoo log store", () => {
     expect(await loadCurrentTapooLogStoreEntries("interactive")).toEqual([
       expect.objectContaining({ payload: "interactive event" }),
     ])
+  })
+
+  it("stores log entries under the descriptive entrySessionMode key", async () => {
+    const { db } = installFakeIndexedDb()
+    resetTapooLogStoreForTests()
+    setTabSession("tab-a")
+
+    await appendTapooLogStoreEntry("agent-api", logEntry("agent request"))
+
+    expect(db.readEntries()).toEqual([
+      expect.objectContaining({ entrySessionMode: storageKey("agent-api", "tab-a") }),
+    ])
+    expect(db.readEntries()).toEqual([
+      expect.not.objectContaining({ modeName: "agent-api" }),
+    ])
+    // entrySessionMode already contains the session id, and this is the store that gains a row per
+    // logged entry - a field repeated here is paid for on every one of them.
+    expect(db.readEntries()).toEqual([
+      expect.not.objectContaining({ sessionId: "tab-a" }),
+    ])
+  })
+
+  it("obfuscates log entry payloads stored in IndexedDB", async () => {
+    const { db } = installFakeIndexedDb()
+    resetTapooLogStoreForTests()
+    setTabSession("tab-a")
+    const entry = logEntry("agent request")
+
+    await appendTapooLogStoreEntry("agent-api", entry)
+
+    const [storedEntry] = db.readEntries()
+    expect(typeof storedEntry?.entry).toBe("string")
+    expect((storedEntry?.entry as string).startsWith(STORE_ENCODING_PREFIX)).toBe(true)
+    expect(db.readEntries()).toEqual([
+      expect.not.objectContaining({ entry }),
+    ])
+    expect(await loadCurrentTapooLogStoreEntries("agent-api")).toEqual([entry])
+  })
+
+  it("reports a record that will not decode instead of dropping it from the log", async () => {
+    const { db } = installFakeIndexedDb()
+    resetTapooLogStoreForTests()
+    setTabSession("tab-a")
+    await appendTapooLogStoreEntry("agent-api", logEntry("first"))
+    await appendTapooLogStoreEntry("agent-api", logEntry("tampered with"))
+    await appendTapooLogStoreEntry("agent-api", logEntry("third"))
+
+    const [, second] = db.readEntries()
+    second.entry = "not something Tapoo wrote"
+
+    const entries = await loadCurrentTapooLogStoreEntries("agent-api")
+
+    // The count comes from the index without decoding anything, so dropping the row would leave the
+    // UI claiming three entries while the downloaded file held two - and no indication which was
+    // gone. The payloads are obfuscated, so a decode failure is itself worth seeing.
+    expect(entries).toHaveLength(3)
+    expect(entries[0]).toMatchObject({ payload: "first" })
+    // -1, not 0: turn 0 is an agent's opening turn and epoch 0 is a real timestamp, so a reader
+    // filtering on these fields has to be able to tell a placeholder from small real numbers.
+    expect(entries[1]).toMatchObject({
+      log: "error",
+      payload: "unreadable log record: stored value did not decode",
+      epochMs: -1,
+      turn: -1,
+      level: -1,
+      game: -1,
+      details: { recordId: second.id },
+    })
+    expect(entries[2]).toMatchObject({ payload: "third" })
+    expect(await initTapooLogStore("agent-api")).toMatchObject({ currentLogCount: entries.length })
   })
 
   it("keeps two tab sessions from mixing download/reset scopes", async () => {

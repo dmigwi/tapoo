@@ -271,7 +271,10 @@ export async function tapooDownloadLogs(modeName: MazeControlModeName): Promise<
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json",
   })
-  const firstEntryEpochMs = entries.length > 0 ? entries[0].epochMs : Date.now()
+  // First entry that carries a real timestamp, not simply the first: a record that would not decode
+  // stands in with out-of-domain -1 values (unreadableEntry in storage-logs.ts), and one of those at
+  // the head of the log would otherwise name the download after a timestamp of zero.
+  const firstEntryEpochMs = entries.find((entry) => entry.epochMs >= 0)?.epochMs ?? Date.now()
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement("a")
   anchor.href = url

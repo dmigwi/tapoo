@@ -508,25 +508,29 @@ export type AgentTurnStatsResult = {
 // runtime.storage.log.fallbackAgentApiMaxLevel.
 export type TapooLogBackend = "indexed-db" | "session-storage"
 
-// StoredLogEntry is one logged entry as IndexedDB holds it. sessionMode is the composite the
-// sessionMode index is built over, and its name must stay identical to that index's name and
-// keyPath - see the createIndex calls in storage-logs.ts.
+// StoredLogEntry is one logged entry as IndexedDB holds it. entrySessionMode is the composite the
+// entries store indexes for per-tab/per-mode reads; mode-wide stale lookups live on StoredLogSession
+// instead, so entries do not duplicate a separate mode index. It also carries the session id the
+// entry belongs to, so no separate field repeats it - this is the many-rows store, and a field here
+// is paid for once per logged entry. entry is encoded with the same lightweight browser-storage
+// obfuscation used by localStorage/sessionStorage payloads.
 export type StoredLogEntry = {
   id?: number
-  sessionId: string
-  sessionMode: string
-  modeName: MazeControlModeName
-  entry: LogEntry
+  entrySessionMode: string
+  entry: string
 }
 
 // StoredLogSession is the per-(tab, mode) lease that makes cleanup possible. IndexedDB is shared by
 // every tab and outlives all of them, so a closed tab's entries would otherwise stay forever with
 // nothing left to claim them. lastSeenAt is refreshed while a tab is live; once it stops moving the
 // session is stale, and a later reset sweeps its entries along with the current tab's.
+// These fields stay plain because IndexedDB must query sessionModeName, compare lastSeenAt for stale
+// cleanup, and rebuild entrySessionMode keys from sessionId. Unlike log entries, this lease row is
+// small query metadata rather than gameplay/request payload.
 export type StoredLogSession = {
   id: string
   sessionId: string
-  modeName: MazeControlModeName
+  sessionModeName: MazeControlModeName
   createdAt: number
   lastSeenAt: number
 }
@@ -1080,16 +1084,18 @@ export type AppConfig = {
         logSessionId: string
       }
       log: {
-        // Object-store and index names for the IndexedDB log database. Each index name is also its
-        // keyPath and the field it reads on a stored entry: one string, so an index can never be
-        // built over a property that does not exist - which is what silently returned no rows.
+        // Object-store and index names for the IndexedDB log database. Each store owns the index
+        // labels built over its records. Each index string is also its keyPath, so an index can never
+        // be built over a property that does not exist - which silently returns no rows.
         stores: {
-          entries: string
-          sessions: string
-        }
-        indexes: {
-          sessionMode: string
-          modeName: string
+          logEntries: {
+            label: string
+            sessionModeIndex: string
+          }
+          logSessions: {
+            label: string
+            modeNameIndex: string
+          }
         }
         heartbeatIntervalMs: number
         staleSessionTtlMs: number

@@ -1,5 +1,13 @@
 import { CONFIG, STORE_DB_NAME, staleTapooLogDatabaseName } from "./config"
-import { appendTapooLogEntry, clearTapooLog, loadTapooLog, storageKey, tabStorageKey } from "./storage"
+import {
+  appendTapooLogEntry,
+  clearTapooLog,
+  decodeStoredPayload,
+  encodeStoredPayload,
+  loadTapooLog,
+  storageKey,
+  tabStorageKey,
+} from "./storage"
 import type {
   LogEntry,
   MazeControlModeName,
@@ -10,15 +18,16 @@ import type {
 } from "./types"
 
 const { runtime } = CONFIG
+const logStores = runtime.storage.log.stores
 
 // Named once because every transaction below addresses them: spelling the config path out at each of
 // the twenty-odd call sites would bury the store and index being opened inside the lookup that finds
 // its name.
+const LOG_ENTRY_STORE = logStores.logEntries.label
+const LOG_SESSION_STORE = logStores.logSessions.label
 
-const ENTRIES_STORE = runtime.storage.log.stores.entries
-const SESSIONS_STORE = runtime.storage.log.stores.sessions
-const SESSION_MODE_INDEX = runtime.storage.log.indexes.sessionMode
-const MODE_INDEX = runtime.storage.log.indexes.modeName
+const ENTRY_SESSION_MODE_INDEX = logStores.logEntries.sessionModeIndex
+const SESSION_MODE_NAME_INDEX = logStores.logSessions.modeNameIndex
 
 let inMemorySessionId: string | null = null
 let dbPromise: Promise<IDBDatabase | null> | null = null
@@ -145,21 +154,19 @@ function openIndexedDb(): Promise<IDBDatabase | null> {
     const request = window.indexedDB.open(STORE_DB_NAME)
     request.onupgradeneeded = () => {
       const db = request.result
-      if (!db.objectStoreNames.contains(ENTRIES_STORE)) {
-        const entries = db.createObjectStore(ENTRIES_STORE, {
-          autoIncrement: true,
-          keyPath: "id",
-        })
+      if (!db.objectStoreNames.contains(LOG_ENTRY_STORE)) {
+        const entries = db.createObjectStore(LOG_ENTRY_STORE, { autoIncrement: true, keyPath: "id" })
         // Name and keyPath are the same string on purpose, and it is also the StoredLogEntry field
-        // the index reads. They were three different strings before, so each index was built over a
+        // the index reads. Those were three different strings once, so the index was built over a
         // property no record had: every lookup came back empty while the store kept filling, which
-        // reads exactly like a store that was never written to.
-        entries.createIndex(SESSION_MODE_INDEX, SESSION_MODE_INDEX)
-        entries.createIndex(MODE_INDEX, MODE_INDEX)
+        // reads exactly like a store that was never written to. One index is enough here - reads are
+        // always scoped to a (tab, mode), and mode-wide questions are answered from the sessions
+        // store, which holds a handful of rows rather than one per logged entry.
+        entries.createIndex(ENTRY_SESSION_MODE_INDEX, ENTRY_SESSION_MODE_INDEX)
       }
-      if (!db.objectStoreNames.contains(SESSIONS_STORE)) {
-        const sessions = db.createObjectStore(SESSIONS_STORE, { keyPath: "id" })
-        sessions.createIndex(MODE_INDEX, MODE_INDEX)
+      if (!db.objectStoreNames.contains(LOG_SESSION_STORE)) {
+        const sessions = db.createObjectStore(LOG_SESSION_STORE, { keyPath: "id" })
+        sessions.createIndex(SESSION_MODE_NAME_INDEX, SESSION_MODE_NAME_INDEX)
       }
     }
     request.onsuccess = () => {
@@ -212,7 +219,7 @@ function sessionRecord(
   return {
     id: storageKey(modeName, sessionId),
     sessionId,
-    modeName,
+    sessionModeName: modeName,
     createdAt: now,
     lastSeenAt: now,
   }
@@ -226,9 +233,9 @@ async function ensureIndexedDbSession(
   modeName: MazeControlModeName,
   sessionId: string,
 ): Promise<void> {
-  const transaction = db.transaction(SESSIONS_STORE, "readwrite")
+  const transaction = db.transaction(LOG_SESSION_STORE, "readwrite")
   const done = transactionDone(transaction)
-  const store = transaction.objectStore(SESSIONS_STORE)
+  const store = transaction.objectStore(LOG_SESSION_STORE)
   const id = storageKey(modeName, sessionId)
   const existing = await requestResult(store.get(id) as IDBRequest<StoredLogSession | undefined>)
   const now = Date.now()
@@ -241,10 +248,10 @@ async function indexedDbSessionsByMode(
   db: IDBDatabase,
   modeName: MazeControlModeName,
 ): Promise<StoredLogSession[]> {
-  const transaction = db.transaction(SESSIONS_STORE, "readonly")
+  const transaction = db.transaction(LOG_SESSION_STORE, "readonly")
   const done = transactionDone(transaction)
   const sessions = await requestResult(
-    transaction.objectStore(SESSIONS_STORE).index(MODE_INDEX).getAll(modeName) as IDBRequest<StoredLogSession[]>,
+    transaction.objectStore(LOG_SESSION_STORE).index(SESSION_MODE_NAME_INDEX).getAll(modeName) as IDBRequest<StoredLogSession[]>,
   )
   await done
   return sessions
@@ -266,6 +273,31 @@ async function indexedDbStaleSessionCount(
 
 // --- Entry reads and deletes ---
 
+// Stands in for a stored entry that would not decode. Dropping it instead was the obvious option
+// and the wrong one: indexedDbCurrentCount counts index rows without decoding any of them, so a
+// silent drop leaves the UI reporting more entries than the downloaded file contains, with nothing
+// to say which are missing or why. This log is evidence about an agent run, and a record that cannot
+// be read is itself a finding - the payloads are obfuscated, so a decode failure means the stored
+// value is not what Tapoo wrote. Keeping the row visible, with the id needed to locate it, is what
+// makes that inspectable rather than invisible.
+//
+// Every number is -1 rather than 0, because 0 is a value a real entry can hold: turn 0 is an agent's
+// opening turn, level and game count from 0 in a fresh session, and epoch 0 is a genuine timestamp.
+// A reader filtering or sorting on those fields has to be able to tell a placeholder from a record
+// that simply has small numbers, so the sentinel sits outside the domain of all four.
+function unreadableEntry(recordId: number | undefined): LogEntry {
+  return {
+    epochMs: -1,
+    time: "",
+    turn: -1,
+    level: -1,
+    game: -1,
+    log: "error",
+    payload: "unreadable log record: stored value did not decode",
+    details: { recordId: recordId ?? null },
+  }
+}
+
 // This tab's entries for one mode, in insertion order - the entries store is autoIncrement, so the
 // index returns them in the order they were logged.
 async function indexedDbCurrentEntries(
@@ -273,15 +305,15 @@ async function indexedDbCurrentEntries(
   modeName: MazeControlModeName,
   sessionId: string,
 ): Promise<LogEntry[]> {
-  const transaction = db.transaction(ENTRIES_STORE, "readonly")
+  const transaction = db.transaction(LOG_ENTRY_STORE, "readonly")
   const done = transactionDone(transaction)
   const entries = await requestResult(
-    transaction.objectStore(ENTRIES_STORE).index(SESSION_MODE_INDEX).getAll(
+    transaction.objectStore(LOG_ENTRY_STORE).index(ENTRY_SESSION_MODE_INDEX).getAll(
       storageKey(modeName, sessionId),
     ) as IDBRequest<StoredLogEntry[]>,
   )
   await done
-  return entries.map((record) => record.entry)
+  return entries.map((record) => decodeStoredPayload<LogEntry>(record.entry) ?? unreadableEntry(record.id))
 }
 
 // Counts through the index rather than loading the entries, so the log count that drives the UI
@@ -291,10 +323,10 @@ async function indexedDbCurrentCount(
   modeName: MazeControlModeName,
   sessionId: string,
 ): Promise<number> {
-  const transaction = db.transaction(ENTRIES_STORE, "readonly")
+  const transaction = db.transaction(LOG_ENTRY_STORE, "readonly")
   const done = transactionDone(transaction)
   const count = await requestResult<number>(
-    transaction.objectStore(ENTRIES_STORE).index(SESSION_MODE_INDEX).count(storageKey(modeName, sessionId)),
+    transaction.objectStore(LOG_ENTRY_STORE).index(ENTRY_SESSION_MODE_INDEX).count(storageKey(modeName, sessionId)),
   )
   await done
   return count
@@ -309,7 +341,7 @@ async function deleteEntriesForSessionMode(
   modeName: MazeControlModeName,
   sessionId: string,
 ): Promise<void> {
-  const index = transaction.objectStore(ENTRIES_STORE).index(SESSION_MODE_INDEX)
+  const index = transaction.objectStore(LOG_ENTRY_STORE).index(ENTRY_SESSION_MODE_INDEX)
   const key = storageKey(modeName, sessionId)
   await new Promise<void>((resolve, reject) => {
     const request = index.openCursor(key)
@@ -375,7 +407,7 @@ async function resyncFromIndexedDb(modeName: MazeControlModeName): Promise<Tapoo
 
 // Writes one entry and renews this tab's lease in the same transaction. Both, together, or neither:
 // an entry whose session row failed to write would be unreachable by every later lookup - it is
-// found through the sessionMode index - and a lease without entries would keep a dead session alive
+// found through the entrySessionMode index - and a lease without entries would keep a dead session alive
 // in the stale count. The returned state is read after the write so a caller never sees counts from
 // before its own append.
 export async function appendTapooLogStoreEntry(
@@ -390,9 +422,9 @@ export async function appendTapooLogStoreEntry(
   }
 
   try {
-    const transaction = db.transaction([ENTRIES_STORE, SESSIONS_STORE], "readwrite")
+    const transaction = db.transaction([LOG_ENTRY_STORE, LOG_SESSION_STORE], "readwrite")
     const done = transactionDone(transaction)
-    const sessions = transaction.objectStore(SESSIONS_STORE)
+    const sessions = transaction.objectStore(LOG_SESSION_STORE)
     const id = storageKey(modeName, sessionId)
     // Read-modify-write inside the transaction already open for the entry, rather than a second one:
     // the lease has to keep the createdAt it was minted with, and rewriting the row wholesale here
@@ -401,11 +433,9 @@ export async function appendTapooLogStoreEntry(
     const existing = await requestResult(sessions.get(id) as IDBRequest<StoredLogSession | undefined>)
     const now = Date.now()
     sessions.put(existing ? { ...existing, lastSeenAt: now } : sessionRecord(sessionId, modeName, now))
-    transaction.objectStore(ENTRIES_STORE).add({
-      sessionId,
-      sessionMode: id,
-      modeName,
-      entry,
+    transaction.objectStore(LOG_ENTRY_STORE).add({
+      entrySessionMode: id,
+      entry: encodeStoredPayload(entry),
     } satisfies StoredLogEntry)
     await done
 
@@ -445,7 +475,7 @@ export function appendTapooLogStoreFallbackEntrySynchronously(
 }
 
 // Reads back this tab's entries for one mode, and only this tab's: the download and preview paths
-// must never hand over another tab's session, which is what the sessionMode index enforces.
+// must never hand over another tab's session, which is what the entrySessionMode index enforces.
 export async function loadCurrentTapooLogStoreEntries(
   modeName: MazeControlModeName,
 ): Promise<LogEntry[]> {
@@ -483,11 +513,11 @@ export async function clearCurrentAndStaleTapooLogStoreEntries(
     .map((session) => session.sessionId)
 
   if (sessionIds.length > 0) {
-    const transaction = db.transaction([ENTRIES_STORE, SESSIONS_STORE], "readwrite")
+    const transaction = db.transaction([LOG_ENTRY_STORE, LOG_SESSION_STORE], "readwrite")
     const done = transactionDone(transaction)
     for (const staleOrCurrentSessionId of sessionIds) {
       await deleteEntriesForSessionMode(transaction, modeName, staleOrCurrentSessionId)
-      transaction.objectStore(SESSIONS_STORE).delete(storageKey(modeName, staleOrCurrentSessionId))
+      transaction.objectStore(LOG_SESSION_STORE).delete(storageKey(modeName, staleOrCurrentSessionId))
     }
     await done
   }
