@@ -7,7 +7,9 @@ import {
   clearPersistedSnapshot,
   clearStaleStorageVersions,
   clearTapooLog,
+  decodeStoredPayload,
   disableAgentApiConfigForNetworkError,
+  encodeStoredPayload,
   loadTapooLog,
   loadAgentApiSeatConfigs,
   loadPersistedAgentApiConfigs,
@@ -160,6 +162,14 @@ describe("storage", () => {
       lastWinTraversalSpeedUnits: null,
       bestWinTraversalSpeedUnits: null,
     })
+  })
+
+  it("keeps the store blend key stable", () => {
+    const payload = { tapoo: "vault-key-guard", version: 1 }
+    const encodedPayload = `${STORE_ENCODING_PREFIX}D0MEDh9VGEdYDQAAAAAADUtvWQ0MEBgOF1JNDAYAAAAAHBpWW0ES`
+
+    expect(encodeStoredPayload(payload)).toBe(encodedPayload)
+    expect(decodeStoredPayload<typeof payload>(encodedPayload)).toEqual(payload)
   })
 
   it("saves and reloads configured agent api details separately from game progress", () => {
