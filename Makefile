@@ -1,4 +1,4 @@
-.PHONY: help ci ci-bench lint govulncheck deps frontend-install frontend-deps frontend-typecheck frontend-lint frontend-test frontend-quality frontend-build frontend-local frontend-bench test go-bench agentic-analysis coverage clean-coverage
+.PHONY: help ci ci-bench lint govulncheck deps frontend-install frontend-deps frontend-typecheck frontend-lint frontend-test frontend-quality frontend-build frontend-local frontend-bench test go-bench coverage clean-coverage
 
 COVERAGE_FILE := coverage.out
 GOCACHE := $(CURDIR)/.gocache
@@ -19,8 +19,6 @@ help:
 		'  make frontend-build    Build the browser frontend bundle.' \
 		'  make frontend-local    Install, verify, and build the frontend locally.' \
 		'  make test              Run frontend checks and Go tests with race + coverage.' \
-		'  make agentic-analysis  Answer the agent rubric for exported gameplay logs.' \
-		'                         Usage: make agentic-analysis LOGS="a.json b.json"' \
 		'  make coverage          Print the coverage summary from coverage.out.' \
 		'  make clean-coverage    Remove the generated coverage profile.'
 
@@ -78,13 +76,6 @@ test: deps frontend-deps frontend-typecheck frontend-build frontend-test
 
 go-bench:
 	node ./parity-harness/bench-report.mjs --go-only
-
-# Answers docs/TAPOO_AGENTIC_BEHAVIOR_RUBRIC.md against exported agent-api logs. Needs no frontend
-# toolchain: the script only reads the JSON exports, so it runs before or without an install.
-agentic-analysis:
-	@test -n "$(LOGS)" || \
-		( echo 'Set LOGS to one or more exported logs, e.g. make agentic-analysis LOGS="a.json b.json"' >&2; exit 1 )
-	node ./scripts/agentic-analysis.mjs $(LOGS)
 
 coverage:
 	go tool cover -func=$(COVERAGE_FILE)
