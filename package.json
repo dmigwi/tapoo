@@ -1,7 +1,14 @@
 {
   "name": "tapoo",
   "private": true,
-  "packageManager": "pnpm@11.7.0",
+  "packageManager": "pnpm@11.25.0",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^24.0.0",
+      "onFail": "download"
+    }
+  },
   "scripts": {
     "build:frontend": "./scripts/build-frontend.sh",
     "typecheck:frontend": "tsc --project tsconfig.json --noEmit && tsc --project tsconfig.node.json --noEmit",
@@ -13,7 +20,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.2.0",
+    "@types/node": "^24.13.3",
     "@vitest/coverage-v8": "^4.1.10",
     "esbuild": "^0.28.2",
     "eslint": "^10.8.1",
@@ -23,5 +30,8 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }
