@@ -1,0 +1,3 @@
+[submodule "tapoo-oracle"]
+	path = tapoo-oracle
+	url = https://github.com/dmigwi/tapoo-oracle.git

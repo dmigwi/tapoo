@@ -4,7 +4,12 @@
 [![Go CI](https://github.com/dmigwi/tapoo/actions/workflows/go.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/go.yml)
 [![Page Deployment](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml)
 
-Tapoo is a maze runner hide-and-seek game with two interfaces built from the same codebase: a Go terminal game and a browser SPA with the same terminal-inspired feel.
+Tapoo is an AI agent behavior profiler built as a maze runner hide-and-seek game. Two interfaces
+share one codebase: a browser SPA, where a configured AI agent plays the maze and what it does is
+recorded, and a Go terminal game with the same terminal-inspired feel. Profiling is browser-only -
+the terminal build is the game by itself. Its companion
+[Tapoo Oracle](https://github.com/dmigwi/tapoo-oracle) application analyzes exported AI-agent
+gameplay logs against the Tapoo Agentic Behavior Rubric.
 
 **Objective:** _Guide the blue player to the red destination before the score drops to zero._
 
@@ -69,6 +74,7 @@ Tapoo increases maze area as levels rise. Progress continues until the current t
 - Per-level scoring and progression
 - Pause, resume, retry, and next-level flow
 - HTTP-driven AI agent play against Ollama, OpenAI-compatible, and Anthropic APIs, with up to 6 (configurable) agent seats
+- Agent behavior analysis through the companion [Tapoo Oracle](https://github.com/dmigwi/tapoo-oracle) application
 - Best-effort persistence for terminal and browser sessions
 - Manual GitHub Pages deployment for the web build
 - Go and TypeScript test coverage in CI
@@ -113,6 +119,17 @@ Each seat is configured independently from the `/agents.html` overlay:
 
 The `/prompts.html` page mirrors the exact system prompt, tool definitions, and required response format an agent receives, so its behavior can be inspected without capturing live traffic.
 
+### Analyze exported logs
+
+Tapoo produces downloadable `agent-api` gameplay logs. [Tapoo Oracle](https://github.com/dmigwi/tapoo-oracle)
+owns the log contract, behavior rubric, and analysis engine that turn those exports into capability
+and violation profiles. Oracle is included in this repository as the [`tapoo-oracle`](./tapoo-oracle)
+git submodule and can be initialized with:
+
+```bash
+git submodule update --init --recursive
+```
+
 </details>
 
 <details>
@@ -156,8 +173,8 @@ The deployed browser pages include a short privacy notice at `privacy.html`.
 ### Requirements
 
 - Go `1.25+`
-- `pnpm 11.7.0`
-- Node.js `22`
+- pnpm `11.25.0`
+- Node.js `24` LTS
 - `golangci-lint v2.12.2`
 
 ### Useful commands
@@ -193,7 +210,7 @@ Contributions are welcome, but contributors should install the repository pre-co
 ### Contributor setup
 
 1. Install the required toolchains:
-   `Go 1.25+`, `Node.js 22`, `pnpm 11.7.0`, and `golangci-lint v2.12.2`
+   `Go 1.25+`, `Node.js 24 LTS`, `pnpm 11.25.0`, and `golangci-lint v2.12.2`
 2. Install frontend dependencies:
 
 ```bash
@@ -305,6 +322,7 @@ maze/          Go gameplay, rendering, persistence, and tests
 frontend/app/  TypeScript SPA logic and tests
 public/        Static site assets, HTML, CSS, images, and built JS
 scripts/       Frontend build and hook helpers
+tapoo-oracle/  Companion agent-log analyzer (git submodule)
 ```
 
 ## License
