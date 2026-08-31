@@ -4,8 +4,10 @@
 [![Go CI](https://github.com/dmigwi/tapoo/actions/workflows/go.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/go.yml)
 [![Page Deployment](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml)
 
-Tapoo is a maze runner hide-and-seek game with two interfaces built from the same codebase: a Go
-terminal game and a browser SPA with the same terminal-inspired feel. Its companion
+Tapoo is an AI agent behavior profiler built as a maze runner hide-and-seek game. Two interfaces
+share one codebase: a browser SPA, where a configured AI agent plays the maze and what it does is
+recorded, and a Go terminal game with the same terminal-inspired feel. Profiling is browser-only -
+the terminal build is the game by itself. Its companion
 [Tapoo Oracle](https://github.com/dmigwi/tapoo-oracle) application analyzes exported AI-agent
 gameplay logs against the Tapoo Agentic Behavior Rubric.
 
