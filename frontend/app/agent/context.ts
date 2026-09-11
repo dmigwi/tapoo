@@ -111,12 +111,12 @@ export function buildAgentPersonaPrompt(
   }
 
   // "Hold that standard" is what this used to say, and it read as permission to coast. The class is
-  // a step function - resolveStatusSpeedClass returns trailblazer for any rate above 1.0000 - so an
+  // a step function - resolveStatusSpeedClass returns trailblazer for any rate above 1.0000x - so an
   // instruction to maintain it saturates the moment the threshold is crossed. Observed in play:
   // aggressive batching while below trailblazer, then near-none once it was reached at the minimum
   // rate, which drops back out on the first costly turn and oscillates between classes. The branch
   // now names the class as a cleared floor with a margin that widens as the rate climbs, so the
-  // instruction keeps pointing the same way at 1.0001 as it does at 3.0000.
+  // instruction keeps pointing the same way at 1.0001x as it does at 3.0000x.
   if (speedClass === "trailblazer") { // trailblazer
     return [
       `You are ${playerName} and your traversal speed currently classifies as trailblazer.`,
@@ -203,7 +203,7 @@ export function buildMazeActionPrompt(
     "current value and what running out of it means.",
     // "sustain ... keeping your classification at trailblazer" stood here and set the same coasting
     // trap the persona branch had: the class is a step function, so an instruction to maintain it
-    // stops asking for anything the moment 1.0000 is crossed. Both sentences now name the rate,
+    // stops asking for anything the moment 1.0000x is crossed. Both sentences now name the rate,
     // which keeps climbing, rather than the label, which does not.
     "One way to raise a traversal speed above 1.0000 is to build a picture of the maze around your current cell",
     "using filteredTraversalHistory and the static maze dimensions.",

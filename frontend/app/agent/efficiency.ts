@@ -128,19 +128,21 @@ export function calculateTraversalSpeedUnits(uniqueCellsVisited: number, scoreDe
   return Math.max(0, roundedSpeedUnits)
 }
 
-// traversalSpeedUnitsToDisplay renders fixed-point speed units as the plain ratio players read.
-// calculateTraversalSpeedUnits already selected the boundary-safe rounding direction, so this only
-// formats the stored fixed-point value.
+// traversalSpeedUnitsToDisplay renders fixed-point speed units as the complete speed label players
+// read. calculateTraversalSpeedUnits already selected the boundary-safe rounding direction, so this
+// only formats the stored fixed-point value and appends "x" to identify the value as a speed.
 export function traversalSpeedUnitsToDisplay(traversalSpeedUnits: number): string {
   const efficiencyClass = resolveTraversalSpeedClass(traversalSpeedUnits)
 
   if (efficiencyClass === "navigator") {
-    return (scoring.traversalSpeedScaleUnits / scoring.traversalSpeedScaleUnits)
+    return `${(scoring.traversalSpeedScaleUnits / scoring.traversalSpeedScaleUnits)
       .toFixed(traversalSpeedDisplayDecimals)
+    }x`
   }
 
-  return (traversalSpeedUnits / scoring.traversalSpeedScaleUnits)
+  return `${(traversalSpeedUnits / scoring.traversalSpeedScaleUnits)
     .toFixed(traversalSpeedDisplayDecimals)
+  }x`
 }
 
 // capitalize renders lowercase speed-classification identifiers (kept lowercase for model-facing
@@ -163,7 +165,7 @@ export function agentDisplayName(agent: AgentApiSeatConfig, traversalHistory: re
   return nameWithSpeedClass(agent.playerName, resolveBatchEfficiencyClass(traversalHistory, agent))
 }
 
-// formatPlayerStatusLabel renders the "{name} the {Class} - {rate}x" segment shown on the
+// formatPlayerStatusLabel renders the "{name} the {Class} - {rate}" segment shown on the
 // running-status line for whoever is currently playing - interactive or agent-api. A player who
 // hasn't been charged any decay units yet shows "- Default" instead of a computed rate. No
 // leading/trailing whitespace: CONFIG.messages.runningStatus owns the spacing around {player}.
@@ -176,7 +178,7 @@ export function formatPlayerStatusLabel(
   speedClass: BatchEfficiencyClass = resolveStatusSpeedClass(status.uniqueCellsVisited, status.decayUnitsCharged),
 ): string {
   const rateDisplay = status.decayUnitsCharged > 0
-    ? `${traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(status.uniqueCellsVisited, status.decayUnitsCharged))}x`
+    ? traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(status.uniqueCellsVisited, status.decayUnitsCharged))
     : "Default"
 
   return `${nameWithSpeedClass(status.playerName, speedClass)} - ${rateDisplay}`

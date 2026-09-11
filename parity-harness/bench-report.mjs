@@ -343,7 +343,7 @@ function conservativeMinWinSpeed(summary) {
     return ""
   }
 
-  return `${traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(uniqueCells, budget))}x`
+  return traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(uniqueCells, budget))
 }
 
 // Mirrors frontend/app/agent/efficiency.ts calculateTraversalSpeedUnits().
@@ -365,8 +365,9 @@ function calculateTraversalSpeedUnits(uniqueCellsVisited, scoreDecayUnits) {
 
 // Mirrors frontend/app/agent/efficiency.ts traversalSpeedUnitsToDisplay().
 function traversalSpeedUnitsToDisplay(traversalSpeedUnits) {
-  return (traversalSpeedUnits / traversalSpeedScaleUnits)
+  return `${(traversalSpeedUnits / traversalSpeedScaleUnits)
     .toFixed(traversalSpeedDisplayDecimals)
+  }x`
 }
 
 export function conservativeLabel(headroom) {
@@ -841,21 +842,21 @@ function printLegend() {
       "Equivalently U/Budget with U = (P + Budget)/2, the unique cells a conservative " +
       "agent has visited at break-even - the whole path plus half the off-path space, " +
       "typically 70-80% of the maze, not half of anything a reader would count. Cannot " +
-      "exceed 1.0000: one turn, one decay unit, at most one new cell, so U <= D always. " +
-      "Reaches exactly 1.0000 only when Error Margin is zero, so conservative play is " +
+      "exceed 1.0000x: one turn, one decay unit, at most one new cell, so U <= D always. " +
+      "Reaches exactly 1.0000x only when Error Margin is zero, so conservative play is " +
       "always Backtracker.",
   )
   printLegendEntry(
     "Formatting:",
-    "Four decimal places, rounded away from 1.0000 so a displayed value never contradicts its class. " +
+    "Four decimal places with an x suffix, rounded away from 1.0000x so a displayed value never contradicts its class. " +
       "Classification is computed from the raw ratio, not the rendered string.",
   )
   printLegendEntry(
     "What this means:",
-    "Exceeding 1.0000 requires more than one new cell per turn, which requires batching forward, into " +
+    "Exceeding 1.0000x requires more than one new cell per turn, which requires batching forward, into " +
       "cells never visited. The Trailblazer threshold is therefore a forward-deduction test, and a " +
       "Backtracker classification at high levels may be a structural ceiling rather than poor play. " +
-      "Perfect retrace batching can approach 1.0000 from below, but cannot cross it: retracing " +
+      "Perfect retrace batching can approach 1.0000x from below, but cannot cross it: retracing " +
       "saves denominator while adding no new cells. That limit is a global fact, stated here once, " +
       "rather than a column sitting at one arbitrary batch depth.",
   )
@@ -928,7 +929,7 @@ function printDerivedFormulaLegend() {
     "s_min = (Path Length + Error Margin/2) / Budget, the final traversal speed of a " +
       "single-move agent that exactly exhausts its budget. Generalises to " +
       "s_min(c) = (P + M/c) / Budget for a strategy with round-trip multiplier c; " +
-      "c = 2 is printed, c = 1 gives exactly 1.0000.",
+      "c = 2 is printed, c = 1 gives exactly 1.0000x.",
   )
   printLegendEntry(
     "Redundancies:",
@@ -945,7 +946,7 @@ function printDerivedFormulaLegend() {
   )
   printLegendEntry(
     "Speed display:",
-    "Speeds render at 4dp, rounded away from 1.0000. Class comes from comparing U against D directly, " +
+    "Speeds render at 4dp with an x suffix, rounded away from 1.0000x. Class comes from comparing U against D directly, " +
       "so the number and the class cannot disagree.",
   )
 }
@@ -1071,7 +1072,7 @@ function printReportReadingGuide() {
   printWrapped(
     console.info,
     "Speeds show four decimal places here and in gameplay output, rounded " +
-      "away from 1.0000 so that a displayed value never contradicts its " +
+      "away from 1.0000x so that a displayed value never contradicts its " +
       "classification. Benchmark speeds are derived from route geometry; gameplay speeds " +
       "are measured from actual cells and decay. " +
       "Same format, different status - do not compare one against the other as though they were " +
@@ -1254,12 +1255,12 @@ function printMinWinSpeedNote() {
       "s_min = (P + M/2) / Budget. Below this line a conservative agent has already explored " +
       "more than half the off-path space and cannot finish; at or above it, it can. The half " +
       "is derived from the strategy - single-move play pays 2 turns per off-path cell - not " +
-      "assumed from behaviour. s_min rises as batching improves, reaching exactly 1.0000 in " +
+      "assumed from behaviour. s_min rises as batching improves, reaching exactly 1.0000x in " +
       "the limit of perfect retrace batching, and never exceeding it: retracing visits no new " +
-      "cells, so it lowers the denominator without raising the numerator. Exceeding 1.0000 " +
+      "cells, so it lowers the denominator without raising the numerator. Exceeding 1.0000x " +
       "therefore requires batching forward into cells never visited, at any batch depth. " +
-      "Trailblazer is a forward-deduction test. Values are 4dp strings rounded away from " +
-      "1.0000 so a figure never contradicts its class; the JSON carries the same ratios " +
+      "Trailblazer is a forward-deduction test. Values are 4dp speed strings with an x suffix, rounded away from " +
+      "1.0000x so a figure never contradicts its class; the JSON carries the same ratios " +
       "unrounded under minWinSpeeds, which is what downstream analysis should read. Derived " +
       "from Table 3a, not measured.",
   )
