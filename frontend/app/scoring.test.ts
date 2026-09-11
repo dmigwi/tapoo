@@ -61,7 +61,7 @@ describe("score helpers", () => {
     )
     // Speed is better when higher, the opposite direction to the request count it replaced.
     expect(buildAgentWinSummary(20_000, 15_000, 25_000)).toBe(
-      "2.0000x (Trailblazer) - 0.5000x faster than previous (0.5000x behind best)",
+      "2.0000x (Trailblazer) - 0.5000 faster than previous (0.5000 behind best)",
     )
   })
 
@@ -69,7 +69,7 @@ describe("score helpers", () => {
     // The rank is derived from the achieved pace, never from the delta: a round can be behind the
     // stored best and still have earned trailblazer, or ahead of it and still be a backtracker.
     expect(buildAgentWinSummary(5_000, 2_500, 30_000)).toBe(
-      "0.5000x (Backtracker) - 0.2500x faster than previous (2.5000x behind best)",
+      "0.5000x (Backtracker) - 0.2500 faster than previous (2.5000 behind best)",
     )
     expect(buildAgentWinSummary(10_000, 10_000, 10_000)).toBe(
       "1.0000x (Navigator) - matched previous traversal speed (matched as best)",
@@ -117,7 +117,7 @@ describe("score helpers", () => {
       bestWinTraversalSpeedUnits: 25_000,
       lastAttemptRetentionUnits: 900_000,
       lastWinTraversalSpeedUnits: 20_000,
-      winSummary: "2.0000x (Trailblazer) - 0.5000x faster than previous (0.5000x behind best)",
+      winSummary: "2.0000x (Trailblazer) - 0.5000 faster than previous (0.5000 behind best)",
     })
   })
 
@@ -136,7 +136,7 @@ describe("score helpers", () => {
     ).toMatchObject({
       bestWinTraversalSpeedUnits: 30_000,
       lastWinTraversalSpeedUnits: 30_000,
-      winSummary: "3.0000x (Trailblazer) - 1.5000x faster than previous (new record)",
+      winSummary: "3.0000x (Trailblazer) - 1.5000 faster than previous (new record)",
     })
   })
 })

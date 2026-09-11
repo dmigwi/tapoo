@@ -1,5 +1,10 @@
 import { CONFIG } from "./config"
-import { resolveTraversalSpeedClass, traversalSpeedUnitsToDisplay, capitalize } from "./agent/efficiency"
+import {
+  resolveTraversalSpeedClass,
+  traversalSpeedUnitsToDisplay,
+  traversalSpeedUnitsToRatio,
+  capitalize,
+} from "./agent/efficiency"
 import type {
   AgentSpeedBestComparison,
   AgentSpeedPreviousComparison,
@@ -81,9 +86,9 @@ export function calculateScoreRetentionUnits(
 }
 
 // formatTraversalSpeedLabel renders the speed a round actually achieved together with the
-// classification it earned, e.g. "3.1230 (Trailblazer)". Only an achieved speed carries a
-// classification - a delta between two rounds is a difference, not a pace, so deltas stay bare
-// numbers.
+// classification it earned, e.g. "3.1230x (Trailblazer)". Only an achieved speed carries a
+// classification or the "x" - a delta between two rounds is a difference, not a pace, so deltas stay
+// bare numbers: "0.5000x faster" would read as a multiplier, when 1.5000x to 2.0000x is 1.33 times.
 function formatTraversalSpeedLabel(traversalSpeedUnits: number): string {
   const speedClass = resolveTraversalSpeedClass(traversalSpeedUnits)
   const speedValue = traversalSpeedUnitsToDisplay(traversalSpeedUnits)
@@ -342,14 +347,14 @@ function compareAgentSpeedPrevious(
   if (currentSpeedUnits > lastWinTraversalSpeedUnits) {
     return {
       comparison: "faster",
-      delta: traversalSpeedUnitsToDisplay(currentSpeedUnits - lastWinTraversalSpeedUnits),
+      delta: traversalSpeedUnitsToRatio(currentSpeedUnits - lastWinTraversalSpeedUnits),
     }
   }
 
   if (currentSpeedUnits < lastWinTraversalSpeedUnits) {
     return {
       comparison: "slower",
-      delta: traversalSpeedUnitsToDisplay(lastWinTraversalSpeedUnits - currentSpeedUnits),
+      delta: traversalSpeedUnitsToRatio(lastWinTraversalSpeedUnits - currentSpeedUnits),
     }
   }
 
@@ -368,7 +373,7 @@ function compareAgentSpeedBest(
   if (currentSpeedUnits < bestWinTraversalSpeedUnits) {
     return {
       comparison: "behind-best",
-      delta: traversalSpeedUnitsToDisplay(bestWinTraversalSpeedUnits - currentSpeedUnits),
+      delta: traversalSpeedUnitsToRatio(bestWinTraversalSpeedUnits - currentSpeedUnits),
     }
   }
 

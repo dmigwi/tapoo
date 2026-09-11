@@ -231,6 +231,25 @@ export function mazeNoiseRows(summaries) {
   )
 }
 
+// mazeNoiseNumbers is the JSON counterpart of mazeNoiseRows, for the same reason minWinSpeedNumbers
+// exists: the table rounds speed stddevs to 4dp strings for display, and a consumer comparing a
+// cross-model gap against 2 sigma should get the unrounded values. Missing inputs are null, never ""
+// - Number("") is 0, which would read as a maze with no noise at all.
+export function mazeNoiseNumbers(summaries) {
+  return Object.fromEntries(
+    realSummaries(summaries).map((summary) => [
+      summary.Case,
+      {
+        pathStddev: finiteOrNull(numberOrNaN(summary["Path-stddev"])),
+        speedStddev: {
+          "c=2.00": finiteOrNull(mazeSpeedStddevNumber(summary, 2)),
+          "c=1.25": finiteOrNull(mazeSpeedStddevNumber(summary, 1.25)),
+        },
+      },
+    ]),
+  )
+}
+
 // minWinSpeedNumbers is the JSON counterpart of minWinSpeedRows. The table's values are strings
 // by necessity - the 4dp directional rounding exists so a displayed figure can never contradict its
 // classification, and that is a formatting decision - but a consumer should never have to parse
@@ -334,8 +353,20 @@ function mazeSpeedStddev(summary, roundTripMultiplier) {
   return Number.isFinite(speedStddev) ? speedStddev.toFixed(traversalSpeedDisplayDecimals) : ""
 }
 
+// numberOrNaN reads a summary field as a number, treating the "" that formatNumber writes for a
+// missing value as missing. Number("") is 0, so without this a case with no Path-stddev would report
+// a speed stddev of exactly zero - an assertion of no maze noise, printed as 0.0000 and drawn as a
+// collapsed band - instead of the blank that says the measurement is absent.
+function numberOrNaN(value) {
+  return value === "" || value === null || value === undefined ? Number.NaN : Number(value)
+}
+
+function finiteOrNull(value) {
+  return Number.isFinite(value) ? value : null
+}
+
 function mazeSpeedStddevNumber(summary, roundTripMultiplier) {
-  const pathStddev = Number(summary["Path-stddev"])
+  const pathStddev = numberOrNaN(summary["Path-stddev"])
   const sensitivity = mazeSpeedSensitivity(summary, roundTripMultiplier)
   if (![pathStddev, sensitivity].every(Number.isFinite)) {
     return Number.NaN
@@ -346,8 +377,8 @@ function mazeSpeedStddevNumber(summary, roundTripMultiplier) {
 
 function mazeSpeedSensitivity(summary, roundTripMultiplier) {
   const explorationFraction = 0.5
-  const pathLength = Number(summary.PathLen)
-  const errorMargin = Number(summary.Headroom)
+  const pathLength = numberOrNaN(summary.PathLen)
+  const errorMargin = numberOrNaN(summary.Headroom)
   const c = Number(roundTripMultiplier)
   if (![pathLength, errorMargin, c].every(Number.isFinite)) {
     return Number.NaN
@@ -2161,10 +2192,10 @@ function serializeGroups(report) {
         hashesByCase: Object.fromEntries(report.hashesByCase),
         iterations: group.iterations,
         summaries: group.summaries,
-        // Table 3c renders these as directionally-rounded strings; downstream work gets the raw
-        // quotients here so it never has to parse a display value back into a number.
+        // Tables 3c and 3d render these as rounded strings; downstream work gets the raw quotients
+        // here so it never has to parse a display value back into a number.
         minWinSpeeds: minWinSpeedNumbers(group.summaries),
-        mazeNoise: mazeNoiseRows(group.summaries),
+        mazeNoise: mazeNoiseNumbers(group.summaries),
         validationByCase: Object.fromEntries(report.validationByCase),
       },
     ]),

@@ -24,7 +24,7 @@ import {
   formatPlayerStatusLabel,
   getBatchEfficiencyMetrics,
   resolveTraversalSpeedClass,
-  traversalSpeedUnitsToDisplay,
+  traversalSpeedUnitsToRatio,
 } from "../agent/efficiency"
 import {
   handleAgentTurnLoop,
@@ -85,7 +85,6 @@ function logAgentRoundCompletion({ __state, __agent, __playerStatus }: AgentRoun
       seatId: __agent.seatId,
       playerName: __agent.playerName,
       model: __agent.model,
-      enabled: __agent.enabled,
     },
     score: __state.lastRoundScore,
     turnCount: __state.turnCount,
@@ -93,7 +92,8 @@ function logAgentRoundCompletion({ __state, __agent, __playerStatus }: AgentRoun
     allUniqueCellsVisited: __state.traversalHistory.length,
     playerUniqueCellsVisited: __playerStatus.uniqueCellsVisited,
     decayUnitsCharged: __playerStatus.decayUnitsCharged,
-    traversalSpeed: traversalSpeedUnitsToDisplay(traversalSpeedUnits),
+    // The bare ratio, not the "x" label: Tapoo Oracle parses this field with Number().
+    traversalSpeed: traversalSpeedUnitsToRatio(traversalSpeedUnits),
     traversalSpeedClass: resolveTraversalSpeedClass(traversalSpeedUnits),
     winSummary: __state.winSummary,
   })

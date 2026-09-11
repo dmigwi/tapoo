@@ -205,7 +205,19 @@ async function buildPage(layout, sharedPartials, page) {
       : "",
   })
 
-  await writeFile(path.join(publicDirectory, page.output), html)
+  await writeFile(
+    path.join(publicDirectory, page.output),
+    page.rootRelativeBase ? anchorRelativeUrls(html, page.rootRelativeBase) : html,
+  )
+}
+
+// anchorRelativeUrls pins every "./" href and src to the site's root path. Only 404.html needs it:
+// a static host serves that page at whatever path was requested, so from /tapoo/old/page.html a
+// "./css/..." reference resolves to /tapoo/old/css/... and the stylesheet, script, favicon, font and
+// every nav link 404 in turn. A <base href> would be the usual fix, but the layout's CSP sets
+// base-uri 'none', which disables it - rewriting the references keeps that policy intact.
+function anchorRelativeUrls(html, rootPath) {
+  return html.replace(/\b(href|src)="\.\//g, `$1="${rootPath}`)
 }
 
 // writeSitemap and writeRobotsTxt are derived from the same urlPath used for each page's
@@ -295,6 +307,9 @@ const agentsUrl = `${urlPath}agents.html`
 const promptsUrl = `${urlPath}prompts.html`
 const privacyUrl = `${urlPath}privacy.html`
 const notFoundUrl = `${urlPath}404.html`
+// The site's path on its host ("/tapoo/" for GitHub Pages). docker/nginx.conf maps the same prefix
+// back to its root, so one set of 404 asset URLs works in both.
+const siteRootPath = new URL(urlPath).pathname
 
 // validTimestamp returns value only when it names a real instant, so callers can fall back with ??.
 function validTimestamp(value) {
@@ -456,6 +471,7 @@ await Promise.all([
     descriptionText: escapeHtml(notFoundDescription),
     output: "404.html",
     pageContent: "404-section.html",
+    rootRelativeBase: siteRootPath,
     pageLabelConfigKey: "pages.notFound.pageLabel",
     primaryMenuItem: "nav-game-link.html",
     promptsLink: "nav-prompts-link.html",

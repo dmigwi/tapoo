@@ -8,6 +8,7 @@ import {
   resolveStatusSpeedClass,
   resolveTraversalSpeedClass,
   traversalSpeedUnitsToDisplay,
+  traversalSpeedUnitsToRatio,
 } from "./efficiency"
 import { CONFIG } from "../config"
 import type { AgentApiSeatConfig, TraversalHistoryEntry } from "../types"
@@ -193,6 +194,21 @@ describe("resolveStatusSpeedClass", () => {
     expect(resolveStatusSpeedClass(4, 0)).toBe("trailblazer")
     expect(resolveTraversalSpeedClass(calculateTraversalSpeedUnits(4, 0))).toBe("backtracker")
     expect(traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(4, 0))).toBe("0.0000x")
+  })
+})
+
+describe("traversalSpeedUnitsToRatio", () => {
+  it("renders the bare ratio that Number() parses back, with the same rounding as the label", () => {
+    // Tapoo Oracle reads the logged speed with Number(); "1.3334x" would come back as NaN and every
+    // trailblazer win would classify as backtracker.
+    for (const units of [0, 3_333, 9_999, 10_000, 10_001, 13_334, 20_000]) {
+      const ratio = traversalSpeedUnitsToRatio(units)
+      expect(ratio).not.toContain("x")
+      expect(Number.isFinite(Number(ratio))).toBe(true)
+      expect(traversalSpeedUnitsToDisplay(units)).toBe(`${ratio}x`)
+    }
+    expect(traversalSpeedUnitsToRatio(13_334)).toBe("1.3334")
+    expect(traversalSpeedUnitsToRatio(9_999)).toBe("0.9999")
   })
 })
 

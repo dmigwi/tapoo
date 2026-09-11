@@ -22,7 +22,7 @@ help:
 		'  make frontend-build    Build the browser frontend bundle.' \
 		'  make frontend-local    Install, verify, and build the frontend locally.' \
 		'  make docker-build      Build the Tapoo container image.' \
-		'  make docker-run        Run Tapoo locally at http://127.0.0.1:8080.' \
+		'  make docker-run        Run Tapoo locally at http://localhost:5500.' \
 		'  make docker-shell      Open a shell in the Docker build image.' \
 		'  make test              Run frontend checks and Go tests with race + coverage.' \
 		'  make coverage          Print the coverage summary from coverage.out.' \

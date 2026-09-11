@@ -44,7 +44,7 @@ make docker-build
 make docker-run
 ```
 
-Then open `http://127.0.0.1:8080/`.
+Then open `http://localhost:5500/`.
 
 <details>
 <summary><strong>Gameplay Preview</strong></summary>
@@ -114,7 +114,7 @@ lightweight local Docker-compatible runtime for building and running the same im
 
 ```bash
 make docker-build            # build the tapoo image
-make docker-run              # serve it on http://127.0.0.1:8080
+make docker-run              # serve it on http://localhost:5500
 make docker-shell            # open a shell in the Docker build image
 ```
 
@@ -122,7 +122,7 @@ Direct Docker equivalents:
 
 ```bash
 docker build -t tapoo .
-docker run --rm -it -p 8080:80 tapoo
+docker run --rm -it -p 5500:80 tapoo
 ```
 
 </details>

@@ -128,21 +128,27 @@ export function calculateTraversalSpeedUnits(uniqueCellsVisited: number, scoreDe
   return Math.max(0, roundedSpeedUnits)
 }
 
-// traversalSpeedUnitsToDisplay renders fixed-point speed units as the complete speed label players
-// read. calculateTraversalSpeedUnits already selected the boundary-safe rounding direction, so this
-// only formats the stored fixed-point value and appends "x" to identify the value as a speed.
-export function traversalSpeedUnitsToDisplay(traversalSpeedUnits: number): string {
+// traversalSpeedUnitsToRatio renders fixed-point speed units as the bare ratio, with no unit suffix.
+// It is the machine-facing form: the agent-api log records it, and Tapoo Oracle reads that field back
+// with Number(), which a suffixed "1.2345x" turns into NaN. calculateTraversalSpeedUnits already
+// selected the boundary-safe rounding direction, so this only formats the stored fixed-point value.
+export function traversalSpeedUnitsToRatio(traversalSpeedUnits: number): string {
   const efficiencyClass = resolveTraversalSpeedClass(traversalSpeedUnits)
 
   if (efficiencyClass === "navigator") {
-    return `${(scoring.traversalSpeedScaleUnits / scoring.traversalSpeedScaleUnits)
+    return (scoring.traversalSpeedScaleUnits / scoring.traversalSpeedScaleUnits)
       .toFixed(traversalSpeedDisplayDecimals)
-    }x`
   }
 
-  return `${(traversalSpeedUnits / scoring.traversalSpeedScaleUnits)
+  return (traversalSpeedUnits / scoring.traversalSpeedScaleUnits)
     .toFixed(traversalSpeedDisplayDecimals)
-  }x`
+}
+
+// traversalSpeedUnitsToDisplay renders fixed-point speed units as the complete speed label players
+// read: the ratio with "x" appended to identify the value as a speed. Anything a program parses back
+// takes traversalSpeedUnitsToRatio instead.
+export function traversalSpeedUnitsToDisplay(traversalSpeedUnits: number): string {
+  return `${traversalSpeedUnitsToRatio(traversalSpeedUnits)}x`
 }
 
 // capitalize renders lowercase speed-classification identifiers (kept lowercase for model-facing

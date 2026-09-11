@@ -4,6 +4,7 @@ import {
   branchingDistributionRows,
   caseDefinitionRows,
   costModelRows,
+  mazeNoiseNumbers,
   mazeNoiseRows,
   minWinSpeedRows,
   realSummaries,
@@ -162,6 +163,32 @@ describe("bench report helpers", () => {
       "Path stddev (Cells)": 2.5,
       "Speed stddev c=2.00": "0.0179",
       "Speed stddev c=1.25": "0.0046",
+    })
+  })
+
+  it("serializes maze noise as unrounded numbers rather than the table's display strings", () => {
+    const noise = mazeNoiseNumbers(summaries).area70_10x7
+    expect(noise.pathStddev).toBe(2.5)
+    expect(typeof noise.speedStddev["c=2.00"]).toBe("number")
+    expect(typeof noise.speedStddev["c=1.25"]).toBe("number")
+    // Same quantity as Table 3d, before the 4dp rounding - so it matches the row only once rounded.
+    const row = mazeNoiseRows(summaries).area70_10x7
+    expect(noise.speedStddev["c=2.00"].toFixed(4)).toBe(row["Speed stddev c=2.00"])
+    expect(noise.speedStddev["c=1.25"].toFixed(4)).toBe(row["Speed stddev c=1.25"])
+    expect(Object.keys(mazeNoiseNumbers(summaries))).toEqual(realCaseNames)
+  })
+
+  it("reports a missing path stddev as absent, never as zero maze noise", () => {
+    // formatNumber writes "" for a missing metric, and Number("") is 0: unguarded, a case with no
+    // Path-stddev reads as a maze with exactly no noise.
+    const missing = summaries.map((summary) => ({ ...summary, "Path-stddev": "" }))
+    expect(mazeNoiseNumbers(missing).area70_10x7).toEqual({
+      pathStddev: null,
+      speedStddev: { "c=2.00": null, "c=1.25": null },
+    })
+    expect(mazeNoiseRows(missing).area70_10x7).toMatchObject({
+      "Speed stddev c=2.00": "",
+      "Speed stddev c=1.25": "",
     })
   })
 
