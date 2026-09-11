@@ -4,6 +4,7 @@ import {
   branchingDistributionRows,
   caseDefinitionRows,
   costModelRows,
+  mazeNoiseRows,
   minWinSpeedRows,
   realSummaries,
   renderBenchmarkCharts,
@@ -34,6 +35,7 @@ const summaries = [
     "PathLen": 68.2,
     "Path-p5": 65,
     "Path-p95": 70,
+    "Path-stddev": 2.5,
     "Path%": 97.43,
     "Backtrack": 1.8,
     "Backtrack-p5": 0,
@@ -63,6 +65,7 @@ const summaries = [
     "PathLen": 25,
     "Path-p5": 25,
     "Path-p95": 25,
+    "Path-stddev": 0,
     "Path%": 100,
     "Backtrack": 0,
     "Backtrack-p5": 0,
@@ -92,6 +95,7 @@ const summaries = [
     "PathLen": 98.01,
     "Path-p5": 99,
     "Path-p95": 100,
+    "Path-stddev": 0.5,
     "Path%": 98.01,
     "Backtrack": 1.99,
     "Backtrack-p5": 0,
@@ -112,6 +116,7 @@ describe("bench report helpers", () => {
     expect(Object.keys(routeGeometryRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(costModelRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(minWinSpeedRows(summaries))).toEqual(realCaseNames)
+    expect(Object.keys(mazeNoiseRows(summaries))).toEqual(realCaseNames)
   })
 
   it("formats route geometry rows with structural route metrics", () => {
@@ -119,6 +124,7 @@ describe("bench report helpers", () => {
       "Path Len (Cells)": 68.2,
       "Path P5 (Cells)": 65,
       "Path P95 (Cells)": 70,
+      "Path stddev (Cells)": 2.5,
       "Path (%)": 97.43,
       "W-Branch (Depth)": 1.2,
       "W-Branch P5 (Depth)": 0,
@@ -151,12 +157,32 @@ describe("bench report helpers", () => {
     })
   })
 
-  it("renders the conservative minimum winning speed chart", () => {
+  it("formats maze-noise rows with speed standard deviations by strategy", () => {
+    expect(mazeNoiseRows(summaries).area70_10x7).toEqual({
+      "Path stddev (Cells)": 2.5,
+      "Speed stddev c=2.00": "0.0179",
+      "Speed stddev c=1.25": "0.0046",
+    })
+  })
+
+  it("renders the compact benchmark chart set", () => {
     const svg = renderBenchmarkCharts({
       groups: new Map([["BenchmarkMazeBranching", { summaries }]]),
     })
 
-    expect(svg).toContain("Conservative (No Batching) Min Win Speed")
+    expect(svg).toContain("Structure")
+    expect(svg).toContain("Route")
+    expect(svg).toContain("Agent-facing")
+    expect(svg).toContain("Shape")
+    expect(svg).toContain("Junctions/Cell")
+    expect(svg).toContain("W-Branch (% of Margin)")
+    expect(svg).toContain("Min Win Speed +/- Maze Noise")
+    expect(svg).toContain("Conservative Min Win Speed")
+    expect(svg).toContain("Speed stddev c=2.00 / c=1.25")
+    expect(svg).toContain("Skew vs Speed stddev")
+    expect(svg).toContain("legend-dot--preferred")
+    expect(svg).toContain("Area (Cells)")
+    expect(svg).toContain("Skew (Ratio)")
   })
 
   it("formats case definitions separately from branching results", () => {
@@ -180,9 +206,9 @@ describe("bench report helpers", () => {
       "Dead Ends/Maze": 2.18,
       "Zero-Junction (%)": 84,
       "Junctions/Cell": 0.0025,
-      "P5": 0,
-      "P95": 0.0143,
-      "stddev": 0.0054,
+      "Junctions/Cell P5": 0,
+      "Junctions/Cell P95": 0.0143,
+      "Junctions/Cell stddev": 0.0054,
     })
   })
 

@@ -23,6 +23,7 @@ const traversalSpeedDisplayDecimals = String(traversalSpeedScaleUnits).length - 
 const routeGeometryTableTitle = "Table 3a - Route geometry"
 const costModelTableTitle = "Table 3b - Cost model"
 const minWinSpeedTableTitle = "Table 3c - Minimum winning speed"
+const mazeNoiseTableTitle = "Table 3d - Maze noise"
 
 const reportOutputPath = process.env.TAPOO_BENCH_OUT ?? "parity-harness/bench-report.json"
 const chartOutputPath = chartPathForReport(reportOutputPath)
@@ -162,9 +163,9 @@ export function branchingDistributionRows(summaries) {
         "Dead Ends/Maze": summary["Dead ends/maze"],
         "Zero-Junction (%)": summary["Zero-J%"],
         "Junctions/Cell": summary["Junctions/cell"],
-        "P5": summary.p5,
-        "P95": summary.p95,
-        "stddev": summary.stddev,
+        "Junctions/Cell P5": summary.p5,
+        "Junctions/Cell P95": summary.p95,
+        "Junctions/Cell stddev": summary.stddev,
       },
     ]),
   )
@@ -178,6 +179,7 @@ export function routeGeometryRows(summaries) {
         "Path Len (Cells)": summary.PathLen,
         "Path P5 (Cells)": summary["Path-p5"],
         "Path P95 (Cells)": summary["Path-p95"],
+        "Path stddev (Cells)": summary["Path-stddev"],
         "Path (%)": summary["Path%"],
         "W-Branch (Depth)": summary.WorstBranch,
         "W-Branch P5 (Depth)": summary["WorstBranch-p5"],
@@ -211,6 +213,19 @@ export function minWinSpeedRows(summaries) {
       summary.Case,
       {
         "Conservative (No Batching) Min Win Speed": conservativeMinWinSpeed(summary),
+      },
+    ]),
+  )
+}
+
+export function mazeNoiseRows(summaries) {
+  return Object.fromEntries(
+    realSummaries(summaries).map((summary) => [
+      summary.Case,
+      {
+        "Path stddev (Cells)": summary["Path-stddev"],
+        "Speed stddev c=2.00": mazeSpeedStddev(summary, 2),
+        "Speed stddev c=1.25": mazeSpeedStddev(summary, 1.25),
       },
     ]),
   )
@@ -259,6 +274,26 @@ function worstBranchPercent(summary) {
   return percentOfBudget(summary.WorstBranch, summary.Budget)
 }
 
+function pathPercent(summary, key) {
+  const area = summaryArea(summary)
+  const pathLength = Number(summary[key])
+  if (![area, pathLength].every(Number.isFinite) || area <= 0) {
+    return Number.NaN
+  }
+
+  return (pathLength / area) * 100
+}
+
+function branchPercentOfMargin(summary, key) {
+  const branchDepth = Number(summary[key])
+  const errorMargin = Number(summary.Headroom)
+  if (![branchDepth, errorMargin].every(Number.isFinite) || errorMargin <= 0) {
+    return Number.NaN
+  }
+
+  return Math.min(100, (branchDepth / errorMargin) * 100)
+}
+
 function batchingTraversalBudget(summary) {
   const batching = batchingTraversalCost(summary)
   return Number.isFinite(batching) ? Math.round(batching) : ""
@@ -292,6 +327,42 @@ function worstBranchPercentOfMargin(summary) {
   }
 
   return formatNumber(Math.min(100, (worstBranch / errorMargin) * 100))
+}
+
+function mazeSpeedStddev(summary, roundTripMultiplier) {
+  const speedStddev = mazeSpeedStddevNumber(summary, roundTripMultiplier)
+  return Number.isFinite(speedStddev) ? speedStddev.toFixed(traversalSpeedDisplayDecimals) : ""
+}
+
+function mazeSpeedStddevNumber(summary, roundTripMultiplier) {
+  const pathStddev = Number(summary["Path-stddev"])
+  const sensitivity = mazeSpeedSensitivity(summary, roundTripMultiplier)
+  if (![pathStddev, sensitivity].every(Number.isFinite)) {
+    return Number.NaN
+  }
+
+  return Math.abs(sensitivity) * pathStddev
+}
+
+function mazeSpeedSensitivity(summary, roundTripMultiplier) {
+  const explorationFraction = 0.5
+  const pathLength = Number(summary.PathLen)
+  const errorMargin = Number(summary.Headroom)
+  const c = Number(roundTripMultiplier)
+  if (![pathLength, errorMargin, c].every(Number.isFinite)) {
+    return Number.NaN
+  }
+
+  const uniqueCells = pathLength + explorationFraction * errorMargin
+  const decayUnits = pathLength + c * explorationFraction * errorMargin
+  if (decayUnits <= 0) {
+    return Number.NaN
+  }
+
+  return (
+    ((1 - explorationFraction) * decayUnits) -
+    (uniqueCells * (1 - c * explorationFraction))
+  ) / (decayUnits * decayUnits)
 }
 
 function roundedNumber(value, precision) {
@@ -730,19 +801,32 @@ function printLegend() {
     "Junctions/Maze divided by Area. Use only when comparing cases of different size.",
   )
   printLegendEntry(
-    "P5/P95, stddev:",
-    "Spread of per-sample junctions/cell. Indicative only for cases averaging under one junction " +
-      `per maze, where n=${benchmarkIterations} leaves the estimate noisy.`,
+    "Junctions/Cell P5/P95/stddev:",
+    `Spread of junctions/cell across the case's ${benchmarkIterations} mazes. All three describe the per-cell rate, ` +
+      "not the per-maze counts to their left. Indicative only for cases averaging under one junction " +
+      `per maze, where n=${benchmarkIterations} leaves the estimate noisy. This stddev is measured ` +
+      "directly from samples; Table 3d's speed stddev is derived by multiplying Path stddev by a " +
+      "sensitivity, with no agent run.",
   )
 
   printLegendSection("Table 3a - Route geometry")
 
   printLegendEntry(
-    "Path Len, Path P5/P95:",
-    "Cells on the unique start-to-destination route: the mean, with the 5th and 95th percentiles in " +
-      "their own columns. The unavoidable ideal path, not any route an agent found. Every maze is a " +
-      "spanning tree, so exactly one route exists between any two cells. The spread matters as much as the " +
-      "mean - an agent faces one draw, not the average.",
+    "Path Len, Path P5/P95, Path stddev:",
+    "Cells on the unique start-to-destination route: the mean, with the 5th and 95th percentiles " +
+      "and the standard deviation in their own columns. The unavoidable ideal path, not any route " +
+      "an agent found. Every maze is a spanning tree, so exactly one route exists between any two " +
+      "cells. " +
+      `Path stddev is the maze-noise measurement that describes how much the success path varies from ` +
+      `one maze to the next at this case and is taken over the same ${benchmarkIterations} samples. Each ` +
+      "game is one draw from this spread, so every figure a gameplay profile reports carries it. " +
+      "Repeated games on fresh mazes are the only thing that averages it out; more turns inside " +
+      "one game do not, because the maze is fixed for the whole run. The percentiles and the " +
+      "stddev are independent views of the same spread. If the distribution were normal they " +
+      "would agree, since p5 and p95 sit at -1.645 and +1.645 standard deviations, so " +
+      "(P95 - P5) / 3.29 would recover the stddev. Where the two disagree the distribution is " +
+      "skewed - expected here, since path length is bounded above by area - and the stddev is " +
+      "the figure to use.",
   )
   printLegendEntry(
     "Path (%):",
@@ -909,7 +993,14 @@ function printDerivedFormulaLegend() {
     "Spread columns:",
     "Mean, P5, and P95 columns report the sample mean plus the 5th and 95th percentile for that " +
       "same metric. P5/P95 (Junctions/Cell) and stddev (Junctions/Cell) are computed over " +
-      "per-sample junctions/cell values; Path P5/P95 are cell counts and W-Branch P5/P95 are depths.",
+      "per-sample junctions/cell values; Path P5/P95 and Path stddev are cell counts; " +
+      "W-Branch P5/P95 are depths.",
+  )
+  printLegendEntry(
+    "Path spread:",
+    `Path stddev is the sample standard deviation of path length over the case's ${benchmarkIterations} mazes. ` +
+      "(P95 - P5) / 3.29 estimates the same quantity under normality and is printed nowhere; " +
+      "the two are worth comparing by eye as a skew check.",
   )
   printLegendEntry(
     "Route percentages:",
@@ -1030,9 +1121,15 @@ function printReportReadingGuide() {
   console.info("")
   printNumberedReadingGuideItem(
     2,
-    "What kind of task does each level present? Answered by Tables 1, 2, 3a, 3b and 3c, " +
+    "What kind of task does each level present? Answered by Tables 1, 2, 3a, 3b, 3c and 3d, " +
       "which characterise maze structure and derive what it costs an agent to solve. These are " +
       "descriptive. They are NOT a drift check and no threshold in them ever fires.",
+  )
+  printWrapped(
+    console.info,
+    "Tables 3a through 3d form one derivation chain: 3a measures maze structure, 3b derives " +
+      "cost in turns, 3c derives the speed threshold that cost implies, and 3d derives how much " +
+      "one maze draw can move that speed.",
   )
   console.info("")
   printWrapped(
@@ -1262,7 +1359,47 @@ function printMinWinSpeedNote() {
       "Trailblazer is a forward-deduction test. Values are 4dp speed strings with an x suffix, rounded away from " +
       "1.0000x so a figure never contradicts its class; the JSON carries the same ratios " +
       "unrounded under minWinSpeeds, which is what downstream analysis should read. Derived " +
-      "from Table 3a, not measured.",
+      "from Table 3a, not measured. Speeds here are thresholds derived from route geometry; gameplay " +
+      "speeds carrying the same 'x' notation are measured from actual cells and decay. Same glyph, " +
+      "different status.",
+  )
+}
+
+function printMazeNoiseNote(summaries) {
+  const shapeExample = mazeNoiseShapeExample(summaries)
+  printLegendEntry(
+    "Table 3d note:",
+    "Maze-induced standard deviation in traversal speed, from the Table 3a path spread and the " +
+      "sensitivity ds/dP = ((1-f)D - U(1-cf)) / D^2, with U = P + fM, D = P + cfM, f = 0.5. " +
+      "Two columns because sensitivity is not a constant: it falls as batching improves, and " +
+      "vanishes at c = 1, where D = P + fM = U and the ratio is pinned at 1.0000 whatever the " +
+      "draw - that limit is stated here rather than printed as a column of zeros. " +
+      "A cross-model speed difference is resolved only when it exceeds roughly two standard " +
+      "deviations at the conservative column. " +
+      "Decision-rate statistics such as invalid-move rate are path-insensitive and do not carry " +
+      "this noise; more turns inside one game reduce model noise but not maze noise, since the " +
+      "maze is one draw held fixed for the whole run. " +
+      "Noise tracks grid shape as well as area. At a fixed area, thin grids carry more than " +
+      `square ones${shapeExample}. The shapes actually played are the near-square ` +
+      "'Preferred = yes' rows in Table 1, so read a gameplay profile against that row rather than " +
+      "the case mean or the widest ladder.",
+  )
+}
+
+function mazeNoiseShapeExample(summaries) {
+  const rows = mazeNoiseRows(summaries)
+  const area900Square = rows.area900_30x30?.["Speed stddev c=2.00"]
+  const area900Thin = rows.area900_150x6?.["Speed stddev c=2.00"]
+  const area1600Square = rows.area1600_40x40?.["Speed stddev c=2.00"]
+  const area1600Thin = rows.area1600_400x4?.["Speed stddev c=2.00"]
+
+  if ([area900Square, area900Thin, area1600Square, area1600Thin].some((value) => value === undefined)) {
+    return ""
+  }
+
+  return (
+    ` - ${area900Square} at area900_30x30 against ${area900Thin} at area900_150x6, ` +
+    `and ${area1600Square} against ${area1600Thin} across the area 1600 rows`
   )
 }
 
@@ -1278,6 +1415,10 @@ function printNavigationTables(summaries, suffix = "") {
   console.info(`\n${minWinSpeedTableTitle}${suffix}`)
   printMinWinSpeedNote()
   printCaseTable(minWinSpeedRows(summaries))
+
+  console.info(`\n${mazeNoiseTableTitle}${suffix}`)
+  printMazeNoiseNote(summaries)
+  printCaseTable(mazeNoiseRows(summaries))
 }
 
 // printHashComparisonTable is the actual equality check made legible in one place: a single
@@ -1546,65 +1687,79 @@ export function renderBenchmarkCharts(report, options = {}) {
   const summaries = realSummaries(firstGroup?.summaries ?? []).filter(
     options.summaryFilter ?? (() => true),
   )
-  const branchingCharts = [
-    ["Junctions/Maze", "Junctions/maze"],
-    ["Junctions/Cell", "Junctions/cell"],
-    ["Degree-3/Maze", "Deg3/maze"],
-    ["Degree-4 (%)", "%Deg4"],
-    ["Zero-Junction (%)", "Zero-J%"],
-    ["Dead Ends/Maze", "Dead ends/maze"],
-    ["P5 (Junctions/Cell)", "p5"],
-    ["P95 (Junctions/Cell)", "p95"],
-    ["stddev (Junctions/Cell)", "stddev"],
+  const structureCharts = [
+    {
+      bandHigh: "p95",
+      bandLow: "p5",
+      bandLabel: "Junctions/Cell P5-P95",
+      label: "Junctions/Cell",
+      selector: "Junctions/cell",
+      seriesLabel: "Junctions/Cell",
+    },
+    { label: "Degree-4 (%)", selector: "%Deg4" },
+    { label: "Zero-Junction (%)", selector: "Zero-J%" },
   ]
-  const navigationCharts = [
-    ["Path (%)", "Path%"],
-    ["W-Branch (%)", (summary) => percentOfBudget(summary.WorstBranch, summary.Budget)],
-    ["Error Margin / Cell", errorMarginPerCell],
-    ["Conservative (No Batching) Min Win Speed", conservativeMinWinSpeedRatio],
+  const routeCharts = [
+    {
+      bandHigh: (summary) => pathPercent(summary, "Path-p95"),
+      bandLow: (summary) => pathPercent(summary, "Path-p5"),
+      bandLabel: "Path P5-P95 (%)",
+      label: "Path (%)",
+      selector: "Path%",
+      seriesLabel: "Path (%)",
+    },
+    {
+      bandHigh: (summary) => branchPercentOfMargin(summary, "WorstBranch-p95"),
+      bandLow: (summary) => branchPercentOfMargin(summary, "WorstBranch-p5"),
+      bandLabel: "W-Branch P5-P95 (% of Margin)",
+      label: "W-Branch (% of Margin)",
+      selector: worstBranchPercentOfMargin,
+      seriesLabel: "W-Branch (% of Margin)",
+    },
   ]
-  const relationshipCharts = [
-    ["Skew vs Error Margin / Cell", errorMarginPerCell, summarySkew, "skew"],
-    [
-      "Junctions/Cell vs Path (%)",
-      (summary) => summary["Path%"],
-      (summary) => summary["Junctions/cell"],
-      "junctions/cell",
-    ],
-    [
-      "Junctions/Cell vs W-Branch (%)",
-      worstBranchPercent,
-      (summary) => summary["Junctions/cell"],
-      "junctions/cell",
-    ],
-    [
-      "Degree-4 (%) vs W-Branch (%)",
-      worstBranchPercent,
-      (summary) => summary["%Deg4"],
-      "degree-4 (%)",
-    ],
-    [
-      "Zero-Junction (%) vs Path (%)",
-      (summary) => summary["Path%"],
-      (summary) => summary["Zero-J%"],
-      "zero-junction (%)",
-    ],
-    [
-      "Path (%) vs Error Margin / Cell",
-      errorMarginPerCell,
-      (summary) => summary["Path%"],
-      "path (%)",
-    ],
+  const agentFacingCharts = [
+    {
+      bandHigh: (summary) => conservativeMinWinSpeedRatio(summary) + mazeSpeedStddevNumber(summary, 2),
+      bandHigh2: (summary) => conservativeMinWinSpeedRatio(summary) + 2 * mazeSpeedStddevNumber(summary, 2),
+      bandLow: (summary) => conservativeMinWinSpeedRatio(summary) - mazeSpeedStddevNumber(summary, 2),
+      bandLow2: (summary) => conservativeMinWinSpeedRatio(summary) - 2 * mazeSpeedStddevNumber(summary, 2),
+      bandLabel: "+/-1σ",
+      bandLabel2: "+/-2σ",
+      label: "Min Win Speed +/- Maze Noise",
+      selector: conservativeMinWinSpeedRatio,
+      seriesLabel: "Conservative Min Win Speed",
+    },
+    {
+      label: "Speed stddev c=2.00 / c=1.25",
+      series: [
+        { label: "c=2.00", selector: (summary) => mazeSpeedStddevNumber(summary, 2) },
+        { label: "c=1.25", selector: (summary) => mazeSpeedStddevNumber(summary, 1.25) },
+      ],
+    },
+  ]
+  const shapeCharts = [
+    {
+      kind: "scatter",
+      label: "Skew vs Speed stddev",
+      legendItems: [
+        { className: "legend-dot", label: "All shapes", type: "point" },
+        { className: "legend-dot legend-dot--preferred", label: "Preferred", type: "point" },
+      ],
+      selector: (summary) => mazeSpeedStddevNumber(summary, 2),
+      xLabel: "Skew (Ratio)",
+      xSelector: summarySkew,
+    },
   ]
   const chartWidth = 360
-  const chartHeight = 180
+  const chartHeight = 230
   const gap = 22
   const columns = 2
   const titleSuffix = options.filterLabel ? ` (${options.filterLabel})` : ""
   const allCharts = [
-    { title: `Table 2 - Branching distribution${titleSuffix}`, metrics: branchingCharts },
-    { title: `Table 3 - Navigation summaries${titleSuffix}`, metrics: navigationCharts },
-    { title: `Shape relationships${titleSuffix}`, metrics: relationshipCharts },
+    { title: `Structure${titleSuffix}`, metrics: structureCharts },
+    { title: `Route${titleSuffix}`, metrics: routeCharts },
+    { title: `Agent-facing${titleSuffix}`, metrics: agentFacingCharts },
+    { title: `Shape${titleSuffix}`, metrics: shapeCharts },
   ]
   const sectionHeights = allCharts.map(({ metrics }) => {
     const rows = Math.ceil(metrics.length / columns)
@@ -1639,9 +1794,16 @@ export function renderBenchmarkCharts(report, options = {}) {
       .label { font-size: 11px; fill: #9aa69c; }
       .panel { fill: #101713; stroke: #2f4137; stroke-width: 1; }
       .axis { stroke: #405247; stroke-width: 1; }
+      .band { fill: rgba(92, 200, 170, 0.16); stroke: none; }
+      .band--wide { fill: rgba(244, 169, 7, 0.11); stroke: none; }
       .grid { stroke: #24322b; stroke-width: 1; }
       .line { fill: none; stroke: #5cc8aa; stroke-width: 2; }
-      .point { fill: #f1d065; }
+      .line--secondary { stroke: #ef6718; }
+      .point { fill: #d6a72c; stroke: none; }
+      .point--preferred { fill: #5cc8aa; stroke: none; }
+      .legend-dot { fill: #d6a72c; stroke: none; }
+      .legend-dot--preferred { fill: #5cc8aa; stroke: none; }
+      .legend-swatch { stroke: #2f4137; stroke-width: 0.6; }
     </style>\n` +
     `<rect width="100%" height="100%" fill="#0b110e"/>\n` +
     sections.join("\n") +
@@ -1651,20 +1813,33 @@ export function renderBenchmarkCharts(report, options = {}) {
 
 function renderChartSection({ chartHeight, chartWidth, columns, gap, metrics, summaries, title, y }) {
   const titleLine = `<text class="title" x="${gap}" y="${y}">${escapeXml(title)}</text>`
-  const charts = metrics.map(([label, selector, xSelector, xLabel], index) => {
+  const charts = metrics.map((metric, index) => {
     const column = index % columns
     const row = Math.floor(index / columns)
     const x = gap + column * (chartWidth + gap)
     const chartY = y + 34 + row * (chartHeight + gap)
-    return renderLineChart({
+    const spec = normalizeChartSpec(metric)
+    return spec.kind === "scatter" ? renderScatterChart({
       height: chartHeight,
-      label,
+      label: spec.label,
+      legendItems: spec.legendItems,
       summaries,
-      values: summaries.map((summary) => metricValue(summary, selector)),
+      values: summaries.map((summary) => metricValue(summary, spec.selector)),
       width: chartWidth,
       x,
-      xLabel,
-      xValues: summaries.map((summary) => metricValue(summary, xSelector ?? summaryArea)),
+      xLabel: spec.xLabel,
+      xValues: summaries.map((summary) => metricValue(summary, spec.xSelector ?? summaryArea)),
+      y: chartY,
+    }) : renderLineChart({
+      bands: chartBands(summaries, spec),
+      height: chartHeight,
+      label: spec.label,
+      series: chartSeries(summaries, spec),
+      summaries,
+      width: chartWidth,
+      x,
+      xLabel: spec.xLabel,
+      xValues: summaries.map((summary) => metricValue(summary, spec.xSelector ?? summaryArea)),
       y: chartY,
     })
   })
@@ -1672,8 +1847,146 @@ function renderChartSection({ chartHeight, chartWidth, columns, gap, metrics, su
   return [titleLine, ...charts].join("\n")
 }
 
-function renderLineChart({ height, label, values, width, x, xLabel = "total cells", xValues, y }) {
-  const padding = { bottom: 34, left: 46, right: 18, top: 28 }
+function normalizeChartSpec(metric) {
+  if (!Array.isArray(metric)) {
+    return metric
+  }
+
+  const [label, selector, xSelector, xLabel] = metric
+  return { label, selector, xLabel, xSelector }
+}
+
+function chartSeries(summaries, spec) {
+  if (spec.series) {
+    return spec.series.map((series, index) => ({
+      className: index === 0 ? "line" : "line line--secondary",
+      label: series.label,
+      values: summaries.map((summary) => metricValue(summary, series.selector)),
+    }))
+  }
+
+  return [{
+    className: "line",
+    label: spec.seriesLabel ?? spec.label,
+    values: summaries.map((summary) => metricValue(summary, spec.selector)),
+  }]
+}
+
+function chartBands(summaries, spec) {
+  const bands = []
+  if (spec.bandLow2 && spec.bandHigh2) {
+    bands.push({
+      className: "band band--wide",
+      high: summaries.map((summary) => metricValue(summary, spec.bandHigh2)),
+      label: spec.bandLabel2 ?? "+/-2σ",
+      low: summaries.map((summary) => metricValue(summary, spec.bandLow2)),
+    })
+  }
+  if (spec.bandLow && spec.bandHigh) {
+    bands.push({
+      className: "band",
+      high: summaries.map((summary) => metricValue(summary, spec.bandHigh)),
+      label: spec.bandLabel ?? (bands.length > 0 ? "+/-1σ" : "P5-P95"),
+      low: summaries.map((summary) => metricValue(summary, spec.bandLow)),
+    })
+  }
+  return bands
+}
+
+function renderLineChart({ bands = [], height, label, series, width, x, xLabel = "Area (Cells)", xValues, y }) {
+  const padding = { bottom: 38, left: 46, right: 18, top: 68 }
+  const chartLeft = x + padding.left
+  const chartTop = y + padding.top
+  const chartWidth = width - padding.left - padding.right
+  const chartHeight = height - padding.top - padding.bottom
+  const allValues = [
+    ...series.flatMap((line) => line.values),
+    ...bands.flatMap((band) => [...band.low, ...band.high]),
+  ]
+  const finiteValues = allValues.filter((value) => Number.isFinite(value))
+  const { maxValue, minValue, scaled } = chartScale(finiteValues)
+  const finiteXValues = xValues.filter((value) => Number.isFinite(value))
+  const { maxValue: maxXValue, minValue: minXValue } = chartScale(finiteXValues)
+  const xRange = maxXValue - minXValue || 1
+  const range = maxValue - minValue || 1
+  const firstXValue = Number.isFinite(minXValue) ? formatNumber(minXValue) : ""
+  const lastXValue = Number.isFinite(maxXValue) ? formatNumber(maxXValue) : ""
+  const project = (value, index) => {
+      const xValue = xValues[index]
+      if (!Number.isFinite(value) || !Number.isFinite(xValue)) {
+        return null
+      }
+      const px = chartLeft + ((xValue - minXValue) / xRange) * chartWidth
+      const py = chartTop + chartHeight - ((value - minValue) / range) * chartHeight
+      return { px, py }
+  }
+  const bandShapes = bands.map((band) => renderBand({
+    band,
+    highPoints: band.high.map(project).filter(Boolean).sort((first, second) => first.px - second.px),
+    lowPoints: band.low.map(project).filter(Boolean).sort((first, second) => first.px - second.px),
+  })).join("\n")
+  const lineShapes = series.map((line) => {
+    const points = line.values.map(project)
+      .filter(Boolean)
+      .sort((first, second) => first.px - second.px)
+    const polyline = points.map(({ px, py }) => `${roundSvg(px)},${roundSvg(py)}`).join(" ")
+    return (
+      `<polyline class="${line.className}" points="${polyline}"/>\n` +
+      points.map(({ px, py }) => `<circle class="point" cx="${roundSvg(px)}" cy="${roundSvg(py)}" r="2"/>`).join("\n")
+    )
+  }).join("\n")
+  const legend = renderChartLegend({
+    bands,
+    series,
+    width,
+    x: x + 12,
+    y: y + 34,
+  })
+
+  return (
+    `<g>\n` +
+    `<rect class="panel" x="${x}" y="${y}" width="${width}" height="${height}" rx="6"/>\n` +
+    `<text x="${x + 12}" y="${y + 18}" font-size="13">${escapeXml(label)}${scaled ? " (scaled)" : ""}</text>\n` +
+    `<line class="grid" x1="${chartLeft}" y1="${chartTop}" x2="${chartLeft + chartWidth}" y2="${chartTop}"/>\n` +
+    `<line class="grid" x1="${chartLeft}" y1="${chartTop + chartHeight / 2}" x2="${chartLeft + chartWidth}" y2="${chartTop + chartHeight / 2}"/>\n` +
+    `<line class="axis" x1="${chartLeft}" y1="${chartTop + chartHeight}" x2="${chartLeft + chartWidth}" y2="${chartTop + chartHeight}"/>\n` +
+    `<line class="axis" x1="${chartLeft}" y1="${chartTop}" x2="${chartLeft}" y2="${chartTop + chartHeight}"/>\n` +
+    legend +
+    bandShapes +
+    `\n${lineShapes}` +
+    `\n<text class="label" x="${x + 10}" y="${y + height - 14}">${escapeXml(firstXValue)}</text>\n` +
+    `<text class="label" text-anchor="middle" x="${x + width / 2}" y="${y + height - 14}">${escapeXml(xLabel)}</text>\n` +
+    `<text class="label" text-anchor="end" x="${x + width - 10}" y="${y + height - 14}">${escapeXml(lastXValue)}</text>\n` +
+    `<text class="label" x="${x + 10}" y="${chartTop + 4}">${formatNumber(maxValue)}</text>\n` +
+    `<text class="label" x="${x + 10}" y="${chartTop + chartHeight + 4}">${formatNumber(minValue)}</text>\n` +
+    `</g>`
+  )
+}
+
+function renderBand({ band, highPoints, lowPoints }) {
+  if (highPoints.length === 0 || lowPoints.length === 0) {
+    return ""
+  }
+
+  const points = [...highPoints, ...lowPoints.reverse()]
+    .map(({ px, py }) => `${roundSvg(px)},${roundSvg(py)}`)
+    .join(" ")
+  return `<polygon class="${band.className}" points="${points}"/>`
+}
+
+function renderScatterChart({
+  height,
+  label,
+  legendItems = [],
+  values,
+  width,
+  x,
+  xLabel = "Area (Cells)",
+  xValues,
+  summaries,
+  y,
+}) {
+  const padding = { bottom: 38, left: 46, right: 18, top: 68 }
   const chartLeft = x + padding.left
   const chartTop = y + padding.top
   const chartWidth = width - padding.left - padding.right
@@ -1684,21 +1997,26 @@ function renderLineChart({ height, label, values, width, x, xLabel = "total cell
   const { maxValue: maxXValue, minValue: minXValue } = chartScale(finiteXValues)
   const xRange = maxXValue - minXValue || 1
   const range = maxValue - minValue || 1
-  const points = values
-    .map((value, index) => {
-      const xValue = xValues[index]
-      if (!Number.isFinite(value) || !Number.isFinite(xValue)) {
-        return null
-      }
-      const px = chartLeft + ((xValue - minXValue) / xRange) * chartWidth
-      const py = chartTop + chartHeight - ((value - minValue) / range) * chartHeight
-      return { px, py }
-    })
-    .filter(Boolean)
-    .sort((first, second) => first.px - second.px)
-  const line = points.map(({ px, py }) => `${roundSvg(px)},${roundSvg(py)}`).join(" ")
   const firstXValue = Number.isFinite(minXValue) ? formatNumber(minXValue) : ""
   const lastXValue = Number.isFinite(maxXValue) ? formatNumber(maxXValue) : ""
+  const points = values.map((value, index) => {
+    const xValue = xValues[index]
+    if (!Number.isFinite(value) || !Number.isFinite(xValue)) {
+      return ""
+    }
+    const px = chartLeft + ((xValue - minXValue) / xRange) * chartWidth
+    const py = chartTop + chartHeight - ((value - minValue) / range) * chartHeight
+    const preferred = summaries[index]?.Preferred === "yes"
+    const radius = preferred ? 3.6 : 2.3
+    const className = preferred ? "point point--preferred" : "point"
+    return `<circle class="${className}" cx="${roundSvg(px)}" cy="${roundSvg(py)}" r="${radius}"/>`
+  }).filter(Boolean).join("\n")
+  const legend = renderChartLegend({
+    customItems: legendItems,
+    width,
+    x: x + 12,
+    y: y + 34,
+  })
 
   return (
     `<g>\n` +
@@ -1708,14 +2026,72 @@ function renderLineChart({ height, label, values, width, x, xLabel = "total cell
     `<line class="grid" x1="${chartLeft}" y1="${chartTop + chartHeight / 2}" x2="${chartLeft + chartWidth}" y2="${chartTop + chartHeight / 2}"/>\n` +
     `<line class="axis" x1="${chartLeft}" y1="${chartTop + chartHeight}" x2="${chartLeft + chartWidth}" y2="${chartTop + chartHeight}"/>\n` +
     `<line class="axis" x1="${chartLeft}" y1="${chartTop}" x2="${chartLeft}" y2="${chartTop + chartHeight}"/>\n` +
-    `<polyline class="line" points="${line}"/>\n` +
-    points.map(({ px, py }) => `<circle class="point" cx="${roundSvg(px)}" cy="${roundSvg(py)}" r="2"/>`).join("\n") +
+    legend +
+    points +
     `\n<text class="label" x="${x + 10}" y="${y + height - 14}">${escapeXml(firstXValue)}</text>\n` +
     `<text class="label" text-anchor="middle" x="${x + width / 2}" y="${y + height - 14}">${escapeXml(xLabel)}</text>\n` +
     `<text class="label" text-anchor="end" x="${x + width - 10}" y="${y + height - 14}">${escapeXml(lastXValue)}</text>\n` +
     `<text class="label" x="${x + 10}" y="${chartTop + 4}">${formatNumber(maxValue)}</text>\n` +
     `<text class="label" x="${x + 10}" y="${chartTop + chartHeight + 4}">${formatNumber(minValue)}</text>\n` +
     `</g>`
+  )
+}
+
+function renderChartLegend({ bands = [], customItems = [], series = [], width, x, y }) {
+  const items = [
+    ...bands.map((band) => ({
+      className: band.className,
+      label: band.label,
+      type: "band",
+    })),
+    ...series.map((line) => ({
+      className: line.className,
+      label: line.label,
+      type: "line",
+    })),
+    ...customItems,
+  ].filter((item) => item.label)
+  if (items.length <= 1) {
+    return ""
+  }
+
+  const maxX = x + width - 24
+  let cursorX = x
+  let cursorY = y
+  const output = items.map((item) => {
+    const itemWidth = Math.max(74, item.label.length * 6 + 30)
+    if (cursorX !== x && cursorX + itemWidth > maxX) {
+      cursorX = x
+      cursorY += 14
+    }
+
+    const itemSvg = renderLegendItem(item, cursorX, cursorY)
+    cursorX += itemWidth
+    return itemSvg
+  })
+
+  return `${output.join("\n")}\n`
+}
+
+function renderLegendItem(item, x, y) {
+  const labelX = x + 24
+  if (item.type === "band") {
+    return (
+      `<rect class="${item.className} legend-swatch" x="${x}" y="${y - 8}" ` +
+      `width="16" height="8" rx="2"/>\n` +
+      `<text class="label" x="${labelX}" y="${y}">${escapeXml(item.label)}</text>`
+    )
+  }
+  if (item.type === "point") {
+    return (
+      `<circle class="${item.className}" cx="${x + 8}" cy="${y - 4}" r="4"/>\n` +
+      `<text class="label" x="${labelX}" y="${y}">${escapeXml(item.label)}</text>`
+    )
+  }
+
+  return (
+    `<line class="${item.className}" x1="${x}" y1="${y - 4}" x2="${x + 16}" y2="${y - 4}"/>\n` +
+    `<text class="label" x="${labelX}" y="${y}">${escapeXml(item.label)}</text>`
   )
 }
 
@@ -1788,6 +2164,7 @@ function serializeGroups(report) {
         // Table 3c renders these as directionally-rounded strings; downstream work gets the raw
         // quotients here so it never has to parse a display value back into a number.
         minWinSpeeds: minWinSpeedNumbers(group.summaries),
+        mazeNoise: mazeNoiseRows(group.summaries),
         validationByCase: Object.fromEntries(report.validationByCase),
       },
     ]),
@@ -1835,6 +2212,7 @@ function parseGoBenchmarkLine(line) {
       "PathLen": formatNumber(metrics.pathLen),
       "Path-p5": formatNumber(metrics["path-p5"]),
       "Path-p95": formatNumber(metrics["path-p95"]),
+      "Path-stddev": formatNumber(metrics["path-stddev"]),
       "Path%": formatNumber(metrics.pathPct),
       "Backtrack": formatNumber(metrics.backtrack),
       "Backtrack-p5": formatNumber(metrics["backtrack-p5"]),
@@ -1884,6 +2262,7 @@ function normalizeSummary(summary) {
     "PathLen": formatNumber(summary.PathLen),
     "Path-p5": formatNumber(summary["Path-p5"]),
     "Path-p95": formatNumber(summary["Path-p95"]),
+    "Path-stddev": formatNumber(summary["Path-stddev"]),
     "Path%": formatNumber(summary["Path%"]),
     "Backtrack": formatNumber(summary.Backtrack),
     "Backtrack-p5": formatNumber(summary["Backtrack-p5"]),
