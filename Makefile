@@ -1,9 +1,11 @@
-.PHONY: help ci ci-bench lint govulncheck deps frontend-install frontend-deps frontend-typecheck frontend-lint frontend-test frontend-quality frontend-build frontend-local frontend-bench test go-bench coverage clean-coverage
+.PHONY: help ci ci-bench lint govulncheck deps frontend-install frontend-deps frontend-typecheck frontend-lint frontend-test frontend-quality frontend-build frontend-local frontend-bench test go-bench coverage clean-coverage check-docker docker-build docker-run docker-shell
 
 COVERAGE_FILE := coverage.out
 GOCACHE := $(CURDIR)/.gocache
 GOVULNCHECK_VERSION := v1.7.0
 PNPM := pnpm
+DOCKER_IMAGE := tapoo
+DOCKER_BUILD_IMAGE := tapoo-build
 
 export GOCACHE
 
@@ -18,6 +20,9 @@ help:
 		'  make frontend-quality  Run frontend typecheck, lint, and tests.' \
 		'  make frontend-build    Build the browser frontend bundle.' \
 		'  make frontend-local    Install, verify, and build the frontend locally.' \
+		'  make docker-build      Build the Tapoo container image.' \
+		'  make docker-run        Run Tapoo locally at http://127.0.0.1:8080.' \
+		'  make docker-shell      Open a shell in the Docker build image.' \
 		'  make test              Run frontend checks and Go tests with race + coverage.' \
 		'  make coverage          Print the coverage summary from coverage.out.' \
 		'  make clean-coverage    Remove the generated coverage profile.'
@@ -69,6 +74,20 @@ frontend-build:
 	./scripts/build-frontend.sh
 
 frontend-local: frontend-install frontend-quality frontend-build 
+
+check-docker:
+	@command -v docker >/dev/null 2>&1 || \
+		( echo "Docker is required. Install Docker or Colima and make sure the daemon is running." >&2; exit 1 )
+
+docker-build: check-docker
+	docker build -t $(DOCKER_IMAGE) .
+
+docker-run: check-docker
+	docker run --rm -it -p 5500:80 $(DOCKER_IMAGE)
+
+docker-shell: check-docker
+	docker build --target build -t $(DOCKER_BUILD_IMAGE) .
+	docker run --rm -it $(DOCKER_BUILD_IMAGE) bash
 
 test: deps frontend-deps frontend-typecheck frontend-build frontend-test
 	go test -race -covermode=atomic -coverprofile=$(COVERAGE_FILE) ./...
