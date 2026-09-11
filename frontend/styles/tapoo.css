@@ -476,6 +476,33 @@ body {
   font: inherit;
 }
 
+.not-found-panel {
+  max-width: 720px;
+}
+
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.not-found-actions a {
+  border: 1px solid rgba(72, 198, 62, 0.28);
+  border-radius: 1px;
+  background: rgba(72, 198, 62, 0.08);
+  padding: 8px 11px;
+  color: var(--status);
+  text-decoration: none;
+}
+
+.not-found-actions a:focus-visible,
+.not-found-actions a:hover {
+  border-color: rgba(241, 208, 101, 0.7);
+  color: var(--status);
+  outline: none;
+}
+
 .placeholder-art {
   position: relative;
   display: block;

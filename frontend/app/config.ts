@@ -103,6 +103,13 @@ export const CONFIG: AppConfig = {
         "storage and optional AI Agent API gameplay context.",
       pageLabel: "Privacy",
     },
+    notFound: {
+      documentTitle: "Tapoo Maze Runner | Page Not Found",
+      description:
+        "Tapoo could not find the requested page. Return to the game, AI Agent runner, " +
+        "or published agent prompt reference.",
+      pageLabel: "404",
+    },
   },
   // Runtime text shown inside the terminal view and overlay states.
   // Compact-viewport status strings should stay at or under ~57 characters (the longest existing

@@ -879,6 +879,11 @@ export type AppConfig = {
       description: string
       pageLabel: string
     }
+    notFound: {
+      documentTitle: string
+      description: string
+      pageLabel: string
+    }
   }
   messages: {
     navigation: {

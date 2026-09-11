@@ -255,7 +255,7 @@ const {
   STORE_ENCODING_PREFIX,
 } = await loadRuntimeConfig()
 const { controlModes, siteUrl: urlPath, author } = runtimeConfig.runtime
-const { game, agents, prompts, privacy } = runtimeConfig.pages
+const { game, agents, prompts, privacy, notFound } = runtimeConfig.pages
 await mkdir(publicDirectory, { recursive: true })
 
 // og-image.png/.svg are static, hand-authored assets under public/images (like favicon.svg), not
@@ -289,9 +289,12 @@ const promptsTitle = prompts.documentTitle
 const promptsDescription = prompts.description
 const privacyTitle = privacy.documentTitle
 const privacyDescription = privacy.description
+const notFoundTitle = notFound.documentTitle
+const notFoundDescription = notFound.description
 const agentsUrl = `${urlPath}agents.html`
 const promptsUrl = `${urlPath}prompts.html`
 const privacyUrl = `${urlPath}privacy.html`
+const notFoundUrl = `${urlPath}404.html`
 
 // validTimestamp returns value only when it names a real instant, so callers can fall back with ??.
 function validTimestamp(value) {
@@ -442,6 +445,35 @@ await Promise.all([
     ),
     titleConfigKey: "pages.privacy.documentTitle",
     titleText: escapeHtml(privacyTitle),
+  }),
+  buildPage(layout, {
+    ...sharedPartials,
+    placeholderArt: "",
+  }, {
+    bodyAttributes: "",
+    canonicalUrl: notFoundUrl,
+    descriptionConfigKey: "pages.notFound.description",
+    descriptionText: escapeHtml(notFoundDescription),
+    output: "404.html",
+    pageContent: "404-section.html",
+    pageLabelConfigKey: "pages.notFound.pageLabel",
+    primaryMenuItem: "nav-game-link.html",
+    promptsLink: "nav-prompts-link.html",
+    scriptTags,
+    secondaryMenuItem: "nav-agents-back-link.html",
+    structuredData: indentHtml(
+      buildStructuredData({
+        website,
+        type: "WebPage",
+        name: notFoundTitle,
+        description: notFoundDescription,
+        url: notFoundUrl,
+        extra: { dateModified: buildDate },
+      }),
+      "      ",
+    ),
+    titleConfigKey: "pages.notFound.documentTitle",
+    titleText: escapeHtml(notFoundTitle),
   }),
   writeSitemap([urlPath, agentsUrl, promptsUrl, privacyUrl]),
   writeRobotsTxt(),
