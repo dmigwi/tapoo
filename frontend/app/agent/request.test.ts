@@ -430,10 +430,15 @@ describe("agent request service", () => {
     expect(requestEntries[0].details).toEqual({
       endpoint,
       api: agent.api,
+      seatId: agent.seatId,
+      agentSessionId: agent.sessionId,
+      model: agent.model,
+      requestIntervalSeconds: agent.requestIntervalSeconds,
       requestCount: 1,
       agentMode: "tools",
       player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
+      echoBackReasoning: false,
       tools: expectedLoggedTools(uncalledTools([]), true),
       messages: [
         { role: "system", content_checksum: checksumLoggedDescription(developerMessage), content: developerMessage },
@@ -450,10 +455,15 @@ describe("agent request service", () => {
     expect(requestEntries[1].details).toEqual({
       endpoint,
       api: agent.api,
+      seatId: agent.seatId,
+      agentSessionId: agent.sessionId,
+      model: agent.model,
+      requestIntervalSeconds: agent.requestIntervalSeconds,
       requestCount: 2,
       agentMode: "tools",
       player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
+      echoBackReasoning: false,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
         {
@@ -602,10 +612,15 @@ describe("agent request service", () => {
     expect(requestEntries[0].details).toEqual({
       endpoint,
       api: agent.api,
+      seatId: agent.seatId,
+      agentSessionId: agent.sessionId,
+      model: agent.model,
+      requestIntervalSeconds: agent.requestIntervalSeconds,
       requestCount: 1,
       agentMode: "tools",
       player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
+      echoBackReasoning: false,
       tools: expectedLoggedTools(uncalledTools([]), false),
       messages: [
         {
@@ -627,10 +642,15 @@ describe("agent request service", () => {
     expect(requestEntries[1].details).toEqual({
       endpoint,
       api: agent.api,
+      seatId: agent.seatId,
+      agentSessionId: agent.sessionId,
+      model: agent.model,
+      requestIntervalSeconds: agent.requestIntervalSeconds,
       requestCount: 2,
       agentMode: "tools",
       player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
+      echoBackReasoning: false,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
         {

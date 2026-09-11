@@ -196,10 +196,15 @@ async function requestChatTurn(
   logTapooRecordEntry(agentApiModeName, "info", "Agent request.", {
     endpoint: endpointDisplay,
     player,
+    seatId: agent.seatId,
+    agentSessionId: agent.sessionId,
+    model: agent.model,
     api: agent.api,
+    requestIntervalSeconds: agent.requestIntervalSeconds,
     requestCount,
     agentMode,
     reasoning: reasoningEffort,
+    echoBackReasoning: agent.echoBackReasoning ?? false,
     // The full accumulated conversation is sent on every provider request, which is exactly why the
     // logged copy is not: prompts, tool descriptions and tool results are each previewed with a
     // checksum after the first request of a level, so a turn's log cost no longer multiplies by how
