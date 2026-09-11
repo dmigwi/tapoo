@@ -16,6 +16,7 @@
     "lint:frontend:fix": "eslint frontend --fix",
     "test:frontend": "vitest run",
     "coverage:frontend": "vitest run --coverage",
+    "audit:frontend": "pnpm audit",
     "quality:frontend": "pnpm run typecheck:frontend && pnpm run lint:frontend && pnpm run test:frontend"
   },
   "devDependencies": {
@@ -29,7 +30,7 @@
     "postcss": "8.5.26",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=24"

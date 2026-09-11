@@ -1,4 +1,4 @@
-.PHONY: help ci ci-bench lint govulncheck deps frontend-install frontend-deps frontend-typecheck frontend-lint frontend-test frontend-quality frontend-build frontend-local frontend-bench test go-bench coverage clean-coverage check-docker docker-build docker-run docker-shell
+.PHONY: help ci ci-bench lint govulncheck deps frontend-install frontend-deps frontend-typecheck frontend-lint frontend-test frontend-audit frontend-quality frontend-build frontend-local frontend-bench test go-bench coverage clean-coverage check-docker docker-build docker-run docker-shell
 
 COVERAGE_FILE := coverage.out
 GOCACHE := $(CURDIR)/.gocache
@@ -17,6 +17,7 @@ help:
 		'  make lint              Run golangci-lint.' \
 		'  make govulncheck       Run govulncheck against this module.' \
 		'  make frontend-install  Install the pinned frontend toolchain.' \
+		'  make frontend-audit    Audit frontend dependencies for known advisories.' \
 		'  make frontend-quality  Run frontend typecheck, lint, and tests.' \
 		'  make frontend-build    Build the browser frontend bundle.' \
 		'  make frontend-local    Install, verify, and build the frontend locally.' \
@@ -27,7 +28,7 @@ help:
 		'  make coverage          Print the coverage summary from coverage.out.' \
 		'  make clean-coverage    Remove the generated coverage profile.'
 
-ci: lint frontend-lint govulncheck test
+ci: lint frontend-lint frontend-audit govulncheck test
 
 ci-bench: frontend-deps
 	node ./parity-harness/bench-report.mjs
@@ -63,6 +64,9 @@ frontend-lint:
 
 frontend-test:
 	CI=true $(PNPM) --config.confirmModulesPurge=false run test:frontend
+
+frontend-audit:
+	CI=true $(PNPM) --config.confirmModulesPurge=false run audit:frontend
 
 frontend-bench: frontend-deps
 	node ./parity-harness/bench-report.mjs --frontend-only
