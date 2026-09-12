@@ -20,10 +20,10 @@ const benchmarkIterations = isMainModule() ? configuredBenchmarkIterations() : 0
 const benchmarkSeed = isMainModule() ? configuredBenchmarkSeed() : 0
 const traversalSpeedScaleUnits = configuredTraversalSpeedScaleUnits()
 const traversalSpeedDisplayDecimals = String(traversalSpeedScaleUnits).length - 1
-const routeGeometryTableTitle = "Table 3a - Route geometry"
-const costModelTableTitle = "Table 3b - Cost model"
-const minWinSpeedTableTitle = "Table 3c - Minimum winning speed"
-const mazeNoiseTableTitle = "Table 3d - Maze noise"
+const routeGeometryTableTitle = "Table 3a - Route"
+const offPathSpaceTableTitle = "Table 3b - Off-path space"
+const costModelTableTitle = "Table 3c - Cost model"
+const speedAndNoiseTableTitle = "Table 3d - Speed and noise"
 
 const reportOutputPath = process.env.TAPOO_BENCH_OUT ?? "parity-harness/bench-report.json"
 const chartOutputPath = chartPathForReport(reportOutputPath)
@@ -177,14 +177,24 @@ export function routeGeometryRows(summaries) {
       summary.Case,
       {
         "Path Len (Cells)": summary.PathLen,
+        "Path (%)": summary["Path%"],
         "Path P5 (Cells)": summary["Path-p5"],
         "Path P95 (Cells)": summary["Path-p95"],
         "Path stddev (Cells)": summary["Path-stddev"],
-        "Path (%)": summary["Path%"],
+      },
+    ]),
+  )
+}
+
+export function offPathSpaceRows(summaries) {
+  return Object.fromEntries(
+    realSummaries(summaries).map((summary) => [
+      summary.Case,
+      {
+        "Error Margin (Cells)": summary.Headroom,
         "W-Branch (Depth)": summary.WorstBranch,
         "W-Branch P5 (Depth)": summary["WorstBranch-p5"],
         "W-Branch P95 (Depth)": summary["WorstBranch-p95"],
-        "Error Margin (Cells)": summary.Headroom,
         "W-Branch (% of Margin)": worstBranchPercentOfMargin(summary),
       },
     ]),
@@ -223,6 +233,20 @@ export function mazeNoiseRows(summaries) {
     realSummaries(summaries).map((summary) => [
       summary.Case,
       {
+        "Path stddev (Cells)": summary["Path-stddev"],
+        "Speed stddev c=2.00": mazeSpeedStddev(summary, 2),
+        "Speed stddev c=1.25": mazeSpeedStddev(summary, 1.25),
+      },
+    ]),
+  )
+}
+
+export function speedAndNoiseRows(summaries) {
+  return Object.fromEntries(
+    realSummaries(summaries).map((summary) => [
+      summary.Case,
+      {
+        "Conservative (No Batching) Min Win Speed": conservativeMinWinSpeed(summary),
         "Path stddev (Cells)": summary["Path-stddev"],
         "Speed stddev c=2.00": mazeSpeedStddev(summary, 2),
         "Speed stddev c=1.25": mazeSpeedStddev(summary, 1.25),
@@ -840,30 +864,30 @@ function printLegend() {
       "sensitivity, with no agent run.",
   )
 
-  printLegendSection("Table 3a - Route geometry")
+  printLegendSection("Table 3a - Route")
 
   printLegendEntry(
-    "Path Len, Path P5/P95, Path stddev:",
-    "Cells on the unique start-to-destination route: the mean, with the 5th and 95th percentiles " +
-      "and the standard deviation in their own columns. The unavoidable ideal path, not any route " +
-      "an agent found. Every maze is a spanning tree, so exactly one route exists between any two " +
-      "cells. " +
-      `Path stddev is the maze-noise measurement that describes how much the success path varies from ` +
-      `one maze to the next at this case and is taken over the same ${benchmarkIterations} samples. Each ` +
-      "game is one draw from this spread, so every figure a gameplay profile reports carries it. " +
-      "Repeated games on fresh mazes are the only thing that averages it out; more turns inside " +
-      "one game do not, because the maze is fixed for the whole run. The percentiles and the " +
-      "stddev are independent views of the same spread. If the distribution were normal they " +
+    "Path Len, Path (%), Path P5/P95, Path stddev:",
+    "Cells on the unique start-to-destination route: the mean, the same figure as a share of area, " +
+      "the 5th and 95th percentiles, and the standard deviation. The unavoidable ideal path, not " +
+      "any route an agent found. Every maze is a spanning tree, so exactly one route exists between " +
+      "any two cells. Low levels are near-pure corridors; higher levels are more heavily branched. " +
+      `Path stddev describes how much the success path varies from one maze to the next at this ` +
+      `case, over the same ${benchmarkIterations} samples. At area600_25x24 the path averages ` +
+      "384.4 cells and typically lands within about 46 of that; the middle 90% span 309 to 459. " +
+      "A game draws one of those mazes. It might be a 309-cell path or a 459-cell one, and the " +
+      "agent never learns which - it sees only its own window, turn by turn. Neither does the " +
+      "profile: a single run cannot separate a model that struggled from a model that drew a long " +
+      "path. Table 3d turns this spread into the error bar on a speed figure. The percentiles and " +
+      "the stddev are independent views of the same spread. If the distribution were normal they " +
       "would agree, since p5 and p95 sit at -1.645 and +1.645 standard deviations, so " +
-      "(P95 - P5) / 3.29 would recover the stddev. Where the two disagree the distribution is " +
-      "skewed - expected here, since path length is bounded above by area - and the stddev is " +
-      "the figure to use.",
+      "(P95 - P5) / 3.29 would recover the stddev. They agree closely from area 180 upward and " +
+      "diverge only at the smallest cases, where the mean sits within a few cells of the area cap " +
+      "and the percentiles cannot resolve the spread. Use the stddev.",
   )
-  printLegendEntry(
-    "Path (%):",
-    "Path Len as a percentage share of area. Low levels are near-pure corridors; higher levels are more " +
-      "heavily branched.",
-  )
+
+  printLegendSection("Table 3b - Off-path space")
+
   printLegendEntry(
     "Error Margin:",
     "Area minus Path Len - every cell off the winning route. It is 1 - Path (%) restated as a " +
@@ -885,7 +909,7 @@ function printLegend() {
       "outcomes average out. Clamped at 100 to guard rounding when both averages are near zero.",
   )
 
-  printLegendSection("Table 3b - Cost model")
+  printLegendSection("Table 3c - Cost model")
 
   printLegendEntry(
     "Budget (Decay):",
@@ -930,7 +954,7 @@ function printLegend() {
       "is therefore the batching agent's entire tolerance for going wrong: penalties, extra " +
       "branches, wasted turns. It is not idle capacity to spend on something - every turn costs " +
       "decay and the level ends on arrival. Distinct from Error Margin despite the similar name: " +
-      "margin is cells of off-path space in Table 3a; this is decay units of tolerance. They are " +
+      "margin is cells of off-path space in Table 3b; this is decay units of tolerance. They are " +
       "joined by Error Budget = 0.375 * Error Margin, so this column is a scaled restatement rather " +
       "than independent evidence. The constant is 1 - 5/8, the batcher's per-cell saving (1/2 " +
       "inbound plus 1/8 outbound, against 1). Because 1.25L bounds batching cost from above, this " +
@@ -949,7 +973,7 @@ function printLegend() {
       "can display 0 - 0 even when individual samples had a short branch.",
   )
 
-  printLegendSection("Table 3c - Minimum winning speed")
+  printLegendSection("Table 3d - Speed and noise")
 
   printLegendEntry(
     "Min Win Speed:",
@@ -974,6 +998,17 @@ function printLegend() {
       "Perfect retrace batching can approach 1.0000x from below, but cannot cross it: retracing " +
       "saves denominator while adding no new cells. That limit is a global fact, stated here once, " +
       "rather than a column sitting at one arbitrary batch depth.",
+  )
+  printLegendEntry(
+    "Path stddev (echoed):",
+    "Repeated from Table 3a as the input to the Speed stddev columns beside it, so the derivation " +
+      "can be checked without turning back.",
+  )
+  printLegendEntry(
+    "Speed stddev c=2.00, c=1.25:",
+    "Maze-induced standard deviation in traversal speed for an agent with round-trip multiplier c. " +
+      "Derived, not measured: Path stddev multiplied by the sensitivity in the table note, with no " +
+      "agent run. Table 2's stddev is measured directly from samples; this one is not.",
   )
 
   printDerivedFormulaLegend()
@@ -1035,10 +1070,11 @@ function printDerivedFormulaLegend() {
   )
   printLegendEntry(
     "Route percentages:",
-    "Path (%) = 100*Path Len (Cells) / Area (Cells). Error Margin (Cells) = Area (Cells) - " +
-      "Path Len (Cells). W-Branch (% of Margin) = min(100, 100*W-Branch (Depth) / " +
-      "Error Margin (Cells)) - a depth over a cell count, so read it as how far the worst branch " +
-      "reaches into the off-path space rather than what share of it that branch holds.",
+    "Path (%) = 100*Path Len (Cells) / Area (Cells), Table 3a. Error Margin (Cells) = " +
+      "Area (Cells) - Path Len (Cells) and W-Branch (% of Margin) = min(100, " +
+      "100*W-Branch (Depth) / Error Margin (Cells)), Table 3b - a depth over a cell count, " +
+      "so read it as how far the worst branch reaches into the off-path space rather than what " +
+      "share of it that branch holds.",
   )
   printLegendEntry(
     "Cost model:",
@@ -1052,6 +1088,11 @@ function printDerivedFormulaLegend() {
       "single-move agent that exactly exhausts its budget. Generalises to " +
       "s_min(c) = (P + M/c) / Budget for a strategy with round-trip multiplier c; " +
       "c = 2 is printed, c = 1 gives exactly 1.0000x.",
+  )
+  printLegendEntry(
+    "Maze noise:",
+    "Speed stddev(c) = |ds/dP| * Path stddev, with ds/dP = ((1-f)D - U(1-cf)) / D^2, " +
+      "U = P + fM, D = P + cfM, f = 0.5. Zero at c = 1 by construction.",
   )
   printLegendEntry(
     "Redundancies:",
@@ -1158,9 +1199,10 @@ function printReportReadingGuide() {
   )
   printWrapped(
     console.info,
-    "Tables 3a through 3d form one derivation chain: 3a measures maze structure, 3b derives " +
-      "cost in turns, 3c derives the speed threshold that cost implies, and 3d derives how much " +
-      "one maze draw can move that speed.",
+    "Tables 3a through 3d describe the task from four angles. 3a measures the route and how " +
+      "much it varies from maze to maze. 3b measures the space off that route and its deepest " +
+      "branch. 3c derives what the maze costs an agent in turns. 3d derives the speed threshold " +
+      "that cost implies, and how far one maze draw can move it.",
   )
   console.info("")
   printWrapped(
@@ -1172,7 +1214,7 @@ function printReportReadingGuide() {
     console.info,
     "Parity means the two ports agree, not that either is correct. The structural validation " +
       "line covers correctness of form - tree, connected, closed - but not of intent. " +
-      "Tables 3b and 3c are projections from a cost model, not measurements: no agent " +
+      "Tables 3c and 3d are projections from a cost model, not measurements: no agent " +
       `has been run. Every figure is a mean over ${benchmarkIterations} samples unless ` +
       "a percentile column says otherwise.",
   )
@@ -1184,7 +1226,7 @@ function printReportReadingGuide() {
   console.info("")
   printWrapped(
     console.info,
-    "Tables 3b and 3c describe two agent archetypes at the point where each exactly exhausts " +
+    "Tables 3c and 3d describe two agent archetypes at the point where each exactly exhausts " +
       "its budget. Nothing about real agent behaviour is assumed: the exploration fraction is " +
       "derived from the strategy, not guessed. Single-move play pays 2 turns per off-path cell, " +
       "so it breaks even having entered half of them; batching pays less per cell, so it breaks " +
@@ -1344,22 +1386,33 @@ function printBranchingDistributionNote() {
 function printRouteGeometryNote() {
   printLegendEntry(
     "Table 3a note:",
-    "Route geometry contains only maze structure, not agent assumptions. P5/P95 columns are split " +
-      "out as numeric cells so console.table keeps them unquoted and right-aligned. W-Branch means Worst Branch. " +
-      "Error Margin (Cells) = area - Path Len (Cells), or 1 - Path (%) restated as a count. W-Branch " +
-      "(% of Margin) is clamped at 100 to guard rounding artifacts when both averaged values " +
-      "are near zero.",
+    "Route geometry contains only maze structure, not agent assumptions. Error Margin and the " +
+      "worst-branch columns move to Table 3b; the speed consequence of the spread here is Table 3d. " +
+      "P5/P95 and stddev are split out as numeric cells so console.table keeps them unquoted and " +
+      "right-aligned.",
+  )
+}
+
+function printOffPathSpaceNote() {
+  printLegendEntry(
+    "Table 3b note:",
+    "The space off the winning route, and the deepest single branch in it. W-Branch means Worst " +
+      "Branch, and it is a depth in cells from the route, not a cell count: a branch that forks " +
+      "holds more cells than its depth. Error Margin (Cells) = area - Path Len (Cells), or " +
+      "1 - Path (%) restated as a count. W-Branch (% of Margin) is clamped at 100 to guard " +
+      "rounding artifacts when both averaged values are near zero.",
   )
 }
 
 function printCostModelNote() {
   printLegendEntry(
-    "Table 3b note:",
+    "Table 3c note:",
     "Conservative cost equals Budget exactly at every level because P + M = area. Batching = " +
       "P + 1.25*(M/2), rounded to a whole turn count, and Error Budget is the batching agent's " +
       "entire tolerance for wrong turns. Explore-All Cost is the projected cost of walking every off-path cell. " +
       "Cost columns display floor(1.25L) - floor(2L) as projected whole-turn counts, where L is " +
-      "W-Branch (Worst Branch) Depth for W-Branch Cost and Error Margin (Cells) for Explore-All Cost. " +
+      "W-Branch (Worst Branch) Depth for W-Branch Cost and Error Margin (Cells) for Explore-All Cost, both " +
+      "from Table 3b. " +
       "The two Ls are different quantities: a depth for one, a cell count for the other. " +
       "Small averaged margins can therefore display 0 - 0 even when a few individual samples had a " +
       "short off-path branch. " +
@@ -1376,44 +1429,36 @@ function printCostModelNote() {
   )
 }
 
-function printMinWinSpeedNote() {
-  printLegendEntry(
-    "Table 3c note:",
-    "The final traversal speed of a single-move agent that exactly exhausts its budget: " +
-      "s_min = (P + M/2) / Budget. Below this line a conservative agent has already explored " +
-      "more than half the off-path space and cannot finish; at or above it, it can. The half " +
-      "is derived from the strategy - single-move play pays 2 turns per off-path cell - not " +
-      "assumed from behaviour. s_min rises as batching improves, reaching exactly 1.0000x in " +
-      "the limit of perfect retrace batching, and never exceeding it: retracing visits no new " +
-      "cells, so it lowers the denominator without raising the numerator. Exceeding 1.0000x " +
-      "therefore requires batching forward into cells never visited, at any batch depth. " +
-      "Trailblazer is a forward-deduction test. Values are 4dp speed strings with an x suffix, rounded away from " +
-      "1.0000x so a figure never contradicts its class; the JSON carries the same ratios " +
-      "unrounded under minWinSpeeds, which is what downstream analysis should read. Derived " +
-      "from Table 3a, not measured. Speeds here are thresholds derived from route geometry; gameplay " +
-      "speeds carrying the same 'x' notation are measured from actual cells and decay. Same glyph, " +
-      "different status.",
-  )
-}
-
-function printMazeNoiseNote(summaries) {
+function printSpeedAndNoiseNote(summaries) {
   const shapeExample = mazeNoiseShapeExample(summaries)
   printLegendEntry(
     "Table 3d note:",
-    "Maze-induced standard deviation in traversal speed, from the Table 3a path spread and the " +
-      "sensitivity ds/dP = ((1-f)D - U(1-cf)) / D^2, with U = P + fM, D = P + cfM, f = 0.5. " +
-      "Two columns because sensitivity is not a constant: it falls as batching improves, and " +
-      "vanishes at c = 1, where D = P + fM = U and the ratio is pinned at 1.0000 whatever the " +
-      "draw - that limit is stated here rather than printed as a column of zeros. " +
-      "A cross-model speed difference is resolved only when it exceeds roughly two standard " +
-      "deviations at the conservative column. " +
-      "Decision-rate statistics such as invalid-move rate are path-insensitive and do not carry " +
-      "this noise; more turns inside one game reduce model noise but not maze noise, since the " +
-      "maze is one draw held fixed for the whole run. " +
+    "Min Win Speed is the final traversal speed of a single-move agent that exactly exhausts its " +
+      "budget: s_min = (P + M/2) / Budget. Below this line a conservative agent has already explored " +
+      "more than half the off-path space and cannot finish; at or above it, it can. The half is " +
+      "derived from the strategy - single-move play pays 2 turns per off-path cell - not assumed " +
+      "from behaviour. s_min rises as batching improves, reaching exactly 1.0000x in the limit of " +
+      "perfect retrace batching and never exceeding it: retracing visits no new cells, so it lowers " +
+      "the denominator without raising the numerator. Exceeding 1.0000x therefore requires batching " +
+      "forward into cells never visited, at any batch depth. Trailblazer is a forward-deduction test. " +
+      "The Speed stddev columns are the error bar on that threshold: how far one maze draw can move it. " +
+      "They come from the Table 3a path spread, echoed here as Path stddev, and the sensitivity " +
+      "ds/dP = ((1-f)D - U(1-cf)) / D^2, with U = P + fM, D = P + cfM, f = 0.5. Two columns because " +
+      "sensitivity is not a constant: it falls as batching improves and vanishes at c = 1, where " +
+      "D = P + fM = U and the ratio is pinned at 1.0000x whatever the draw - that limit is stated " +
+      "here rather than printed as a column of zeros. A cross-model speed difference is resolved " +
+      "only when it exceeds roughly two standard deviations at the conservative column. Decision-rate " +
+      "statistics such as invalid-move rate are path-insensitive and do not carry this noise; more " +
+      "turns inside one game reduce model noise but not maze noise, since the maze is one draw held " +
+      "fixed for the whole run. " +
       "Noise tracks grid shape as well as area. At a fixed area, thin grids carry more than " +
       `square ones${shapeExample}. The shapes actually played are the near-square ` +
       "'Preferred = yes' rows in Table 1, so read a gameplay profile against that row rather than " +
-      "the case mean or the widest ladder.",
+      "the case mean or the widest ladder. Values are 4dp speed strings with an x suffix, rounded " +
+      "away from 1.0000x so a figure never contradicts its class; the JSON carries the same ratios " +
+      "unrounded under minWinSpeeds. Speeds here are thresholds derived from route geometry; gameplay " +
+      "speeds carrying the same 'x' notation are measured from actual cells and decay. Same glyph, " +
+      "different status.",
   )
 }
 
@@ -1439,17 +1484,17 @@ function printNavigationTables(summaries, suffix = "") {
   printRouteGeometryNote()
   printCaseTable(routeGeometryRows(summaries))
 
+  console.info(`\n${offPathSpaceTableTitle}${suffix}`)
+  printOffPathSpaceNote()
+  printCaseTable(offPathSpaceRows(summaries))
+
   console.info(`\n${costModelTableTitle}${suffix}`)
   printCostModelNote()
   printCaseTable(costModelRows(summaries))
 
-  console.info(`\n${minWinSpeedTableTitle}${suffix}`)
-  printMinWinSpeedNote()
-  printCaseTable(minWinSpeedRows(summaries))
-
-  console.info(`\n${mazeNoiseTableTitle}${suffix}`)
-  printMazeNoiseNote(summaries)
-  printCaseTable(mazeNoiseRows(summaries))
+  console.info(`\n${speedAndNoiseTableTitle}${suffix}`)
+  printSpeedAndNoiseNote(summaries)
+  printCaseTable(speedAndNoiseRows(summaries))
 }
 
 // printHashComparisonTable is the actual equality check made legible in one place: a single
@@ -2316,7 +2361,7 @@ function formatNumber(value) {
   return Number(numberValue.toPrecision(4))
 }
 
-// Table 3c speed ceilings must use the same fixed-point display precision as gameplay. Reading the
+// Table 3d speed values must use the same fixed-point display precision as gameplay. Reading the
 // frontend config keeps the benchmark report from silently drifting if traversalSpeedScaleUnits
 // changes again.
 function configuredTraversalSpeedScaleUnits() {

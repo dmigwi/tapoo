@@ -7,9 +7,11 @@ import {
   mazeNoiseNumbers,
   mazeNoiseRows,
   minWinSpeedRows,
+  offPathSpaceRows,
   realSummaries,
   renderBenchmarkCharts,
   routeGeometryRows,
+  speedAndNoiseRows,
   sensitivityCaseName,
   validationSummary,
 } from "../../parity-harness/bench-report.mjs"
@@ -115,22 +117,29 @@ describe("bench report helpers", () => {
     expect(Object.keys(caseDefinitionRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(branchingDistributionRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(routeGeometryRows(summaries))).toEqual(realCaseNames)
+    expect(Object.keys(offPathSpaceRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(costModelRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(minWinSpeedRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(mazeNoiseRows(summaries))).toEqual(realCaseNames)
+    expect(Object.keys(speedAndNoiseRows(summaries))).toEqual(realCaseNames)
   })
 
-  it("formats route geometry rows with structural route metrics", () => {
+  it("formats route rows with path metrics only", () => {
     expect(routeGeometryRows(summaries).area70_10x7).toEqual({
       "Path Len (Cells)": 68.2,
+      "Path (%)": 97.43,
       "Path P5 (Cells)": 65,
       "Path P95 (Cells)": 70,
       "Path stddev (Cells)": 2.5,
-      "Path (%)": 97.43,
+    })
+  })
+
+  it("formats off-path space rows with margin and worst-branch metrics", () => {
+    expect(offPathSpaceRows(summaries).area70_10x7).toEqual({
+      "Error Margin (Cells)": 1.8,
       "W-Branch (Depth)": 1.2,
       "W-Branch P5 (Depth)": 0,
       "W-Branch P95 (Depth)": 4,
-      "Error Margin (Cells)": 1.8,
       "W-Branch (% of Margin)": 66.67,
     })
   })
@@ -160,6 +169,15 @@ describe("bench report helpers", () => {
 
   it("formats maze-noise rows with speed standard deviations by strategy", () => {
     expect(mazeNoiseRows(summaries).area70_10x7).toEqual({
+      "Path stddev (Cells)": 2.5,
+      "Speed stddev c=2.00": "0.0179",
+      "Speed stddev c=1.25": "0.0046",
+    })
+  })
+
+  it("formats speed-and-noise rows as the combined Table 3d payload", () => {
+    expect(speedAndNoiseRows(summaries).area70_10x7).toEqual({
+      "Conservative (No Batching) Min Win Speed": "0.9871x",
       "Path stddev (Cells)": 2.5,
       "Speed stddev c=2.00": "0.0179",
       "Speed stddev c=1.25": "0.0046",
