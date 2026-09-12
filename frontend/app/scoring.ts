@@ -4,7 +4,7 @@ import {
   traversalSpeedUnitsToDisplay,
   traversalSpeedUnitsToRatio,
   capitalize,
-} from "./agent/efficiency"
+} from "./agent/traversal-speed"
 import type {
   AgentSpeedBestComparison,
   AgentSpeedPreviousComparison,

@@ -23,9 +23,9 @@ import { cellCoordinateFromGridPoint } from "../traversal"
 import type { ProviderAdapter } from "./providers"
 import {
   formatPlayerStatusLabel,
-  getBatchEfficiencyMetrics,
+  getTraversalSpeedMetrics,
   resolveStatusSpeedClass,
-} from "./efficiency"
+} from "./traversal-speed"
 import type {
   AgentChatMessage,
   AgentApiSeatConfig,
@@ -346,14 +346,14 @@ export function requestPredictionWithAbort({
       // The classification is computed once up front so it appears unconditionally in the system
       // prompt, not only when the model chooses to call get_prediction_rules.
       const {playerUniqueCellsVisited, decayUnitsCharged, playerTurnsTaken} =
-        getBatchEfficiencyMetrics(stateSnapshot.traversalHistory, agent)
-      const batchEfficiencyClass = resolveStatusSpeedClass(playerUniqueCellsVisited, decayUnitsCharged)
+        getTraversalSpeedMetrics(stateSnapshot.traversalHistory, agent)
+      const traversalSpeedClass = resolveStatusSpeedClass(playerUniqueCellsVisited, decayUnitsCharged)
 
       const player = formatPlayerStatusLabel({
         playerName: agent.playerName,
         uniqueCellsVisited: playerUniqueCellsVisited,
         decayUnitsCharged: decayUnitsCharged,
-      }, batchEfficiencyClass)
+      }, traversalSpeedClass)
 
       // The opening persona claims two things - that traversal speed opens at trailblazer, and that
       // no prediction has been made yet - so all three of this agent's own level counters must be
@@ -367,7 +367,7 @@ export function requestPredictionWithAbort({
       // opening turn despite being just as unmeasured.
       const isOpeningTurn = playerTurnsTaken === 0 && decayUnitsCharged === 0 && playerUniqueCellsVisited === 0
 
-      let messages = buildAgentMessages(agent.playerName, batchEfficiencyClass, isOpeningTurn)
+      let messages = buildAgentMessages(agent.playerName, traversalSpeedClass, isOpeningTurn)
       let requestCount = 0
 
       // Track which tools have already been called this turn so duplicate tool calls can be

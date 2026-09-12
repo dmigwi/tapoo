@@ -22,10 +22,10 @@ import {
 import {
   calculateTraversalSpeedUnits,
   formatPlayerStatusLabel,
-  getBatchEfficiencyMetrics,
+  getTraversalSpeedMetrics,
   resolveTraversalSpeedClass,
   traversalSpeedUnitsToRatio,
-} from "../agent/efficiency"
+} from "../agent/traversal-speed"
 import {
   handleAgentTurnLoop,
 } from "./agent-api"
@@ -1333,7 +1333,7 @@ export function createAgentMode(
         return null
       }
 
-      const { playerUniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(
+      const { playerUniqueCellsVisited, decayUnitsCharged } = getTraversalSpeedMetrics(
         boundReadState().traversalHistory,
         agent,
       )

@@ -6,8 +6,8 @@ import {
   buildDuplicateToolCallMessage,
   buildTokenLimitExhaustionPrompt,
 } from "./agent/context"
-import { capitalize } from "./agent/efficiency"
-import type { BatchEfficiencyClass } from "./agent/efficiency"
+import { capitalize } from "./agent/traversal-speed"
+import type { TraversalSpeedClass } from "./agent/traversal-speed"
 import { CONFIG } from "./config"
 
 const { promptPreview, agentConfig, runtime } = CONFIG
@@ -45,7 +45,7 @@ export function previewPlayerNote(): string {
 // been measured, ordered by rate from the top down. The default opening is rendered separately: it
 // is not a fourth classification but the same trailblazer label handed out before any measurement,
 // which is exactly why its wording differs.
-const MEASURED_PERSONA_CLASSES: BatchEfficiencyClass[] = ["trailblazer", "navigator", "backtracker"]
+const MEASURED_PERSONA_CLASSES: TraversalSpeedClass[] = ["trailblazer", "navigator", "backtracker"]
 
 // buildPersonaVariants renders every form the system message can open with, each under the label a
 // reader needs to tell them apart. Built from buildAgentPersonaPrompt rather than transcribed, so a

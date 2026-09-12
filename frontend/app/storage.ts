@@ -650,7 +650,7 @@ export function agentForCurrentRound(
 //     cumulativeRoundCount value an old, unrelated agent record already holds. gameLevel is
 //     what catches that collision, since the new round's level will almost never match the
 //     stale record's level. Dropping gameLevel would let a post-reset session silently inherit
-//     stale decayUnitsCharged from a prior session, corrupting the batchEfficiencyLevel an agent
+//     stale decayUnitsCharged from a prior session, corrupting the traversal speed an agent
 //     is scored against.
 export function recordAgentTurnStats(
   turnAgent: AgentApiSeatConfig,

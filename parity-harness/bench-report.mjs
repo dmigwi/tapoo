@@ -512,7 +512,7 @@ function minWinSpeedSensitivityBandEdge(summary, direction) {
   return center + (direction * halfWidth * (sensitivityAtBatching / sensitivityAtConservative))
 }
 
-// Mirrors frontend/app/agent/efficiency.ts calculateTraversalSpeedUnits().
+// Mirrors frontend/app/agent/traversal-speed.ts calculateTraversalSpeedUnits().
 function calculateTraversalSpeedUnits(uniqueCellsVisited, scoreDecayUnits) {
   if (scoreDecayUnits <= 0) {
     return 0
@@ -529,7 +529,7 @@ function calculateTraversalSpeedUnits(uniqueCellsVisited, scoreDecayUnits) {
   return Math.max(0, speedUnits)
 }
 
-// Mirrors frontend/app/agent/efficiency.ts traversalSpeedUnitsToDisplay().
+// Mirrors frontend/app/agent/traversal-speed.ts traversalSpeedUnitsToDisplay().
 function traversalSpeedUnitsToDisplay(traversalSpeedUnits) {
   return `${(traversalSpeedUnits / traversalSpeedScaleUnits)
     .toFixed(traversalSpeedDisplayDecimals)

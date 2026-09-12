@@ -3,7 +3,7 @@ import { mergeMazeActionResult } from "../control"
 import { requestPredictionWithAbort } from "../agent/request"
 import type { EncodedMazeForLevelStart } from "../agent/request"
 import { agentRequestIntervalMs } from "../agent/config"
-import { calculateTraversalSpeedUnits, getBatchEfficiencyMetrics } from "../agent/efficiency"
+import { calculateTraversalSpeedUnits, getTraversalSpeedMetrics } from "../agent/traversal-speed"
 import { snapshotAgentState } from "../agent/state-snapshot"
 import type { AgentStateSnapshot } from "../agent/state-snapshot"
 import { encodeMazeForLog, logTapooRecordEntry } from "../logs"
@@ -249,7 +249,7 @@ export function handleAgentTurnLoop({
 
   // playerStatusFor scopes traversal speed to the agent that just acted, never the whole team.
   const playerStatusFor = (agent: AgentApiSeatConfig, currentState: State): AgentPlayerStatus => {
-    const { playerUniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(
+    const { playerUniqueCellsVisited, decayUnitsCharged } = getTraversalSpeedMetrics(
       currentState.traversalHistory,
       agent,
     )

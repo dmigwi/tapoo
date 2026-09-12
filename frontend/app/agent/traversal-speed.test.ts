@@ -3,13 +3,13 @@ import { describe, expect, it } from "vitest"
 import {
   calculateTraversalSpeedUnits,
   formatPlayerStatusLabel,
-  getBatchEfficiencyMetrics,
-  resolveBatchEfficiencyClass,
+  getTraversalSpeedMetrics,
+  resolveAgentTraversalSpeedClass,
   resolveStatusSpeedClass,
   resolveTraversalSpeedClass,
   traversalSpeedUnitsToDisplay,
   traversalSpeedUnitsToRatio,
-} from "./efficiency"
+} from "./traversal-speed"
 import { CONFIG } from "../config"
 import type { AgentApiSeatConfig, TraversalHistoryEntry } from "../types"
 
@@ -32,18 +32,18 @@ function visit(playerName: string, row: number, col: number): TraversalHistoryEn
   return { playerName, row, col, openMoves: [], visitCount: 1 }
 }
 
-describe("resolveBatchEfficiencyClass", () => {
+describe("resolveAgentTraversalSpeedClass", () => {
   it("defaults to trailblazer when the agent has been charged nothing yet", () => {
     const agent = createAgent({ decayUnitsCharged: undefined })
 
-    expect(resolveBatchEfficiencyClass([visit("Blue", 0, 1)], agent)).toBe("trailblazer")
+    expect(resolveAgentTraversalSpeedClass([visit("Blue", 0, 1)], agent)).toBe("trailblazer")
   })
 
   it("defaults to trailblazer when decayUnitsCharged is explicitly zero", () => {
     // Also the guard that keeps the rate from dividing by zero.
     const agent = createAgent({ decayUnitsCharged: 0 })
 
-    expect(resolveBatchEfficiencyClass([visit("Blue", 0, 1)], agent)).toBe("trailblazer")
+    expect(resolveAgentTraversalSpeedClass([visit("Blue", 0, 1)], agent)).toBe("trailblazer")
   })
 
   it("only counts distinct cells attributed to the requesting agent's playerName", () => {
@@ -54,14 +54,14 @@ describe("resolveBatchEfficiencyClass", () => {
       visit("Red", 0, 2),
     ]
 
-    expect(resolveBatchEfficiencyClass(traversalHistory, agent)).toBe("backtracker")
+    expect(resolveAgentTraversalSpeedClass(traversalHistory, agent)).toBe("backtracker")
   })
 
   it("falls below the baseline when decay outpaces distinct progress (oscillation)", () => {
     const agent = createAgent({ decayUnitsCharged: 4 })
     const traversalHistory = [visit("Blue", 0, 0)]
 
-    expect(resolveBatchEfficiencyClass(traversalHistory, agent)).toBe("backtracker")
+    expect(resolveAgentTraversalSpeedClass(traversalHistory, agent)).toBe("backtracker")
   })
 
   it("rises above the baseline when a batch advances multiple distinct cells per decay unit", () => {
@@ -75,14 +75,14 @@ describe("resolveBatchEfficiencyClass", () => {
       visit("Blue", 0, 3),
     ]
 
-    expect(resolveBatchEfficiencyClass(traversalHistory, agent)).toBe("trailblazer")
+    expect(resolveAgentTraversalSpeedClass(traversalHistory, agent)).toBe("trailblazer")
   })
 
   it("labels exactly the baseline rate as navigator", () => {
     const agent = createAgent({ decayUnitsCharged: 1 })
     const traversalHistory = [visit("Blue", 0, 0)]
 
-    expect(resolveBatchEfficiencyClass(traversalHistory, agent)).toBe("navigator")
+    expect(resolveAgentTraversalSpeedClass(traversalHistory, agent)).toBe("navigator")
   })
 
   it("drops a single-stepping agent below the baseline once a mistake is charged", () => {
@@ -97,15 +97,15 @@ describe("resolveBatchEfficiencyClass", () => {
       visit("Blue", 0, 3),
     ]
 
-    expect(resolveBatchEfficiencyClass(traversalHistory, agent)).toBe("backtracker")
+    expect(resolveAgentTraversalSpeedClass(traversalHistory, agent)).toBe("backtracker")
   })
 })
 
-describe("getBatchEfficiencyMetrics", () => {
+describe("getTraversalSpeedMetrics", () => {
   it("reports zero counts for a fresh agent with no tracked turns", () => {
     const agent = createAgent({ turnCount: undefined, decayUnitsCharged: undefined })
 
-    expect(getBatchEfficiencyMetrics([], agent)).toEqual({
+    expect(getTraversalSpeedMetrics([], agent)).toEqual({
       playerUniqueCellsVisited: 0,
       allUniqueCellsVisited: 0,
       decayUnitsCharged: 0,
@@ -122,7 +122,7 @@ describe("getBatchEfficiencyMetrics", () => {
       visit("Red", 0, 3),
     ]
 
-    expect(getBatchEfficiencyMetrics(traversalHistory, agent)).toEqual({
+    expect(getTraversalSpeedMetrics(traversalHistory, agent)).toEqual({
       playerUniqueCellsVisited: 2,
       allUniqueCellsVisited: 4,
       decayUnitsCharged: 5,
