@@ -9,6 +9,7 @@ import {
 import { OLLAMA_PREDICTION_FORMAT } from "./providers"
 import { requestPredictionWithAbort } from "./request"
 import { snapshotAgentState } from "./state-snapshot"
+import { fetchDeviceInfo } from "./config"
 import { CONFIG } from "../config"
 import { checksumLoggedDescription, encodeMazeForLog, tapooResetLogs } from "../logs"
 import { loadTapooLog } from "../storage"
@@ -315,6 +316,10 @@ describe("agent request service", () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
+    // One test puts a query and fragment on the address to pin down what platform records. jsdom
+    // keeps the URL for the whole file, so it is reset here rather than at the end of that test,
+    // where a failed assertion would skip it and leak the address into every test after it.
+    window.history.replaceState({}, "", "/")
   })
 
   it("documents the raw follow-up json payload sent after a tool call", async () => {
@@ -499,6 +504,7 @@ describe("agent request service", () => {
   })
 
   it("logs the encoded maze before the level's first request", async () => {
+    window.history.replaceState({}, "", "/?run=7#frag")
     await tapooResetLogs(CONFIG.runtime.controlModes.agentApi)
     vi.stubGlobal(
       "fetch",
@@ -533,7 +539,21 @@ describe("agent request service", () => {
     expect(levelStarted.game).toBe(0)
     // Static expected encoding for this 1x1 maze, first-seen order "|"(0), "---"(1), "   "(2),
     // then "\n"(3) as the row separator.
+    // A query string and fragment on the page URL: platform must carry neither, which is the whole
+    // reason it is built from origin + pathname instead of href. Without them on the address, the
+    // two spellings are indistinguishable in jsdom and the distinction goes untested.
+    expect(window.location.search).toBe("?run=7")
+    expect(window.location.hash).toBe("#frag")
+    // The raw user-agent string never reaches the log: the entry carries the reduced description,
+    // so the engine build tokens that identify a machine are not published with a shared report.
+    expect(String(levelStarted.details?.device)).not.toContain("AppleWebKit")
+    expect(levelStarted.details?.device).not.toBe(window.navigator.userAgent)
     expect(levelStarted.details).toEqual({
+      // Recorded once per level so a run can be reproduced later: the page the build was served
+      // from and the browser that ran it. Compared against the live values rather than hardcoded
+      // jsdom strings, so this asserts the fields carry the real environment, not a constant.
+      platform: `${window.location.origin}${window.location.pathname}`,
+      device: fetchDeviceInfo(window.navigator.userAgent),
       startPosition: { x: 1, y: 1 },
       finalPosition: { x: 1, y: 1 },
       // Recorded once here rather than in every turn's get_maze_structure result: both are fixed
@@ -606,6 +626,12 @@ describe("agent request service", () => {
       loadTapooLog<{ payload: string }>(CONFIG.runtime.controlModes.agentApi)
         .some((entry) => entry.payload === "Agent level started."),
     ).toBe(false)
+    // platform/device belong to the level entry alone. Repeating them on every request would copy
+    // two unchanging strings onto every turn of every level.
+    for (const entry of requestEntries) {
+      expect(entry.details).not.toHaveProperty("platform")
+      expect(entry.details).not.toHaveProperty("device")
+    }
 
     // Round 1: the static system/user prompt is previewed (role intact, content shortened),
     // and tool descriptions are previewed too, since both repeat verbatim every turn.

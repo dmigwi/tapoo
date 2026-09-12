@@ -453,7 +453,21 @@ function uniqueCellsCeiling(summary) {
 }
 
 function conservativeMinWinSpeedRatio(summary) {
-  const uniqueCells = uniqueCellsCeiling(summary)
+  return minWinSpeedRatio(summary, 2)
+}
+
+function conservativeMinWinSpeed(summary) {
+  const uniqueCells = minWinUniqueCells(summary, 2)
+  const budget = Number(summary.Budget)
+  if (![uniqueCells, budget].every(Number.isFinite) || budget <= 0) {
+    return ""
+  }
+
+  return traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(uniqueCells, budget))
+}
+
+function minWinSpeedRatio(summary, roundTripMultiplier, pathKey = "PathLen") {
+  const uniqueCells = minWinUniqueCells(summary, roundTripMultiplier, pathKey)
   const budget = Number(summary.Budget)
   if (![uniqueCells, budget].every(Number.isFinite) || budget <= 0) {
     return Number.NaN
@@ -462,14 +476,40 @@ function conservativeMinWinSpeedRatio(summary) {
   return uniqueCells / budget
 }
 
-function conservativeMinWinSpeed(summary) {
-  const uniqueCells = uniqueCellsCeiling(summary)
+function minWinUniqueCells(summary, roundTripMultiplier, pathKey = "PathLen") {
+  const pathLength = Number(summary[pathKey])
   const budget = Number(summary.Budget)
-  if (![uniqueCells, budget].every(Number.isFinite) || budget <= 0) {
-    return ""
+  const c = Number(roundTripMultiplier)
+  if (![pathLength, budget, c].every(Number.isFinite) || c <= 0) {
+    return Number.NaN
   }
 
-  return traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(uniqueCells, budget))
+  return pathLength + ((budget - pathLength) / c)
+}
+
+function minWinSpeedSensitivityBandHigh(summary) {
+  return minWinSpeedSensitivityBandEdge(summary, 1)
+}
+
+function minWinSpeedSensitivityBandLow(summary) {
+  return minWinSpeedSensitivityBandEdge(summary, -1)
+}
+
+function minWinSpeedSensitivityBandEdge(summary, direction) {
+  const center = conservativeMinWinSpeedRatio(summary)
+  const bandLow = minWinSpeedRatio(summary, 2, "Path-p5")
+  const bandHigh = minWinSpeedRatio(summary, 2, "Path-p95")
+  const sensitivityAtConservative = Math.abs(mazeSpeedSensitivity(summary, 2))
+  const sensitivityAtBatching = Math.abs(mazeSpeedSensitivity(summary, 1.25))
+  if (![center, bandLow, bandHigh, sensitivityAtConservative, sensitivityAtBatching].every(Number.isFinite)) {
+    return Number.NaN
+  }
+  if (sensitivityAtConservative <= 0) {
+    return center
+  }
+
+  const halfWidth = Math.abs(bandHigh - bandLow) / 2
+  return center + (direction * halfWidth * (sensitivityAtBatching / sensitivityAtConservative))
 }
 
 // Mirrors frontend/app/agent/efficiency.ts calculateTraversalSpeedUnits().
@@ -1751,7 +1791,7 @@ function writeJsonReport(
   writeFileSync(
     preferredChartsPath,
     renderBenchmarkCharts(goReport ?? frontendReport, {
-      filterLabel: "Preferred cases only",
+      filterLabel: "Preferred shapes - as played",
       summaryFilter: (summary) => summary.Preferred === "yes",
     }),
   )
@@ -1780,6 +1820,7 @@ export function renderBenchmarkCharts(report, options = {}) {
       bandHigh: (summary) => pathPercent(summary, "Path-p95"),
       bandLow: (summary) => pathPercent(summary, "Path-p5"),
       bandLabel: "Path P5-P95 (%)",
+      caption: "Twin of chart 6: s_min = 0.5 + Path%/2. Structure view here, agent threshold there.",
       label: "Path (%)",
       selector: "Path%",
       seriesLabel: "Path (%)",
@@ -1788,6 +1829,7 @@ export function renderBenchmarkCharts(report, options = {}) {
       bandHigh: (summary) => branchPercentOfMargin(summary, "WorstBranch-p95"),
       bandLow: (summary) => branchPercentOfMargin(summary, "WorstBranch-p5"),
       bandLabel: "W-Branch P5-P95 (% of Margin)",
+      caption: "Depth over off-path cells: how far the worst branch reaches, not what share it holds.",
       label: "W-Branch (% of Margin)",
       selector: worstBranchPercentOfMargin,
       seriesLabel: "W-Branch (% of Margin)",
@@ -1795,22 +1837,16 @@ export function renderBenchmarkCharts(report, options = {}) {
   ]
   const agentFacingCharts = [
     {
-      bandHigh: (summary) => conservativeMinWinSpeedRatio(summary) + mazeSpeedStddevNumber(summary, 2),
-      bandHigh2: (summary) => conservativeMinWinSpeedRatio(summary) + 2 * mazeSpeedStddevNumber(summary, 2),
-      bandLow: (summary) => conservativeMinWinSpeedRatio(summary) - mazeSpeedStddevNumber(summary, 2),
-      bandLow2: (summary) => conservativeMinWinSpeedRatio(summary) - 2 * mazeSpeedStddevNumber(summary, 2),
-      bandLabel: "+/-1σ",
-      bandLabel2: "+/-2σ",
-      label: "Min Win Speed +/- Maze Noise",
+      bandHigh: (summary) => minWinSpeedRatio(summary, 2, "Path-p95"),
+      bandHigh2: minWinSpeedSensitivityBandHigh,
+      bandLabel: "c=2.00 P5-P95",
+      bandLabel2: "c=1.25 P5-P95",
+      bandLow: (summary) => minWinSpeedRatio(summary, 2, "Path-p5"),
+      bandLow2: minWinSpeedSensitivityBandLow,
+      caption: "Spread across mazes, not confidence in the mean. Affine twin of chart 4.",
+      label: "Min Win Speed",
       selector: conservativeMinWinSpeedRatio,
-      seriesLabel: "Conservative Min Win Speed",
-    },
-    {
-      label: "Speed stddev c=2.00 / c=1.25",
-      series: [
-        { label: "c=2.00", selector: (summary) => mazeSpeedStddevNumber(summary, 2) },
-        { label: "c=1.25", selector: (summary) => mazeSpeedStddevNumber(summary, 1.25) },
-      ],
+      seriesLabel: "s_min",
     },
   ]
   const shapeCharts = [
@@ -1819,18 +1855,19 @@ export function renderBenchmarkCharts(report, options = {}) {
       label: "Skew vs Speed stddev",
       legendItems: [
         { className: "legend-dot", label: "All shapes", type: "point" },
-        { className: "legend-dot legend-dot--preferred", label: "Preferred", type: "point" },
+        { className: "legend-dot legend-dot--preferred", label: "Preferred filled", type: "point" },
       ],
       selector: (summary) => mazeSpeedStddevNumber(summary, 2),
       xLabel: "Skew (Ratio)",
+      xScale: "log",
       xSelector: summarySkew,
     },
   ]
   const chartWidth = 360
-  const chartHeight = 230
+  const chartHeight = 260
   const gap = 22
   const columns = 2
-  const titleSuffix = options.filterLabel ? ` (${options.filterLabel})` : ""
+  const titleSuffix = ` (${options.filterLabel ?? "All shapes - geometry sweep"})`
   const allCharts = [
     { title: `Structure${titleSuffix}`, metrics: structureCharts },
     { title: `Route${titleSuffix}`, metrics: routeCharts },
@@ -1845,8 +1882,10 @@ export function renderBenchmarkCharts(report, options = {}) {
   const height = 28 + sectionHeights.reduce((total, sectionHeight) => total + sectionHeight, 0)
   let y = 24
 
+  let chartNumberStart = 1
   const sections = allCharts.map((section, index) => {
     const output = renderChartSection({
+      chartNumberStart,
       chartHeight,
       chartWidth,
       columns,
@@ -1856,6 +1895,7 @@ export function renderBenchmarkCharts(report, options = {}) {
       title: section.title,
       y,
     })
+    chartNumberStart += section.metrics.length
     y += sectionHeights[index]
     return output
   })
@@ -1871,15 +1911,17 @@ export function renderBenchmarkCharts(report, options = {}) {
       .panel { fill: #101713; stroke: #2f4137; stroke-width: 1; }
       .axis { stroke: #405247; stroke-width: 1; }
       .band { fill: rgba(92, 200, 170, 0.16); stroke: none; }
-      .band--wide { fill: rgba(244, 169, 7, 0.11); stroke: none; }
+      .band--wide { fill: rgba(244, 169, 7, 0.13); stroke: none; }
+      .band--secondary { fill: rgba(214, 167, 44, 0.18); stroke: none; }
       .grid { stroke: #24322b; stroke-width: 1; }
       .line { fill: none; stroke: #5cc8aa; stroke-width: 2; }
       .line--secondary { stroke: #ef6718; }
-      .point { fill: #d6a72c; stroke: none; }
-      .point--preferred { fill: #5cc8aa; stroke: none; }
-      .legend-dot { fill: #d6a72c; stroke: none; }
-      .legend-dot--preferred { fill: #5cc8aa; stroke: none; }
+      .point { fill: none; stroke: #d6a72c; stroke-width: 1.6; }
+      .point--preferred { fill: #5cc8aa; stroke: #5cc8aa; stroke-width: 1.8; }
+      .legend-dot { fill: none; stroke: #d6a72c; stroke-width: 1.6; }
+      .legend-dot--preferred { fill: #5cc8aa; stroke: #5cc8aa; stroke-width: 1.8; }
       .legend-swatch { stroke: #2f4137; stroke-width: 0.6; }
+      .caption { font-size: 9px; fill: #87958c; }
     </style>\n` +
     `<rect width="100%" height="100%" fill="#0b110e"/>\n` +
     sections.join("\n") +
@@ -1887,7 +1929,17 @@ export function renderBenchmarkCharts(report, options = {}) {
   )
 }
 
-function renderChartSection({ chartHeight, chartWidth, columns, gap, metrics, summaries, title, y }) {
+function renderChartSection({
+  chartHeight,
+  chartNumberStart,
+  chartWidth,
+  columns,
+  gap,
+  metrics,
+  summaries,
+  title,
+  y,
+}) {
   const titleLine = `<text class="title" x="${gap}" y="${y}">${escapeXml(title)}</text>`
   const charts = metrics.map((metric, index) => {
     const column = index % columns
@@ -1895,27 +1947,32 @@ function renderChartSection({ chartHeight, chartWidth, columns, gap, metrics, su
     const x = gap + column * (chartWidth + gap)
     const chartY = y + 34 + row * (chartHeight + gap)
     const spec = normalizeChartSpec(metric)
+    const numberedLabel = `${chartNumberStart + index}. ${spec.label}`
     return spec.kind === "scatter" ? renderScatterChart({
       height: chartHeight,
-      label: spec.label,
+      label: numberedLabel,
       legendItems: spec.legendItems,
+      caption: spec.caption,
       summaries,
       values: summaries.map((summary) => metricValue(summary, spec.selector)),
       width: chartWidth,
       x,
       xLabel: spec.xLabel,
+      xScale: spec.xScale,
       xValues: summaries.map((summary) => metricValue(summary, spec.xSelector ?? summaryArea)),
       y: chartY,
     }) : renderLineChart({
       bands: chartBands(summaries, spec),
+      caption: spec.caption,
       height: chartHeight,
-      label: spec.label,
+      label: numberedLabel,
       series: chartSeries(summaries, spec),
       summaries,
       width: chartWidth,
       x,
       xLabel: spec.xLabel,
-      xValues: summaries.map((summary) => metricValue(summary, spec.xSelector ?? summaryArea)),
+      xScale: spec.xScale,
+      xValues: summaries.map((summary) => metricValue(summary, spec.xSelector ?? summaryBudget)),
       y: chartY,
     })
   })
@@ -1950,6 +2007,14 @@ function chartSeries(summaries, spec) {
 
 function chartBands(summaries, spec) {
   const bands = []
+  if (spec.bandLow && spec.bandHigh) {
+    bands.push({
+      className: "band",
+      high: summaries.map((summary) => metricValue(summary, spec.bandHigh)),
+      label: spec.bandLabel ?? "P5-P95",
+      low: summaries.map((summary) => metricValue(summary, spec.bandLow)),
+    })
+  }
   if (spec.bandLow2 && spec.bandHigh2) {
     bands.push({
       className: "band band--wide",
@@ -1958,19 +2023,23 @@ function chartBands(summaries, spec) {
       low: summaries.map((summary) => metricValue(summary, spec.bandLow2)),
     })
   }
-  if (spec.bandLow && spec.bandHigh) {
-    bands.push({
-      className: "band",
-      high: summaries.map((summary) => metricValue(summary, spec.bandHigh)),
-      label: spec.bandLabel ?? (bands.length > 0 ? "+/-1σ" : "P5-P95"),
-      low: summaries.map((summary) => metricValue(summary, spec.bandLow)),
-    })
-  }
   return bands
 }
 
-function renderLineChart({ bands = [], height, label, series, width, x, xLabel = "Area (Cells)", xValues, y }) {
-  const padding = { bottom: 38, left: 46, right: 18, top: 68 }
+function renderLineChart({
+  bands = [],
+  caption = "",
+  height,
+  label,
+  series,
+  width,
+  x,
+  xLabel = "Budget / Area (cells)",
+  xScale = "linear",
+  xValues,
+  y,
+}) {
+  const padding = { bottom: 38, left: 46, right: 18, top: 100 }
   const chartLeft = x + padding.left
   const chartTop = y + padding.top
   const chartWidth = width - padding.left - padding.right
@@ -1981,14 +2050,16 @@ function renderLineChart({ bands = [], height, label, series, width, x, xLabel =
   ]
   const finiteValues = allValues.filter((value) => Number.isFinite(value))
   const { maxValue, minValue, scaled } = chartScale(finiteValues)
-  const finiteXValues = xValues.filter((value) => Number.isFinite(value))
+  const scaledXValues = xValues.map((value) => chartXValue(value, xScale))
+  const finiteXValues = scaledXValues.filter((value) => Number.isFinite(value))
+  const finiteRawXValues = xValues.filter((value) => Number.isFinite(value))
   const { maxValue: maxXValue, minValue: minXValue } = chartScale(finiteXValues)
   const xRange = maxXValue - minXValue || 1
   const range = maxValue - minValue || 1
-  const firstXValue = Number.isFinite(minXValue) ? formatNumber(minXValue) : ""
-  const lastXValue = Number.isFinite(maxXValue) ? formatNumber(maxXValue) : ""
+  const firstXValue = finiteRawXValues.length > 0 ? formatNumber(Math.min(...finiteRawXValues)) : ""
+  const lastXValue = finiteRawXValues.length > 0 ? formatNumber(Math.max(...finiteRawXValues)) : ""
   const project = (value, index) => {
-      const xValue = xValues[index]
+      const xValue = scaledXValues[index]
       if (!Number.isFinite(value) || !Number.isFinite(xValue)) {
         return null
       }
@@ -2018,6 +2089,7 @@ function renderLineChart({ bands = [], height, label, series, width, x, xLabel =
     x: x + 12,
     y: y + 34,
   })
+  const captionText = renderChartCaption({ caption, width, x: x + 12, y: y + 68 })
 
   return (
     `<g>\n` +
@@ -2028,6 +2100,7 @@ function renderLineChart({ bands = [], height, label, series, width, x, xLabel =
     `<line class="axis" x1="${chartLeft}" y1="${chartTop + chartHeight}" x2="${chartLeft + chartWidth}" y2="${chartTop + chartHeight}"/>\n` +
     `<line class="axis" x1="${chartLeft}" y1="${chartTop}" x2="${chartLeft}" y2="${chartTop + chartHeight}"/>\n` +
     legend +
+    captionText +
     bandShapes +
     `\n${lineShapes}` +
     `\n<text class="label" x="${x + 10}" y="${y + height - 14}">${escapeXml(firstXValue)}</text>\n` +
@@ -2051,32 +2124,36 @@ function renderBand({ band, highPoints, lowPoints }) {
 }
 
 function renderScatterChart({
+  caption = "",
   height,
   label,
   legendItems = [],
   values,
   width,
   x,
-  xLabel = "Area (Cells)",
+  xLabel = "Budget / Area (cells)",
+  xScale = "linear",
   xValues,
   summaries,
   y,
 }) {
-  const padding = { bottom: 38, left: 46, right: 18, top: 68 }
+  const padding = { bottom: 38, left: 46, right: 18, top: 100 }
   const chartLeft = x + padding.left
   const chartTop = y + padding.top
   const chartWidth = width - padding.left - padding.right
   const chartHeight = height - padding.top - padding.bottom
   const finiteValues = values.filter((value) => Number.isFinite(value))
   const { maxValue, minValue, scaled } = chartScale(finiteValues)
-  const finiteXValues = xValues.filter((value) => Number.isFinite(value))
+  const scaledXValues = xValues.map((value) => chartXValue(value, xScale))
+  const finiteXValues = scaledXValues.filter((value) => Number.isFinite(value))
+  const finiteRawXValues = xValues.filter((value) => Number.isFinite(value))
   const { maxValue: maxXValue, minValue: minXValue } = chartScale(finiteXValues)
   const xRange = maxXValue - minXValue || 1
   const range = maxValue - minValue || 1
-  const firstXValue = Number.isFinite(minXValue) ? formatNumber(minXValue) : ""
-  const lastXValue = Number.isFinite(maxXValue) ? formatNumber(maxXValue) : ""
+  const firstXValue = finiteRawXValues.length > 0 ? formatNumber(Math.min(...finiteRawXValues)) : ""
+  const lastXValue = finiteRawXValues.length > 0 ? formatNumber(Math.max(...finiteRawXValues)) : ""
   const points = values.map((value, index) => {
-    const xValue = xValues[index]
+    const xValue = scaledXValues[index]
     if (!Number.isFinite(value) || !Number.isFinite(xValue)) {
       return ""
     }
@@ -2085,7 +2162,9 @@ function renderScatterChart({
     const preferred = summaries[index]?.Preferred === "yes"
     const radius = preferred ? 3.6 : 2.3
     const className = preferred ? "point point--preferred" : "point"
-    return `<circle class="${className}" cx="${roundSvg(px)}" cy="${roundSvg(py)}" r="${radius}"/>`
+    return (
+      `<circle class="${className}" cx="${roundSvg(px)}" cy="${roundSvg(py)}" r="${radius}"/>`
+    )
   }).filter(Boolean).join("\n")
   const legend = renderChartLegend({
     customItems: legendItems,
@@ -2093,6 +2172,7 @@ function renderScatterChart({
     x: x + 12,
     y: y + 34,
   })
+  const captionText = renderChartCaption({ caption, width, x: x + 12, y: y + 68 })
 
   return (
     `<g>\n` +
@@ -2103,6 +2183,7 @@ function renderScatterChart({
     `<line class="axis" x1="${chartLeft}" y1="${chartTop + chartHeight}" x2="${chartLeft + chartWidth}" y2="${chartTop + chartHeight}"/>\n` +
     `<line class="axis" x1="${chartLeft}" y1="${chartTop}" x2="${chartLeft}" y2="${chartTop + chartHeight}"/>\n` +
     legend +
+    captionText +
     points +
     `\n<text class="label" x="${x + 10}" y="${y + height - 14}">${escapeXml(firstXValue)}</text>\n` +
     `<text class="label" text-anchor="middle" x="${x + width / 2}" y="${y + height - 14}">${escapeXml(xLabel)}</text>\n` +
@@ -2171,6 +2252,28 @@ function renderLegendItem(item, x, y) {
   )
 }
 
+function renderChartCaption({ caption, width, x, y }) {
+  if (!caption) {
+    return ""
+  }
+
+  const lines = wrapWords(caption, Math.max(35, Math.floor((width - 24) / 6))).slice(0, 2)
+  return `${lines.map((line, index) => (
+    `<text class="caption" x="${x}" y="${y + index * 11}">${escapeXml(line)}</text>`
+  )).join("\n")}\n`
+}
+
+function chartXValue(value, scale) {
+  if (!Number.isFinite(value)) {
+    return Number.NaN
+  }
+  if (scale === "log") {
+    return value > 0 ? Math.log10(value) : Number.NaN
+  }
+
+  return value
+}
+
 function chartScale(values) {
   if (values.length === 0) {
     return { maxValue: 1, minValue: 0, scaled: false }
@@ -2201,6 +2304,10 @@ function metricValue(summary, selector) {
 
 function summaryArea(summary) {
   return Number(parseCaseName(summary.Case)?.area)
+}
+
+function summaryBudget(summary) {
+  return Number(summary.Budget)
 }
 
 function summarySkew(summary) {
