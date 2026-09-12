@@ -116,7 +116,7 @@ function logAgentLevelStarted(
     // - once per level - rather than on every request, where they would repeat on every turn.
     // origin + pathname, never href: a query string or fragment is not part of the address a reader
     // needs, and this entry is exported and shared, so nothing incidental in the URL travels with it.
-    // device is reduced the same way - "Chrome 141 on macOS", not the raw user-agent string, whose
+    // device is reduced the same way - "Chrome/141.0.0.0 on macOS", not the raw user-agent string, whose
     // OS version, architecture and device tokens identify the machine without aiding replication.
     platform: `${window.location.origin}${window.location.pathname}`,
     device: fetchDeviceInfo(window.navigator.userAgent),

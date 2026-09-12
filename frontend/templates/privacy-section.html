@@ -56,12 +56,12 @@
         and every response it returned, the encoded maze each level started from, the moves replayed
         and what they cost, and the timing and context around each turn. Each level also records the
         address of the page Tapoo was served from, and the name of your browser with its major
-        version and operating system family - for example <code>Chrome 141 on macOS</code>. That
+        version and operating system family - for example <code>Chrome/141.0.0.0 on macOS</code>. That
         description is reduced from your browser's user-agent string: the operating system version,
         processor architecture, device model and engine build numbers that string also carries are
         not recorded, because they identify a machine without helping anyone reproduce a run. Both
         are written once per level, because a profile can only be reproduced against the build and
-        browser that produced it.
+        device that produced it.
         Neither is sent anywhere by Tapoo, but both travel inside a log you export: if you publish
         one - to a gist, or to an analysis tool - you publish those details with it. This is the
         material a behavior profile is built from, so they exist to be read back - downloaded and

@@ -231,13 +231,16 @@ export function agentConfigValidationError({
 }
 
 // fetchDeviceInfo reduces a user-agent string to the pair a reader needs to reproduce a
-// run: the browser with its major version, and the operating system family.
+// run: the browser with its version, and the operating system family.
 //
 // The raw string is not logged. It also carries the OS version, CPU architecture, device model and
 // engine build tokens, and this entry is exported - published to a gist, handed to an analysis tool -
 // so those travel with it. None of them change how an agent plays a maze, and together they make a
-// log far more identifying than the profile it exists to support. "Chrome 141 on macOS" is what
-// replication needs; "10_15_7; Intel" is not.
+// log far more identifying than the profile it exists to support. "Chrome/141.0.0.0 on macOS" is
+// what replication needs; "10_15_7; Intel" is not. The version is kept as the agent spells it: on
+// Chromium the digits after the major are frozen zeros and say nothing, and Safari's Version/ token
+// is the one that tracks its OS release - a weaker signal than the OS version dropped above, but
+// not nothing.
 //
 // Order is the whole correctness argument below. Browsers impersonate each other in this string by
 // design, for historical compatibility: every Chrome UA contains "Safari", every Edge UA contains
@@ -251,13 +254,13 @@ type UserAgentRule = {
 
 // Most specific first: Edge and Opera both claim Chrome, and Chrome claims Safari.
 const BROWSER_RULES: readonly UserAgentRule[] = [
-  { name: "Edge", pattern: /\b(?:Edg|EdgA|EdgiOS)\/(\d+)/ },
-  { name: "Opera", pattern: /\b(?:OPR|OPiOS)\/(\d+)/ },
-  { name: "Samsung Internet", pattern: /\bSamsungBrowser\/(\d+)/ },
-  { name: "Firefox", pattern: /\b(?:Firefox|FxiOS)\/(\d+)/ },
-  { name: "Chrome", pattern: /\b(?:Chrome|CriOS)\/(\d+)/ },
+  { name: "Edge", pattern: /\b(?:Edg|EdgA|EdgiOS)\/(\d+[\d.]*)/ },
+  { name: "Opera", pattern: /\b(?:OPR|OPiOS)\/(\d+[\d.]*)/ },
+  { name: "Samsung Internet", pattern: /\bSamsungBrowser\/(\d+[\d.]*)/ },
+  { name: "Firefox", pattern: /\b(?:Firefox|FxiOS)\/(\d+[\d.]*)/ },
+  { name: "Chrome", pattern: /\b(?:Chrome|CriOS)\/(\d+[\d.]*)/ },
   // Safari alone puts its own version in Version/, and is the only one left that still says Safari.
-  { name: "Safari", pattern: /\bVersion\/(\d+)[\d.]*\s+(?:Mobile\/\S+\s+)?Safari\// },
+  { name: "Safari", pattern: /\bVersion\/(\d+[\d.]*)\s+(?:Mobile\/\S+\s+)?Safari\// },
 ]
 
 // Android before Linux (an Android UA says "Linux"), and the iOS devices before macOS.
@@ -279,7 +282,7 @@ export function fetchDeviceInfo(userAgent: string): string {
   const browserRule = BROWSER_RULES.find((rule) => rule.pattern.test(agent))
   const browserVersion = browserRule?.pattern.exec(agent)?.[1]
   const browser = browserRule
-    ? `${browserRule.name}${browserVersion ? ` ${browserVersion}` : ""}`
+    ? `${browserRule.name}${browserVersion ? `/${browserVersion}` : ""}`
     : UNKNOWN_BROWSER
   const operatingSystem = OS_RULES.find((rule) => rule.pattern.test(agent))?.name
 
