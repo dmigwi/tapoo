@@ -151,6 +151,11 @@ describe("tapoo logs", () => {
       return element
     })
     vi.stubGlobal("URL", { createObjectURL: () => "blob:log", revokeObjectURL: () => {} })
+    // The save is an anchor click, which jsdom answers with "Not implemented: navigation to another
+    // Document" on its virtual console - an unattributed line in every suite run, which would hide
+    // the same warning if real navigation ever appeared somewhere else. Mocked here as the sibling
+    // download test above already does, and asserted, so the click itself stays covered.
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
 
     // A placeholder standing in for a record that would not decode carries out-of-domain -1 values.
     // Reading epochMs straight off entries[0] would name the file after a timestamp of zero.
@@ -166,6 +171,7 @@ describe("tapoo logs", () => {
     expect(anchors[0]?.download).toBe(
       `tapoo-v${APP_VERSION}-agent-api-logs-${Math.round(second.epochMs / 1000)}.json`,
     )
+    expect(anchorClick).toHaveBeenCalledTimes(1)
   })
 
   it("notifies subscribers when log availability changes", async () => {
