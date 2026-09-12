@@ -58,7 +58,7 @@ const agentContextTools = [
     function: {
       name: "get_prediction_rules",
       description:
-        "Get move response rules. suggestedMovesPerTurn is a min/max range of how many moves a prediction per turn can include - absolute minimum required is 1. Use the local map to extract moves you are most confident about. Batching accuracy drops sharply the further out a prediction reaches, so lean toward min rather than max whenever you are unsure. When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent, which batchEfficiencyClass groups into bands. When decayUnitsCharged is 0, batchEfficiencyClass defaults to trailblazer. Only a cell's first visit counts as progress. Higher traversal speed means more progress per decay unit, increasing the chance of reaching the target before score runs out. batchEfficiencyClass is set to backtracker when the speed is below 1.0000, navigator at 1.0000, or trailblazer above 1.0000. Backtracker is a live game metric rating prediction efficiency class, while get_maze_structure's backtracking visitStatus marks one cell as a spent direction. The two are independent: a player can classify as backtracker without ever entering a backtracking cell, and crossing such cells costs no decay beyond the turn's own charge. Retrace-only batching can save turns but cannot create new-cell progress, so trailblazer is evidence that forward prediction into unvisited cells succeeded. allUniqueCellsVisited is every cell any player has reached this level, not just your own - compare it against mazeDimensions.totalMazeCells to know how much of the maze the team has collectively explored so far; it does not affect your traversal speed, which is scored on playerUniqueCellsVisited against decayUnitsCharged. At the initial game levels the single solution path covers nearly all of totalMazeCells, so expect to explore most of the maze before reaching the destination. At higher levels, the destination can be reachable well before allUniqueCellsVisited approaches totalMazeCells. totalTurnCount is the total number of completed prediction turns in this game level. playerTurnsTaken is the number completed by the player and is reported for context; neither count affects your speed, classification, or scores. The resulting score is visible via get_last_prediction_outcome. mazeDimensions.totalMazeCells is the full level size. mazeDimensions being null means the game state is invalid or incomplete for planning. Returns JSON: {\"suggestedMovesPerTurn\":{\"min\":number,\"max\":number}, \"allUniqueCellsVisited\":number, \"playerUniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"batchEfficiencyClass\":string, \"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null, \"expectedResponseSchema\":object}.",
+        "Get move response rules. suggestedMovesPerTurn is a min/max range of how many moves a prediction per turn can include - absolute minimum required is 1. Use the local map to extract moves you are most confident about. Batching accuracy drops sharply the further out a prediction reaches, so lean toward min rather than max whenever you are unsure. When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current traversal speed, the progress per decay unit spent, which traversalSpeedClass groups into bands. When decayUnitsCharged is 0, traversalSpeedClass defaults to trailblazer. Only a cell's first visit counts as progress. Higher traversal speed means more progress per decay unit, increasing the chance of reaching the target before score runs out. traversalSpeedClass is set to backtracker when the speed is below 1.0000, navigator at 1.0000, or trailblazer above 1.0000. Backtracker is a traversal-speed classification for the whole round; backtracking visitStatus marks one cell as a spent direction. The two are independent: a player can classify as backtracker without ever entering a backtracking cell, and crossing such cells costs no decay beyond the turn's own charge. Retrace-only batching can save turns but cannot create new-cell progress, so trailblazer is evidence that forward prediction into unvisited cells succeeded. allUniqueCellsVisited is every cell any player has reached this level, not just your own - compare it against mazeDimensions.totalMazeCells to know how much of the maze the team has collectively explored so far; it does not affect your traversal speed, which is scored on playerUniqueCellsVisited against decayUnitsCharged. At the initial game levels the single solution path covers nearly all of totalMazeCells, so expect to explore most of the maze before reaching the destination. At higher levels, the destination can be reachable well before allUniqueCellsVisited approaches totalMazeCells. totalTurnCount is the total number of completed prediction turns in this game level. playerTurnsTaken is the number completed by the player and is reported for context; neither count affects your speed, classification, or scores. The resulting score is visible via get_last_prediction_outcome. mazeDimensions.totalMazeCells is the full level size. mazeDimensions being null means the game state is invalid or incomplete for planning. Returns JSON: {\"suggestedMovesPerTurn\":{\"min\":number,\"max\":number}, \"allUniqueCellsVisited\":number, \"playerUniqueCellsVisited\":number, \"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"traversalSpeedClass\":string, \"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null, \"expectedResponseSchema\":object}.",
       parameters: {
         type: "object",
         properties: {},
@@ -430,10 +430,15 @@ describe("agent request service", () => {
     expect(requestEntries[0].details).toEqual({
       endpoint,
       api: agent.api,
+      seatId: agent.seatId,
+      agentSessionId: agent.sessionId,
+      model: agent.model,
+      requestIntervalSeconds: agent.requestIntervalSeconds,
       requestCount: 1,
       agentMode: "tools",
       player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
+      echoBackReasoning: false,
       tools: expectedLoggedTools(uncalledTools([]), true),
       messages: [
         { role: "system", content_checksum: checksumLoggedDescription(developerMessage), content: developerMessage },
@@ -450,10 +455,15 @@ describe("agent request service", () => {
     expect(requestEntries[1].details).toEqual({
       endpoint,
       api: agent.api,
+      seatId: agent.seatId,
+      agentSessionId: agent.sessionId,
+      model: agent.model,
+      requestIntervalSeconds: agent.requestIntervalSeconds,
       requestCount: 2,
       agentMode: "tools",
       player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
+      echoBackReasoning: false,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
         {
@@ -602,10 +612,15 @@ describe("agent request service", () => {
     expect(requestEntries[0].details).toEqual({
       endpoint,
       api: agent.api,
+      seatId: agent.seatId,
+      agentSessionId: agent.sessionId,
+      model: agent.model,
+      requestIntervalSeconds: agent.requestIntervalSeconds,
       requestCount: 1,
       agentMode: "tools",
       player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
+      echoBackReasoning: false,
       tools: expectedLoggedTools(uncalledTools([]), false),
       messages: [
         {
@@ -627,10 +642,15 @@ describe("agent request service", () => {
     expect(requestEntries[1].details).toEqual({
       endpoint,
       api: agent.api,
+      seatId: agent.seatId,
+      agentSessionId: agent.sessionId,
+      model: agent.model,
+      requestIntervalSeconds: agent.requestIntervalSeconds,
       requestCount: 2,
       agentMode: "tools",
       player: "Blue the Trailblazer - Default",
       reasoning: agent.reasoningEffort,
+      echoBackReasoning: false,
       tools: expectedLoggedTools(uncalledTools(["get_maze_structure"]), false),
       messages: [
         {
@@ -924,7 +944,7 @@ describe("agent request service", () => {
         decayUnitsCharged: 0,
         totalTurnCount: 0,
         playerTurnsTaken: 0,
-        batchEfficiencyClass: "trailblazer",
+        traversalSpeedClass: "trailblazer",
         mazeDimensions: {
           numCols: state.mazeDimensions?.numCols,
           numRows: state.mazeDimensions?.numRows,

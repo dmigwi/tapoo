@@ -195,7 +195,7 @@ export type VisitStatus =
 
 // TraversalHistoryEntry records one chronological logical-cell visit for the named player. There is
 // exactly one entry per cell - a revisit increments visitCount rather than appending, which is what
-// keeps allUniqueCellsVisited (agent/efficiency.ts) and the persisted-round duplicate check
+// keeps allUniqueCellsVisited (agent/traversal-speed.ts) and the persisted-round duplicate check
 // (isValidPersistedRound, traversal.ts) reading a distinct-cell count off the array length.
 export type TraversalHistoryEntry = CellCoordinate & {
   playerName: string
@@ -875,6 +875,11 @@ export type AppConfig = {
       backToAgentsLabel: string
     }
     privacy: {
+      documentTitle: string
+      description: string
+      pageLabel: string
+    }
+    notFound: {
       documentTitle: string
       description: string
       pageLabel: string

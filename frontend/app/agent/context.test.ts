@@ -173,7 +173,7 @@ describe("agent context", () => {
       decayUnitsCharged: 2,
       totalTurnCount: 0,
       playerTurnsTaken: 2,
-      batchEfficiencyClass: "backtracker",
+      traversalSpeedClass: "backtracker",
       mazeDimensions: { numCols: 2, numRows: 1, totalMazeCells: 2 },
       expectedResponseSchema,
     })
@@ -252,7 +252,7 @@ describe("agent context", () => {
       decayUnitsCharged: 0,
       totalTurnCount: 0,
       playerTurnsTaken: 0,
-      batchEfficiencyClass: "trailblazer",
+      traversalSpeedClass: "trailblazer",
       mazeDimensions: { numCols: 2, numRows: 1, totalMazeCells: 2 },
       expectedResponseSchema,
     })

@@ -1,5 +1,5 @@
 import { CONFIG } from "../config"
-import { agentDisplayName } from "./efficiency"
+import { agentDisplayName } from "./traversal-speed"
 import type { AgentApiSeatConfig, AgentSeat, TraversalHistoryEntry } from "../types"
 
 const { agentConfig } = CONFIG

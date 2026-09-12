@@ -74,6 +74,7 @@ type BranchingSummary = {
   "PathLen": string
   "Path-p5": string
   "Path-p95": string
+  "Path-stddev": string
   "Path%": string
   "Backtrack": string
   "Backtrack-p5": string
@@ -390,6 +391,7 @@ function runBranchingCase(
       "PathLen": formatMetric(pathLengths.mean),
       "Path-p5": formatMetric(pathLengths.low),
       "Path-p95": formatMetric(pathLengths.high),
+      "Path-stddev": formatMetric(pathLengths.stddev),
       "Path%": formatMetric((pathLengths.mean / dimensions.area) * 100),
       "Backtrack": formatMetric(backtrackCells.mean),
       "Backtrack-p5": formatMetric(backtrackCells.low),

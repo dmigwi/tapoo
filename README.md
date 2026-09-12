@@ -37,6 +37,15 @@ make frontend-build
 
 Then serve `public/` and open `/index.html`.
 
+### Docker
+
+```bash
+make docker-build
+make docker-run
+```
+
+Then open `http://localhost:5500/`.
+
 <details>
 <summary><strong>Gameplay Preview</strong></summary>
 
@@ -94,6 +103,27 @@ Available pages:
 - `/agents.html` for configuring and running HTTP-driven AI agents
 - `/prompts.html` for previewing the exact prompts and tool definitions sent to an agent
 - `/privacy.html` for the browser storage and agent data privacy notice
+
+### Container image
+
+The project-level [Dockerfile](./Dockerfile) builds the browser frontend in a Node/pnpm
+builder stage, then copies the generated [public](./public) output into an nginx runtime image.
+The container serves static files only; Go terminal gameplay is not part of the runtime image.
+If Docker Desktop is not desired, [Colima](https://github.com/abiosoft/colima) can provide a
+lightweight local Docker-compatible runtime for building and running the same image.
+
+```bash
+make docker-build            # build the tapoo image
+make docker-run              # serve it on http://localhost:5500
+make docker-shell            # open a shell in the Docker build image
+```
+
+Direct Docker equivalents:
+
+```bash
+docker build -t tapoo .
+docker run --rm -it -p 5500:80 tapoo
+```
 
 </details>
 
@@ -186,6 +216,8 @@ make frontend-quality
 make frontend-build
 make test
 make ci
+make docker-build
+make docker-run
 ```
 
 ### Benchmarks

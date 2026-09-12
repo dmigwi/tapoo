@@ -361,6 +361,8 @@ type AgentRoundLogDetails = {
   playerUniqueCellsVisited: number
   allUniqueCellsVisited: number
   decayUnitsCharged: number
+  traversalSpeed: string
+  traversalSpeedClass: string
   winSummary: string
 }
 
@@ -731,6 +733,11 @@ describe("agent control mode", () => {
     expect(lastEntry.details.playerUniqueCellsVisited).toBe(0)
     expect(lastEntry.details.allUniqueCellsVisited).toBe(1)
     expect(lastEntry.details.decayUnitsCharged).toBe(1)
+    // The bare ratio, never the "x" label players see: Tapoo Oracle parses this field with Number(),
+    // and "0.0000x" would come back as NaN and misclassify every win it reads.
+    expect(lastEntry.details.traversalSpeed).toBe("0.0000")
+    expect(Number(lastEntry.details.traversalSpeed)).toBe(0)
+    expect(lastEntry.details.traversalSpeedClass).toBe("backtracker")
     // The maze grid/dimensions are no longer repeated here: they never change once a round starts,
     // so they're logged beside the level's first full agent request instead.
     expect(lastEntry.details).not.toHaveProperty("maze")

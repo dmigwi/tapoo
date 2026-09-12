@@ -24,7 +24,7 @@ const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
 const VERSION_MAJOR = 2
 
 // VERSION_MINOR is the semantic minor version for the browser SPA runtime.
-const VERSION_MINOR = 5
+const VERSION_MINOR = 6
 
 // VERSION_PATCH is the semantic patch version for the browser SPA runtime.
 const VERSION_PATCH = 1
@@ -102,6 +102,13 @@ export const CONFIG: AppConfig = {
         "Privacy details for Tapoo, an AI agent behavior profiler, covering browser " +
         "storage and optional AI Agent API gameplay context.",
       pageLabel: "Privacy",
+    },
+    notFound: {
+      documentTitle: "Tapoo Maze Runner | Page Not Found",
+      description:
+        "Tapoo could not find the requested page. Return to the game, AI Agent runner, " +
+        "or published agent prompt reference.",
+      pageLabel: "404",
     },
   },
   // Runtime text shown inside the terminal view and overlay states.

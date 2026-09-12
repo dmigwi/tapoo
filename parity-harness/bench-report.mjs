@@ -20,9 +20,10 @@ const benchmarkIterations = isMainModule() ? configuredBenchmarkIterations() : 0
 const benchmarkSeed = isMainModule() ? configuredBenchmarkSeed() : 0
 const traversalSpeedScaleUnits = configuredTraversalSpeedScaleUnits()
 const traversalSpeedDisplayDecimals = String(traversalSpeedScaleUnits).length - 1
-const routeGeometryTableTitle = "Table 3a - Route geometry"
-const costModelTableTitle = "Table 3b - Cost model"
-const minWinSpeedTableTitle = "Table 3c - Minimum winning speed"
+const routeGeometryTableTitle = "Table 3a - Route"
+const offPathSpaceTableTitle = "Table 3b - Off-path space"
+const costModelTableTitle = "Table 3c - Cost model"
+const speedAndNoiseTableTitle = "Table 3d - Speed and noise"
 
 const reportOutputPath = process.env.TAPOO_BENCH_OUT ?? "parity-harness/bench-report.json"
 const chartOutputPath = chartPathForReport(reportOutputPath)
@@ -162,9 +163,9 @@ export function branchingDistributionRows(summaries) {
         "Dead Ends/Maze": summary["Dead ends/maze"],
         "Zero-Junction (%)": summary["Zero-J%"],
         "Junctions/Cell": summary["Junctions/cell"],
-        "P5": summary.p5,
-        "P95": summary.p95,
-        "stddev": summary.stddev,
+        "Junctions/Cell P5": summary.p5,
+        "Junctions/Cell P95": summary.p95,
+        "Junctions/Cell stddev": summary.stddev,
       },
     ]),
   )
@@ -176,13 +177,24 @@ export function routeGeometryRows(summaries) {
       summary.Case,
       {
         "Path Len (Cells)": summary.PathLen,
+        "Path (%)": summary["Path%"],
         "Path P5 (Cells)": summary["Path-p5"],
         "Path P95 (Cells)": summary["Path-p95"],
-        "Path (%)": summary["Path%"],
+        "Path stddev (Cells)": summary["Path-stddev"],
+      },
+    ]),
+  )
+}
+
+export function offPathSpaceRows(summaries) {
+  return Object.fromEntries(
+    realSummaries(summaries).map((summary) => [
+      summary.Case,
+      {
+        "Error Margin (Cells)": summary.Headroom,
         "W-Branch (Depth)": summary.WorstBranch,
         "W-Branch P5 (Depth)": summary["WorstBranch-p5"],
         "W-Branch P95 (Depth)": summary["WorstBranch-p95"],
-        "Error Margin (Cells)": summary.Headroom,
         "W-Branch (% of Margin)": worstBranchPercentOfMargin(summary),
       },
     ]),
@@ -211,6 +223,52 @@ export function minWinSpeedRows(summaries) {
       summary.Case,
       {
         "Conservative (No Batching) Min Win Speed": conservativeMinWinSpeed(summary),
+      },
+    ]),
+  )
+}
+
+export function mazeNoiseRows(summaries) {
+  return Object.fromEntries(
+    realSummaries(summaries).map((summary) => [
+      summary.Case,
+      {
+        "Path stddev (Cells)": summary["Path-stddev"],
+        "Speed stddev c=2.00": mazeSpeedStddev(summary, 2),
+        "Speed stddev c=1.25": mazeSpeedStddev(summary, 1.25),
+      },
+    ]),
+  )
+}
+
+export function speedAndNoiseRows(summaries) {
+  return Object.fromEntries(
+    realSummaries(summaries).map((summary) => [
+      summary.Case,
+      {
+        "Conservative (No Batching) Min Win Speed": conservativeMinWinSpeed(summary),
+        "Path stddev (Cells)": summary["Path-stddev"],
+        "Speed stddev c=2.00": mazeSpeedStddev(summary, 2),
+        "Speed stddev c=1.25": mazeSpeedStddev(summary, 1.25),
+      },
+    ]),
+  )
+}
+
+// mazeNoiseNumbers is the JSON counterpart of mazeNoiseRows, for the same reason minWinSpeedNumbers
+// exists: the table rounds speed stddevs to 4dp strings for display, and a consumer comparing a
+// cross-model gap against 2 sigma should get the unrounded values. Missing inputs are null, never ""
+// - Number("") is 0, which would read as a maze with no noise at all.
+export function mazeNoiseNumbers(summaries) {
+  return Object.fromEntries(
+    realSummaries(summaries).map((summary) => [
+      summary.Case,
+      {
+        pathStddev: finiteOrNull(numberOrNaN(summary["Path-stddev"])),
+        speedStddev: {
+          "c=2.00": finiteOrNull(mazeSpeedStddevNumber(summary, 2)),
+          "c=1.25": finiteOrNull(mazeSpeedStddevNumber(summary, 1.25)),
+        },
       },
     ]),
   )
@@ -259,6 +317,26 @@ function worstBranchPercent(summary) {
   return percentOfBudget(summary.WorstBranch, summary.Budget)
 }
 
+function pathPercent(summary, key) {
+  const area = summaryArea(summary)
+  const pathLength = Number(summary[key])
+  if (![area, pathLength].every(Number.isFinite) || area <= 0) {
+    return Number.NaN
+  }
+
+  return (pathLength / area) * 100
+}
+
+function branchPercentOfMargin(summary, key) {
+  const branchDepth = Number(summary[key])
+  const errorMargin = Number(summary.Headroom)
+  if (![branchDepth, errorMargin].every(Number.isFinite) || errorMargin <= 0) {
+    return Number.NaN
+  }
+
+  return Math.min(100, (branchDepth / errorMargin) * 100)
+}
+
 function batchingTraversalBudget(summary) {
   const batching = batchingTraversalCost(summary)
   return Number.isFinite(batching) ? Math.round(batching) : ""
@@ -294,6 +372,54 @@ function worstBranchPercentOfMargin(summary) {
   return formatNumber(Math.min(100, (worstBranch / errorMargin) * 100))
 }
 
+function mazeSpeedStddev(summary, roundTripMultiplier) {
+  const speedStddev = mazeSpeedStddevNumber(summary, roundTripMultiplier)
+  return Number.isFinite(speedStddev) ? speedStddev.toFixed(traversalSpeedDisplayDecimals) : ""
+}
+
+// numberOrNaN reads a summary field as a number, treating the "" that formatNumber writes for a
+// missing value as missing. Number("") is 0, so without this a case with no Path-stddev would report
+// a speed stddev of exactly zero - an assertion of no maze noise, printed as 0.0000 and drawn as a
+// collapsed band - instead of the blank that says the measurement is absent.
+function numberOrNaN(value) {
+  return value === "" || value === null || value === undefined ? Number.NaN : Number(value)
+}
+
+function finiteOrNull(value) {
+  return Number.isFinite(value) ? value : null
+}
+
+function mazeSpeedStddevNumber(summary, roundTripMultiplier) {
+  const pathStddev = numberOrNaN(summary["Path-stddev"])
+  const sensitivity = mazeSpeedSensitivity(summary, roundTripMultiplier)
+  if (![pathStddev, sensitivity].every(Number.isFinite)) {
+    return Number.NaN
+  }
+
+  return Math.abs(sensitivity) * pathStddev
+}
+
+function mazeSpeedSensitivity(summary, roundTripMultiplier) {
+  const explorationFraction = 0.5
+  const pathLength = numberOrNaN(summary.PathLen)
+  const errorMargin = numberOrNaN(summary.Headroom)
+  const c = Number(roundTripMultiplier)
+  if (![pathLength, errorMargin, c].every(Number.isFinite)) {
+    return Number.NaN
+  }
+
+  const uniqueCells = pathLength + explorationFraction * errorMargin
+  const decayUnits = pathLength + c * explorationFraction * errorMargin
+  if (decayUnits <= 0) {
+    return Number.NaN
+  }
+
+  return (
+    ((1 - explorationFraction) * decayUnits) -
+    (uniqueCells * (1 - c * explorationFraction))
+  ) / (decayUnits * decayUnits)
+}
+
 function roundedNumber(value, precision) {
   const numericValue = Number(value)
   if (!Number.isFinite(numericValue)) {
@@ -327,7 +453,21 @@ function uniqueCellsCeiling(summary) {
 }
 
 function conservativeMinWinSpeedRatio(summary) {
-  const uniqueCells = uniqueCellsCeiling(summary)
+  return minWinSpeedRatio(summary, 2)
+}
+
+function conservativeMinWinSpeed(summary) {
+  const uniqueCells = minWinUniqueCells(summary, 2)
+  const budget = Number(summary.Budget)
+  if (![uniqueCells, budget].every(Number.isFinite) || budget <= 0) {
+    return ""
+  }
+
+  return traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(uniqueCells, budget))
+}
+
+function minWinSpeedRatio(summary, roundTripMultiplier, pathKey = "PathLen") {
+  const uniqueCells = minWinUniqueCells(summary, roundTripMultiplier, pathKey)
   const budget = Number(summary.Budget)
   if (![uniqueCells, budget].every(Number.isFinite) || budget <= 0) {
     return Number.NaN
@@ -336,17 +476,43 @@ function conservativeMinWinSpeedRatio(summary) {
   return uniqueCells / budget
 }
 
-function conservativeMinWinSpeed(summary) {
-  const uniqueCells = uniqueCellsCeiling(summary)
+function minWinUniqueCells(summary, roundTripMultiplier, pathKey = "PathLen") {
+  const pathLength = Number(summary[pathKey])
   const budget = Number(summary.Budget)
-  if (![uniqueCells, budget].every(Number.isFinite) || budget <= 0) {
-    return ""
+  const c = Number(roundTripMultiplier)
+  if (![pathLength, budget, c].every(Number.isFinite) || c <= 0) {
+    return Number.NaN
   }
 
-  return `${traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(uniqueCells, budget))}x`
+  return pathLength + ((budget - pathLength) / c)
 }
 
-// Mirrors frontend/app/agent/efficiency.ts calculateTraversalSpeedUnits().
+function minWinSpeedSensitivityBandHigh(summary) {
+  return minWinSpeedSensitivityBandEdge(summary, 1)
+}
+
+function minWinSpeedSensitivityBandLow(summary) {
+  return minWinSpeedSensitivityBandEdge(summary, -1)
+}
+
+function minWinSpeedSensitivityBandEdge(summary, direction) {
+  const center = conservativeMinWinSpeedRatio(summary)
+  const bandLow = minWinSpeedRatio(summary, 2, "Path-p5")
+  const bandHigh = minWinSpeedRatio(summary, 2, "Path-p95")
+  const sensitivityAtConservative = Math.abs(mazeSpeedSensitivity(summary, 2))
+  const sensitivityAtBatching = Math.abs(mazeSpeedSensitivity(summary, 1.25))
+  if (![center, bandLow, bandHigh, sensitivityAtConservative, sensitivityAtBatching].every(Number.isFinite)) {
+    return Number.NaN
+  }
+  if (sensitivityAtConservative <= 0) {
+    return center
+  }
+
+  const halfWidth = Math.abs(bandHigh - bandLow) / 2
+  return center + (direction * halfWidth * (sensitivityAtBatching / sensitivityAtConservative))
+}
+
+// Mirrors frontend/app/agent/traversal-speed.ts calculateTraversalSpeedUnits().
 function calculateTraversalSpeedUnits(uniqueCellsVisited, scoreDecayUnits) {
   if (scoreDecayUnits <= 0) {
     return 0
@@ -363,10 +529,11 @@ function calculateTraversalSpeedUnits(uniqueCellsVisited, scoreDecayUnits) {
   return Math.max(0, speedUnits)
 }
 
-// Mirrors frontend/app/agent/efficiency.ts traversalSpeedUnitsToDisplay().
+// Mirrors frontend/app/agent/traversal-speed.ts traversalSpeedUnitsToDisplay().
 function traversalSpeedUnitsToDisplay(traversalSpeedUnits) {
-  return (traversalSpeedUnits / traversalSpeedScaleUnits)
+  return `${(traversalSpeedUnits / traversalSpeedScaleUnits)
     .toFixed(traversalSpeedDisplayDecimals)
+  }x`
 }
 
 export function conservativeLabel(headroom) {
@@ -729,25 +896,38 @@ function printLegend() {
     "Junctions/Maze divided by Area. Use only when comparing cases of different size.",
   )
   printLegendEntry(
-    "P5/P95, stddev:",
-    "Spread of per-sample junctions/cell. Indicative only for cases averaging under one junction " +
-      `per maze, where n=${benchmarkIterations} leaves the estimate noisy.`,
+    "Junctions/Cell P5/P95/stddev:",
+    `Spread of junctions/cell across the case's ${benchmarkIterations} mazes. All three describe the per-cell rate, ` +
+      "not the per-maze counts to their left. Indicative only for cases averaging under one junction " +
+      `per maze, where n=${benchmarkIterations} leaves the estimate noisy. This stddev is measured ` +
+      "directly from samples; Table 3d's speed stddev is derived by multiplying Path stddev by a " +
+      "sensitivity, with no agent run.",
   )
 
-  printLegendSection("Table 3a - Route geometry")
+  printLegendSection("Table 3a - Route")
 
   printLegendEntry(
-    "Path Len, Path P5/P95:",
-    "Cells on the unique start-to-destination route: the mean, with the 5th and 95th percentiles in " +
-      "their own columns. The unavoidable ideal path, not any route an agent found. Every maze is a " +
-      "spanning tree, so exactly one route exists between any two cells. The spread matters as much as the " +
-      "mean - an agent faces one draw, not the average.",
+    "Path Len, Path (%), Path P5/P95, Path stddev:",
+    "Cells on the unique start-to-destination route: the mean, the same figure as a share of area, " +
+      "the 5th and 95th percentiles, and the standard deviation. The unavoidable ideal path, not " +
+      "any route an agent found. Every maze is a spanning tree, so exactly one route exists between " +
+      "any two cells. Low levels are near-pure corridors; higher levels are more heavily branched. " +
+      `Path stddev describes how much the success path varies from one maze to the next at this ` +
+      `case, over the same ${benchmarkIterations} samples. At area600_25x24 the path averages ` +
+      "384.4 cells and typically lands within about 46 of that; the middle 90% span 309 to 459. " +
+      "A game draws one of those mazes. It might be a 309-cell path or a 459-cell one, and the " +
+      "agent never learns which - it sees only its own window, turn by turn. Neither does the " +
+      "profile: a single run cannot separate a model that struggled from a model that drew a long " +
+      "path. Table 3d turns this spread into the error bar on a speed figure. The percentiles and " +
+      "the stddev are independent views of the same spread. If the distribution were normal they " +
+      "would agree, since p5 and p95 sit at -1.645 and +1.645 standard deviations, so " +
+      "(P95 - P5) / 3.29 would recover the stddev. They agree closely from area 180 upward and " +
+      "diverge only at the smallest cases, where the mean sits within a few cells of the area cap " +
+      "and the percentiles cannot resolve the spread. Use the stddev.",
   )
-  printLegendEntry(
-    "Path (%):",
-    "Path Len as a percentage share of area. Low levels are near-pure corridors; higher levels are more " +
-      "heavily branched.",
-  )
+
+  printLegendSection("Table 3b - Off-path space")
+
   printLegendEntry(
     "Error Margin:",
     "Area minus Path Len - every cell off the winning route. It is 1 - Path (%) restated as a " +
@@ -769,7 +949,7 @@ function printLegend() {
       "outcomes average out. Clamped at 100 to guard rounding when both averages are near zero.",
   )
 
-  printLegendSection("Table 3b - Cost model")
+  printLegendSection("Table 3c - Cost model")
 
   printLegendEntry(
     "Budget (Decay):",
@@ -814,7 +994,7 @@ function printLegend() {
       "is therefore the batching agent's entire tolerance for going wrong: penalties, extra " +
       "branches, wasted turns. It is not idle capacity to spend on something - every turn costs " +
       "decay and the level ends on arrival. Distinct from Error Margin despite the similar name: " +
-      "margin is cells of off-path space in Table 3a; this is decay units of tolerance. They are " +
+      "margin is cells of off-path space in Table 3b; this is decay units of tolerance. They are " +
       "joined by Error Budget = 0.375 * Error Margin, so this column is a scaled restatement rather " +
       "than independent evidence. The constant is 1 - 5/8, the batcher's per-cell saving (1/2 " +
       "inbound plus 1/8 outbound, against 1). Because 1.25L bounds batching cost from above, this " +
@@ -833,7 +1013,7 @@ function printLegend() {
       "can display 0 - 0 even when individual samples had a short branch.",
   )
 
-  printLegendSection("Table 3c - Minimum winning speed")
+  printLegendSection("Table 3d - Speed and noise")
 
   printLegendEntry(
     "Min Win Speed:",
@@ -841,23 +1021,34 @@ function printLegend() {
       "Equivalently U/Budget with U = (P + Budget)/2, the unique cells a conservative " +
       "agent has visited at break-even - the whole path plus half the off-path space, " +
       "typically 70-80% of the maze, not half of anything a reader would count. Cannot " +
-      "exceed 1.0000: one turn, one decay unit, at most one new cell, so U <= D always. " +
-      "Reaches exactly 1.0000 only when Error Margin is zero, so conservative play is " +
+      "exceed 1.0000x: one turn, one decay unit, at most one new cell, so U <= D always. " +
+      "Reaches exactly 1.0000x only when Error Margin is zero, so conservative play is " +
       "always Backtracker.",
   )
   printLegendEntry(
     "Formatting:",
-    "Four decimal places, rounded away from 1.0000 so a displayed value never contradicts its class. " +
+    "Four decimal places with an x suffix, rounded away from 1.0000x so a displayed value never contradicts its class. " +
       "Classification is computed from the raw ratio, not the rendered string.",
   )
   printLegendEntry(
     "What this means:",
-    "Exceeding 1.0000 requires more than one new cell per turn, which requires batching forward, into " +
+    "Exceeding 1.0000x requires more than one new cell per turn, which requires batching forward, into " +
       "cells never visited. The Trailblazer threshold is therefore a forward-deduction test, and a " +
       "Backtracker classification at high levels may be a structural ceiling rather than poor play. " +
-      "Perfect retrace batching can approach 1.0000 from below, but cannot cross it: retracing " +
+      "Perfect retrace batching can approach 1.0000x from below, but cannot cross it: retracing " +
       "saves denominator while adding no new cells. That limit is a global fact, stated here once, " +
       "rather than a column sitting at one arbitrary batch depth.",
+  )
+  printLegendEntry(
+    "Path stddev (echoed):",
+    "Repeated from Table 3a as the input to the Speed stddev columns beside it, so the derivation " +
+      "can be checked without turning back.",
+  )
+  printLegendEntry(
+    "Speed stddev c=2.00, c=1.25:",
+    "Maze-induced standard deviation in traversal speed for an agent with round-trip multiplier c. " +
+      "Derived, not measured: Path stddev multiplied by the sensitivity in the table note, with no " +
+      "agent run. Table 2's stddev is measured directly from samples; this one is not.",
   )
 
   printDerivedFormulaLegend()
@@ -908,14 +1099,22 @@ function printDerivedFormulaLegend() {
     "Spread columns:",
     "Mean, P5, and P95 columns report the sample mean plus the 5th and 95th percentile for that " +
       "same metric. P5/P95 (Junctions/Cell) and stddev (Junctions/Cell) are computed over " +
-      "per-sample junctions/cell values; Path P5/P95 are cell counts and W-Branch P5/P95 are depths.",
+      "per-sample junctions/cell values; Path P5/P95 and Path stddev are cell counts; " +
+      "W-Branch P5/P95 are depths.",
+  )
+  printLegendEntry(
+    "Path spread:",
+    `Path stddev is the sample standard deviation of path length over the case's ${benchmarkIterations} mazes. ` +
+      "(P95 - P5) / 3.29 estimates the same quantity under normality and is printed nowhere; " +
+      "the two are worth comparing by eye as a skew check.",
   )
   printLegendEntry(
     "Route percentages:",
-    "Path (%) = 100*Path Len (Cells) / Area (Cells). Error Margin (Cells) = Area (Cells) - " +
-      "Path Len (Cells). W-Branch (% of Margin) = min(100, 100*W-Branch (Depth) / " +
-      "Error Margin (Cells)) - a depth over a cell count, so read it as how far the worst branch " +
-      "reaches into the off-path space rather than what share of it that branch holds.",
+    "Path (%) = 100*Path Len (Cells) / Area (Cells), Table 3a. Error Margin (Cells) = " +
+      "Area (Cells) - Path Len (Cells) and W-Branch (% of Margin) = min(100, " +
+      "100*W-Branch (Depth) / Error Margin (Cells)), Table 3b - a depth over a cell count, " +
+      "so read it as how far the worst branch reaches into the off-path space rather than what " +
+      "share of it that branch holds.",
   )
   printLegendEntry(
     "Cost model:",
@@ -928,7 +1127,12 @@ function printDerivedFormulaLegend() {
     "s_min = (Path Length + Error Margin/2) / Budget, the final traversal speed of a " +
       "single-move agent that exactly exhausts its budget. Generalises to " +
       "s_min(c) = (P + M/c) / Budget for a strategy with round-trip multiplier c; " +
-      "c = 2 is printed, c = 1 gives exactly 1.0000.",
+      "c = 2 is printed, c = 1 gives exactly 1.0000x.",
+  )
+  printLegendEntry(
+    "Maze noise:",
+    "Speed stddev(c) = |ds/dP| * Path stddev, with ds/dP = ((1-f)D - U(1-cf)) / D^2, " +
+      "U = P + fM, D = P + cfM, f = 0.5. Zero at c = 1 by construction.",
   )
   printLegendEntry(
     "Redundancies:",
@@ -945,7 +1149,7 @@ function printDerivedFormulaLegend() {
   )
   printLegendEntry(
     "Speed display:",
-    "Speeds render at 4dp, rounded away from 1.0000. Class comes from comparing U against D directly, " +
+    "Speeds render at 4dp with an x suffix, rounded away from 1.0000x. Class comes from comparing U against D directly, " +
       "so the number and the class cannot disagree.",
   )
 }
@@ -1029,9 +1233,16 @@ function printReportReadingGuide() {
   console.info("")
   printNumberedReadingGuideItem(
     2,
-    "What kind of task does each level present? Answered by Tables 1, 2, 3a, 3b and 3c, " +
+    "What kind of task does each level present? Answered by Tables 1, 2, 3a, 3b, 3c and 3d, " +
       "which characterise maze structure and derive what it costs an agent to solve. These are " +
       "descriptive. They are NOT a drift check and no threshold in them ever fires.",
+  )
+  printWrapped(
+    console.info,
+    "Tables 3a through 3d describe the task from four angles. 3a measures the route and how " +
+      "much it varies from maze to maze. 3b measures the space off that route and its deepest " +
+      "branch. 3c derives what the maze costs an agent in turns. 3d derives the speed threshold " +
+      "that cost implies, and how far one maze draw can move it.",
   )
   console.info("")
   printWrapped(
@@ -1043,7 +1254,7 @@ function printReportReadingGuide() {
     console.info,
     "Parity means the two ports agree, not that either is correct. The structural validation " +
       "line covers correctness of form - tree, connected, closed - but not of intent. " +
-      "Tables 3b and 3c are projections from a cost model, not measurements: no agent " +
+      "Tables 3c and 3d are projections from a cost model, not measurements: no agent " +
       `has been run. Every figure is a mean over ${benchmarkIterations} samples unless ` +
       "a percentile column says otherwise.",
   )
@@ -1055,7 +1266,7 @@ function printReportReadingGuide() {
   console.info("")
   printWrapped(
     console.info,
-    "Tables 3b and 3c describe two agent archetypes at the point where each exactly exhausts " +
+    "Tables 3c and 3d describe two agent archetypes at the point where each exactly exhausts " +
       "its budget. Nothing about real agent behaviour is assumed: the exploration fraction is " +
       "derived from the strategy, not guessed. Single-move play pays 2 turns per off-path cell, " +
       "so it breaks even having entered half of them; batching pays less per cell, so it breaks " +
@@ -1071,7 +1282,7 @@ function printReportReadingGuide() {
   printWrapped(
     console.info,
     "Speeds show four decimal places here and in gameplay output, rounded " +
-      "away from 1.0000 so that a displayed value never contradicts its " +
+      "away from 1.0000x so that a displayed value never contradicts its " +
       "classification. Benchmark speeds are derived from route geometry; gameplay speeds " +
       "are measured from actual cells and decay. " +
       "Same format, different status - do not compare one against the other as though they were " +
@@ -1215,22 +1426,33 @@ function printBranchingDistributionNote() {
 function printRouteGeometryNote() {
   printLegendEntry(
     "Table 3a note:",
-    "Route geometry contains only maze structure, not agent assumptions. P5/P95 columns are split " +
-      "out as numeric cells so console.table keeps them unquoted and right-aligned. W-Branch means Worst Branch. " +
-      "Error Margin (Cells) = area - Path Len (Cells), or 1 - Path (%) restated as a count. W-Branch " +
-      "(% of Margin) is clamped at 100 to guard rounding artifacts when both averaged values " +
-      "are near zero.",
+    "Route geometry contains only maze structure, not agent assumptions. Error Margin and the " +
+      "worst-branch columns move to Table 3b; the speed consequence of the spread here is Table 3d. " +
+      "P5/P95 and stddev are split out as numeric cells so console.table keeps them unquoted and " +
+      "right-aligned.",
+  )
+}
+
+function printOffPathSpaceNote() {
+  printLegendEntry(
+    "Table 3b note:",
+    "The space off the winning route, and the deepest single branch in it. W-Branch means Worst " +
+      "Branch, and it is a depth in cells from the route, not a cell count: a branch that forks " +
+      "holds more cells than its depth. Error Margin (Cells) = area - Path Len (Cells), or " +
+      "1 - Path (%) restated as a count. W-Branch (% of Margin) is clamped at 100 to guard " +
+      "rounding artifacts when both averaged values are near zero.",
   )
 }
 
 function printCostModelNote() {
   printLegendEntry(
-    "Table 3b note:",
+    "Table 3c note:",
     "Conservative cost equals Budget exactly at every level because P + M = area. Batching = " +
       "P + 1.25*(M/2), rounded to a whole turn count, and Error Budget is the batching agent's " +
       "entire tolerance for wrong turns. Explore-All Cost is the projected cost of walking every off-path cell. " +
       "Cost columns display floor(1.25L) - floor(2L) as projected whole-turn counts, where L is " +
-      "W-Branch (Worst Branch) Depth for W-Branch Cost and Error Margin (Cells) for Explore-All Cost. " +
+      "W-Branch (Worst Branch) Depth for W-Branch Cost and Error Margin (Cells) for Explore-All Cost, both " +
+      "from Table 3b. " +
       "The two Ls are different quantities: a depth for one, a cell count for the other. " +
       "Small averaged margins can therefore display 0 - 0 even when a few individual samples had a " +
       "short off-path branch. " +
@@ -1247,21 +1469,53 @@ function printCostModelNote() {
   )
 }
 
-function printMinWinSpeedNote() {
+function printSpeedAndNoiseNote(summaries) {
+  const shapeExample = mazeNoiseShapeExample(summaries)
   printLegendEntry(
-    "Table 3c note:",
-    "The final traversal speed of a single-move agent that exactly exhausts its budget: " +
-      "s_min = (P + M/2) / Budget. Below this line a conservative agent has already explored " +
-      "more than half the off-path space and cannot finish; at or above it, it can. The half " +
-      "is derived from the strategy - single-move play pays 2 turns per off-path cell - not " +
-      "assumed from behaviour. s_min rises as batching improves, reaching exactly 1.0000 in " +
-      "the limit of perfect retrace batching, and never exceeding it: retracing visits no new " +
-      "cells, so it lowers the denominator without raising the numerator. Exceeding 1.0000 " +
-      "therefore requires batching forward into cells never visited, at any batch depth. " +
-      "Trailblazer is a forward-deduction test. Values are 4dp strings rounded away from " +
-      "1.0000 so a figure never contradicts its class; the JSON carries the same ratios " +
-      "unrounded under minWinSpeeds, which is what downstream analysis should read. Derived " +
-      "from Table 3a, not measured.",
+    "Table 3d note:",
+    "Min Win Speed is the final traversal speed of a single-move agent that exactly exhausts its " +
+      "budget: s_min = (P + M/2) / Budget. Below this line a conservative agent has already explored " +
+      "more than half the off-path space and cannot finish; at or above it, it can. The half is " +
+      "derived from the strategy - single-move play pays 2 turns per off-path cell - not assumed " +
+      "from behaviour. s_min rises as batching improves, reaching exactly 1.0000x in the limit of " +
+      "perfect retrace batching and never exceeding it: retracing visits no new cells, so it lowers " +
+      "the denominator without raising the numerator. Exceeding 1.0000x therefore requires batching " +
+      "forward into cells never visited, at any batch depth. Trailblazer is a forward-deduction test. " +
+      "The Speed stddev columns are the error bar on that threshold: how far one maze draw can move it. " +
+      "They come from the Table 3a path spread, echoed here as Path stddev, and the sensitivity " +
+      "ds/dP = ((1-f)D - U(1-cf)) / D^2, with U = P + fM, D = P + cfM, f = 0.5. Two columns because " +
+      "sensitivity is not a constant: it falls as batching improves and vanishes at c = 1, where " +
+      "D = P + fM = U and the ratio is pinned at 1.0000x whatever the draw - that limit is stated " +
+      "here rather than printed as a column of zeros. A cross-model speed difference is resolved " +
+      "only when it exceeds roughly two standard deviations at the conservative column. Decision-rate " +
+      "statistics such as invalid-move rate are path-insensitive and do not carry this noise; more " +
+      "turns inside one game reduce model noise but not maze noise, since the maze is one draw held " +
+      "fixed for the whole run. " +
+      "Noise tracks grid shape as well as area. At a fixed area, thin grids carry more than " +
+      `square ones${shapeExample}. The shapes actually played are the near-square ` +
+      "'Preferred = yes' rows in Table 1, so read a gameplay profile against that row rather than " +
+      "the case mean or the widest ladder. Values are 4dp speed strings with an x suffix, rounded " +
+      "away from 1.0000x so a figure never contradicts its class; the JSON carries the same ratios " +
+      "unrounded under minWinSpeeds. Speeds here are thresholds derived from route geometry; gameplay " +
+      "speeds carrying the same 'x' notation are measured from actual cells and decay. Same glyph, " +
+      "different status.",
+  )
+}
+
+function mazeNoiseShapeExample(summaries) {
+  const rows = mazeNoiseRows(summaries)
+  const area900Square = rows.area900_30x30?.["Speed stddev c=2.00"]
+  const area900Thin = rows.area900_150x6?.["Speed stddev c=2.00"]
+  const area1600Square = rows.area1600_40x40?.["Speed stddev c=2.00"]
+  const area1600Thin = rows.area1600_400x4?.["Speed stddev c=2.00"]
+
+  if ([area900Square, area900Thin, area1600Square, area1600Thin].some((value) => value === undefined)) {
+    return ""
+  }
+
+  return (
+    ` - ${area900Square} at area900_30x30 against ${area900Thin} at area900_150x6, ` +
+    `and ${area1600Square} against ${area1600Thin} across the area 1600 rows`
   )
 }
 
@@ -1270,13 +1524,17 @@ function printNavigationTables(summaries, suffix = "") {
   printRouteGeometryNote()
   printCaseTable(routeGeometryRows(summaries))
 
+  console.info(`\n${offPathSpaceTableTitle}${suffix}`)
+  printOffPathSpaceNote()
+  printCaseTable(offPathSpaceRows(summaries))
+
   console.info(`\n${costModelTableTitle}${suffix}`)
   printCostModelNote()
   printCaseTable(costModelRows(summaries))
 
-  console.info(`\n${minWinSpeedTableTitle}${suffix}`)
-  printMinWinSpeedNote()
-  printCaseTable(minWinSpeedRows(summaries))
+  console.info(`\n${speedAndNoiseTableTitle}${suffix}`)
+  printSpeedAndNoiseNote(summaries)
+  printCaseTable(speedAndNoiseRows(summaries))
 }
 
 // printHashComparisonTable is the actual equality check made legible in one place: a single
@@ -1533,7 +1791,7 @@ function writeJsonReport(
   writeFileSync(
     preferredChartsPath,
     renderBenchmarkCharts(goReport ?? frontendReport, {
-      filterLabel: "Preferred cases only",
+      filterLabel: "Preferred shapes - as played",
       summaryFilter: (summary) => summary.Preferred === "yes",
     }),
   )
@@ -1545,65 +1803,76 @@ export function renderBenchmarkCharts(report, options = {}) {
   const summaries = realSummaries(firstGroup?.summaries ?? []).filter(
     options.summaryFilter ?? (() => true),
   )
-  const branchingCharts = [
-    ["Junctions/Maze", "Junctions/maze"],
-    ["Junctions/Cell", "Junctions/cell"],
-    ["Degree-3/Maze", "Deg3/maze"],
-    ["Degree-4 (%)", "%Deg4"],
-    ["Zero-Junction (%)", "Zero-J%"],
-    ["Dead Ends/Maze", "Dead ends/maze"],
-    ["P5 (Junctions/Cell)", "p5"],
-    ["P95 (Junctions/Cell)", "p95"],
-    ["stddev (Junctions/Cell)", "stddev"],
+  const structureCharts = [
+    {
+      bandHigh: "p95",
+      bandLow: "p5",
+      bandLabel: "Junctions/Cell P5-P95",
+      label: "Junctions/Cell",
+      selector: "Junctions/cell",
+      seriesLabel: "Junctions/Cell",
+    },
+    { label: "Degree-4 (%)", selector: "%Deg4" },
+    { label: "Zero-Junction (%)", selector: "Zero-J%" },
   ]
-  const navigationCharts = [
-    ["Path (%)", "Path%"],
-    ["W-Branch (%)", (summary) => percentOfBudget(summary.WorstBranch, summary.Budget)],
-    ["Error Margin / Cell", errorMarginPerCell],
-    ["Conservative (No Batching) Min Win Speed", conservativeMinWinSpeedRatio],
+  const routeCharts = [
+    {
+      bandHigh: (summary) => pathPercent(summary, "Path-p95"),
+      bandLow: (summary) => pathPercent(summary, "Path-p5"),
+      bandLabel: "Path P5-P95 (%)",
+      caption: "Twin of chart 6: s_min = 0.5 + Path%/2. Structure view here, agent threshold there.",
+      label: "Path (%)",
+      selector: "Path%",
+      seriesLabel: "Path (%)",
+    },
+    {
+      bandHigh: (summary) => branchPercentOfMargin(summary, "WorstBranch-p95"),
+      bandLow: (summary) => branchPercentOfMargin(summary, "WorstBranch-p5"),
+      bandLabel: "W-Branch P5-P95 (% of Margin)",
+      caption: "Depth over off-path cells: how far the worst branch reaches, not what share it holds.",
+      label: "W-Branch (% of Margin)",
+      selector: worstBranchPercentOfMargin,
+      seriesLabel: "W-Branch (% of Margin)",
+    },
   ]
-  const relationshipCharts = [
-    ["Skew vs Error Margin / Cell", errorMarginPerCell, summarySkew, "skew"],
-    [
-      "Junctions/Cell vs Path (%)",
-      (summary) => summary["Path%"],
-      (summary) => summary["Junctions/cell"],
-      "junctions/cell",
-    ],
-    [
-      "Junctions/Cell vs W-Branch (%)",
-      worstBranchPercent,
-      (summary) => summary["Junctions/cell"],
-      "junctions/cell",
-    ],
-    [
-      "Degree-4 (%) vs W-Branch (%)",
-      worstBranchPercent,
-      (summary) => summary["%Deg4"],
-      "degree-4 (%)",
-    ],
-    [
-      "Zero-Junction (%) vs Path (%)",
-      (summary) => summary["Path%"],
-      (summary) => summary["Zero-J%"],
-      "zero-junction (%)",
-    ],
-    [
-      "Path (%) vs Error Margin / Cell",
-      errorMarginPerCell,
-      (summary) => summary["Path%"],
-      "path (%)",
-    ],
+  const agentFacingCharts = [
+    {
+      bandHigh: (summary) => minWinSpeedRatio(summary, 2, "Path-p95"),
+      bandHigh2: minWinSpeedSensitivityBandHigh,
+      bandLabel: "c=2.00 P5-P95",
+      bandLabel2: "c=1.25 P5-P95",
+      bandLow: (summary) => minWinSpeedRatio(summary, 2, "Path-p5"),
+      bandLow2: minWinSpeedSensitivityBandLow,
+      caption: "Spread across mazes, not confidence in the mean. Affine twin of chart 4.",
+      label: "Min Win Speed",
+      selector: conservativeMinWinSpeedRatio,
+      seriesLabel: "s_min",
+    },
+  ]
+  const shapeCharts = [
+    {
+      kind: "scatter",
+      label: "Skew vs Speed stddev",
+      legendItems: [
+        { className: "legend-dot", label: "All shapes", type: "point" },
+        { className: "legend-dot legend-dot--preferred", label: "Preferred filled", type: "point" },
+      ],
+      selector: (summary) => mazeSpeedStddevNumber(summary, 2),
+      xLabel: "Skew (Ratio)",
+      xScale: "log",
+      xSelector: summarySkew,
+    },
   ]
   const chartWidth = 360
-  const chartHeight = 180
+  const chartHeight = 260
   const gap = 22
   const columns = 2
-  const titleSuffix = options.filterLabel ? ` (${options.filterLabel})` : ""
+  const titleSuffix = ` (${options.filterLabel ?? "All shapes - geometry sweep"})`
   const allCharts = [
-    { title: `Table 2 - Branching distribution${titleSuffix}`, metrics: branchingCharts },
-    { title: `Table 3 - Navigation summaries${titleSuffix}`, metrics: navigationCharts },
-    { title: `Shape relationships${titleSuffix}`, metrics: relationshipCharts },
+    { title: `Structure${titleSuffix}`, metrics: structureCharts },
+    { title: `Route${titleSuffix}`, metrics: routeCharts },
+    { title: `Agent-facing${titleSuffix}`, metrics: agentFacingCharts },
+    { title: `Shape${titleSuffix}`, metrics: shapeCharts },
   ]
   const sectionHeights = allCharts.map(({ metrics }) => {
     const rows = Math.ceil(metrics.length / columns)
@@ -1613,8 +1882,10 @@ export function renderBenchmarkCharts(report, options = {}) {
   const height = 28 + sectionHeights.reduce((total, sectionHeight) => total + sectionHeight, 0)
   let y = 24
 
+  let chartNumberStart = 1
   const sections = allCharts.map((section, index) => {
     const output = renderChartSection({
+      chartNumberStart,
       chartHeight,
       chartWidth,
       columns,
@@ -1624,6 +1895,7 @@ export function renderBenchmarkCharts(report, options = {}) {
       title: section.title,
       y,
     })
+    chartNumberStart += section.metrics.length
     y += sectionHeights[index]
     return output
   })
@@ -1638,9 +1910,18 @@ export function renderBenchmarkCharts(report, options = {}) {
       .label { font-size: 11px; fill: #9aa69c; }
       .panel { fill: #101713; stroke: #2f4137; stroke-width: 1; }
       .axis { stroke: #405247; stroke-width: 1; }
+      .band { fill: rgba(92, 200, 170, 0.16); stroke: none; }
+      .band--wide { fill: rgba(244, 169, 7, 0.13); stroke: none; }
+      .band--secondary { fill: rgba(214, 167, 44, 0.18); stroke: none; }
       .grid { stroke: #24322b; stroke-width: 1; }
       .line { fill: none; stroke: #5cc8aa; stroke-width: 2; }
-      .point { fill: #f1d065; }
+      .line--secondary { stroke: #ef6718; }
+      .point { fill: none; stroke: #d6a72c; stroke-width: 1.6; }
+      .point--preferred { fill: #5cc8aa; stroke: #5cc8aa; stroke-width: 1.8; }
+      .legend-dot { fill: none; stroke: #d6a72c; stroke-width: 1.6; }
+      .legend-dot--preferred { fill: #5cc8aa; stroke: #5cc8aa; stroke-width: 1.8; }
+      .legend-swatch { stroke: #2f4137; stroke-width: 0.6; }
+      .caption { font-size: 9px; fill: #87958c; }
     </style>\n` +
     `<rect width="100%" height="100%" fill="#0b110e"/>\n` +
     sections.join("\n") +
@@ -1648,22 +1929,50 @@ export function renderBenchmarkCharts(report, options = {}) {
   )
 }
 
-function renderChartSection({ chartHeight, chartWidth, columns, gap, metrics, summaries, title, y }) {
+function renderChartSection({
+  chartHeight,
+  chartNumberStart,
+  chartWidth,
+  columns,
+  gap,
+  metrics,
+  summaries,
+  title,
+  y,
+}) {
   const titleLine = `<text class="title" x="${gap}" y="${y}">${escapeXml(title)}</text>`
-  const charts = metrics.map(([label, selector, xSelector, xLabel], index) => {
+  const charts = metrics.map((metric, index) => {
     const column = index % columns
     const row = Math.floor(index / columns)
     const x = gap + column * (chartWidth + gap)
     const chartY = y + 34 + row * (chartHeight + gap)
-    return renderLineChart({
+    const spec = normalizeChartSpec(metric)
+    const numberedLabel = `${chartNumberStart + index}. ${spec.label}`
+    return spec.kind === "scatter" ? renderScatterChart({
       height: chartHeight,
-      label,
+      label: numberedLabel,
+      legendItems: spec.legendItems,
+      caption: spec.caption,
       summaries,
-      values: summaries.map((summary) => metricValue(summary, selector)),
+      values: summaries.map((summary) => metricValue(summary, spec.selector)),
       width: chartWidth,
       x,
-      xLabel,
-      xValues: summaries.map((summary) => metricValue(summary, xSelector ?? summaryArea)),
+      xLabel: spec.xLabel,
+      xScale: spec.xScale,
+      xValues: summaries.map((summary) => metricValue(summary, spec.xSelector ?? summaryArea)),
+      y: chartY,
+    }) : renderLineChart({
+      bands: chartBands(summaries, spec),
+      caption: spec.caption,
+      height: chartHeight,
+      label: numberedLabel,
+      series: chartSeries(summaries, spec),
+      summaries,
+      width: chartWidth,
+      x,
+      xLabel: spec.xLabel,
+      xScale: spec.xScale,
+      xValues: summaries.map((summary) => metricValue(summary, spec.xSelector ?? summaryBudget)),
       y: chartY,
     })
   })
@@ -1671,33 +1980,116 @@ function renderChartSection({ chartHeight, chartWidth, columns, gap, metrics, su
   return [titleLine, ...charts].join("\n")
 }
 
-function renderLineChart({ height, label, values, width, x, xLabel = "total cells", xValues, y }) {
-  const padding = { bottom: 34, left: 46, right: 18, top: 28 }
+function normalizeChartSpec(metric) {
+  if (!Array.isArray(metric)) {
+    return metric
+  }
+
+  const [label, selector, xSelector, xLabel] = metric
+  return { label, selector, xLabel, xSelector }
+}
+
+function chartSeries(summaries, spec) {
+  if (spec.series) {
+    return spec.series.map((series, index) => ({
+      className: index === 0 ? "line" : "line line--secondary",
+      label: series.label,
+      values: summaries.map((summary) => metricValue(summary, series.selector)),
+    }))
+  }
+
+  return [{
+    className: "line",
+    label: spec.seriesLabel ?? spec.label,
+    values: summaries.map((summary) => metricValue(summary, spec.selector)),
+  }]
+}
+
+function chartBands(summaries, spec) {
+  const bands = []
+  if (spec.bandLow && spec.bandHigh) {
+    bands.push({
+      className: "band",
+      high: summaries.map((summary) => metricValue(summary, spec.bandHigh)),
+      label: spec.bandLabel ?? "P5-P95",
+      low: summaries.map((summary) => metricValue(summary, spec.bandLow)),
+    })
+  }
+  if (spec.bandLow2 && spec.bandHigh2) {
+    bands.push({
+      className: "band band--wide",
+      high: summaries.map((summary) => metricValue(summary, spec.bandHigh2)),
+      label: spec.bandLabel2 ?? "+/-2σ",
+      low: summaries.map((summary) => metricValue(summary, spec.bandLow2)),
+    })
+  }
+  return bands
+}
+
+function renderLineChart({
+  bands = [],
+  caption = "",
+  height,
+  label,
+  series,
+  width,
+  x,
+  xLabel = "Budget / Area (cells)",
+  xScale = "linear",
+  xValues,
+  y,
+}) {
+  const padding = { bottom: 38, left: 46, right: 18, top: 100 }
   const chartLeft = x + padding.left
   const chartTop = y + padding.top
   const chartWidth = width - padding.left - padding.right
   const chartHeight = height - padding.top - padding.bottom
-  const finiteValues = values.filter((value) => Number.isFinite(value))
+  const allValues = [
+    ...series.flatMap((line) => line.values),
+    ...bands.flatMap((band) => [...band.low, ...band.high]),
+  ]
+  const finiteValues = allValues.filter((value) => Number.isFinite(value))
   const { maxValue, minValue, scaled } = chartScale(finiteValues)
-  const finiteXValues = xValues.filter((value) => Number.isFinite(value))
+  const scaledXValues = xValues.map((value) => chartXValue(value, xScale))
+  const finiteXValues = scaledXValues.filter((value) => Number.isFinite(value))
+  const finiteRawXValues = xValues.filter((value) => Number.isFinite(value))
   const { maxValue: maxXValue, minValue: minXValue } = chartScale(finiteXValues)
   const xRange = maxXValue - minXValue || 1
   const range = maxValue - minValue || 1
-  const points = values
-    .map((value, index) => {
-      const xValue = xValues[index]
+  const firstXValue = finiteRawXValues.length > 0 ? formatNumber(Math.min(...finiteRawXValues)) : ""
+  const lastXValue = finiteRawXValues.length > 0 ? formatNumber(Math.max(...finiteRawXValues)) : ""
+  const project = (value, index) => {
+      const xValue = scaledXValues[index]
       if (!Number.isFinite(value) || !Number.isFinite(xValue)) {
         return null
       }
       const px = chartLeft + ((xValue - minXValue) / xRange) * chartWidth
       const py = chartTop + chartHeight - ((value - minValue) / range) * chartHeight
       return { px, py }
-    })
-    .filter(Boolean)
-    .sort((first, second) => first.px - second.px)
-  const line = points.map(({ px, py }) => `${roundSvg(px)},${roundSvg(py)}`).join(" ")
-  const firstXValue = Number.isFinite(minXValue) ? formatNumber(minXValue) : ""
-  const lastXValue = Number.isFinite(maxXValue) ? formatNumber(maxXValue) : ""
+  }
+  const bandShapes = bands.map((band) => renderBand({
+    band,
+    highPoints: band.high.map(project).filter(Boolean).sort((first, second) => first.px - second.px),
+    lowPoints: band.low.map(project).filter(Boolean).sort((first, second) => first.px - second.px),
+  })).join("\n")
+  const lineShapes = series.map((line) => {
+    const points = line.values.map(project)
+      .filter(Boolean)
+      .sort((first, second) => first.px - second.px)
+    const polyline = points.map(({ px, py }) => `${roundSvg(px)},${roundSvg(py)}`).join(" ")
+    return (
+      `<polyline class="${line.className}" points="${polyline}"/>\n` +
+      points.map(({ px, py }) => `<circle class="point" cx="${roundSvg(px)}" cy="${roundSvg(py)}" r="2"/>`).join("\n")
+    )
+  }).join("\n")
+  const legend = renderChartLegend({
+    bands,
+    series,
+    width,
+    x: x + 12,
+    y: y + 34,
+  })
+  const captionText = renderChartCaption({ caption, width, x: x + 12, y: y + 68 })
 
   return (
     `<g>\n` +
@@ -1707,8 +2099,10 @@ function renderLineChart({ height, label, values, width, x, xLabel = "total cell
     `<line class="grid" x1="${chartLeft}" y1="${chartTop + chartHeight / 2}" x2="${chartLeft + chartWidth}" y2="${chartTop + chartHeight / 2}"/>\n` +
     `<line class="axis" x1="${chartLeft}" y1="${chartTop + chartHeight}" x2="${chartLeft + chartWidth}" y2="${chartTop + chartHeight}"/>\n` +
     `<line class="axis" x1="${chartLeft}" y1="${chartTop}" x2="${chartLeft}" y2="${chartTop + chartHeight}"/>\n` +
-    `<polyline class="line" points="${line}"/>\n` +
-    points.map(({ px, py }) => `<circle class="point" cx="${roundSvg(px)}" cy="${roundSvg(py)}" r="2"/>`).join("\n") +
+    legend +
+    captionText +
+    bandShapes +
+    `\n${lineShapes}` +
     `\n<text class="label" x="${x + 10}" y="${y + height - 14}">${escapeXml(firstXValue)}</text>\n` +
     `<text class="label" text-anchor="middle" x="${x + width / 2}" y="${y + height - 14}">${escapeXml(xLabel)}</text>\n` +
     `<text class="label" text-anchor="end" x="${x + width - 10}" y="${y + height - 14}">${escapeXml(lastXValue)}</text>\n` +
@@ -1716,6 +2110,168 @@ function renderLineChart({ height, label, values, width, x, xLabel = "total cell
     `<text class="label" x="${x + 10}" y="${chartTop + chartHeight + 4}">${formatNumber(minValue)}</text>\n` +
     `</g>`
   )
+}
+
+function renderBand({ band, highPoints, lowPoints }) {
+  if (highPoints.length === 0 || lowPoints.length === 0) {
+    return ""
+  }
+
+  const points = [...highPoints, ...lowPoints.reverse()]
+    .map(({ px, py }) => `${roundSvg(px)},${roundSvg(py)}`)
+    .join(" ")
+  return `<polygon class="${band.className}" points="${points}"/>`
+}
+
+function renderScatterChart({
+  caption = "",
+  height,
+  label,
+  legendItems = [],
+  values,
+  width,
+  x,
+  xLabel = "Budget / Area (cells)",
+  xScale = "linear",
+  xValues,
+  summaries,
+  y,
+}) {
+  const padding = { bottom: 38, left: 46, right: 18, top: 100 }
+  const chartLeft = x + padding.left
+  const chartTop = y + padding.top
+  const chartWidth = width - padding.left - padding.right
+  const chartHeight = height - padding.top - padding.bottom
+  const finiteValues = values.filter((value) => Number.isFinite(value))
+  const { maxValue, minValue, scaled } = chartScale(finiteValues)
+  const scaledXValues = xValues.map((value) => chartXValue(value, xScale))
+  const finiteXValues = scaledXValues.filter((value) => Number.isFinite(value))
+  const finiteRawXValues = xValues.filter((value) => Number.isFinite(value))
+  const { maxValue: maxXValue, minValue: minXValue } = chartScale(finiteXValues)
+  const xRange = maxXValue - minXValue || 1
+  const range = maxValue - minValue || 1
+  const firstXValue = finiteRawXValues.length > 0 ? formatNumber(Math.min(...finiteRawXValues)) : ""
+  const lastXValue = finiteRawXValues.length > 0 ? formatNumber(Math.max(...finiteRawXValues)) : ""
+  const points = values.map((value, index) => {
+    const xValue = scaledXValues[index]
+    if (!Number.isFinite(value) || !Number.isFinite(xValue)) {
+      return ""
+    }
+    const px = chartLeft + ((xValue - minXValue) / xRange) * chartWidth
+    const py = chartTop + chartHeight - ((value - minValue) / range) * chartHeight
+    const preferred = summaries[index]?.Preferred === "yes"
+    const radius = preferred ? 3.6 : 2.3
+    const className = preferred ? "point point--preferred" : "point"
+    return (
+      `<circle class="${className}" cx="${roundSvg(px)}" cy="${roundSvg(py)}" r="${radius}"/>`
+    )
+  }).filter(Boolean).join("\n")
+  const legend = renderChartLegend({
+    customItems: legendItems,
+    width,
+    x: x + 12,
+    y: y + 34,
+  })
+  const captionText = renderChartCaption({ caption, width, x: x + 12, y: y + 68 })
+
+  return (
+    `<g>\n` +
+    `<rect class="panel" x="${x}" y="${y}" width="${width}" height="${height}" rx="6"/>\n` +
+    `<text x="${x + 12}" y="${y + 18}" font-size="13">${escapeXml(label)}${scaled ? " (scaled)" : ""}</text>\n` +
+    `<line class="grid" x1="${chartLeft}" y1="${chartTop}" x2="${chartLeft + chartWidth}" y2="${chartTop}"/>\n` +
+    `<line class="grid" x1="${chartLeft}" y1="${chartTop + chartHeight / 2}" x2="${chartLeft + chartWidth}" y2="${chartTop + chartHeight / 2}"/>\n` +
+    `<line class="axis" x1="${chartLeft}" y1="${chartTop + chartHeight}" x2="${chartLeft + chartWidth}" y2="${chartTop + chartHeight}"/>\n` +
+    `<line class="axis" x1="${chartLeft}" y1="${chartTop}" x2="${chartLeft}" y2="${chartTop + chartHeight}"/>\n` +
+    legend +
+    captionText +
+    points +
+    `\n<text class="label" x="${x + 10}" y="${y + height - 14}">${escapeXml(firstXValue)}</text>\n` +
+    `<text class="label" text-anchor="middle" x="${x + width / 2}" y="${y + height - 14}">${escapeXml(xLabel)}</text>\n` +
+    `<text class="label" text-anchor="end" x="${x + width - 10}" y="${y + height - 14}">${escapeXml(lastXValue)}</text>\n` +
+    `<text class="label" x="${x + 10}" y="${chartTop + 4}">${formatNumber(maxValue)}</text>\n` +
+    `<text class="label" x="${x + 10}" y="${chartTop + chartHeight + 4}">${formatNumber(minValue)}</text>\n` +
+    `</g>`
+  )
+}
+
+function renderChartLegend({ bands = [], customItems = [], series = [], width, x, y }) {
+  const items = [
+    ...bands.map((band) => ({
+      className: band.className,
+      label: band.label,
+      type: "band",
+    })),
+    ...series.map((line) => ({
+      className: line.className,
+      label: line.label,
+      type: "line",
+    })),
+    ...customItems,
+  ].filter((item) => item.label)
+  if (items.length <= 1) {
+    return ""
+  }
+
+  const maxX = x + width - 24
+  let cursorX = x
+  let cursorY = y
+  const output = items.map((item) => {
+    const itemWidth = Math.max(74, item.label.length * 6 + 30)
+    if (cursorX !== x && cursorX + itemWidth > maxX) {
+      cursorX = x
+      cursorY += 14
+    }
+
+    const itemSvg = renderLegendItem(item, cursorX, cursorY)
+    cursorX += itemWidth
+    return itemSvg
+  })
+
+  return `${output.join("\n")}\n`
+}
+
+function renderLegendItem(item, x, y) {
+  const labelX = x + 24
+  if (item.type === "band") {
+    return (
+      `<rect class="${item.className} legend-swatch" x="${x}" y="${y - 8}" ` +
+      `width="16" height="8" rx="2"/>\n` +
+      `<text class="label" x="${labelX}" y="${y}">${escapeXml(item.label)}</text>`
+    )
+  }
+  if (item.type === "point") {
+    return (
+      `<circle class="${item.className}" cx="${x + 8}" cy="${y - 4}" r="4"/>\n` +
+      `<text class="label" x="${labelX}" y="${y}">${escapeXml(item.label)}</text>`
+    )
+  }
+
+  return (
+    `<line class="${item.className}" x1="${x}" y1="${y - 4}" x2="${x + 16}" y2="${y - 4}"/>\n` +
+    `<text class="label" x="${labelX}" y="${y}">${escapeXml(item.label)}</text>`
+  )
+}
+
+function renderChartCaption({ caption, width, x, y }) {
+  if (!caption) {
+    return ""
+  }
+
+  const lines = wrapWords(caption, Math.max(35, Math.floor((width - 24) / 6))).slice(0, 2)
+  return `${lines.map((line, index) => (
+    `<text class="caption" x="${x}" y="${y + index * 11}">${escapeXml(line)}</text>`
+  )).join("\n")}\n`
+}
+
+function chartXValue(value, scale) {
+  if (!Number.isFinite(value)) {
+    return Number.NaN
+  }
+  if (scale === "log") {
+    return value > 0 ? Math.log10(value) : Number.NaN
+  }
+
+  return value
 }
 
 function chartScale(values) {
@@ -1748,6 +2304,10 @@ function metricValue(summary, selector) {
 
 function summaryArea(summary) {
   return Number(parseCaseName(summary.Case)?.area)
+}
+
+function summaryBudget(summary) {
+  return Number(summary.Budget)
 }
 
 function summarySkew(summary) {
@@ -1784,9 +2344,10 @@ function serializeGroups(report) {
         hashesByCase: Object.fromEntries(report.hashesByCase),
         iterations: group.iterations,
         summaries: group.summaries,
-        // Table 3c renders these as directionally-rounded strings; downstream work gets the raw
-        // quotients here so it never has to parse a display value back into a number.
+        // Tables 3c and 3d render these as rounded strings; downstream work gets the raw quotients
+        // here so it never has to parse a display value back into a number.
         minWinSpeeds: minWinSpeedNumbers(group.summaries),
+        mazeNoise: mazeNoiseNumbers(group.summaries),
         validationByCase: Object.fromEntries(report.validationByCase),
       },
     ]),
@@ -1834,6 +2395,7 @@ function parseGoBenchmarkLine(line) {
       "PathLen": formatNumber(metrics.pathLen),
       "Path-p5": formatNumber(metrics["path-p5"]),
       "Path-p95": formatNumber(metrics["path-p95"]),
+      "Path-stddev": formatNumber(metrics["path-stddev"]),
       "Path%": formatNumber(metrics.pathPct),
       "Backtrack": formatNumber(metrics.backtrack),
       "Backtrack-p5": formatNumber(metrics["backtrack-p5"]),
@@ -1883,6 +2445,7 @@ function normalizeSummary(summary) {
     "PathLen": formatNumber(summary.PathLen),
     "Path-p5": formatNumber(summary["Path-p5"]),
     "Path-p95": formatNumber(summary["Path-p95"]),
+    "Path-stddev": formatNumber(summary["Path-stddev"]),
     "Path%": formatNumber(summary["Path%"]),
     "Backtrack": formatNumber(summary.Backtrack),
     "Backtrack-p5": formatNumber(summary["Backtrack-p5"]),
@@ -1905,7 +2468,7 @@ function formatNumber(value) {
   return Number(numberValue.toPrecision(4))
 }
 
-// Table 3c speed ceilings must use the same fixed-point display precision as gameplay. Reading the
+// Table 3d speed values must use the same fixed-point display precision as gameplay. Reading the
 // frontend config keeps the benchmark report from silently drifting if traversalSpeedScaleUnits
 // changes again.
 function configuredTraversalSpeedScaleUnits() {

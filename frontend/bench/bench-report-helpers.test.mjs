@@ -4,10 +4,14 @@ import {
   branchingDistributionRows,
   caseDefinitionRows,
   costModelRows,
+  mazeNoiseNumbers,
+  mazeNoiseRows,
   minWinSpeedRows,
+  offPathSpaceRows,
   realSummaries,
   renderBenchmarkCharts,
   routeGeometryRows,
+  speedAndNoiseRows,
   sensitivityCaseName,
   validationSummary,
 } from "../../parity-harness/bench-report.mjs"
@@ -34,6 +38,7 @@ const summaries = [
     "PathLen": 68.2,
     "Path-p5": 65,
     "Path-p95": 70,
+    "Path-stddev": 2.5,
     "Path%": 97.43,
     "Backtrack": 1.8,
     "Backtrack-p5": 0,
@@ -63,6 +68,7 @@ const summaries = [
     "PathLen": 25,
     "Path-p5": 25,
     "Path-p95": 25,
+    "Path-stddev": 0,
     "Path%": 100,
     "Backtrack": 0,
     "Backtrack-p5": 0,
@@ -92,6 +98,7 @@ const summaries = [
     "PathLen": 98.01,
     "Path-p5": 99,
     "Path-p95": 100,
+    "Path-stddev": 0.5,
     "Path%": 98.01,
     "Backtrack": 1.99,
     "Backtrack-p5": 0,
@@ -110,20 +117,29 @@ describe("bench report helpers", () => {
     expect(Object.keys(caseDefinitionRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(branchingDistributionRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(routeGeometryRows(summaries))).toEqual(realCaseNames)
+    expect(Object.keys(offPathSpaceRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(costModelRows(summaries))).toEqual(realCaseNames)
     expect(Object.keys(minWinSpeedRows(summaries))).toEqual(realCaseNames)
+    expect(Object.keys(mazeNoiseRows(summaries))).toEqual(realCaseNames)
+    expect(Object.keys(speedAndNoiseRows(summaries))).toEqual(realCaseNames)
   })
 
-  it("formats route geometry rows with structural route metrics", () => {
+  it("formats route rows with path metrics only", () => {
     expect(routeGeometryRows(summaries).area70_10x7).toEqual({
       "Path Len (Cells)": 68.2,
+      "Path (%)": 97.43,
       "Path P5 (Cells)": 65,
       "Path P95 (Cells)": 70,
-      "Path (%)": 97.43,
+      "Path stddev (Cells)": 2.5,
+    })
+  })
+
+  it("formats off-path space rows with margin and worst-branch metrics", () => {
+    expect(offPathSpaceRows(summaries).area70_10x7).toEqual({
+      "Error Margin (Cells)": 1.8,
       "W-Branch (Depth)": 1.2,
       "W-Branch P5 (Depth)": 0,
       "W-Branch P95 (Depth)": 4,
-      "Error Margin (Cells)": 1.8,
       "W-Branch (% of Margin)": 66.67,
     })
   })
@@ -151,12 +167,70 @@ describe("bench report helpers", () => {
     })
   })
 
-  it("renders the conservative minimum winning speed chart", () => {
+  it("formats maze-noise rows with speed standard deviations by strategy", () => {
+    expect(mazeNoiseRows(summaries).area70_10x7).toEqual({
+      "Path stddev (Cells)": 2.5,
+      "Speed stddev c=2.00": "0.0179",
+      "Speed stddev c=1.25": "0.0046",
+    })
+  })
+
+  it("formats speed-and-noise rows as the combined Table 3d payload", () => {
+    expect(speedAndNoiseRows(summaries).area70_10x7).toEqual({
+      "Conservative (No Batching) Min Win Speed": "0.9871x",
+      "Path stddev (Cells)": 2.5,
+      "Speed stddev c=2.00": "0.0179",
+      "Speed stddev c=1.25": "0.0046",
+    })
+  })
+
+  it("serializes maze noise as unrounded numbers rather than the table's display strings", () => {
+    const noise = mazeNoiseNumbers(summaries).area70_10x7
+    expect(noise.pathStddev).toBe(2.5)
+    expect(typeof noise.speedStddev["c=2.00"]).toBe("number")
+    expect(typeof noise.speedStddev["c=1.25"]).toBe("number")
+    // Same quantity as Table 3d, before the 4dp rounding - so it matches the row only once rounded.
+    const row = mazeNoiseRows(summaries).area70_10x7
+    expect(noise.speedStddev["c=2.00"].toFixed(4)).toBe(row["Speed stddev c=2.00"])
+    expect(noise.speedStddev["c=1.25"].toFixed(4)).toBe(row["Speed stddev c=1.25"])
+    expect(Object.keys(mazeNoiseNumbers(summaries))).toEqual(realCaseNames)
+  })
+
+  it("reports a missing path stddev as absent, never as zero maze noise", () => {
+    // formatNumber writes "" for a missing metric, and Number("") is 0: unguarded, a case with no
+    // Path-stddev reads as a maze with exactly no noise.
+    const missing = summaries.map((summary) => ({ ...summary, "Path-stddev": "" }))
+    expect(mazeNoiseNumbers(missing).area70_10x7).toEqual({
+      pathStddev: null,
+      speedStddev: { "c=2.00": null, "c=1.25": null },
+    })
+    expect(mazeNoiseRows(missing).area70_10x7).toMatchObject({
+      "Speed stddev c=2.00": "",
+      "Speed stddev c=1.25": "",
+    })
+  })
+
+  it("renders the compact benchmark chart set", () => {
     const svg = renderBenchmarkCharts({
       groups: new Map([["BenchmarkMazeBranching", { summaries }]]),
     })
 
-    expect(svg).toContain("Conservative (No Batching) Min Win Speed")
+    expect(svg).toContain("Structure")
+    expect(svg).toContain("All shapes - geometry sweep")
+    expect(svg).toContain("Route")
+    expect(svg).toContain("Agent-facing")
+    expect(svg).toContain("Shape")
+    expect(svg).toContain("1. Junctions/Cell")
+    expect(svg).toContain("W-Branch (% of Margin)")
+    expect(svg).toContain("6. Min Win Speed")
+    expect(svg).toContain("7. Skew vs Speed stddev")
+    expect(svg).toContain("c=2.00 P5-P95")
+    expect(svg).toContain("c=1.25 P5-P95")
+    expect(svg).toContain("All shapes")
+    expect(svg).toContain("Preferred filled")
+    expect(svg).toContain("legend-dot--preferred")
+    expect(svg).toContain("Budget / Area (cells)")
+    expect(svg).toContain("Skew (Ratio)")
   })
 
   it("formats case definitions separately from branching results", () => {
@@ -180,9 +254,9 @@ describe("bench report helpers", () => {
       "Dead Ends/Maze": 2.18,
       "Zero-Junction (%)": 84,
       "Junctions/Cell": 0.0025,
-      "P5": 0,
-      "P95": 0.0143,
-      "stddev": 0.0054,
+      "Junctions/Cell P5": 0,
+      "Junctions/Cell P95": 0.0143,
+      "Junctions/Cell stddev": 0.0054,
     })
   })
 

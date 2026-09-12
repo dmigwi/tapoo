@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { calculateTraversalSpeedUnits } from "../agent/efficiency"
+import { calculateTraversalSpeedUnits } from "../agent/traversal-speed"
 import { CONFIG } from "../config"
 import { hasReachedTarget } from "../status"
 import type { State, TraversalHistoryEntry } from "../types"

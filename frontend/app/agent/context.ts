@@ -6,10 +6,10 @@ import {
   mazeCellKey,
 } from "../traversal"
 import {
-  getBatchEfficiencyMetrics,
-  resolveBatchEfficiencyClass,
-} from "./efficiency"
-import type { BatchEfficiencyClass } from "./efficiency"
+  getTraversalSpeedMetrics,
+  resolveAgentTraversalSpeedClass,
+} from "./traversal-speed"
+import type { TraversalSpeedClass } from "./traversal-speed"
 import type { AgentStateSnapshot } from "./state-snapshot"
 import type {
   AgentChatMessage,
@@ -90,7 +90,7 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
 // return side the scoring has none of.
 export function buildAgentPersonaPrompt(
   playerName: string,
-  speedClass: BatchEfficiencyClass,
+  speedClass: TraversalSpeedClass,
   isOpeningTurn: boolean,
 ): string {
   // This is where the agent's stance for the turn is set, not a status readout: each branch tells
@@ -111,12 +111,12 @@ export function buildAgentPersonaPrompt(
   }
 
   // "Hold that standard" is what this used to say, and it read as permission to coast. The class is
-  // a step function - resolveStatusSpeedClass returns trailblazer for any rate above 1.0000 - so an
+  // a step function - resolveStatusSpeedClass returns trailblazer for any rate above 1.0000x - so an
   // instruction to maintain it saturates the moment the threshold is crossed. Observed in play:
   // aggressive batching while below trailblazer, then near-none once it was reached at the minimum
   // rate, which drops back out on the first costly turn and oscillates between classes. The branch
   // now names the class as a cleared floor with a margin that widens as the rate climbs, so the
-  // instruction keeps pointing the same way at 1.0001 as it does at 3.0000.
+  // instruction keeps pointing the same way at 1.0001x as it does at 3.0000x.
   if (speedClass === "trailblazer") { // trailblazer
     return [
       `You are ${playerName} and your traversal speed currently classifies as trailblazer.`,
@@ -157,12 +157,12 @@ export function buildAgentPersonaPrompt(
 // buildMazeActionPrompt keeps request guidance compact while naming the active player.
 export function buildMazeActionPrompt(
   playerName: string,
-  batchEfficiencyClass: BatchEfficiencyClass,
+  traversalSpeedClass: TraversalSpeedClass,
   isOpeningTurn: boolean,
 ): string {
   const partialInvalidTurnCost = agentBaseDecayUnits + agentPartialInvalidPenaltyDecayUnits
   return [
-    buildAgentPersonaPrompt(playerName, batchEfficiencyClass, isOpeningTurn),
+    buildAgentPersonaPrompt(playerName, traversalSpeedClass, isOpeningTurn),
     "Call every available tool once on each turn before returning moves. Start with get_maze_structure to read",
     "currentCell, destinationCell, and nearby maze structure; call get_prediction_rules for the required response",
     "format, suggested move count, mazeDimensions, and traversal-speed metrics; call get_last_prediction_outcome for",
@@ -203,7 +203,7 @@ export function buildMazeActionPrompt(
     "current value and what running out of it means.",
     // "sustain ... keeping your classification at trailblazer" stood here and set the same coasting
     // trap the persona branch had: the class is a step function, so an instruction to maintain it
-    // stops asking for anything the moment 1.0000 is crossed. Both sentences now name the rate,
+    // stops asking for anything the moment 1.0000x is crossed. Both sentences now name the rate,
     // which keeps climbing, rather than the label, which does not.
     "One way to raise a traversal speed above 1.0000 is to build a picture of the maze around your current cell",
     "using filteredTraversalHistory and the static maze dimensions.",
@@ -224,13 +224,13 @@ export function buildMazeActionPrompt(
 // buildAgentMessages separates durable behavior instructions from the current turn request.
 export function buildAgentMessages(
   playerName: string,
-  batchEfficiencyClass: BatchEfficiencyClass,
+  traversalSpeedClass: TraversalSpeedClass,
   isOpeningTurn: boolean,
 ): AgentChatMessage[] {
   return [
     {
       role: "system",
-      content: buildMazeActionPrompt(playerName, batchEfficiencyClass, isOpeningTurn),
+      content: buildMazeActionPrompt(playerName, traversalSpeedClass, isOpeningTurn),
     },
     {
       role: "user",
@@ -352,15 +352,15 @@ const predictionRulesTool: AgentToolDefinition = {
       "- absolute minimum required is 1. Use the local map to extract moves you are most confident about. Batching accuracy",
       "drops sharply the further out a prediction reaches, so lean toward min rather than max whenever you are unsure.",
       "When decayUnitsCharged is greater than 0, playerUniqueCellsVisited divided by decayUnitsCharged is your current",
-      "traversal speed, the progress per decay unit spent, which batchEfficiencyClass groups into bands. When",
-      "decayUnitsCharged is 0, batchEfficiencyClass defaults to trailblazer. Only a cell's first visit",
+      "traversal speed, the progress per decay unit spent, which traversalSpeedClass groups into bands. When",
+      "decayUnitsCharged is 0, traversalSpeedClass defaults to trailblazer. Only a cell's first visit",
       "counts as progress. Higher traversal speed means more progress per decay unit, increasing the chance of reaching",
       "the target before score runs out.",
-      "batchEfficiencyClass is set to backtracker when the speed is below 1.0000, navigator at 1.0000, or trailblazer above 1.0000.",
-      "Backtracker is a live game metric rating prediction efficiency class, while get_maze_structure's",
-      "backtracking visitStatus marks one cell as a spent direction. The two are independent: a player can classify as",
-      "backtracker without ever entering a backtracking cell, and crossing such cells costs no decay beyond the turn's",
-      "own charge. Retrace-only batching can save turns but cannot",
+      "traversalSpeedClass is set to backtracker when the speed is below 1.0000, navigator at 1.0000, or trailblazer above 1.0000.",
+      "Backtracker is a traversal-speed classification for the whole round; backtracking visitStatus marks one cell",
+      "as a spent direction. The two are independent: a player can classify as backtracker without ever entering a",
+      "backtracking cell, and crossing such cells costs no decay beyond the turn's own charge.",
+      "Retrace-only batching can save turns but cannot",
       "create new-cell progress, so trailblazer is evidence that forward prediction into unvisited cells succeeded.",
       "allUniqueCellsVisited is every cell any player has reached this level, not just your own - compare it",
       "against mazeDimensions.totalMazeCells to know how much of the maze the team has collectively explored so far;",
@@ -374,7 +374,7 @@ const predictionRulesTool: AgentToolDefinition = {
       "the game state is invalid or incomplete for planning.",
       "Returns JSON:",
       "{\"suggestedMovesPerTurn\":{\"min\":number,\"max\":number}, \"allUniqueCellsVisited\":number, \"playerUniqueCellsVisited\":number,",
-      "\"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"batchEfficiencyClass\":string,",
+      "\"decayUnitsCharged\":number, \"totalTurnCount\":number, \"playerTurnsTaken\":number, \"traversalSpeedClass\":string,",
       "\"mazeDimensions\":{\"numCols\":number,\"numRows\":number,\"totalMazeCells\":number}|null,",
       "\"expectedResponseSchema\":object}.",
     ].join(" "),
@@ -535,9 +535,9 @@ export function buildAgentToolHandlers(
       // Raw counts are exposed instead of the derived rate so the model can compute and verify the
       // classification itself; all are always concrete numbers (0 is a valid count), never null, so
       // there is nothing ambiguous for the model to puzzle over before its first request.
-      const batchEfficiencyClass = resolveBatchEfficiencyClass(snapshot.traversalHistory, agent)
+      const traversalSpeedClass = resolveAgentTraversalSpeedClass(snapshot.traversalHistory, agent)
       const { playerUniqueCellsVisited, allUniqueCellsVisited, decayUnitsCharged, playerTurnsTaken } =
-        getBatchEfficiencyMetrics(snapshot.traversalHistory, agent)
+        getTraversalSpeedMetrics(snapshot.traversalHistory, agent)
       return {
         suggestedMovesPerTurn: runtime.modelConfig.suggestedMovesPerTurnRange,
         allUniqueCellsVisited,
@@ -545,7 +545,7 @@ export function buildAgentToolHandlers(
         decayUnitsCharged,
         totalTurnCount: snapshot.turnCount,
         playerTurnsTaken,
-        batchEfficiencyClass,
+        traversalSpeedClass,
         mazeDimensions: snapshot.mazeDimensions
           ? {
               numCols: snapshot.mazeDimensions.numCols,

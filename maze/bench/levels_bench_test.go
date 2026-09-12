@@ -473,6 +473,7 @@ func measureBranching(b *testing.B, caseName string, config maze.Dimensions, pro
 	b.ReportMetric(pathSummary.mean, "pathLen")
 	b.ReportMetric(pathSummary.low, "path-p5")
 	b.ReportMetric(pathSummary.high, "path-p95")
+	b.ReportMetric(pathSummary.stddev, "path-stddev")
 	b.ReportMetric(pathSummary.mean/float64(totalCells)*100, "pathPct")
 	b.ReportMetric(backtrackSummary.mean, "backtrack")
 	b.ReportMetric(backtrackSummary.low, "backtrack-p5")

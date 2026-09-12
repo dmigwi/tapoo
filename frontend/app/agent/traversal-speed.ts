@@ -4,12 +4,12 @@ import type { AgentApiSeatConfig, AgentPlayerStatus, TraversalHistoryEntry } fro
 const { scoring } = CONFIG
 const traversalSpeedDisplayDecimals = String(scoring.traversalSpeedScaleUnits).length - 1
 
-// BatchEfficiencyClass names the traversal-speed group the rate falls into, not just a grade, so
+// TraversalSpeedClass names the traversal-speed group the rate falls into, not just a grade, so
 // the classification itself carries the corrective instruction: climb out of backtracker, sustain
 // trailblazer.
-export type BatchEfficiencyClass = "backtracker" | "navigator" | "trailblazer"
+export type TraversalSpeedClass = "backtracker" | "navigator" | "trailblazer"
 
-// BatchEfficiencyMetrics are the raw counts behind the traversal speed, exposed to the model
+// TraversalSpeedMetrics are the raw counts behind the traversal speed, exposed to the model
 // directly so it can compute and verify the rate/classification itself instead of treating the
 // classification as an unexplained label. playerUniqueCellsVisited is scoped to this specific
 // agent (see countDistinctCellsForAgent) - it alone feeds the traversal-speed rate. allUniqueCellsVisited
@@ -23,7 +23,7 @@ export type BatchEfficiencyClass = "backtracker" | "navigator" | "trailblazer"
 // the rate: a turn is charged the same decay whether it carried one move or many, so dividing by
 // requests would leave the rate blind to the batching it is meant to reward, and the rate is about
 // this agent's own spend, not the team's combined exploration.
-export type BatchEfficiencyMetrics = {
+export type TraversalSpeedMetrics = {
   playerUniqueCellsVisited: number
   allUniqueCellsVisited: number
   decayUnitsCharged: number
@@ -40,11 +40,11 @@ function countDistinctCellsForAgent(
   return traversalHistory.filter((entry) => entry.playerName === agent.playerName).length
 }
 
-// getBatchEfficiencyMetrics returns the raw counts behind the rate.
-export function getBatchEfficiencyMetrics(
+// getTraversalSpeedMetrics returns the raw counts behind the rate.
+export function getTraversalSpeedMetrics(
   traversalHistory: readonly TraversalHistoryEntry[],
   agent: AgentApiSeatConfig,
-): BatchEfficiencyMetrics {
+): TraversalSpeedMetrics {
   return {
     playerUniqueCellsVisited: countDistinctCellsForAgent(traversalHistory, agent),
     // traversalHistory records only first visits (see countDistinctCellsForAgent), so its length
@@ -61,7 +61,7 @@ export function getBatchEfficiencyMetrics(
 // Nothing charged yet defaults to trailblazer - not the neutral baseline - so play starts already
 // primed to predict multi-move sequences, matching the classification stated in an agent's first
 // prompt. That same guard keeps the rate below from dividing by zero.
-export function resolveStatusSpeedClass(uniqueCellsVisited: number, decayUnitsCharged: number): BatchEfficiencyClass {
+export function resolveStatusSpeedClass(uniqueCellsVisited: number, decayUnitsCharged: number): TraversalSpeedClass {
   if (!decayUnitsCharged) {
     return "trailblazer"
   }
@@ -74,13 +74,13 @@ export function resolveStatusSpeedClass(uniqueCellsVisited: number, decayUnitsCh
   return "navigator"
 }
 
-// resolveBatchEfficiencyClass is the single source of truth for an agent's current speed
+// resolveAgentTraversalSpeedClass is the single source of truth for an agent's current speed
 // classification, everywhere one is shown or sent.
-export function resolveBatchEfficiencyClass(
+export function resolveAgentTraversalSpeedClass(
   traversalHistory: readonly TraversalHistoryEntry[],
   agent: AgentApiSeatConfig,
-): BatchEfficiencyClass {
-  const { playerUniqueCellsVisited, decayUnitsCharged } = getBatchEfficiencyMetrics(traversalHistory, agent)
+): TraversalSpeedClass {
+  const { playerUniqueCellsVisited, decayUnitsCharged } = getTraversalSpeedMetrics(traversalHistory, agent)
   return resolveStatusSpeedClass(playerUniqueCellsVisited, decayUnitsCharged)
 }
 
@@ -88,11 +88,11 @@ export function resolveBatchEfficiencyClass(
 // against scoring.traversalSpeedScaleUnits - the fixed-point value equal to a 1.0000 ratio - rather
 // than dividing traversalSpeedUnits back down to a float first. Every caller already holds a
 // fixed-point value from calculateTraversalSpeedUnits (a persisted win record, a live
-// running-status rate, an agent's batch efficiency), so comparing units directly is both the only
+// running-status rate, an agent's traversal speed), so comparing units directly is both the only
 // entry point speed classification ever needs and free of the precision loss a fresh division could
 // introduce right at a boundary, keeping the win summary and the running prompt unable to disagree
 // about where that boundary sits.
-export function resolveTraversalSpeedClass(traversalSpeedUnits: number): BatchEfficiencyClass {
+export function resolveTraversalSpeedClass(traversalSpeedUnits: number): TraversalSpeedClass {
   // Below baseline: score is draining faster than new ground is being covered, whether spent on
   // invalid moves, malformed responses, or oscillation between already-visited cells.
   if (traversalSpeedUnits < scoring.traversalSpeedScaleUnits) {
@@ -128,10 +128,11 @@ export function calculateTraversalSpeedUnits(uniqueCellsVisited: number, scoreDe
   return Math.max(0, roundedSpeedUnits)
 }
 
-// traversalSpeedUnitsToDisplay renders fixed-point speed units as the plain ratio players read.
-// calculateTraversalSpeedUnits already selected the boundary-safe rounding direction, so this only
-// formats the stored fixed-point value.
-export function traversalSpeedUnitsToDisplay(traversalSpeedUnits: number): string {
+// traversalSpeedUnitsToRatio renders fixed-point speed units as the bare ratio, with no unit suffix.
+// It is the machine-facing form: the agent-api log records it, and Tapoo Oracle reads that field back
+// with Number(), which a suffixed "1.2345x" turns into NaN. calculateTraversalSpeedUnits already
+// selected the boundary-safe rounding direction, so this only formats the stored fixed-point value.
+export function traversalSpeedUnitsToRatio(traversalSpeedUnits: number): string {
   const efficiencyClass = resolveTraversalSpeedClass(traversalSpeedUnits)
 
   if (efficiencyClass === "navigator") {
@@ -143,6 +144,13 @@ export function traversalSpeedUnitsToDisplay(traversalSpeedUnits: number): strin
     .toFixed(traversalSpeedDisplayDecimals)
 }
 
+// traversalSpeedUnitsToDisplay renders fixed-point speed units as the complete speed label players
+// read: the ratio with "x" appended to identify the value as a speed. Anything a program parses back
+// takes traversalSpeedUnitsToRatio instead.
+export function traversalSpeedUnitsToDisplay(traversalSpeedUnits: number): string {
+  return `${traversalSpeedUnitsToRatio(traversalSpeedUnits)}x`
+}
+
 // capitalize renders lowercase speed-classification identifiers (kept lowercase for model-facing
 // JSON/prose) as UI-facing title case.
 export function capitalize(value: string): string {
@@ -152,7 +160,7 @@ export function capitalize(value: string): string {
 // nameWithSpeedClass renders "{name} the {Class}" - shared by every UI surface that names a player
 // after their current speed classification: seat roster/dialog labels (agentDisplayName) and the
 // running-status line (formatPlayerStatusLabel).
-export function nameWithSpeedClass(playerName: string, speedClass: BatchEfficiencyClass): string {
+export function nameWithSpeedClass(playerName: string, speedClass: TraversalSpeedClass): string {
   return `${playerName} the ${capitalize(speedClass)}`
 }
 
@@ -160,23 +168,23 @@ export function nameWithSpeedClass(playerName: string, speedClass: BatchEfficien
 // it - tooltips, dialog titles - so the classification the model is working from stays visible to
 // a human observer too, e.g. "Kora the Trailblazer".
 export function agentDisplayName(agent: AgentApiSeatConfig, traversalHistory: readonly TraversalHistoryEntry[]): string {
-  return nameWithSpeedClass(agent.playerName, resolveBatchEfficiencyClass(traversalHistory, agent))
+  return nameWithSpeedClass(agent.playerName, resolveAgentTraversalSpeedClass(traversalHistory, agent))
 }
 
-// formatPlayerStatusLabel renders the "{name} the {Class} - {rate}x" segment shown on the
+// formatPlayerStatusLabel renders the "{name} the {Class} - {rate}" segment shown on the
 // running-status line for whoever is currently playing - interactive or agent-api. A player who
 // hasn't been charged any decay units yet shows "- Default" instead of a computed rate. No
 // leading/trailing whitespace: CONFIG.messages.runningStatus owns the spacing around {player}.
 // speedClass defaults to resolving it from status, but a caller that already classified the same
 // (uniqueCellsVisited, decayUnitsCharged) pair for its own purposes - e.g. agent/request.ts, which
-// needs the raw BatchEfficiencyClass for the system prompt as well as this label - can pass it
+// needs the raw TraversalSpeedClass for the system prompt as well as this label - can pass it
 // straight through instead of paying for the same classification twice.
 export function formatPlayerStatusLabel(
   status: AgentPlayerStatus,
-  speedClass: BatchEfficiencyClass = resolveStatusSpeedClass(status.uniqueCellsVisited, status.decayUnitsCharged),
+  speedClass: TraversalSpeedClass = resolveStatusSpeedClass(status.uniqueCellsVisited, status.decayUnitsCharged),
 ): string {
   const rateDisplay = status.decayUnitsCharged > 0
-    ? `${traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(status.uniqueCellsVisited, status.decayUnitsCharged))}x`
+    ? traversalSpeedUnitsToDisplay(calculateTraversalSpeedUnits(status.uniqueCellsVisited, status.decayUnitsCharged))
     : "Default"
 
   return `${nameWithSpeedClass(status.playerName, speedClass)} - ${rateDisplay}`

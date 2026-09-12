@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { GameClock } from "./clock"
 import { CONFIG } from "./config"
-import { formatPlayerStatusLabel } from "./agent/efficiency"
+import { formatPlayerStatusLabel } from "./agent/traversal-speed"
 import { fitPlayerSegmentToWidth, render } from "./render"
 import type { AgentElements, Elements, State, TraversalHistoryEntry } from "./types"
 
