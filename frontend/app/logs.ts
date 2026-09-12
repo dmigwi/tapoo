@@ -1,5 +1,6 @@
 import { APP_VERSION, CONFIG } from "./config"
 import { isAgentApiMode, isRunningStatus } from "./status"
+import { fetchDeviceInfo, fetchPlatformInfo } from "./environment"
 import {
   appendTapooLogStoreEntry,
   appendTapooLogStoreFallbackEntrySynchronously,
@@ -263,6 +264,12 @@ export async function tapooDownloadLogs(modeName: MazeControlModeName): Promise<
   const entries = await loadCurrentTapooLogStoreEntries(modeName)
   const payload = {
     name: "tapoo",
+    // Where the run happened, for anyone reproducing it later: the page the build was served from
+    // and the browser that ran it. Neither changes within a session, so they belong to the export as
+    // a whole - written once into the envelope beside name and version, not copied onto every entry.
+    // Both are reduced before they are written - see environment.ts for what each one drops and why.
+    platform: fetchPlatformInfo(window.location),
+    device: fetchDeviceInfo(window.navigator.userAgent),
     version: APP_VERSION,
     mode: modeName,
     downloadedAt: getLocalTimestamp(),

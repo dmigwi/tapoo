@@ -18,6 +18,7 @@ import {
   tapooResetLogs,
   trimLoggedDescription,
 } from "./logs"
+import { fetchDeviceInfo } from "./environment"
 import { createMazeDimensions } from "./traversal"
 import type * as StorageLogs from "./storage-logs"
 import type { EncodedMaze } from "./types"
@@ -52,9 +53,17 @@ describe("tapoo logs", () => {
     vi.unstubAllGlobals()
     vi.useRealTimers()
     await tapooResetLogs("agent-api")
+    // One test puts a query and fragment on the address to pin down what platform records. jsdom
+    // keeps the URL for the whole file, so it is reset here rather than at the end of that test,
+    // where a failed assertion would skip it and leak the address into every test after it.
+    window.history.replaceState({}, "", "/")
   })
 
   it("resets in-memory logs before downloading them", async () => {
+    // A query string and fragment on the page address: platform must carry neither, which is the
+    // whole reason it is built from origin + pathname instead of href. Without them on the address
+    // the two spellings are indistinguishable in jsdom and the distinction goes untested.
+    window.history.replaceState({}, "", "/?run=7#frag")
     // The blob is captured on a holder object rather than in a `let`. TypeScript cannot see the
     // mock body run, so a `let` initialized to null stays narrowed to `null` at every later read
     // and guarding it collapses to `never`; a property read uses its declared type instead.
@@ -90,13 +99,24 @@ describe("tapoo logs", () => {
     )
     const downloadedText = await firstDownload.text()
     const downloadedPayload = JSON.parse(downloadedText) as {
+      device: string
       downloadedAt: string
       entries: unknown[]
       mode: string
       name: string
+      platform: string
       version: string
     }
     expect(downloadedPayload.name).toBe("tapoo")
+    // Where the run happened, recorded once in the envelope rather than on every entry.
+    expect(downloadedPayload.platform).toBe(`${window.location.origin}${window.location.pathname}`)
+    expect(downloadedPayload.platform).not.toContain("?")
+    expect(downloadedPayload.platform).not.toContain("#")
+    // The reduced description, never the raw user-agent string: the engine build and device tokens
+    // it carries identify a machine and would be published with any shared log.
+    expect(downloadedPayload.device).toBe(fetchDeviceInfo(window.navigator.userAgent))
+    expect(downloadedPayload.device).not.toBe(window.navigator.userAgent)
+    expect(downloadedPayload.device).not.toContain("AppleWebKit")
     expect(downloadedPayload.version).toBe(APP_VERSION)
     expect(downloadedPayload.mode).toBe("agent-api")
     expect(downloadedPayload.entries).toHaveLength(1)

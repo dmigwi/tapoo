@@ -54,29 +54,29 @@
         Tapoo Logs are stored in <code>IndexedDB</code> when available. They are the profiler's
         primary output rather than a debugging side effect: every request sent to an agent endpoint
         and every response it returned, the encoded maze each level started from, the moves replayed
-        and what they cost, and the timing and context around each turn. Each level also records the
-        address of the page Tapoo was served from, and the name of your browser with its major
-        version and operating system family - for example <code>Chrome/141.0.0.0 on macOS</code>. That
-        description is reduced from your browser's user-agent string: the operating system version,
-        processor architecture, device model and engine build numbers that string also carries are
-        not recorded, because they identify a machine without helping anyone reproduce a run. Both
-        are written once per level, because a profile can only be reproduced against the build and
-        device that produced it.
-        Neither is sent anywhere by Tapoo, but both travel inside a log you export: if you publish
-        one - to a gist, or to an analysis tool - you publish those details with it. This is the
-        material a behavior profile is built from, so they exist to be read back - downloaded and
-        analysed after a run, or compared between runs and between agents. Logs stay on your device,
-        are scoped to the current browser tab session, and can be downloaded or cleared from the
-        game controls. If IndexedDB is unavailable, Tapoo falls back to <code>sessionStorage</code>
-        for logs, and AI Agent mode is then capped at level {{fallbackAgentApiMaxLevel}}: starting a
-        higher level shows a storage notice instead of playing it. The cap exists because browsers
-        often limit <code>sessionStorage</code> to only a few MB per site or session, which a single
-        high level's logs can exceed on their own - past that limit the browser refuses further
-        writes and the log stops recording the run it is meant to describe. Interactive mode is not
-        affected by that cap, and no cap applies at all when IndexedDB is available. A second limit
-        is unrelated to storage and applies in both modes: a level is only played if its maze fits
-        the visible area, so a window too small for the level shows a screen-room notice until it is
-        enlarged.
+        and what they cost, and the timing and context around each turn. Each log you download also
+        carries the address of the page Tapoo was served from and the name of your browser with its
+        version and operating system family - for example <code>Chrome/141.0.0.0 on macOS</code>.
+        That description is reduced from your browser's user-agent string: the operating system
+        version, processor architecture, device model and engine build numbers that string also
+        carries are not recorded, because they identify a machine without helping anyone reproduce a
+        run. Both are written into the downloaded file itself rather than into the events it
+        contains, because a profile can only be reproduced against the build and browser that
+        produced it. Neither is sent anywhere by Tapoo, but both sit inside the file you export: if
+        you publish one - to a gist, or to an analysis tool - you publish those details with it.
+        This is the material a behavior profile is built from, so they exist to be read back -
+        downloaded and analysed after a run, or compared between runs and between agents. Logs stay
+        on your device, are scoped to the current browser tab session, and can be downloaded or
+        cleared from the game controls. If IndexedDB is unavailable, Tapoo falls back to
+        <code>sessionStorage</code> for logs, and AI Agent mode is then capped at level
+        {{fallbackAgentApiMaxLevel}}: starting a higher level shows a storage notice instead of
+        playing it. The cap exists because browsers often limit <code>sessionStorage</code> to only
+        a few MB per site or session, which a single high level's logs can exceed on their own -
+        past that limit the browser refuses further writes and the log stops recording the run it is
+        meant to describe. Interactive mode is not affected by that cap, and no cap applies at all
+        when IndexedDB is available. A second limit is unrelated to storage and applies in both
+        modes: a level is only played if its maze fits the visible area, so a window too small for
+        the level shows a screen-room notice until it is enlarged.
       </p>
       <p>
         All of this remains on your device unless you clear it through browser settings or use the

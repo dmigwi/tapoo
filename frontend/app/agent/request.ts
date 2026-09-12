@@ -1,6 +1,6 @@
 import { logTapooRecordEntry, setTapooLogContext } from "../logs"
 import { CONFIG } from "../config"
-import { describeProviderHttpFailure, fetchDeviceInfo } from "./config"
+import { describeProviderHttpFailure } from "./config"
 import {
   AGENT_CONTEXT_TOOLS,
   buildAgentMessages,
@@ -111,15 +111,6 @@ function logAgentLevelStarted(
   // per-turn results (see compactLoggedToolResult), so they belong beside the maze those results
   // describe. level is not repeated either - every log entry is already stamped with it.
   logTapooRecordEntry(CONFIG.runtime.controlModes.agentApi, "info", "Agent level started.", {
-    // Where the run happened, for anyone reproducing it later: the page the build was served from
-    // and the browser that ran it. Neither changes within a session, so they sit here with the maze
-    // - once per level - rather than on every request, where they would repeat on every turn.
-    // origin + pathname, never href: a query string or fragment is not part of the address a reader
-    // needs, and this entry is exported and shared, so nothing incidental in the URL travels with it.
-    // device is reduced the same way - "Chrome/141.0.0.0 on macOS", not the raw user-agent string, whose
-    // OS version, architecture and device tokens identify the machine without aiding replication.
-    platform: `${window.location.origin}${window.location.pathname}`,
-    device: fetchDeviceInfo(window.navigator.userAgent),
     startPosition: stateSnapshot.startPosition,
     finalPosition: stateSnapshot.finalPosition,
     destinationCell: cellCoordinateFromGridPoint(stateSnapshot.finalPosition),
