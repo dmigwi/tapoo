@@ -109,8 +109,8 @@ export function resolveTraversalSpeedClass(traversalSpeedUnits: number): Travers
 }
 
 // calculateTraversalSpeedUnits normalizes one agent's progress-per-decay-unit into fixed-point
-// units. The raw count comparison decides the rounding direction, so the displayed 4dp value cannot
-// cross the classification boundary: Backtracker floors, Navigator stays exact, Trailblazer ceils.
+// units. Values normally round to the nearest display unit, except inside the one-unit margin
+// around 1.0000x where rounding could cross the raw-count class boundary.
 export function calculateTraversalSpeedUnits(uniqueCellsVisited: number, scoreDecayUnits: number): number {
   if (scoreDecayUnits <= 0) {
     return 0
@@ -120,10 +120,13 @@ export function calculateTraversalSpeedUnits(uniqueCellsVisited: number, scoreDe
     return scoring.traversalSpeedScaleUnits
   }
 
-  const scaledSpeedUnits = uniqueCellsVisited * scoring.traversalSpeedScaleUnits
-  const roundedSpeedUnits = uniqueCellsVisited < scoreDecayUnits
-    ? Math.floor(scaledSpeedUnits / scoreDecayUnits)
-    : Math.floor((scaledSpeedUnits + scoreDecayUnits - 1) / scoreDecayUnits)
+  const scaledSpeed = (uniqueCellsVisited / scoreDecayUnits) * scoring.traversalSpeedScaleUnits
+  const speedMargin = scoring.traversalSpeedScaleUnits - scaledSpeed
+  const roundedSpeedUnits = speedMargin >= 0 && speedMargin <= 1
+    ? Math.floor(scaledSpeed)
+    : speedMargin < 0 && speedMargin >= -1
+      ? Math.ceil(scaledSpeed)
+      : Math.round(scaledSpeed)
 
   return Math.max(0, roundedSpeedUnits)
 }

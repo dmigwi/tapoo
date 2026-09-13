@@ -522,9 +522,12 @@ function calculateTraversalSpeedUnits(uniqueCellsVisited, scoreDecayUnits) {
   }
 
   const scaledSpeedUnits = (uniqueCellsVisited * traversalSpeedScaleUnits) / scoreDecayUnits
-  const speedUnits = uniqueCellsVisited < scoreDecayUnits
+  const speedMargin = traversalSpeedScaleUnits - scaledSpeedUnits
+  const speedUnits = speedMargin >= 0 && speedMargin <= 1
     ? Math.floor(scaledSpeedUnits)
-    : Math.ceil(scaledSpeedUnits)
+    : speedMargin < 0 && speedMargin >= -1
+      ? Math.ceil(scaledSpeedUnits)
+      : Math.round(scaledSpeedUnits)
 
   return Math.max(0, speedUnits)
 }
