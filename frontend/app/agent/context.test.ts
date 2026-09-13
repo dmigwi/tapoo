@@ -117,6 +117,7 @@ function createState(overrides: Partial<State> = {}): State {
     winSummary: "",
     wallWeight: 1,
     scoreDecayUnits: 0,
+    lastActionResult: null,
     turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,

@@ -62,6 +62,7 @@ function createState(overrides: Partial<State> = {}): State {
     playerPosition: null,
     score: 0,
     scoreDecayUnits: 0,
+    lastActionResult: null,
     status: "boot",
     traversalHistory: [],
     wallWeight: 1,

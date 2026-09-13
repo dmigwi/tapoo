@@ -5,6 +5,7 @@ import { isAgentApiMode } from "./status"
 import type {
   AgentApiSeatConfig,
   Elements,
+  MazeActionResult,
   MazeActionControl,
   MazeActionDispatch,
   MazeControlModeName,
@@ -203,6 +204,18 @@ function createTraversalMock({
       area: numCols * numRows,
     })),
     cloneCellCoordinate: vi.fn(cloneCellCoordinate),
+    cloneMazeActionResult: vi.fn((result: MazeActionResult | null | undefined) => result ? {
+      ...result,
+      ...(result.lastReplayStartCell
+        ? { lastReplayStartCell: cloneCellCoordinate(result.lastReplayStartCell) }
+        : {}),
+      ...(result.lastSubmittedMoves
+        ? { lastSubmittedMoves: [...result.lastSubmittedMoves] }
+        : {}),
+      ...(result.lastSubmittedMovesSchema
+        ? { lastSubmittedMovesSchema: { ...result.lastSubmittedMovesSchema } }
+        : {}),
+    } : null),
     cloneMazeRows: vi.fn((mazeRows: string[][]) => mazeRows.map((row) => [...row])),
     cloneRenderGridPoint: vi.fn(({ x, y }: { x: number; y: number }) => ({ x, y })),
     cloneTraversalHistory: vi.fn((history: TraversalHistoryEntry[]) =>

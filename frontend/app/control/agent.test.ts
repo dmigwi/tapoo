@@ -398,6 +398,7 @@ function createControlFixture(
     playerPosition: { x: 1, y: 1 },
     score: 800,
     scoreDecayUnits: 0,
+    lastActionResult: null,
     status: "running",
     traversalHistory: [selfVisit(0, 0)],
     wallWeight: 1,
@@ -421,6 +422,140 @@ describe("agent control mode", () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
+  })
+
+  it("hydrates the latest action result from the bound session state", () => {
+    const elements = createAgentFormElements()
+    const lastActionResult = createControlFixture({
+      currentCell: { row: 0, col: 1 },
+      lastMoveStatus: "applied",
+      lastSubmittedMoves: ["MoveRight"],
+      lastAppliedMoveIndex: 0,
+      chargedMovesCount: 1,
+    })
+    const state = createControlFixture({ lastActionResult })
+    const mode = createTestAgentMode(elements)
+
+    mode.bindActionDispatch(vi.fn(), () => state, vi.fn(() => state), testGameControls())
+
+    expect(mode.readLastActionResult()).toEqual(expect.objectContaining({
+      currentCell: { row: 0, col: 1 },
+      lastMoveStatus: "applied",
+      lastSubmittedMoves: ["MoveRight"],
+      lastAppliedMoveIndex: 0,
+      chargedMovesCount: 1,
+    }))
+    expect(mode.readLastActionResult()).not.toBe(lastActionResult)
+  })
+
+  it("sends the restored previous outcome tool payload with the current maze state", async () => {
+    const elements = createAgentFormElements()
+    const lastActionResult: MazeActionResult = {
+      lastReplayStartIndex: 0,
+      lastReplayStartCell: { row: 0, col: 0 },
+      lastSubmittedMoves: ["MoveRight"],
+      lastMoveStatus: "applied",
+      predictionStatus: "all-applied",
+      lastAppliedMoveIndex: 0,
+      visitedBefore: false,
+      chargedMovesCount: 1,
+    }
+    const state = createControlFixture({
+      playerPosition: { x: 3, y: 1 },
+      traversalHistory: [
+        selfVisit(0, 0),
+        visit(0, 1),
+      ],
+      score: 700,
+      scoreDecayUnits: 1,
+      turnCount: 1,
+      lastActionResult,
+    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: {
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              { id: "call_structure", function: { index: 0, name: "get_maze_structure", arguments: {} } },
+              { id: "call_outcome", function: { index: 1, name: "get_last_prediction_outcome", arguments: {} } },
+              { id: "call_rules", function: { index: 2, name: "get_prediction_rules", arguments: {} } },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          message: {
+            role: "assistant",
+            content: "{\"moves\":[\"MoveRight\"]}",
+          },
+        }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(() => createControlFixture({ lastMoveStatus: "applied" })),
+      () => state,
+      vi.fn(() => state),
+      testGameControls(),
+    )
+
+    await flushImmediateAgentTurn()
+    await vi.advanceTimersByTimeAsync(CONFIG.timing.defaultAgentApiRequestIntervalSeconds * 1_000)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const secondRequest = fetchMock.mock.calls[1][1] as RequestInit
+    if (typeof secondRequest.body !== "string") {
+      throw new Error("expected agent request body to be serialized json")
+    }
+
+    const secondRequestBody = JSON.parse(secondRequest.body) as {
+      messages: Array<{ role: string; tool_name?: string; content?: string }>
+    }
+    const toolMessages = secondRequestBody.messages.filter(({ role }) => role === "tool")
+    const structureContent = JSON.parse(
+      toolMessages.find(({ tool_name }) => tool_name === "get_maze_structure")?.content ?? "{}",
+    ) as { currentCell?: unknown; filteredTraversalHistory?: unknown[] }
+    const outcomeContent = JSON.parse(
+      toolMessages.find(({ tool_name }) => tool_name === "get_last_prediction_outcome")?.content ?? "{}",
+    ) as {
+      status: string
+      score: number
+      decayUnitsRemaining: number
+      lastMoveStatus: string | null
+      predictionStatus: string | null
+      lastReplayStartIndex: number | null
+      lastReplayStartCell: { row: number; col: number } | null
+      lastSubmittedMoves: string[]
+      lastAppliedMoveIndex: number | null
+      chargedMovesCount: number
+    }
+
+    expect(structureContent).toMatchObject({
+      currentCell: { row: 0, col: 1 },
+      filteredTraversalHistory: [
+        expect.objectContaining({ playerName: "Self", cell: { row: 0, col: 0 } }),
+        expect.objectContaining({ playerName: "Blue", cell: { row: 0, col: 1 } }),
+      ],
+    })
+    expect(outcomeContent).toEqual({
+      status: "running",
+      score: 700,
+      decayUnitsRemaining: 7,
+      lastMoveStatus: "applied",
+      predictionStatus: "all-applied",
+      lastReplayStartIndex: 0,
+      lastReplayStartCell: { row: 0, col: 0 },
+      lastSubmittedMoves: ["MoveRight"],
+      lastAppliedMoveIndex: 0,
+      chargedMovesCount: 1,
+    })
   })
 
   it("polls the agent endpoint for traversal moves and dispatches them with feedback enabled", async () => {

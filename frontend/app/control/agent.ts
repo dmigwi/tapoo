@@ -61,6 +61,7 @@ import {
   tapooResetLogs,
 } from "../logs"
 import { isAgentApiMode, isRunningStatus } from "../status"
+import { cloneMazeActionResult } from "../traversal"
 
 const { agentConfig, runtime, systemSettings } = CONFIG
 
@@ -257,10 +258,13 @@ export function createAgentMode(
       // Start from a clean slate so rebinding never depends on whatever was attached before.
       releaseBindings()
       boundReadState = readState
+      lastActionResult = cloneMazeActionResult(readState().lastActionResult)
 
       // recordLastActionResult captures the move outcome so agents and replays share one source of truth.
       const recordLastActionResult = (actionResult: MazeActionResult): void => {
-        lastActionResult = actionResult
+        const clonedActionResult = cloneMazeActionResult(actionResult)
+        lastActionResult = clonedActionResult
+        readState().lastActionResult = clonedActionResult
       }
 
       // Agent-owned moves always ask for feedback so the next API request has fresh context.
@@ -1312,12 +1316,21 @@ export function createAgentMode(
     },
     // recordActionResult keeps the last replay result available for the agent-api control flow.
     recordActionResult(actionResult: MazeActionResult) {
-      lastActionResult = actionResult
-      agentMovePoller?.__setLastActionResult(actionResult)
+      const clonedActionResult = cloneMazeActionResult(actionResult)
+      lastActionResult = clonedActionResult
+      const boundState = boundReadState?.()
+      if (boundState) {
+        boundState.lastActionResult = clonedActionResult
+      }
+      agentMovePoller?.__setLastActionResult(clonedActionResult)
     },
     // clearActionResult drops stale agent-facing replay data after full-session resets.
     clearActionResult() {
       lastActionResult = null
+      const boundState = boundReadState?.()
+      if (boundState) {
+        boundState.lastActionResult = null
+      }
       agentMovePoller?.__setLastActionResult(null)
     },
     // readCurrentPlayer exposes the currently playing agent's traversal-speed status label for the

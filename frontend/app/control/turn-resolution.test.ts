@@ -50,6 +50,7 @@ function createState(overrides: Partial<State> = {}): State {
     playerPosition: { x: 1, y: 1 },
     score: 200,
     scoreDecayUnits: 0,
+    lastActionResult: null,
     status: "running",
     traversalHistory: [selfVisit(0, 0)],
     wallWeight: 1,

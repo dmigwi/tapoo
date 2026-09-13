@@ -135,6 +135,7 @@ const state: State = {
   playerPosition: { x: 1, y: 1 },
   score: 10000,
   scoreDecayUnits: 0,
+  lastActionResult: null,
   status: "running",
   traversalHistory: [{ playerName: "Self", row: 0, col: 0, openMoves: [], visitCount: 1 }],
   wallWeight: 1,

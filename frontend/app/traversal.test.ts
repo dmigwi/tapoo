@@ -21,6 +21,7 @@ import {
 } from "./traversal"
 import type {
   MazeAction,
+  MazeActionResult,
   MoveAction,
   PersistedRound,
   State,
@@ -84,6 +85,7 @@ function createState(overrides: Partial<State> = {}): State {
     winSummary: "",
     wallWeight: 1,
     scoreDecayUnits: 0,
+    lastActionResult: null,
     turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,
@@ -291,6 +293,31 @@ describe("traversal", () => {
 
   it("accepts internally consistent persisted rounds", () => {
     expect(isValidPersistedRound(createPersistedRound())).toBe(true)
+  })
+
+  it("accepts a persisted round with a valid previous action result", () => {
+    const lastActionResult: MazeActionResult = {
+      lastReplayStartIndex: 0,
+      lastReplayStartCell: { row: 0, col: 0 },
+      lastSubmittedMoves: ["MoveRight"],
+      lastMoveStatus: "applied",
+      predictionStatus: "all-applied",
+      lastAppliedMoveIndex: 0,
+      visitedBefore: false,
+      chargedMovesCount: 1,
+    }
+
+    expect(isValidPersistedRound(createPersistedRound({ lastActionResult }))).toBe(true)
+  })
+
+  it("rejects a persisted round with an impossible previous action result", () => {
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
+          lastActionResult: { lastAppliedMoveIndex: -1 } as unknown as MazeActionResult,
+        }),
+      ),
+    ).toBe(false)
   })
 
   it("rejects a persisted round whose stored openMoves no longer match the restored maze", () => {

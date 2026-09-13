@@ -9,7 +9,7 @@ import type { AgentStateSnapshot } from "../agent/state-snapshot"
 import { encodeMazeForLog, logTapooRecordEntry } from "../logs"
 import { agentForCurrentRound, recordAgentTurnStats } from "../storage"
 import { isLostStatus, isRunningStatus, isWonStatus } from "../status"
-import { cellCoordinateFromGridPoint, cloneMazeDimensions } from "../traversal"
+import { cellCoordinateFromGridPoint, cloneMazeActionResult, cloneMazeDimensions } from "../traversal"
 import type {
   AgentApiSeatConfig,
   AgentPredictionFailure,
@@ -707,7 +707,7 @@ export function handleAgentTurnLoop({
       __elements.body.dataset.agentControl = nextAttached ? "active" : "idle"
     },
     __setLastActionResult(actionResult) {
-      lastActionResult = actionResult
+      lastActionResult = cloneMazeActionResult(actionResult)
     },
     __stopPolling: stopPolling,
     __shouldPollAgent: shouldPollAgent,
