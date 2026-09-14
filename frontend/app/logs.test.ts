@@ -7,6 +7,7 @@ import type { PRNGGenerator } from "./maze"
 import {
   checksumLoggedDescription,
   encodeMazeForLog,
+  checksumEntries,
   fnv1a64Checksum,
   initTapooLogs,
   logTapooRecordEntry,
@@ -41,6 +42,71 @@ function createXorshift128Generator(seed: number): PRNGGenerator {
     return (w >>> 0) % limit
   }
 }
+
+// fnv1a64Reference is FNV-1a 64 written straight from the spec with BigInt: slow, but too plain to
+// be wrong. The limb implementation in logs.ts is held to it rather than to recorded outputs alone.
+function fnv1a64Reference(text: string): string {
+  let hash = 0xcbf29ce484222325n
+  for (const byte of new TextEncoder().encode(text)) {
+    hash = BigInt.asUintN(64, (hash ^ BigInt(byte)) * 0x100000001b3n)
+  }
+  return `0x${hash.toString(16).padStart(16, "0")}`
+}
+
+describe("fnv1a64Checksum", () => {
+  it("matches the spec reference across UTF-8 widths and unpaired surrogates", () => {
+    const cases = ["", "a", "tapoo", "é ñ ü", "— “quotes” →", "#Wantam!", "😀🎯", "\uD800", "\uDC00", "x\uD800y",
+      "\uDFFF\uD800", "a😀b\uD83Dc", "x".repeat(70_000) + "😀"]
+    for (const text of cases) {
+      expect(fnv1a64Checksum(text)).toBe(fnv1a64Reference(text))
+    }
+  })
+
+  it("matches the spec reference on random text across the whole UTF-16 range", () => {
+    let seed = 0x5eed
+    const next = (): number => {
+      seed = (Math.imul(seed, 1_103_515_245) + 12_345) >>> 0
+      return seed
+    }
+    for (let sample = 0; sample < 500; sample++) {
+      let text = ""
+      const length = next() % 48
+      for (let i = 0; i < length; i++) {
+        text += String.fromCharCode(next() % 0x10000)
+      }
+      expect(fnv1a64Checksum(text)).toBe(fnv1a64Reference(text))
+    }
+  })
+})
+
+describe("checksumEntries", () => {
+  const entries = [
+    { log: "info", payload: "Agent request.", details: { player: "Blue the Trailblazer — 1.3165x" } },
+    { log: "warn", payload: "Malformed agent prediction response.", details: { raw: "😀 \uD800 lone" } },
+    { log: "info", payload: "Agent level won.", details: { traversalSpeed: "1.0000" } },
+  ]
+
+  it("equals the checksum of the compact entries JSON without building it", async () => {
+    await expect(checksumEntries(entries, async () => {})).resolves.toBe(fnv1a64Checksum(JSON.stringify(entries)))
+    await expect(checksumEntries([], async () => {})).resolves.toBe(fnv1a64Checksum("[]"))
+  })
+
+  it("yields to the page once a slice runs past a frame, and not before", async () => {
+    let clock = 0
+    const yieldToPage = vi.fn(async () => {})
+
+    // A clock that never moves: a log small enough to finish in one slice never yields.
+    await checksumEntries(entries, yieldToPage, () => clock)
+    expect(yieldToPage).not.toHaveBeenCalled()
+
+    // Every clock read lands 20 ms after the last. A slice starts on one read and is checked on the
+    // next, so each check sees 20 ms - past the 16 ms budget - and every entry ends its slice.
+    const slow = await checksumEntries(entries, yieldToPage, () => (clock += 20))
+    expect(yieldToPage).toHaveBeenCalledTimes(entries.length)
+    // Yielding changes when the work runs, never the result.
+    expect(slow).toBe(fnv1a64Checksum(JSON.stringify(entries)))
+  })
+})
 
 // These tests keep the in-memory Tapoo log export/reset behavior intentionally small.
 describe("tapoo logs", () => {
@@ -94,7 +160,9 @@ describe("tapoo logs", () => {
     }
     expect(downloadedFilename).toMatch(
       new RegExp(
-        `^tapoo-v${APP_VERSION.replaceAll(".", "\\.")}-agent-api-logs-\\d+\\.json$`,
+        // The first entry's millisecond epoch last, unbroken, right before .json.
+        `^tapoo-logs-schema${String(CONFIG.runtime.storage.version).replaceAll(".", "\\.")}` +
+          `-v${APP_VERSION.replaceAll(".", "\\.")}-\\d{13,}\\.json$`,
       ),
     )
     const downloadedText = await firstDownload.text()
@@ -102,12 +170,26 @@ describe("tapoo logs", () => {
       device: string
       downloadedAt: string
       entries: unknown[]
+      entriesChecksum: string
       mode: string
       name: string
       platform: string
+      storageVersion: string
       version: string
     }
     expect(downloadedPayload.name).toBe("tapoo")
+    // Verified the way a consumer would, from the downloaded file alone: the file is pretty-printed,
+    // so the checksum covers the entries re-serialized compactly, not the file's own text.
+    expect(downloadedPayload.entriesChecksum).toMatch(/^0x[0-9a-f]{16}$/)
+    expect(downloadedPayload.entriesChecksum).toBe(fnv1a64Checksum(JSON.stringify(downloadedPayload.entries)))
+    // Any edit to an entry after download no longer matches.
+    const tampered = JSON.parse(downloadedText) as { entries: Array<Record<string, unknown>> }
+    tampered.entries[0].payload = "edited after download"
+    expect(fnv1a64Checksum(JSON.stringify(tampered.entries))).not.toBe(downloadedPayload.entriesChecksum)
+    // Recorded as the identifier it is, not a number: a numeric 5.10 would read back as 5.1.
+    expect(downloadedPayload.storageVersion).toBe(String(CONFIG.runtime.storage.version))
+    // Only agent-api logs download, so the mode was never informative in the name.
+    expect(downloadedFilename).not.toContain("agent-api")
     // Where the run happened, recorded once in the envelope rather than on every entry.
     expect(downloadedPayload.platform).toBe(`${window.location.origin}${window.location.pathname}`)
     expect(downloadedPayload.platform).not.toContain("?")
@@ -189,9 +271,41 @@ describe("tapoo logs", () => {
 
     const [, second] = loadTapooLog<{ epochMs: number }>("agent-api")
     expect(anchors[0]?.download).toBe(
-      `tapoo-v${APP_VERSION}-agent-api-logs-${Math.round(second.epochMs / 1000)}.json`,
+      `tapoo-logs-schema${CONFIG.runtime.storage.version}-v${APP_VERSION}-${second.epochMs}.json`,
     )
     expect(anchorClick).toHaveBeenCalledTimes(1)
+  })
+
+  it("ends the name with the millisecond epoch, so front-trimmed labels still tell runs apart", async () => {
+    const anchors: HTMLAnchorElement[] = []
+    const createElement = document.createElement.bind(document)
+    vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
+      const element = createElement(tagName)
+      if (tagName === "a") {
+        anchors.push(element as HTMLAnchorElement)
+      }
+      return element
+    })
+    vi.stubGlobal("URL", { createObjectURL: () => "blob:log", revokeObjectURL: () => {} })
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+    const now = vi.spyOn(Date, "now")
+
+    // Two experiments started 342 ms apart - within the same second, on one machine.
+    now.mockReturnValue(1_789_378_730_123)
+    logTapooRecordEntry("agent-api", "info", "first entry")
+    await tapooDownloadLogs("agent-api")
+    await tapooResetLogs("agent-api")
+    now.mockReturnValue(1_789_378_730_465)
+    logTapooRecordEntry("agent-api", "info", "first entry")
+    await tapooDownloadLogs("agent-api")
+
+    const [first, second] = anchors.map((anchor) => anchor.download)
+    expect(first).toBe(`tapoo-logs-schema${CONFIG.runtime.storage.version}-v${APP_VERSION}-1789378730123.json`)
+    // Downstream tabs trim a long name from the front: at a 320px viewport only nine digits and
+    // ".json" survive. Those trailing characters are all a reader sees, so they must still differ.
+    const visibleAt320px = (name: string) => name.slice(-"789240357.json".length)
+    expect(visibleAt320px(first)).toBe("378730123.json")
+    expect(visibleAt320px(second)).toBe("378730465.json")
   })
 
   it("notifies subscribers when log availability changes", async () => {

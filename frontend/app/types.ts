@@ -112,6 +112,11 @@ export type PersistedRound = {
   scoreDecayUnits?: number
   turnCount?: number
   cumulativeRoundCount?: number
+  // lastActionResult is the previous prediction/replay outcome for this same active round. It is
+  // stored with the round because agent context tools need it after same-tab reloads or poller
+  // rebinds; keeping it only in memory can make the maze state advance while
+  // get_last_prediction_outcome falsely reports a first-turn/null outcome.
+  lastActionResult?: MazeActionResult | null
   // Optional so snapshots written before this field existed still validate rather than being
   // discarded. Absent restores as CONFIG.runtime.defaultRestartLevel, the same value a session
   // that never set one uses.
@@ -659,6 +664,9 @@ export type State = {
   bestWinTraversalSpeedUnits: number | null
   winSummary: string
   scoreDecayUnits: number
+  // Previous command/replay outcome for the active round. New results overwrite old results, and
+  // new rounds clear it, so get_last_prediction_outcome always describes this exact session turn.
+  lastActionResult: MazeActionResult | null
   // turnCount counts completed turns within the CURRENT round only - it resets to 0 every time
   // cumulativeRoundCount increments (a fresh level start, a retry, or a too-small-viewport bailout).
   // Paired with level and cumulativeRoundCount, it forms a fingerprint that can never collide across

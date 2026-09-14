@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { CONFIG } from "./config"
 import {
   cellCoordinateFromGridPoint,
+  cloneMazeActionResult,
   cloneTraversalHistory,
   createMazeDimensions,
   findTraversalHistoryEntry,
@@ -21,6 +22,7 @@ import {
 } from "./traversal"
 import type {
   MazeAction,
+  MazeActionResult,
   MoveAction,
   PersistedRound,
   State,
@@ -84,6 +86,7 @@ function createState(overrides: Partial<State> = {}): State {
     winSummary: "",
     wallWeight: 1,
     scoreDecayUnits: 0,
+    lastActionResult: null,
     turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,
@@ -219,6 +222,39 @@ describe("traversal", () => {
     expect(findTraversalHistoryEntry(history, { row: 9, col: 9 })).toBeUndefined()
   })
 
+  it("clones a previous action result without sharing any nested value with the original", () => {
+    // The outcome is handed between the game, the agent control, the poller and storage, and each new
+    // one overwrites the last. A copy sharing a nested array or object with its source would let
+    // whoever still holds the original rewrite the moves, start cell or schema of the saved outcome.
+    const original: MazeActionResult = {
+      lastReplayStartIndex: 0,
+      lastReplayStartCell: { row: 0, col: 0 },
+      lastSubmittedMoves: ["MoveRight"],
+      lastSubmittedMovesSchema: { type: "array" } as unknown as MazeActionResult["lastSubmittedMovesSchema"],
+      lastMoveStatus: "applied",
+      predictionStatus: "all-applied",
+      lastAppliedMoveIndex: 0,
+      visitedBefore: false,
+      chargedMovesCount: 1,
+    }
+
+    const clone = cloneMazeActionResult(original)
+
+    expect(clone).toEqual(original)
+    expect(clone?.lastSubmittedMoves).not.toBe(original.lastSubmittedMoves)
+    expect(clone?.lastReplayStartCell).not.toBe(original.lastReplayStartCell)
+    expect(clone?.lastSubmittedMovesSchema).not.toBe(original.lastSubmittedMovesSchema)
+
+    original.lastSubmittedMoves?.push("MoveDown")
+    if (original.lastReplayStartCell) {
+      original.lastReplayStartCell.col = 9
+    }
+    expect(clone?.lastSubmittedMoves).toEqual(["MoveRight"])
+    expect(clone?.lastReplayStartCell).toEqual({ row: 0, col: 0 })
+    expect(cloneMazeActionResult(null)).toBeNull()
+    expect(cloneMazeActionResult(undefined)).toBeNull()
+  })
+
   it("clones only traversal histories that include the known start cell", () => {
     // The first entry carries a visitCount above 1 deliberately: cloneTraversalHistory copies fields
     // by explicit destructuring, so a clone that hardcoded or dropped the count would still pass
@@ -291,6 +327,31 @@ describe("traversal", () => {
 
   it("accepts internally consistent persisted rounds", () => {
     expect(isValidPersistedRound(createPersistedRound())).toBe(true)
+  })
+
+  it("accepts a persisted round with a valid previous action result", () => {
+    const lastActionResult: MazeActionResult = {
+      lastReplayStartIndex: 0,
+      lastReplayStartCell: { row: 0, col: 0 },
+      lastSubmittedMoves: ["MoveRight"],
+      lastMoveStatus: "applied",
+      predictionStatus: "all-applied",
+      lastAppliedMoveIndex: 0,
+      visitedBefore: false,
+      chargedMovesCount: 1,
+    }
+
+    expect(isValidPersistedRound(createPersistedRound({ lastActionResult }))).toBe(true)
+  })
+
+  it("rejects a persisted round with an impossible previous action result", () => {
+    expect(
+      isValidPersistedRound(
+        createPersistedRound({
+          lastActionResult: { lastAppliedMoveIndex: -1 } as unknown as MazeActionResult,
+        }),
+      ),
+    ).toBe(false)
   })
 
   it("rejects a persisted round whose stored openMoves no longer match the restored maze", () => {

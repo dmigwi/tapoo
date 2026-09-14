@@ -146,28 +146,52 @@ describe("calculateTraversalSpeedUnits", () => {
     expect(calculateTraversalSpeedUnits(4, -1)).toBe(0)
   })
 
-  it("rounds away from the 1.0000x display boundary based on the raw speed class", () => {
+  it("rounds normally but clamps the 1.0000x boundary based on the raw speed class", () => {
     // Raw speed is 0.99995, so it must remain visibly Backtracker instead of rounding to Navigator.
     const backtrackerUnits = calculateTraversalSpeedUnits(99_995, 100_000)
     expect(resolveTraversalSpeedClass(backtrackerUnits)).toBe("backtracker")
     expect(traversalSpeedUnitsToDisplay(backtrackerUnits)).toBe("0.9999x")
 
+    // Raw speed is 0.99985, so it must remain visibly Backtracker instead of rounding to Navigator.
+    const backtracker1Units = calculateTraversalSpeedUnits(99_985, 100_000)
+    expect(resolveTraversalSpeedClass(backtracker1Units)).toBe("backtracker")
+    expect(traversalSpeedUnitsToDisplay(backtracker1Units)).toBe("0.9999x")
+
+    // Raw speed is safely below the boundary, so normal rounding still applies.
+    const backtracker2Units = calculateTraversalSpeedUnits(45_459, 100_000)
+    expect(resolveTraversalSpeedClass(backtracker2Units)).toBe("backtracker")
+    expect(traversalSpeedUnitsToDisplay(backtracker2Units)).toBe("0.4546x")
+
     // Raw speed is 1.00005, so it must remain visibly Trailblazer instead of rounding to Navigator.
     const trailblazerUnits = calculateTraversalSpeedUnits(100_005, 100_000)
     expect(resolveTraversalSpeedClass(trailblazerUnits)).toBe("trailblazer")
     expect(traversalSpeedUnitsToDisplay(trailblazerUnits)).toBe("1.0001x")
+
+    // Raw speed is 1.00001, so even a smaller just-above-boundary Trailblazer cannot display as Navigator.
+    const trailblazer1Units = calculateTraversalSpeedUnits(100_001, 100_000)
+    expect(resolveTraversalSpeedClass(trailblazer1Units)).toBe("trailblazer")
+    expect(traversalSpeedUnitsToDisplay(trailblazer1Units)).toBe("1.0001x")
   })
 
-  it("floors backtracker speeds and ceils trailblazer speeds at the configured display precision", () => {
-    // 1 / 3 must not round upward to imply more progress than was actually observed.
+  it("rounds exact half-unit ties up, matching an exact reconstruction", () => {
+    // 57 / 800 is exactly 0.07125, i.e. 712.5 units. Computing (57 / 800) * scale gives
+    // 712.4999999999999 and rounds down; multiplying first keeps the tie exact. Oracle rebuilds speed
+    // from its decomposition with exact arithmetic, so the logged value has to agree with it.
+    expect(calculateTraversalSpeedUnits(57, 800)).toBe(713)
+    expect(calculateTraversalSpeedUnits(69, 800)).toBe(863)
+    expect(calculateTraversalSpeedUnits(113, 800)).toBe(1_413)
+  })
+
+  it("keeps normal rounding away from the class boundary", () => {
+    // 1 / 3 is safely below 1.0000x, so normal rounding applies.
     const backtrackerUnits = calculateTraversalSpeedUnits(1, 3)
     expect(backtrackerUnits).toBe(3_333)
     expect(traversalSpeedUnitsToDisplay(backtrackerUnits)).toBe("0.3333x")
 
-    // 4 / 3 must not round downward and hide progress above the baseline class.
+    // 4 / 3 is safely above 1.0000x, so normal rounding applies.
     const trailblazerUnits = calculateTraversalSpeedUnits(4, 3)
-    expect(trailblazerUnits).toBe(13_334)
-    expect(traversalSpeedUnitsToDisplay(trailblazerUnits)).toBe("1.3334x")
+    expect(trailblazerUnits).toBe(13_333)
+    expect(traversalSpeedUnitsToDisplay(trailblazerUnits)).toBe("1.3333x")
   })
 })
 

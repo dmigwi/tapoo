@@ -5,6 +5,7 @@ import type {
   CellCoordinate,
   MazeAction,
   MazeDimensions,
+  MazeActionResult,
   MoveAction,
   PersistedRound,
   RenderGridPoint,
@@ -353,6 +354,30 @@ export function cloneTraversalHistory(
   }))
 }
 
+// cloneMazeActionResult detaches the previous replay outcome before it crosses storage/runtime
+// boundaries. Each new outcome overwrites the old one, so preserving stale object references would
+// make the persisted round look mutable from whichever caller still holds the original result.
+export function cloneMazeActionResult(
+  result: MazeActionResult | null | undefined,
+): MazeActionResult | null {
+  if (!result) {
+    return null
+  }
+
+  return {
+    ...result,
+    ...(result.lastReplayStartCell
+      ? { lastReplayStartCell: cloneCellCoordinate(result.lastReplayStartCell) }
+      : {}),
+    ...(result.lastSubmittedMoves
+      ? { lastSubmittedMoves: [...result.lastSubmittedMoves] }
+      : {}),
+    ...(result.lastSubmittedMovesSchema
+      ? { lastSubmittedMovesSchema: { ...result.lastSubmittedMovesSchema } }
+      : {}),
+  }
+}
+
 // startCellFromTraversalHistory derives the persisted start cell from the first chronological visit.
 export function startCellFromTraversalHistory(
   history: TraversalHistoryEntry[],
@@ -362,6 +387,30 @@ export function startCellFromTraversalHistory(
 }
 
 // --- Persistence validation ---
+
+function isValidMazeActionResult(value: unknown): value is MazeActionResult {
+  if (value === null || value === undefined) {
+    return true
+  }
+  if (typeof value !== "object") {
+    return false
+  }
+
+  const result = value as Partial<MazeActionResult>
+  return (
+    (result.lastReplayStartIndex === undefined || result.lastReplayStartIndex === 0) &&
+    (result.lastReplayStartCell === undefined || result.lastReplayStartCell === null || isCellCoordinate(result.lastReplayStartCell)) &&
+    (result.lastSubmittedMoves === undefined ||
+      (Array.isArray(result.lastSubmittedMoves) && result.lastSubmittedMoves.every((move) => typeof move === "string"))) &&
+    (result.lastMoveStatus === undefined || typeof result.lastMoveStatus === "string") &&
+    (result.predictionStatus === undefined || typeof result.predictionStatus === "string") &&
+    (result.lastAppliedMoveIndex === undefined || result.lastAppliedMoveIndex === null ||
+      (typeof result.lastAppliedMoveIndex === "number" && Number.isInteger(result.lastAppliedMoveIndex) && result.lastAppliedMoveIndex >= 0)) &&
+    (result.visitedBefore === undefined || typeof result.visitedBefore === "boolean") &&
+    (result.chargedMovesCount === undefined ||
+      (typeof result.chargedMovesCount === "number" && Number.isInteger(result.chargedMovesCount) && result.chargedMovesCount >= 0))
+  )
+}
 
 // isValidPersistedRound verifies that a restored round is internally consistent.
 export function isValidPersistedRound(snapshot: PersistedRound): boolean {
@@ -423,6 +472,10 @@ export function isValidPersistedRound(snapshot: PersistedRound): boolean {
   }
 
   if (!isValidGridPointEqual(snapshot.startPosition, gridPointFromCellCoordinate(snapshot.startCell))) {
+    return false
+  }
+
+  if (!isValidMazeActionResult(snapshot.lastActionResult)) {
     return false
   }
 

@@ -47,6 +47,7 @@ import { isTapooLogStorageFallback } from "./storage-logs"
 import {
   cellCoordinateFromGridPoint,
   cloneMazeDimensions,
+  cloneMazeActionResult,
   cloneMazeRows,
   cloneRenderGridPoint,
   cloneTraversalHistory,
@@ -111,6 +112,7 @@ const state: State = {
   winSummary: "",
   wallWeight: WALL_WEIGHTS[0],
   scoreDecayUnits: 0,
+  lastActionResult: null,
   turnCount: 0,
   cumulativeRoundCount: 0,
   clock: null,
@@ -364,6 +366,7 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
   state.score = snapshot.score
   state.lastRoundScore = snapshot.lastRoundScore
   state.scoreDecayUnits = snapshot.scoreDecayUnits ?? 0
+  state.lastActionResult = cloneMazeActionResult(snapshot.lastActionResult)
   state.turnCount = snapshot.turnCount ?? 0
   state.cumulativeRoundCount = snapshot.cumulativeRoundCount ?? 0
   state.winSummary = snapshot.winSummary ?? ""
@@ -422,6 +425,7 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
   state.status = "running"
   state.lastRoundScore = 0
   state.scoreDecayUnits = 0
+  state.lastActionResult = null
   state.turnCount = 0
   state.cumulativeRoundCount += 1
   state.winSummary = ""
@@ -664,6 +668,7 @@ function dispatchControl(
     cycleWallWeight: () => { markForRender(cycleWallWeight()) },
     movePlayer,
     recordActionResult: (actionResult) => {
+      state.lastActionResult = cloneMazeActionResult(actionResult)
       // The active control mode owns how it stores or forwards the latest replay result.
       activeControlMode?.recordActionResult(actionResult)
     },

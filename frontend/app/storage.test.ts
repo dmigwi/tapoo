@@ -26,7 +26,7 @@ import {
 // The real guard rather than a local copy: loadPersistedSnapshot takes it from its caller, so a copy
 // here would let these tests keep accepting weights production had already stopped accepting.
 import { isWallWeight } from "./traversal"
-import type { State, TraversalHistoryEntry } from "./types"
+import type { MazeActionResult, State, TraversalHistoryEntry } from "./types"
 
 const MODE = CONFIG.runtime.controlModes.interactive
 const AGENT_MODE = CONFIG.runtime.controlModes.agentApi
@@ -111,6 +111,7 @@ function createState(overrides: Partial<State> = {}): State {
     winSummary: "",
     wallWeight: 2,
     scoreDecayUnits: 0,
+    lastActionResult: null,
     turnCount: 0,
     cumulativeRoundCount: 0,
     clock: null,
@@ -808,8 +809,43 @@ describe("storage", () => {
       restartLevel: 1,
       remainingMs: 25_000,
       scoreDecayUnits: 0,
+      lastActionResult: null,
       turnCount: 0,
       cumulativeRoundCount: 0,
+    })
+  })
+
+  it("saves and reloads the previous action result with the active round", () => {
+    const lastActionResult: MazeActionResult = {
+      lastReplayStartIndex: 0,
+      lastReplayStartCell: { row: 0, col: 0 },
+      lastSubmittedMoves: ["MoveRight"],
+      lastMoveStatus: "applied",
+      predictionStatus: "all-applied",
+      lastAppliedMoveIndex: 0,
+      visitedBefore: false,
+      chargedMovesCount: 1,
+    }
+    const state = createState({
+      playerPosition: { x: 1, y: 1 },
+      finalPosition: { x: 1, y: 1 },
+      lastActionResult,
+    })
+
+    saveActiveRoundSnapshot(MODE, state)
+    lastActionResult.lastSubmittedMoves?.push("MoveDown")
+
+    const snapshot = loadPersistedSnapshot(MODE, 1, 1, isWallWeight)
+
+    expect(snapshot.round?.lastActionResult).toEqual({
+      lastReplayStartIndex: 0,
+      lastReplayStartCell: { row: 0, col: 0 },
+      lastSubmittedMoves: ["MoveRight"],
+      lastMoveStatus: "applied",
+      predictionStatus: "all-applied",
+      lastAppliedMoveIndex: 0,
+      visitedBefore: false,
+      chargedMovesCount: 1,
     })
   })
 

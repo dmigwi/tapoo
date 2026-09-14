@@ -271,8 +271,21 @@ export async function tapooDownloadLogs(modeName: MazeControlModeName): Promise<
     platform: fetchPlatformInfo(window.location),
     device: fetchDeviceInfo(window.navigator.userAgent),
     version: APP_VERSION,
+    // The storage schema the entries were written under, separate from the app release: two releases
+    // can share a schema, and a schema bump discards everything stored under the previous one, so this
+    // is what identifies the rules the entries in this file were recorded by. A string, because it is
+    // an identifier - as a number, 5.10 would serialize as 5.1.
+    storageVersion: String(CONFIG.runtime.storage.version),
     mode: modeName,
     downloadedAt: getLocalTimestamp(),
+    // fnv1a64Checksum of the entries serialized compactly - JSON.stringify(entries), no indentation,
+    // computed by checksumEntries without building that string.
+    // That is what a consumer rebuilds from this file alone: parse it, re-serialize entries, hash.
+    // It shows the entries were not edited between download and report generation, whether by an
+    // accidental save or a hand edit. It is not a signature: the algorithm is public and keyless, so
+    // anyone deliberately rewriting entries can recompute it, the same limit every checksum in these
+    // logs has.
+    entriesChecksum: await checksumEntries(entries),
     entries,
   }
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -285,7 +298,14 @@ export async function tapooDownloadLogs(modeName: MazeControlModeName): Promise<
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement("a")
   anchor.href = url
-  anchor.download = `${payload.name}-v${payload.version}-${modeName}-logs-${Math.round(firstEntryEpochMs / 1000)}.json`
+  // No mode segment: only agent-api logs download (see the guard above), so it never varied. The
+  // first entry's epoch in milliseconds goes last, as one unbroken number. Downstream tabs trim a
+  // long name from the front and keep only its end - as little as nine digits and ".json" at a 320px
+  // viewport - so what tells two logs apart has to sit right before the extension: the low digits
+  // and milliseconds, which still differ between experiments started within the same second. The
+  // constant prefix and the shared schema and app versions go first, where trimming costs nothing.
+  // The number is the entry's own epochMs, so a filename can be searched for inside its log.
+  anchor.download = `${payload.name}-logs-schema${payload.storageVersion}-v${payload.version}-${firstEntryEpochMs}.json`
   anchor.hidden = true
   document.body.append(anchor)
   anchor.click()
@@ -324,15 +344,94 @@ export function trimLoggedDescription(
 // arrow in a tool description) hashes identically here and in that external tool.
 // Implementation reference: https://www.ietf.org/archive/id/draft-eastlake-fnv-22.html
 export function fnv1a64Checksum(text: string): string {
-  const offsetBasis = 0xcbf29ce484222325n // 14695981039346656037 - the fixed FNV-1a 64-bit offset from the spec.
-  const prime = 0x100000001b3n // 1,099,511,628,211 - the fixed FNV-1a 64-bit prime from the spec.
+  const hash = createFnv1a64()
+  hash.update(text)
+  return hash.digest()
+}
 
-  let hash = offsetBasis
-  for (const byte of new TextEncoder().encode(text)) {
-    hash ^= BigInt(byte)
-    hash = BigInt.asUintN(64, hash * prime)
+// createFnv1a64 is the incremental form of fnv1a64Checksum, for input too large to hold as one string.
+// Updates hash as if their texts were concatenated, with one caveat: a chunk boundary must not fall
+// inside a surrogate pair, since each chunk is UTF-8 encoded on its own and a split half encodes as
+// U+FFFD. Chunks of complete JSON never split one - JSON.stringify escapes lone surrogates to ASCII.
+//
+// The 64-bit state is four 16-bit limbs (v0 lowest), not a BigInt: at log scale the BigInt version was
+// the slowest step of a download, over 1 s for 100 MB. The prime is 2^40 + 435, so a multiply is each
+// limb times 435 plus v0 and v1 shifted two limbs and 8 bits up; every intermediate stays below 2^31,
+// so no step leaves small-integer arithmetic. encodeInto writes UTF-8 into one reused buffer, so the
+// encoding is TextEncoder's own and no copy of the input is ever made.
+function createFnv1a64(): { update(text: string): void; digest(): string } {
+  // The FNV-1a 64-bit offset basis 0xcbf29ce484222325, split into limbs.
+  let v0 = 0x2325
+  let v1 = 0x8422
+  let v2 = 0x9ce4
+  let v3 = 0xcbf2
+  const encoder = new TextEncoder()
+  let buffer = new Uint8Array(1 << 16)
+
+  return {
+    update(text: string): void {
+      // Three bytes per UTF-16 unit is UTF-8's worst case, so encodeInto can never truncate.
+      if (buffer.length < text.length * 3) {
+        buffer = new Uint8Array(text.length * 3)
+      }
+      const { written } = encoder.encodeInto(text, buffer)
+      for (let i = 0; i < written; i++) {
+        v0 ^= buffer[i]
+        const t0 = v0 * 435
+        const t1 = v1 * 435 + (t0 >>> 16)
+        const t2 = v2 * 435 + (v0 << 8) + (t1 >>> 16)
+        v3 = (v3 * 435 + (v1 << 8) + (t2 >>> 16)) & 0xffff
+        v2 = t2 & 0xffff
+        v1 = t1 & 0xffff
+        v0 = t0 & 0xffff
+      }
+    },
+    digest(): string {
+      return `0x${[v3, v2, v1, v0].map((limb) => limb.toString(16).padStart(4, "0")).join("")}`
+    },
   }
-  return `0x${hash.toString(16).padStart(16, "0")}`
+}
+
+// checksumEntries is fnv1a64Checksum(JSON.stringify(entries)) without ever building that string. An
+// array's JSON is "[", its elements' JSON joined by ",", then "]" - so hashing those pieces in order
+// gives the identical checksum while holding one entry's text at a time, not a log that can reach
+// 100 MB. It also hands control back to the page whenever a slice runs past one frame, so a large
+// download never freezes the tab; a small log finishes inside its first slice and never yields.
+export async function checksumEntries(
+  entries: readonly unknown[],
+  yieldToPage: () => Promise<void> = yieldToEventLoop,
+  now: () => number = () => performance.now(),
+): Promise<string> {
+  const frameBudgetMs = 16
+  const hash = createFnv1a64()
+  let sliceStart = now()
+
+  hash.update("[")
+  for (let index = 0; index < entries.length; index++) {
+    if (index > 0) {
+      hash.update(",")
+    }
+    hash.update(JSON.stringify(entries[index]))
+    if (now() - sliceStart > frameBudgetMs) {
+      await yieldToPage()
+      sliceStart = now()
+    }
+  }
+  hash.update("]")
+  return hash.digest()
+}
+
+// yieldToEventLoop resumes on the next macrotask through MessageChannel rather than setTimeout, which
+// browsers clamp to at least 4 ms once nested - at thousands of slices that clamp would dominate.
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel()
+    channel.port1.onmessage = () => {
+      channel.port1.close()
+      resolve()
+    }
+    channel.port2.postMessage(null)
+  })
 }
 
 // checksumLoggedDescription computes fnv1a64Checksum for a description/content field, or undefined

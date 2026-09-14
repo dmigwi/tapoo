@@ -14,6 +14,7 @@ import { isAgentSeatId } from "./agent/seats"
 import { canPersistRoundStatus, hasActiveRoundState } from "./status"
 import {
   cloneMazeDimensions,
+  cloneMazeActionResult,
   cloneMazeRows,
   cloneRenderGridPoint,
   cloneTraversalHistory,
@@ -931,6 +932,7 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
     winSummary: state.winSummary,
     restartLevel: state.restartLevel,
     scoreDecayUnits: state.scoreDecayUnits,
+    lastActionResult: cloneMazeActionResult(state.lastActionResult),
     turnCount: state.turnCount,
     cumulativeRoundCount: state.cumulativeRoundCount,
   }

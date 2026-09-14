@@ -83,14 +83,16 @@
         matching Tapoo control: Reset Progress clears progress, Clear Tapoo Logs clears logs, and
         removing an agent clears that agent's saved configuration. Stored values are lightly
         obfuscated to reduce casual tampering, but this is not strong encryption for gameplay data.
-        Every stored entry is also tagged with Tapoo's storage schema version, which is separate 
-        from the app version named above.
-        Upgrading Tapoo to a new schema version does not migrate entries left over
-        from an older one, and the upgraded page cannot read them. Instead, the next time you open
-        Tapoo it tells you how many leftover entries exist and which version wrote them, and asks
-        you to confirm before removing them. Nothing is deleted until you confirm, and confirming
-        does clear previously stored preferences and AI Agent configuration, including any
-        credential or header values saved with an agent.
+        Every stored entry is also tagged with Tapoo's storage schema version, which is separate
+        from the app version named above. Tapoo is a data collection tool and has no legacy data
+        support, which guarantees that a log you download at any time only contains data written
+        under the storage schema version your copy of Tapoo supports. Upgrading to a new schema
+        version never migrates entries left over from an older one, and the upgraded page does not
+        read them, so no stored data is ever rewritten - or corrupted - by a version migration.
+        Instead, the next time you open Tapoo it tells you how many leftover entries exist and which
+        version wrote them, and asks you to confirm before removing them. Nothing is deleted until
+        you confirm, and confirming does clear previously stored preferences and AI Agent
+        configuration, including any credential or header values saved with an agent.
       </p>
 
       <h2>Third-Party Sharing (AI Agent Mode)</h2>

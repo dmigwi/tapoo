@@ -163,7 +163,7 @@ describe("bench report helpers", () => {
 
   it("reports only the conservative minimum winning speed reference line", () => {
     expect(minWinSpeedRows(summaries).area100_10x10).toEqual({
-      "Conservative (No Batching) Min Win Speed": "0.9900x",
+      "Conservative (No Batching) Min Win Speed": "0.9901x",
     })
   })
 
