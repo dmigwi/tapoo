@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { CONFIG } from "./config"
 import {
   cellCoordinateFromGridPoint,
+  cloneMazeActionResult,
   cloneTraversalHistory,
   createMazeDimensions,
   findTraversalHistoryEntry,
@@ -219,6 +220,39 @@ describe("traversal", () => {
     // Returns the live entry, not a copy - game.ts mutates visitCount straight through it.
     expect(findTraversalHistoryEntry(history, { row: 0, col: 1 })).toBe(revisited)
     expect(findTraversalHistoryEntry(history, { row: 9, col: 9 })).toBeUndefined()
+  })
+
+  it("clones a previous action result without sharing any nested value with the original", () => {
+    // The outcome is handed between the game, the agent control, the poller and storage, and each new
+    // one overwrites the last. A copy sharing a nested array or object with its source would let
+    // whoever still holds the original rewrite the moves, start cell or schema of the saved outcome.
+    const original: MazeActionResult = {
+      lastReplayStartIndex: 0,
+      lastReplayStartCell: { row: 0, col: 0 },
+      lastSubmittedMoves: ["MoveRight"],
+      lastSubmittedMovesSchema: { type: "array" } as unknown as MazeActionResult["lastSubmittedMovesSchema"],
+      lastMoveStatus: "applied",
+      predictionStatus: "all-applied",
+      lastAppliedMoveIndex: 0,
+      visitedBefore: false,
+      chargedMovesCount: 1,
+    }
+
+    const clone = cloneMazeActionResult(original)
+
+    expect(clone).toEqual(original)
+    expect(clone?.lastSubmittedMoves).not.toBe(original.lastSubmittedMoves)
+    expect(clone?.lastReplayStartCell).not.toBe(original.lastReplayStartCell)
+    expect(clone?.lastSubmittedMovesSchema).not.toBe(original.lastSubmittedMovesSchema)
+
+    original.lastSubmittedMoves?.push("MoveDown")
+    if (original.lastReplayStartCell) {
+      original.lastReplayStartCell.col = 9
+    }
+    expect(clone?.lastSubmittedMoves).toEqual(["MoveRight"])
+    expect(clone?.lastReplayStartCell).toEqual({ row: 0, col: 0 })
+    expect(cloneMazeActionResult(null)).toBeNull()
+    expect(cloneMazeActionResult(undefined)).toBeNull()
   })
 
   it("clones only traversal histories that include the known start cell", () => {

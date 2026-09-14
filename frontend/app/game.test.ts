@@ -1447,6 +1447,38 @@ describe("bootstrapGame", () => {
     )
   })
 
+  it("clears the previous prediction outcome when a new round starts, in interactive mode too", async () => {
+    // Agent mode's clearActionResult also nulls the outcome, but interactive mode's is a no-op - while
+    // the game still records an outcome in every mode. On this path the reset inside
+    // startRoundWithDimensions is the only thing keeping the last round's outcome off a new maze. A
+    // resize redraw starts that new round without going through restartGame, which clears it separately.
+    const harness = await bootstrapHarness({
+      dimensionsResults: [
+        { level: 1, numCols: 4, numRows: 1 },
+        { level: 1, numCols: 1, numRows: 4 },
+      ],
+      round: createHorizontalRound(),
+      terminalSizes: [
+        { numCols: 20, numRows: 20 },
+        { numCols: 1, numRows: 20 },
+        { numCols: 1, numRows: 20 },
+      ],
+    })
+    const previousOutcome: MazeActionResult = {
+      lastMoveStatus: "applied",
+      lastSubmittedMoves: ["MoveRight"],
+      lastAppliedMoveIndex: 0,
+      chargedMovesCount: 1,
+    }
+    latestRenderedState(harness.render).lastActionResult = previousOutcome
+
+    window.dispatchEvent(new Event("resize"))
+
+    // A new round really started - otherwise a null outcome would prove nothing.
+    expect(harness.generateMaze).toHaveBeenCalledTimes(2)
+    expect(latestRenderedState(harness.render).lastActionResult).toBeNull()
+  })
+
   it("re-measures once web fonts finish loading and corrects a stale too-small bootstrap", async () => {
     Object.defineProperty(document, "fonts", {
       configurable: true,
