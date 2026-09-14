@@ -491,7 +491,7 @@ export const CONFIG: AppConfig = {
     // again - changing it moves the opening level for everyone.
     defaultRestartLevel: 1,
     storage: {
-      version: 5.1,
+      version: 5.2,
       suffixes: {
         gameSetup: "gameSetup",
         winMetrics: "winMetrics",
