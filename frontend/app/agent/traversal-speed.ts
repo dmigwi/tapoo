@@ -120,7 +120,11 @@ export function calculateTraversalSpeedUnits(uniqueCellsVisited: number, scoreDe
     return scoring.traversalSpeedScaleUnits
   }
 
-  const scaledSpeed = (uniqueCellsVisited / scoreDecayUnits) * scoring.traversalSpeedScaleUnits
+  // Multiply before dividing. uniqueCellsVisited * scale is an exact integer, so this is a single
+  // correctly-rounded division; (uniqueCellsVisited / scoreDecayUnits) * scale rounds twice and can
+  // land an exact tie just below .5 - 57 / 800 is exactly 712.5 units but computes as
+  // 712.4999999999999, which Math.round takes to 712 while any exact reconstruction gets 713.
+  const scaledSpeed = (uniqueCellsVisited * scoring.traversalSpeedScaleUnits) / scoreDecayUnits
   const speedMargin = scoring.traversalSpeedScaleUnits - scaledSpeed
   const roundedSpeedUnits = speedMargin >= 0 && speedMargin <= 1
     ? Math.floor(scaledSpeed)

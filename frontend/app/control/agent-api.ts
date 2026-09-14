@@ -324,11 +324,10 @@ export function handleAgentTurnLoop({
     }
 
     const playerStatus = playerStatusFor(updatedAgent, preCommitState)
-    __commitAgentTurn(
-      chargedMovesCount,
-      calculateTraversalSpeedUnits(playerStatus.uniqueCellsVisited, playerStatus.decayUnitsCharged),
-    )
-
+    // Recorded before the commit, not after: __commitAgentTurn persists the round snapshot, and a
+    // reload restores lastActionResult from it. Recording afterwards would save this turn's board
+    // with the previous outcome, so a tab killed before the next save would report last turn's
+    // moves as this turn's.
     const nextResult = mergeMazeActionResult(activeActionResult(), {
       lastPlayerName: agent.playerName,
       lastMoveStatus,
@@ -338,6 +337,11 @@ export function handleAgentTurnLoop({
     lastActionResult = nextResult
 
     __onActionResult(nextResult)
+
+    __commitAgentTurn(
+      chargedMovesCount,
+      calculateTraversalSpeedUnits(playerStatus.uniqueCellsVisited, playerStatus.decayUnitsCharged),
+    )
     notifyRoundCompletion(updatedAgent, playerStatus, nextResult)
   }
 
@@ -665,11 +669,10 @@ export function handleAgentTurnLoop({
       }
 
       const playerStatus = playerStatusFor(updatedAgent, preCommitState)
-      __commitAgentTurn(
-        chargedMovesCount,
-        calculateTraversalSpeedUnits(playerStatus.uniqueCellsVisited, playerStatus.decayUnitsCharged),
-      )
-
+      // Recorded before the commit, not after: __commitAgentTurn persists the round snapshot, and a
+      // reload restores lastActionResult from it. Recording afterwards would save this turn's board
+      // with the previous outcome, so a tab killed before the next save would report last turn's
+      // moves as this turn's.
       const nextResult = mergeReplayResult(lastReplayResult, {
         lastPlayerName: selectedAgent.playerName,
         lastMoveStatus: lastReplayResult.lastMoveStatus,
@@ -683,6 +686,11 @@ export function handleAgentTurnLoop({
 
       lastActionResult = nextResult
       __onActionResult(nextResult)
+
+      __commitAgentTurn(
+        chargedMovesCount,
+        calculateTraversalSpeedUnits(playerStatus.uniqueCellsVisited, playerStatus.decayUnitsCharged),
+      )
       notifyRoundCompletion(updatedAgent, playerStatus, nextResult)
     } finally {
       activeRequest = null

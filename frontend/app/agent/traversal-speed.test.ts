@@ -173,6 +173,15 @@ describe("calculateTraversalSpeedUnits", () => {
     expect(traversalSpeedUnitsToDisplay(trailblazer1Units)).toBe("1.0001x")
   })
 
+  it("rounds exact half-unit ties up, matching an exact reconstruction", () => {
+    // 57 / 800 is exactly 0.07125, i.e. 712.5 units. Computing (57 / 800) * scale gives
+    // 712.4999999999999 and rounds down; multiplying first keeps the tie exact. Oracle rebuilds speed
+    // from its decomposition with exact arithmetic, so the logged value has to agree with it.
+    expect(calculateTraversalSpeedUnits(57, 800)).toBe(713)
+    expect(calculateTraversalSpeedUnits(69, 800)).toBe(863)
+    expect(calculateTraversalSpeedUnits(113, 800)).toBe(1_413)
+  })
+
   it("keeps normal rounding away from the class boundary", () => {
     // 1 / 3 is safely below 1.0000x, so normal rounding applies.
     const backtrackerUnits = calculateTraversalSpeedUnits(1, 3)

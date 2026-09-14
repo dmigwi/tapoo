@@ -435,6 +435,53 @@ describe("agent api turn loop", () => {
     )
   })
 
+  // __commitAgentTurn is not just bookkeeping: in the game it runs commitAgentApiTurn, which persists
+  // the round snapshot, and that snapshot is what a reload restores lastActionResult from. If the
+  // turn's merged outcome is recorded only after the commit, the snapshot written by the commit holds
+  // the previous per-move result instead - so a tab killed before the next save (no pagehide) restores
+  // this turn's board with an outcome that does not describe it, exactly the mismatch persisting
+  // lastActionResult exists to prevent. The commit mock captures what has been recorded by the time
+  // it runs, the way persistNow does.
+  it("records the replayed turn's merged outcome before committing, so the persisted round carries it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        message: { role: "assistant", content: "{\"moves\":[\"MoveRight\",\"MoveDown\"]}" },
+      }),
+    }))
+
+    const recorded: { outcome: MazeActionResult | null } = { outcome: null }
+    const persisted: { outcome: MazeActionResult | null } = { outcome: null }
+    const onActionResult = vi.fn((result: MazeActionResult) => { recorded.outcome = result })
+    const commitAgentTurn = vi.fn(() => { persisted.outcome = recorded.outcome })
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi
+        .fn<(action: MazeAction) => MazeActionResult>()
+        .mockReturnValue(createActionResult({ lastMoveStatus: "applied", visitedBefore: false })),
+      __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState(),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    expect(commitAgentTurn).toHaveBeenCalledTimes(1)
+    expect(persisted.outcome).toEqual(expect.objectContaining({
+      predictionStatus: "all-applied",
+      lastSubmittedMoves: ["MoveRight", "MoveDown"],
+      lastAppliedMoveIndex: 1,
+      chargedMovesCount: 1,
+    }))
+  })
+
   // The bail this covers is the last link in a chain that cost a real round: a turn whose counters
   // never reached storage, committed anyway, leaves State.turnCount one ahead of the levelTurnCount
   // still on disk - and agentTurnCountMismatch reads that gap on the next turn as a genuine
@@ -968,6 +1015,46 @@ describe("agent api turn loop", () => {
       CONFIG.runtime.controlModes.agentApi,
     ).find((entry) => entry.payload === "Malformed agent prediction response.")
     expect(malformedEntry?.log).toBe("warn")
+  })
+
+  // The no-replay twin of the ordering test above. A rejected response dispatches no moves, so nothing
+  // else records an outcome this turn: if the merged result lands after the commit, the snapshot the
+  // commit persists still holds the previous turn's outcome, and a reload before the next save would
+  // report last turn's submitted moves as this turn's.
+  it("records a rejected response's outcome before committing, so the persisted round carries it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        message: { role: "assistant", content: "{\"moves\":[\"MoveSideways\"]}" },
+      }),
+    }))
+
+    const recorded: { outcome: MazeActionResult | null } = { outcome: null }
+    const persisted: { outcome: MazeActionResult | null } = { outcome: null }
+    const onActionResult = vi.fn((result: MazeActionResult) => { recorded.outcome = result })
+    const commitAgentTurn = vi.fn(() => { persisted.outcome = recorded.outcome })
+
+    const poller = handleAgentTurnLoop({
+      __elements: { body: document.createElement("div") },
+      __commitAgentTurn: commitAgentTurn,
+      __dispatch: vi.fn() as MazeActionDispatch,
+      __dispatchAgentAction: vi.fn(),
+      __onActionResult: onActionResult,
+      __onRoundOutcome: ignoreRoundOutcome,
+      __disableAgentAfterNetworkError: createDisableAgentAfterNetworkError(),
+      __readAgentConfigs: enabledAgentConfigs,
+      __readState: () => createState(),
+    })
+
+    poller.__setAttached(true)
+    poller.__scheduleNextAgentTurn(testAgentMovePollIntervalMs)
+    await flushImmediateAgentTurn()
+
+    expect(commitAgentTurn).toHaveBeenCalledTimes(1)
+    expect(persisted.outcome).toEqual(expect.objectContaining({
+      lastMoveStatus: "malformed-response",
+      chargedMovesCount: CONFIG.scoring.agentMalformedPenaltyDecayUnits,
+    }))
   })
 
   // The same bail as the replay-loop test above, on the path that never replays a move: a rejected
