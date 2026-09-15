@@ -108,7 +108,7 @@ describe("checksumEntries", () => {
   })
 })
 
-// These tests keep the in-memory Tapoo log export/reset behavior intentionally small.
+// These tests keep the Tapoo log export/reset behavior intentionally small.
 describe("tapoo logs", () => {
   beforeEach(async () => {
     await initTapooLogs()

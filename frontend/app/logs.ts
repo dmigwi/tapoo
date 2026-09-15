@@ -19,34 +19,46 @@ const loggedDescriptionPreviewLength = 25
 
 // --- Log State ---
 
-// logCount tracks how many entries are stored without holding the full payloads in memory.
-// Seeded by initTapooLogs once the agent-api log stream opens; zero until then.
+/**
+ * logCount tracks how many entries are stored without holding the full payloads in memory.
+ * Seeded by initTapooLogs once the agent-api log stream opens; zero until then.
+ */
 let logCount = 0
 let staleLogSessionCount = 0
 let heartbeatTimer: number | null = null
-// True while a lease refresh started by the heartbeat is still open. Ticks that arrive meanwhile are
-// dropped rather than queued - see the interval body for why two in flight is worse than none.
+/**
+ * True while a lease refresh started by the heartbeat is still open. Ticks that arrive meanwhile are
+ * dropped rather than queued - see the interval body for why two in flight is worse than none.
+ */
 let heartbeatRefreshPending = false
 let writeQueue: Promise<void> = Promise.resolve()
 
-// currentTurn stamps every entry written while one agent turn resolves. A turn issues several
-// provider requests before its prediction lands, and nothing else in an entry identifies which
-// turn produced it, so this is what makes per-turn grouping possible in a downloaded log.
+/**
+ * currentTurn stamps every entry written while one agent turn resolves. A turn issues several
+ * provider requests before its prediction lands, and nothing else in an entry identifies which
+ * turn produced it, so this is what makes per-turn grouping possible in a downloaded log.
+ */
 let currentTurn = 0
 
-// currentLevel stamps every entry the same way currentTurn does, so a downloaded log can tell
-// which maze level a given request belongs to - turn alone can't, since turnCount resets each level.
+/**
+ * currentLevel stamps every entry the same way currentTurn does, so a downloaded log can tell
+ * which maze level a given request belongs to - turn alone can't, since turnCount resets each level.
+ */
 let currentLevel = 0
 
-// currentGame stamps every entry the same way currentTurn/currentLevel do (from State's
-// cumulativeRoundCount) - turn and level alone can't tell a retry of the same level apart from
-// continuing it, since both reset to the same values either way; this counter never resets
-// mid-session.
+/**
+ * currentGame stamps every entry the same way currentTurn/currentLevel do (from State's
+ * cumulativeRoundCount) - turn and level alone can't tell a retry of the same level apart from
+ * continuing it, since both reset to the same values either way; this counter never resets
+ * mid-session.
+ */
 let currentGame = 0
 
 // --- Timestamps ---
 
-// localTimestampParts returns filename-safe local time pieces shared by log entries and downloads.
+/**
+ * localTimestampParts returns filename-safe local time pieces shared by log entries and downloads.
+ */
 function localTimestampParts(): [string, string, string] {
   const date = new Date()
   const pad = (value: number): string => String(value).padStart(2, "0")
@@ -63,14 +75,18 @@ function localTimestampParts(): [string, string, string] {
   ]
 }
 
-// getLocalTimestamp formats local timezone debugging time in a filename-safe form.
+/**
+ * getLocalTimestamp formats local timezone debugging time in a filename-safe form.
+ */
 function getLocalTimestamp(): string {
   return localTimestampParts().join("")
 }
 
 // --- Counters And Heartbeat ---
 
-// clearTapooLogHeartbeat stops lease refreshes once this tab has no current-session logs to protect.
+/**
+ * clearTapooLogHeartbeat stops lease refreshes once this tab has no current-session logs to protect.
+ */
 function clearTapooLogHeartbeat(): void {
   if (heartbeatTimer === null) {
     return
@@ -80,10 +96,12 @@ function clearTapooLogHeartbeat(): void {
   heartbeatTimer = null
 }
 
-// updateLogState is the single in-memory counter write path after any log-store read/write/reset.
-// The UI buttons only know these counters, not IndexedDB/sessionStorage internals. Keeping this as
-// the only counter publisher prevents callers from updating counts while forgetting to refresh UI
-// controls or stop a now-useless heartbeat after logs are cleared.
+/**
+ * updateLogState is the single in-memory counter write path after any log-store read/write/reset.
+ * The UI buttons only know these counters, not IndexedDB/sessionStorage internals. Keeping this as
+ * the only counter publisher prevents callers from updating counts while forgetting to refresh UI
+ * controls or stop a now-useless heartbeat after logs are cleared.
+ */
 function updateLogState(currentCount: number, staleCount: number): void {
   logCount = currentCount
   staleLogSessionCount = staleCount
@@ -94,10 +112,12 @@ function updateLogState(currentCount: number, staleCount: number): void {
   logStateListeners.forEach((listener) => listener(logCount))
 }
 
-// syncTapooLogHeartbeat keeps non-empty stopped agent-api sessions fresh enough to avoid stale
-// cleanup. Active running rounds renew their lease through successful log writes instead, so the
-// interval is reserved for logs that would otherwise sit unchanged while the game is paused,
-// awaiting configuration, won/lost, or otherwise not running.
+/**
+ * syncTapooLogHeartbeat keeps non-empty stopped agent-api sessions fresh enough to avoid stale
+ * cleanup. Active running rounds renew their lease through successful log writes instead, so the
+ * interval is reserved for logs that would otherwise sit unchanged while the game is paused,
+ * awaiting configuration, won/lost, or otherwise not running.
+ */
 export function syncTapooLogHeartbeat(
   state: Pick<State, "controlMode" | "status">,
 ): void {
@@ -143,7 +163,9 @@ export function syncTapooLogHeartbeat(
   }, CONFIG.runtime.storage.log.heartbeatIntervalMs)
 }
 
-// subscribeTapooLogs notifies UI surfaces whenever the log count changes.
+/**
+ * subscribeTapooLogs notifies UI surfaces whenever the log count changes.
+ */
 export function subscribeTapooLogs(listener: LogStateListener): () => void {
   logStateListeners.add(listener)
   listener(logCount)
@@ -153,13 +175,17 @@ export function subscribeTapooLogs(listener: LogStateListener): () => void {
   }
 }
 
-// tapooLogCount reports whether download controls have anything meaningful to export.
+/**
+ * tapooLogCount reports whether download controls have anything meaningful to export.
+ */
 export function tapooLogCount(): number {
   return logCount
 }
 
-// tapooResettableLogCount includes stale same-mode sessions because reset is the one user-triggered
-// cleanup path for them; download stays current-session only and should use tapooLogCount.
+/**
+ * tapooResettableLogCount includes stale same-mode sessions because reset is the one user-triggered
+ * cleanup path for them; download stays current-session only and should use tapooLogCount.
+ */
 export function tapooResettableLogCount(): number {
   return logCount + staleLogSessionCount
 }
@@ -170,19 +196,23 @@ async function flushTapooLogWrites(): Promise<void> {
   await writeQueue
 }
 
-// initTapooLogs must run at least once before heartbeat syncing: it presets logCount from the
-// current tab's agent-api log stream, which is how an interactive page later knows whether it has
-// existing agent-api records to keep fresh. Interactive pages still never create or write
-// interactive-mode log records.
+/**
+ * initTapooLogs must run at least once before heartbeat syncing: it presets logCount from the
+ * current tab's agent-api log stream, which is how an interactive page later knows whether it has
+ * existing agent-api records to keep fresh. Interactive pages still never create or write
+ * interactive-mode log records.
+ */
 export async function initTapooLogs(): Promise<void> {
   const logStoreState = await initTapooLogStore(tapooLogModeName)
   updateLogState(logStoreState.currentLogCount, logStoreState.staleLogSessionCount)
 }
 
-// setTapooLogContext marks which turn, level, and game subsequent entries belong to, reading all
-// three off one state snapshot in a single call. Called once as each turn begins, so every
-// request, response, and diagnostic it produces carries the same values. Takes a Pick rather than
-// the whole State so this module only ever depends on the fields it actually stamps entries with.
+/**
+ * setTapooLogContext marks which turn, level, and game subsequent entries belong to, reading all
+ * three off one state snapshot in a single call. Called once as each turn begins, so every
+ * request, response, and diagnostic it produces carries the same values. Takes a Pick rather than
+ * the whole State so this module only ever depends on the fields it actually stamps entries with.
+ */
 export function setTapooLogContext(
   state: Pick<State, "turnCount" | "level" | "cumulativeRoundCount">,
 ): void {
@@ -191,10 +221,12 @@ export function setTapooLogContext(
   currentGame = state.cumulativeRoundCount
 }
 
-// logTapooRecordEntry queues one Tapoo Logs record: gameplay milestones, agent request/response
-// payloads, diagnostics, and profiler evidence all use the same timestamped stream. Callers never
-// await it so gameplay/request paths do not stall on IndexedDB; download/reset flush the queue
-// before reading.
+/**
+ * logTapooRecordEntry queues one Tapoo Logs record: gameplay milestones, agent request/response
+ * payloads, diagnostics, and profiler evidence all use the same timestamped stream. Callers never
+ * await it so gameplay/request paths do not stall on IndexedDB; download/reset flush the queue
+ * before reading.
+ */
 export function logTapooRecordEntry(
   modeName: MazeControlModeName,
   log: LogLevel,
@@ -234,7 +266,9 @@ export function logTapooRecordEntry(
     })
 }
 
-// tapooResetLogs clears the current tab-session logs plus stale sessions for the same mode.
+/**
+ * tapooResetLogs clears the current tab-session logs plus stale sessions for the same mode.
+ */
 export async function tapooResetLogs(modeName: MazeControlModeName): Promise<void> {
   if (!isAgentApiMode(modeName)) {
     currentTurn = 0
@@ -252,9 +286,11 @@ export async function tapooResetLogs(modeName: MazeControlModeName): Promise<voi
   updateLogState(logStoreState.currentLogCount, logStoreState.staleLogSessionCount)
 }
 
-// tapooDownloadLogs reads the current tab-session payload on demand and triggers a JSON file
-// download. Reading only at download time means memory usage stays flat during gameplay.
-// Attach to window in the page entry point so it survives property mangling and tree-shaking.
+/**
+ * tapooDownloadLogs reads the current tab-session payload on demand and triggers a JSON file
+ * download. Reading only at download time means memory usage stays flat during gameplay.
+ * Attach to window in the page entry point so it survives property mangling and tree-shaking.
+ */
 export async function tapooDownloadLogs(modeName: MazeControlModeName): Promise<void> {
   if (!isAgentApiMode(modeName)) {
     return
@@ -317,9 +353,11 @@ export async function tapooDownloadLogs(modeName: MazeControlModeName): Promise<
 
 // --- Logged Text Helpers ---
 
-// trimLoggedDescription is the single place every long, repeated description field goes through
-// before being logged. Passing keepFull lets each call site decide once whether this entry needs
-// the real text (e.g. the level's first request) or just a short, recognizable preview.
+/**
+ * trimLoggedDescription is the single place every long, repeated description field goes through
+ * before being logged. Passing keepFull lets each call site decide once whether this entry needs
+ * the real text (e.g. the level's first request) or just a short, recognizable preview.
+ */
 export function trimLoggedDescription(
   description: string | undefined,
   keepFull: boolean,
@@ -336,29 +374,33 @@ export function trimLoggedDescription(
   return `${description.slice(0, loggedDescriptionPreviewLength)}...`
 }
 
-// fnv1a64Checksum is the one checksum algorithm used consistently for every logged text field - not
-// a security control, just cheap proof a prompt/tool description didn't silently change
-// mid-experiment. 64-bit for lower collision odds than the 32-bit variant. Hashes UTF-8 bytes (via
-// TextEncoder, the same encoding any external tool reproducing this outside the app would use)
-// rather than JS's own UTF-16 code units, so a non-ASCII character (a curly quote, an em dash, an
-// arrow in a tool description) hashes identically here and in that external tool.
-// Implementation reference: https://www.ietf.org/archive/id/draft-eastlake-fnv-22.html
+/**
+ * fnv1a64Checksum is the one checksum algorithm used consistently for every logged text field - not
+ * a security control, just cheap proof a prompt/tool description didn't silently change
+ * mid-experiment. 64-bit for lower collision odds than the 32-bit variant. Hashes UTF-8 bytes (via
+ * TextEncoder, the same encoding any external tool reproducing this outside the app would use)
+ * rather than JS's own UTF-16 code units, so a non-ASCII character (a curly quote, an em dash, an
+ * arrow in a tool description) hashes identically here and in that external tool.
+ * Implementation reference: https://www.ietf.org/archive/id/draft-eastlake-fnv-22.html
+ */
 export function fnv1a64Checksum(text: string): string {
   const hash = createFnv1a64()
   hash.update(text)
   return hash.digest()
 }
 
-// createFnv1a64 is the incremental form of fnv1a64Checksum, for input too large to hold as one string.
-// Updates hash as if their texts were concatenated, with one caveat: a chunk boundary must not fall
-// inside a surrogate pair, since each chunk is UTF-8 encoded on its own and a split half encodes as
-// U+FFFD. Chunks of complete JSON never split one - JSON.stringify escapes lone surrogates to ASCII.
-//
-// The 64-bit state is four 16-bit limbs (v0 lowest), not a BigInt: at log scale the BigInt version was
-// the slowest step of a download, over 1 s for 100 MB. The prime is 2^40 + 435, so a multiply is each
-// limb times 435 plus v0 and v1 shifted two limbs and 8 bits up; every intermediate stays below 2^31,
-// so no step leaves small-integer arithmetic. encodeInto writes UTF-8 into one reused buffer, so the
-// encoding is TextEncoder's own and no copy of the input is ever made.
+/**
+ * createFnv1a64 is the incremental form of fnv1a64Checksum, for input too large to hold as one string.
+ * Updates hash as if their texts were concatenated, with one caveat: a chunk boundary must not fall
+ * inside a surrogate pair, since each chunk is UTF-8 encoded on its own and a split half encodes as
+ * U+FFFD. Chunks of complete JSON never split one - JSON.stringify escapes lone surrogates to ASCII.
+ *
+ * The 64-bit state is four 16-bit limbs (v0 lowest), not a BigInt: at log scale the BigInt version was
+ * the slowest step of a download, over 1 s for 100 MB. The prime is 2^40 + 435, so a multiply is each
+ * limb times 435 plus v0 and v1 shifted two limbs and 8 bits up; every intermediate stays below 2^31,
+ * so no step leaves small-integer arithmetic. encodeInto writes UTF-8 into one reused buffer, so the
+ * encoding is TextEncoder's own and no copy of the input is ever made.
+ */
 function createFnv1a64(): { update(text: string): void; digest(): string } {
   // The FNV-1a 64-bit offset basis 0xcbf29ce484222325, split into limbs.
   let v0 = 0x2325
@@ -392,11 +434,13 @@ function createFnv1a64(): { update(text: string): void; digest(): string } {
   }
 }
 
-// checksumEntries is fnv1a64Checksum(JSON.stringify(entries)) without ever building that string. An
-// array's JSON is "[", its elements' JSON joined by ",", then "]" - so hashing those pieces in order
-// gives the identical checksum while holding one entry's text at a time, not a log that can reach
-// 100 MB. It also hands control back to the page whenever a slice runs past one frame, so a large
-// download never freezes the tab; a small log finishes inside its first slice and never yields.
+/**
+ * checksumEntries is fnv1a64Checksum(JSON.stringify(entries)) without ever building that string. An
+ * array's JSON is "[", its elements' JSON joined by ",", then "]" - so hashing those pieces in order
+ * gives the identical checksum while holding one entry's text at a time, not a log that can reach
+ * 100 MB. It also hands control back to the page whenever a slice runs past one frame, so a large
+ * download never freezes the tab; a small log finishes inside its first slice and never yields.
+ */
 export async function checksumEntries(
   entries: readonly unknown[],
   yieldToPage: () => Promise<void> = yieldToEventLoop,
@@ -421,8 +465,10 @@ export async function checksumEntries(
   return hash.digest()
 }
 
-// yieldToEventLoop resumes on the next macrotask through MessageChannel rather than setTimeout, which
-// browsers clamp to at least 4 ms once nested - at thousands of slices that clamp would dominate.
+/**
+ * yieldToEventLoop resumes on the next macrotask through MessageChannel rather than setTimeout, which
+ * browsers clamp to at least 4 ms once nested - at thousands of slices that clamp would dominate.
+ */
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => {
     const channel = new MessageChannel()
@@ -434,17 +480,21 @@ function yieldToEventLoop(): Promise<void> {
   })
 }
 
-// checksumLoggedDescription computes fnv1a64Checksum for a description/content field, or undefined
-// when there's nothing to hash - mirrors trimLoggedDescription's own undefined handling.
+/**
+ * checksumLoggedDescription computes fnv1a64Checksum for a description/content field, or undefined
+ * when there's nothing to hash - mirrors trimLoggedDescription's own undefined handling.
+ */
 export function checksumLoggedDescription(description: string | undefined): string | undefined {
   return description === undefined ? undefined : fnv1a64Checksum(description)
 }
 
 // --- Maze Encoding Helpers ---
 
-// encodeMazeForLog packs a maze grid into one compact, exactly reversible representation instead of
-// a nested rows array: each cell becomes the single digit naming its position in index_chars,
-// discovered dynamically from this maze's own content rather than assumed from wallWeight/CONFIG.
+/**
+ * encodeMazeForLog packs a maze grid into one compact, exactly reversible representation instead of
+ * a nested rows array: each cell becomes the single digit naming its position in index_chars,
+ * discovered dynamically from this maze's own content rather than assumed from wallWeight/CONFIG.
+ */
 export function encodeMazeForLog(maze: string[][]): EncodedMaze {
   const index_chars: string[] = []
   const indexByToken = new Map<string, number>()

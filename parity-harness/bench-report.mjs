@@ -1030,8 +1030,9 @@ function printLegend() {
   )
   printLegendEntry(
     "Formatting:",
-    "Four decimal places with an x suffix, rounded away from 1.0000x so a displayed value never contradicts its class. " +
-      "Classification is computed from the raw ratio, not the rendered string.",
+    "Four decimal places with an x suffix, rounded to nearest except within one unit of 1.0000x, " +
+    "where values below are floored and values above are ceiled, so a displayed value never contradicts its class. " +
+    "Classification is computed from the raw ratio, not the rendered string.",
   )
   printLegendEntry(
     "What this means:",
@@ -1152,8 +1153,9 @@ function printDerivedFormulaLegend() {
   )
   printLegendEntry(
     "Speed display:",
-    "Speeds render at 4dp with an x suffix, rounded away from 1.0000x. Class comes from comparing U against D directly, " +
-      "so the number and the class cannot disagree.",
+    "Speeds render at 4dp with an x suffix, rounded to nearest except within one unit of 1.0000x, " +
+    "where rounding never crosses the class. Class comes from comparing U against D directly, " +
+    "so the number and the class cannot disagree.",
   )
 }
 
@@ -1285,7 +1287,8 @@ function printReportReadingGuide() {
   printWrapped(
     console.info,
     "Speeds show four decimal places here and in gameplay output, rounded " +
-      "away from 1.0000x so that a displayed value never contradicts its " +
+      "to nearest except within one unit of 1.0000x, where values below are floored and " +
+      "values above are ceiled, so that a displayed value never contradicts its " +
       "classification. Benchmark speeds are derived from route geometry; gameplay speeds " +
       "are measured from actual cells and decay. " +
       "Same format, different status - do not compare one against the other as though they were " +
@@ -1498,7 +1501,8 @@ function printSpeedAndNoiseNote(summaries) {
       `square ones${shapeExample}. The shapes actually played are the near-square ` +
       "'Preferred = yes' rows in Table 1, so read a gameplay profile against that row rather than " +
       "the case mean or the widest ladder. Values are 4dp speed strings with an x suffix, rounded " +
-      "away from 1.0000x so a figure never contradicts its class; the JSON carries the same ratios " +
+      "to nearest except within one unit of 1.0000x, so a figure never contradicts its class; " +
+      "the JSON carries the same ratios " +
       "unrounded under minWinSpeeds. Speeds here are thresholds derived from route geometry; gameplay " +
       "speeds carrying the same 'x' notation are measured from actual cells and decay. Same glyph, " +
       "different status.",

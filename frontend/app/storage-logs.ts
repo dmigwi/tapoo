@@ -20,9 +20,11 @@ import type {
 const { runtime } = CONFIG
 const logStores = runtime.storage.log.stores
 
-// Named once because every transaction below addresses them: spelling the config path out at each of
-// the twenty-odd call sites would bury the store and index being opened inside the lookup that finds
-// its name.
+/**
+ * Named once because every transaction below addresses them: spelling the config path out at each of
+ * the twenty-odd call sites would bury the store and index being opened inside the lookup that finds
+ * its name.
+ */
 const LOG_ENTRY_STORE = logStores.logEntries.label
 const LOG_SESSION_STORE = logStores.logSessions.label
 
@@ -32,27 +34,31 @@ const SESSION_MODE_NAME_INDEX = logStores.logSessions.modeNameIndex
 let inMemorySessionId: string | null = null
 let dbPromise: Promise<IDBDatabase | null> | null = null
 let backend: TapooLogBackend = "session-storage"
-// Last counts read from the database, kept so an append does not have to re-derive them. An append
-// is a hot path - several per turn - and re-counting there cost two extra transactions per entry
-// while neither number could have changed in a way the append itself did not cause: the entry count
-// goes up by exactly one, and a session can only turn stale by aging past the TTL, which the
-// heartbeat notices. init, the heartbeat, and reset all resync these from the database, so a drift
-// from anything this module did not do is corrected within one heartbeat rather than persisting.
+/**
+ * Last counts read from the database, kept so an append does not have to re-derive them. An append
+ * is a hot path - several per turn - and re-counting there cost two extra transactions per entry
+ * while neither number could have changed in a way the append itself did not cause: the entry count
+ * goes up by exactly one, and a session can only turn stale by aging past the TTL, which the
+ * heartbeat notices. init, the heartbeat, and reset all resync these from the database, so a drift
+ * from anything this module did not do is corrected within one heartbeat rather than persisting.
+ */
 let cachedCurrentLogCount = 0
 let cachedStaleSessionCount = 0
 
 // --- Tab session identity ---
 
-// currentTapooLogSessionId names the browser tab, not the mode played in it. sessionStorage is
-// per-tab and IndexedDB is not, so this id is what gives the shared database the tab scoping the old
-// sessionStorage log had for free: entries are filed under (session, mode), downloads and resets act
-// on the current session alone, and another tab's logs stay untouched and undownloadable from here.
-//
-// Minted on first use and held in sessionStorage, so it survives reloads within the tab and dies
-// with it - after which the entries it labels are unreachable by any live tab and become the stale
-// rows the reset path sweeps. The in-memory fallback covers storage being unavailable (private mode,
-// blocked cookies): logging still works for the life of the page, and a reload simply starts a new
-// session rather than failing.
+/**
+ * currentTapooLogSessionId names the browser tab, not the mode played in it. sessionStorage is
+ * per-tab and IndexedDB is not, so this id is what gives the shared database the tab scoping the old
+ * sessionStorage log had for free: entries are filed under (session, mode), downloads and resets act
+ * on the current session alone, and another tab's logs stay untouched and undownloadable from here.
+ *
+ * Minted on first use and held in sessionStorage, so it survives reloads within the tab and dies
+ * with it - after which the entries it labels are unreachable by any live tab and become the stale
+ * rows the reset path sweeps. The in-memory fallback covers storage being unavailable (private mode,
+ * blocked cookies): logging still works for the life of the page, and a reload simply starts a new
+ * session rather than failing.
+ */
 export function currentTapooLogSessionId(): string {
   try {
     const key = tabStorageKey(runtime.storage.suffixes.logSessionId)
@@ -72,19 +78,23 @@ export function currentTapooLogSessionId(): string {
 
 // --- IndexedDB plumbing ---
 
-// Presence, not usability: a browser can expose window.indexedDB and still refuse to open a database
-// - private windows, blocked site data, and storage-partitioned third-party contexts all do. So this
-// only decides whether opening is worth attempting; the backend is not settled until openIndexedDb
-// resolves, which is why callers check its result rather than this. The one caller that treats this
-// as final is appendTapooLogStoreFallbackEntrySynchronously, which cannot await an open at all and
-// needs an answer before deciding whether the synchronous path applies.
+/**
+ * Presence, not usability: a browser can expose window.indexedDB and still refuse to open a
+ * database - private windows, blocked site data, and storage-partitioned third-party contexts all
+ * do. So this only decides whether opening is worth attempting; the backend is not settled until
+ * openIndexedDb resolves, which is why callers check its result rather than this. The one caller
+ * that treats this as final is appendTapooLogStoreFallbackEntrySynchronously, which cannot await an
+ * open at all and needs an answer before deciding whether the synchronous path applies.
+ */
 function hasIndexedDb(): boolean {
   return window.indexedDB !== undefined && window.indexedDB !== null
 }
 
-// IndexedDB reports failures as DOMException on the request or transaction, and both can be null
-// once a connection is torn down. Normalising to an Error keeps the rejection readable rather than
-// surfacing "null" at the await.
+/**
+ * IndexedDB reports failures as DOMException on the request or transaction, and both can be null
+ * once a connection is torn down. Normalising to an Error keeps the rejection readable rather than
+ * surfacing "null" at the await.
+ */
 function indexedDbError(error: unknown): Error {
   if (error instanceof Error) {
     return error
@@ -95,8 +105,10 @@ function indexedDbError(error: unknown): Error {
   return new Error("IndexedDB request failed")
 }
 
-// Promisifies one IDBRequest. IndexedDB predates promises, so every read below would otherwise
-// carry its own onsuccess/onerror pair.
+/**
+ * Promisifies one IDBRequest. IndexedDB predates promises, so every read below would otherwise
+ * carry its own onsuccess/onerror pair.
+ */
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => { resolve(request.result) }
@@ -104,15 +116,17 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   })
 }
 
-// Resolves when a transaction commits, rejecting on error or abort. Awaited after every write: an
-// IDBRequest succeeding only means the operation was queued, so returning before the transaction
-// completes would report a write that could still roll back.
-//
-// Call this immediately after opening the transaction and await the promise later, never the other
-// way round. oncomplete/onabort fire once; a transaction that aborts while the caller is still
-// awaiting one of its requests fires abort before any handler is attached, and attaching afterwards
-// waits for an event that has already happened - the append never settles, and the log write queue
-// behind it stops forever.
+/**
+ * Resolves when a transaction commits, rejecting on error or abort. Awaited after every write: an
+ * IDBRequest succeeding only means the operation was queued, so returning before the transaction
+ * completes would report a write that could still roll back.
+ *
+ * Call this immediately after opening the transaction and await the promise later, never the other
+ * way round. oncomplete/onabort fire once; a transaction that aborts while the caller is still
+ * awaiting one of its requests fires abort before any handler is attached, and attaching afterwards
+ * waits for an event that has already happened - the append never settles, and the log write queue
+ * behind it stops forever.
+ */
 function transactionDone(transaction: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     transaction.oncomplete = () => { resolve() }
@@ -121,24 +135,29 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
   })
 }
 
-// Drops the cached connection so the next caller opens a fresh one. Used for the failures that are
-// genuinely transient - another tab upgrading the database, the browser closing the connection under
-// storage pressure or a "clear site data", a write that failed against a handle already dead.
-// Without this the module would cache a broken connection for the life of the page and every later
-// write would fail silently against it.
+/**
+ * Drops the cached connection so the next caller opens a fresh one. Used for the failures that are
+ * genuinely transient - another tab upgrading the database, the browser closing the connection under
+ * storage pressure or a "clear site data", a write that failed against a handle already dead.
+ * Without this the module would cache a broken connection for the life of the page and every later
+ * write would fail silently against it.
+ */
 function invalidateIndexedDbConnection(): void {
   dbPromise = null
   backend = "session-storage"
 }
 
-// Opens the log database once per page and caches the promise, so concurrent callers share one
-// connection rather than racing separate open requests.
-//
-// Every failure path resolves null rather than rejecting: no IndexedDB, a refused open, or a version
-// change blocked by another tab all mean the same thing to a caller - use the fallback. Logging must
-// never throw into the game loop, so an unusable database degrades the backend instead of failing
-// the turn that tried to log. backend is set here because this is the only place that learns which
-// one is actually live.
+/**
+ * Opens the log database once per page and caches the promise, so concurrent callers share one
+ * connection rather than racing separate open requests.
+ *
+ * Every failure path resolves null rather than rejecting: no IndexedDB, a refused open, or a
+ * version change blocked by another tab all mean the same thing to a caller - use the fallback.
+ * Logging must never throw into the game loop, so an unusable database degrades the backend instead
+ * of failing the turn that tried to log. backend becomes indexed-db only here, because this is the
+ * only place that learns an open actually succeeded; every other write only ever drops it back to
+ * session-storage.
+ */
 function openIndexedDb(): Promise<IDBDatabase | null> {
   if (!hasIndexedDb()) {
     backend = "session-storage"
@@ -204,13 +223,17 @@ function openIndexedDb(): Promise<IDBDatabase | null> {
 
 // --- Session leases and staleness ---
 
-// The lastSeenAt below which a session is treated as abandoned. Compared against, never stored.
+/**
+ * The lastSeenAt below which a session is treated as abandoned. Compared against, never stored.
+ */
 function staleCutoff(): number {
   return Date.now() - runtime.storage.log.staleSessionTtlMs
 }
 
-// Builds a lease row. The id is (mode, session) rather than the session alone: the same tab playing
-// both modes holds two leases, so a reset of one mode cannot sweep the other's entries.
+/**
+ * Builds a lease row. The id is (mode, session) rather than the session alone: the same tab playing
+ * both modes holds two leases, so a reset of one mode cannot sweep the other's entries.
+ */
 function sessionRecord(
   sessionId: string,
   modeName: MazeControlModeName,
@@ -225,9 +248,11 @@ function sessionRecord(
   }
 }
 
-// Renews this tab's lease, preserving createdAt so the row still records when the session began.
-// Read-modify-write inside one transaction, so a concurrent renewal from another page in the same
-// tab cannot interleave and lose the earlier timestamp.
+/**
+ * Renews this tab's lease, preserving createdAt so the row still records when the session began.
+ * Read-modify-write inside one transaction, so a concurrent renewal from another page in the same
+ * tab cannot interleave and lose the earlier timestamp.
+ */
 async function ensureIndexedDbSession(
   db: IDBDatabase,
   modeName: MazeControlModeName,
@@ -243,7 +268,9 @@ async function ensureIndexedDbSession(
   await done
 }
 
-// Every lease recorded for one mode, this tab's included. The caller decides which are stale.
+/**
+ * Every lease recorded for one mode, this tab's included. The caller decides which are stale.
+ */
 async function indexedDbSessionsByMode(
   db: IDBDatabase,
   modeName: MazeControlModeName,
@@ -257,8 +284,10 @@ async function indexedDbSessionsByMode(
   return sessions
 }
 
-// How many other sessions have gone quiet past the TTL. Counted, not deleted: this drives the UI
-// offer to reclaim space, and the deletion only happens when the player accepts it.
+/**
+ * How many other sessions have gone quiet past the TTL. Counted, not deleted: this drives the UI
+ * offer to reclaim space, and the deletion only happens when the player accepts it.
+ */
 async function indexedDbStaleSessionCount(
   db: IDBDatabase,
   modeName: MazeControlModeName,
@@ -273,18 +302,20 @@ async function indexedDbStaleSessionCount(
 
 // --- Entry reads and deletes ---
 
-// Stands in for a stored entry that would not decode. Dropping it instead was the obvious option
-// and the wrong one: indexedDbCurrentCount counts index rows without decoding any of them, so a
-// silent drop leaves the UI reporting more entries than the downloaded file contains, with nothing
-// to say which are missing or why. This log is evidence about an agent run, and a record that cannot
-// be read is itself a finding - the payloads are obfuscated, so a decode failure means the stored
-// value is not what Tapoo wrote. Keeping the row visible, with the id needed to locate it, is what
-// makes that inspectable rather than invisible.
-//
-// Every number is -1 rather than 0, because 0 is a value a real entry can hold: turn 0 is an agent's
-// opening turn, level and game count from 0 in a fresh session, and epoch 0 is a genuine timestamp.
-// A reader filtering or sorting on those fields has to be able to tell a placeholder from a record
-// that simply has small numbers, so the sentinel sits outside the domain of all four.
+/**
+ * Stands in for a stored entry that would not decode. Dropping it instead was the obvious option
+ * and the wrong one: indexedDbCurrentCount counts index rows without decoding any of them, so a
+ * silent drop leaves the UI reporting more entries than the downloaded file contains, with nothing
+ * to say which are missing or why. This log is evidence about an agent run, and a record that cannot
+ * be read is itself a finding - the payloads are obfuscated, so a decode failure means the stored
+ * value is not what Tapoo wrote. Keeping the row visible, with the id needed to locate it, is what
+ * makes that inspectable rather than invisible.
+ *
+ * Every number is -1 rather than 0, because 0 is a value a real entry can hold: turn 0 is an agent's
+ * opening turn, level and game count from 0 in a fresh session, and epoch 0 is a genuine timestamp.
+ * A reader filtering or sorting on those fields has to be able to tell a placeholder from a record
+ * that simply has small numbers, so the sentinel sits outside the domain of all four.
+ */
 function unreadableEntry(recordId: number | undefined): LogEntry {
   return {
     epochMs: -1,
@@ -298,8 +329,10 @@ function unreadableEntry(recordId: number | undefined): LogEntry {
   }
 }
 
-// This tab's entries for one mode, in insertion order - the entries store is autoIncrement, so the
-// index returns them in the order they were logged.
+/**
+ * This tab's entries for one mode, in insertion order - the entries store is autoIncrement, so the
+ * index returns them in the order they were logged.
+ */
 async function indexedDbCurrentEntries(
   db: IDBDatabase,
   modeName: MazeControlModeName,
@@ -316,8 +349,10 @@ async function indexedDbCurrentEntries(
   return entries.map((record) => decodeStoredPayload<LogEntry>(record.entry) ?? unreadableEntry(record.id))
 }
 
-// Counts through the index rather than loading the entries, so the log count that drives the UI
-// does not deserialize a session's worth of payloads on every append.
+/**
+ * Counts through the index rather than loading the entries, so the log count that drives the UI
+ * does not deserialize a session's worth of payloads on every append.
+ */
 async function indexedDbCurrentCount(
   db: IDBDatabase,
   modeName: MazeControlModeName,
@@ -332,10 +367,12 @@ async function indexedDbCurrentCount(
   return count
 }
 
-// Deletes one session's entries for one mode by walking the index with a cursor. A cursor rather
-// than getAll-then-delete keeps a whole session's payloads out of memory at once - the reason the
-// logs moved off sessionStorage is that a session can be tens of megabytes. Takes the caller's
-// transaction so the entries and their lease row are removed atomically.
+/**
+ * Deletes one session's entries for one mode by walking the index with a cursor. A cursor rather
+ * than getAll-then-delete keeps a whole session's payloads out of memory at once - the reason the
+ * logs moved off sessionStorage is that a session can be tens of megabytes. Takes the caller's
+ * transaction so the entries and their lease row are removed atomically.
+ */
 async function deleteEntriesForSessionMode(
   transaction: IDBTransaction,
   modeName: MazeControlModeName,
@@ -360,8 +397,10 @@ async function deleteEntriesForSessionMode(
 
 // --- Public API ---
 
-// The state every fallback path reports. Counts what sessionStorage holds for this mode and zero
-// stale sessions: the fallback backend has no lease rows, so there is nothing there to go stale.
+/**
+ * The state every fallback path reports. Counts what sessionStorage holds for this mode and zero
+ * stale sessions: the fallback backend has no lease rows, so there is nothing there to go stale.
+ */
 function sessionStorageState(modeName: MazeControlModeName): TapooLogStoreState {
   return {
     backend: "session-storage",
@@ -370,20 +409,24 @@ function sessionStorageState(modeName: MazeControlModeName): TapooLogStoreState 
   }
 }
 
-// Opens the store for this tab and reports what it found, without deleting anything. Startup is
-// deliberately read-only: stale sessions are counted so the UI can offer a reset, but sweeping them
-// here would destroy another tab's logs the moment this one loaded - and two tabs are the normal
-// case, not the exception.
-//
-// The session lease is refreshed only when this tab already has entries. A tab that has logged
-// nothing has nothing to protect, so leaving it unleased keeps empty rows from accumulating.
+/**
+ * Opens the store for this tab and reports what it found, without deleting anything. Startup is
+ * deliberately read-only: stale sessions are counted so the UI can offer a reset, but sweeping them
+ * here would destroy another tab's logs the moment this one loaded - and two tabs are the normal
+ * case, not the exception.
+ *
+ * The session lease is refreshed only when this tab already has entries. A tab that has logged
+ * nothing has nothing to protect, so leaving it unleased keeps empty rows from accumulating.
+ */
 export async function initTapooLogStore(modeName: MazeControlModeName): Promise<TapooLogStoreState> {
   return resyncFromIndexedDb(modeName)
 }
 
-// Reads both counts straight from the database and reseeds the cache from them. The three callers
-// are the ones that must not trust a cached number: startup has none yet, the heartbeat is where
-// another tab's session becomes stale, and a reset has just changed both.
+/**
+ * Reads both counts straight from the database and reseeds the cache from them. The three callers
+ * are the ones that must not trust a cached number: startup has none yet, the heartbeat is where
+ * another tab's session becomes stale, and a reset has just changed both.
+ */
 async function resyncFromIndexedDb(modeName: MazeControlModeName): Promise<TapooLogStoreState> {
   const sessionId = currentTapooLogSessionId()
   const db = await openIndexedDb()
@@ -405,11 +448,13 @@ async function resyncFromIndexedDb(modeName: MazeControlModeName): Promise<Tapoo
   }
 }
 
-// Writes one entry and renews this tab's lease in the same transaction. Both, together, or neither:
-// an entry whose session row failed to write would be unreachable by every later lookup - it is
-// found through the entrySessionMode index - and a lease without entries would keep a dead session alive
-// in the stale count. The returned state is read after the write so a caller never sees counts from
-// before its own append.
+/**
+ * Writes one entry and renews this tab's lease in the same transaction. Both, together, or neither:
+ * an entry whose session row failed to write would be unreachable by every later lookup - it is
+ * found through the entrySessionMode index - and a lease without entries would keep a dead session alive
+ * in the stale count. The returned state is read after the write so a caller never sees counts from
+ * before its own append.
+ */
 export async function appendTapooLogStoreEntry(
   modeName: MazeControlModeName,
   entry: LogEntry,
@@ -457,11 +502,13 @@ export async function appendTapooLogStoreEntry(
   }
 }
 
-// The synchronous path for browsers with no IndexedDB at all. logTapooRecordEntry is called from hot
-// paths and cannot await, so when the fallback backend is the only one available the entry is
-// written straight to sessionStorage and the caller is told so immediately. Returns null when
-// IndexedDB exists, which is the signal to take the async path instead - this must not be used to
-// duplicate an entry the async path will also write.
+/**
+ * The synchronous path for browsers with no IndexedDB at all. logTapooRecordEntry is called from hot
+ * paths and cannot await, so when the fallback backend is the only one available the entry is
+ * written straight to sessionStorage and the caller is told so immediately. Returns null when
+ * IndexedDB exists, which is the signal to take the async path instead - this must not be used to
+ * duplicate an entry the async path will also write.
+ */
 export function appendTapooLogStoreFallbackEntrySynchronously(
   modeName: MazeControlModeName,
   entry: LogEntry,
@@ -474,8 +521,10 @@ export function appendTapooLogStoreFallbackEntrySynchronously(
   return sessionStorageState(modeName)
 }
 
-// Reads back this tab's entries for one mode, and only this tab's: the download and preview paths
-// must never hand over another tab's session, which is what the entrySessionMode index enforces.
+/**
+ * Reads back this tab's entries for one mode, and only this tab's: the download and preview paths
+ * must never hand over another tab's session, which is what the entrySessionMode index enforces.
+ */
 export async function loadCurrentTapooLogStoreEntries(
   modeName: MazeControlModeName,
 ): Promise<LogEntry[]> {
@@ -484,13 +533,15 @@ export async function loadCurrentTapooLogStoreEntries(
   return db ? indexedDbCurrentEntries(db, modeName, sessionId) : loadTapooLog<LogEntry>(modeName)
 }
 
-// Reset: drops this tab's entries for the mode, and sweeps stale sessions at the same time. The
-// sweep is here rather than at startup because a deliberate reset is the one moment the player has
-// asked for deletion - doing it on load would silently discard logs another tab is still writing.
-//
-// A session counts as stale only when its lease has gone untouched past staleSessionTtlMs, so a live
-// tab that simply has not logged recently keeps its entries. Sessions and entries are deleted in one
-// transaction, so a partial sweep cannot leave entries with no session to find them by.
+/**
+ * Reset: drops this tab's entries for the mode, and sweeps stale sessions at the same time. The
+ * sweep is here rather than at startup because a deliberate reset is the one moment the player has
+ * asked for deletion - doing it on load would silently discard logs another tab is still writing.
+ *
+ * A session counts as stale only when its lease has gone untouched past staleSessionTtlMs, so a live
+ * tab that simply has not logged recently keeps its entries. Sessions and entries are deleted in one
+ * transaction, so a partial sweep cannot leave entries with no session to find them by.
+ */
 export async function clearCurrentAndStaleTapooLogStoreEntries(
   modeName: MazeControlModeName,
 ): Promise<TapooLogStoreState> {
@@ -531,10 +582,12 @@ export async function clearCurrentAndStaleTapooLogStoreEntries(
   }
 }
 
-// The heartbeat. A tab that is logging keeps renewing its lease so another tab's reset does not
-// mistake it for abandoned; the interval is well inside staleSessionTtlMs, so a live tab is never
-// one missed beat away from being swept. Like init, it leases only when there are entries to
-// protect.
+/**
+ * The heartbeat. A tab that is logging keeps renewing its lease so another tab's reset does not
+ * mistake it for abandoned; the interval is well inside staleSessionTtlMs, so a live tab is never
+ * one missed beat away from being swept. Like init, it leases only when there are entries to
+ * protect.
+ */
 export async function refreshCurrentTapooLogStoreLease(
   modeName: MazeControlModeName,
 ): Promise<TapooLogStoreState> {
@@ -543,24 +596,26 @@ export async function refreshCurrentTapooLogStoreLease(
 
 // --- Stale version cleanup ---
 
-// Deletes the log databases an older schema version left behind, one per version, and resolves once
-// every attempt has settled.
-//
-// Nothing else can reach them. The schema version is part of the database name, so a version bump
-// does not upgrade the old database - it opens a new one and abandons the old, and
-// clearStaleStorageVersions cannot help because it walks localStorage and sessionStorage keys while
-// IndexedDB is neither. Left alone, the largest thing Tapoo ever writes - a session's worth of agent
-// transcripts - would outlive every reset and every leftover-data confirmation the user gives, while
-// the gate that asked for that confirmation counted only the handful of Web Storage keys beside it.
-//
-// The versions are taken from those stale keys rather than from indexedDB.databases(), which Firefox
-// has never implemented: the two always move together, since the version that wrote
-// tapoo.v4.82.agentConfigs is the version that wrote tapoo.v4.82.logs. Deleting a database that was
-// never created is a no-op, so a version that happened to log nothing costs one harmless request.
-//
-// Every outcome resolves, including blocked - a delete blocked by another tab's open connection
-// still completes once that tab releases it, and waiting here would hold the game behind a tab the
-// user may never close.
+/**
+ * Deletes the log databases an older schema version left behind, one per version, and resolves once
+ * every attempt has settled.
+ *
+ * Nothing else can reach them. The schema version is part of the database name, so a version bump
+ * does not upgrade the old database - it opens a new one and abandons the old, and
+ * clearStaleStorageVersions cannot help because it walks localStorage and sessionStorage keys while
+ * IndexedDB is neither. Left alone, the largest thing Tapoo ever writes - a session's worth of agent
+ * transcripts - would outlive every reset and every leftover-data confirmation the user gives, while
+ * the gate that asked for that confirmation counted only the handful of Web Storage keys beside it.
+ *
+ * The versions are taken from those stale keys rather than from indexedDB.databases(), which Firefox
+ * has never implemented: the two always move together, since the version that wrote
+ * tapoo.v4.82.agentConfigs is the version that wrote tapoo.v4.82.logs. Deleting a database that was
+ * never created is a no-op, so a version that happened to log nothing costs one harmless request.
+ *
+ * Every outcome resolves, including blocked - a delete blocked by another tab's open connection
+ * still completes once that tab releases it, and waiting here would hold the game behind a tab the
+ * user may never close.
+ */
 export async function clearStaleTapooLogDatabases(versions: readonly string[]): Promise<void> {
   if (!hasIndexedDb()) {
     return
@@ -588,8 +643,10 @@ export function isTapooLogStorageFallback(): boolean {
   return backend === "session-storage"
 }
 
-// Clears the module's cached handle, backend and session id. Exported for tests alone: the cached
-// connection promise would otherwise carry one test's database into the next.
+/**
+ * Clears the module's cached handle, backend and session id. Exported for tests alone: the cached
+ * connection promise would otherwise carry one test's database into the next.
+ */
 export function resetTapooLogStoreForTests(): void {
   dbPromise = null
   backend = "session-storage"

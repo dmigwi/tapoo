@@ -37,7 +37,9 @@ const {
 // --- Shared constants ---
 // These are referenced by both the message builders and the tool layer below.
 
-// EXPECTED_RESPONSE_SCHEMA documents the exact JSON shape returned by prediction sources.
+/**
+ * EXPECTED_RESPONSE_SCHEMA documents the exact JSON shape returned by prediction sources.
+ */
 export const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
   type: "object",
   description:
@@ -57,9 +59,11 @@ export const EXPECTED_RESPONSE_SCHEMA: AgentExpectedResponseSchema = {
   },
 }
 
-// SUBMITTED_MOVES_SCHEMA documents the submitted-move entries returned after processing a turn. The
-// same move names that were sent, in submission order - index fields point into this array rather
-// than being encoded into its strings.
+/**
+ * SUBMITTED_MOVES_SCHEMA documents the submitted-move entries returned after processing a turn. The
+ * same move names that were sent, in submission order - index fields point into this array rather
+ * than being encoded into its strings.
+ */
 export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
   type: "array",
   description: "The moves submitted last turn, in order, exactly as they were sent.",
@@ -73,21 +77,23 @@ export const SUBMITTED_MOVES_SCHEMA: AgentSubmittedMovesSchema = {
 // --- 1. Messages ---
 // System and user messages are the first content the model receives each turn.
 
-// buildAgentPersonaPrompt opens every turn's system prompt, and is where the agent is given the
-// standard it plays to: who it is, where its traversal speed currently stands, and whether the job
-// this turn is to hold that or climb out of it. Each classification gets its own stance - the two
-// below the top are not interchangeable, since one is holding the baseline and the other is losing
-// ground against it.
-//
-// Grounded rather than motivational: every claim it makes is one the agent could check against
-// get_prediction_rules, which reports the same classification from the same counts. A stance the
-// agent can catch being untrue is worse than no stance at all.
-//
-// Stated as spend efficiency, never as acquisition. Traversal speed is first visits over decay
-// units spent - the same ratio get_prediction_rules calls "the progress per decay unit spent" - so
-// a high speed means units bought more ground, not that anything was gained. Nothing in this game
-// credits an agent for a cell: score only decays. Language like "gaining" or "worth" invents a
-// return side the scoring has none of.
+/**
+ * buildAgentPersonaPrompt opens every turn's system prompt, and is where the agent is given the
+ * standard it plays to: who it is, where its traversal speed currently stands, and whether the job
+ * this turn is to hold that or climb out of it. Each classification gets its own stance - the two
+ * below the top are not interchangeable, since one is holding the baseline and the other is losing
+ * ground against it.
+ *
+ * Grounded rather than motivational: every claim it makes is one the agent could check against
+ * get_prediction_rules, which reports the same classification from the same counts. A stance the
+ * agent can catch being untrue is worse than no stance at all.
+ *
+ * Stated as spend efficiency, never as acquisition. Traversal speed is first visits over decay
+ * units spent - the same ratio get_prediction_rules calls "the progress per decay unit spent" - so
+ * a high speed means units bought more ground, not that anything was gained. Nothing in this game
+ * credits an agent for a cell: score only decays. Language like "gaining" or "worth" invents a
+ * return side the scoring has none of.
+ */
 export function buildAgentPersonaPrompt(
   playerName: string,
   speedClass: TraversalSpeedClass,
@@ -154,7 +160,9 @@ export function buildAgentPersonaPrompt(
   ].join(" ")
 }
 
-// buildMazeActionPrompt keeps request guidance compact while naming the active player.
+/**
+ * buildMazeActionPrompt keeps request guidance compact while naming the active player.
+ */
 export function buildMazeActionPrompt(
   playerName: string,
   traversalSpeedClass: TraversalSpeedClass,
@@ -221,7 +229,9 @@ export function buildMazeActionPrompt(
   ].join(" ")
 }
 
-// buildAgentMessages separates durable behavior instructions from the current turn request.
+/**
+ * buildAgentMessages separates durable behavior instructions from the current turn request.
+ */
 export function buildAgentMessages(
   playerName: string,
   traversalSpeedClass: TraversalSpeedClass,
@@ -243,13 +253,15 @@ export function buildAgentMessages(
   ]
 }
 
-// buildDuplicateToolCallMessage names exactly which tool call(s) already have results, rather
-// than claiming no tool call can return anything new - other tools may still be genuinely
-// uncalled, and the model remains free to request those. It is explicitly labeled with the
-// configured warning prefix and uses the same warning terminology as lastPredictionOutcomeTool's malformed-response
-// explanation, so a model that ignores it can tie the resulting penalty back to this message.
-// describeToolCall renders each call as "name (id)", falling back to placeholders for the rare
-// case a provider omits either field.
+/**
+ * buildDuplicateToolCallMessage names exactly which tool call(s) already have results, rather
+ * than claiming no tool call can return anything new - other tools may still be genuinely
+ * uncalled, and the model remains free to request those. It is explicitly labeled with the
+ * configured warning prefix and uses the same warning terminology as lastPredictionOutcomeTool's malformed-response
+ * explanation, so a model that ignores it can tie the resulting penalty back to this message.
+ * describeToolCall renders each call as "name (id)", falling back to placeholders for the rare
+ * case a provider omits either field.
+ */
 export function buildDuplicateToolCallMessage(duplicateToolCalls: AgentToolCall[]): AgentChatMessage {
   const describeToolCall = (toolCall: AgentToolCall) =>
     `${toolCall.function?.name ?? "unknown"} (${toolCall.id ?? "no id"})`
@@ -263,12 +275,14 @@ export function buildDuplicateToolCallMessage(duplicateToolCalls: AgentToolCall[
   }
 }
 
-// buildTokenLimitExhaustionPrompt gives a capped-empty response one free corrective retry - only a
-// repeat failure after this warning charges a penalty, matching lastPredictionOutcomeTool's
-// "the same fixed score penalty was charged" description of that outcome. Named explicitly, the
-// same way buildDuplicateToolCallMessage names its own consequence, rather than leaving the model to
-// discover the cost only after incurring it. Keeping the complete user message here alongside the
-// other model-facing context prevents controller policy code from owning prompt wording.
+/**
+ * buildTokenLimitExhaustionPrompt gives a capped-empty response one free corrective retry - only a
+ * repeat failure after this warning charges a penalty, matching lastPredictionOutcomeTool's
+ * "the same fixed score penalty was charged" description of that outcome. Named explicitly, the
+ * same way buildDuplicateToolCallMessage names its own consequence, rather than leaving the model to
+ * discover the cost only after incurring it. Keeping the complete user message here alongside the
+ * other model-facing context prevents controller policy code from owning prompt wording.
+ */
 export function buildTokenLimitExhaustionPrompt(tokensUsage: number): AgentChatMessage {
   return {
     role: "user",
@@ -290,7 +304,9 @@ const emptyToolParameters: AgentToolDefinition["function"]["parameters"] = {
   required: [],
 }
 
-// mazeStructureTool gives agents position anchors plus nearby explored structure in one compact call.
+/**
+ * mazeStructureTool gives agents position anchors plus nearby explored structure in one compact call.
+ */
 const mazeStructureTool: AgentToolDefinition = {
   type: "function",
   function: {
@@ -336,13 +352,15 @@ const mazeStructureTool: AgentToolDefinition = {
   },
 }
 
-// predictionRulesTool documents the only accepted move response and the suggested batch size.
-// It deliberately does not restate the charging model: buildMazeActionPrompt already carries that,
-// with the actual unit counts, and is sent as the system message on every single turn. The split is
-// that the prompt owns the durable rules - what a turn costs and what each classification implies -
-// while this tool owns the live numbers and how to read them: the raw metrics, the division that
-// yields traversal speed, the thresholds it is scored against, and where to find the resulting
-// score.
+/**
+ * predictionRulesTool documents the only accepted move response and the suggested batch size.
+ * It deliberately does not restate the charging model: buildMazeActionPrompt already carries that,
+ * with the actual unit counts, and is sent as the system message on every single turn. The split is
+ * that the prompt owns the durable rules - what a turn costs and what each classification implies -
+ * while this tool owns the live numbers and how to read them: the raw metrics, the division that
+ * yields traversal speed, the thresholds it is scored against, and where to find the resulting
+ * score.
+ */
 const predictionRulesTool: AgentToolDefinition = {
   type: "function",
   function: {
@@ -382,7 +400,9 @@ const predictionRulesTool: AgentToolDefinition = {
   },
 }
 
-// lastPredictionOutcomeTool reports the previous prediction outcome so agents can correct course.
+/**
+ * lastPredictionOutcomeTool reports the previous prediction outcome so agents can correct course.
+ */
 const lastPredictionOutcomeTool: AgentToolDefinition = {
   type: "function",
   function: {
@@ -430,7 +450,9 @@ const lastPredictionOutcomeTool: AgentToolDefinition = {
   },
 }
 
-// AGENT_CONTEXT_TOOLS exposes focused context slices instead of one oversized state object.
+/**
+ * AGENT_CONTEXT_TOOLS exposes focused context slices instead of one oversized state object.
+ */
 export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
   mazeStructureTool,
   predictionRulesTool,
@@ -440,13 +462,15 @@ export const AGENT_CONTEXT_TOOLS: AgentToolDefinition[] = [
 // --- 3. Tool handlers ---
 // Handlers execute when the model calls a tool and produce the tool result messages.
 
-// classifyCellType names a visited cell's local structure from its fixed exit count, sparing the
-// model from re-deriving "one exit is a dead-end, two is a corridor, three or more is a junction"
-// from openMoves key counts itself on every turn. Real gameplay logs showed the model getting this
-// wrong even though the rule was already spelled out in mazeStructureTool's description - handing
-// it the precomputed label removes the room for that misreading, the same way historyWindowRadius
-// and playerUniqueCellsVisited/allUniqueCellsVisited hand over other conclusions instead of raw
-// material to re-derive.
+/**
+ * classifyCellType names a visited cell's local structure from its fixed exit count, sparing the
+ * model from re-deriving "one exit is a dead-end, two is a corridor, three or more is a junction"
+ * from openMoves key counts itself on every turn. Real gameplay logs showed the model getting this
+ * wrong even though the rule was already spelled out in mazeStructureTool's description - handing
+ * it the precomputed label removes the room for that misreading, the same way historyWindowRadius
+ * and playerUniqueCellsVisited/allUniqueCellsVisited hand over other conclusions instead of raw
+ * material to re-derive.
+ */
 function classifyCellType(
   start: CellCoordinate | null,
   target: CellCoordinate | null,
@@ -466,19 +490,21 @@ function classifyCellType(
   return exitCount === 2 ? "corridor" : "junction"
 }
 
-// cellVisitStatus answers "what should I do about this cell next?" rather than the weaker "has anyone
-// been here". It is the model-facing preprocessing of TraversalHistoryEntry.visitCount, which is never
-// exposed itself: handing over the raw tally would invite the model to re-derive this threshold and
-// get it wrong, when the decision is the only part it needs.
-//
-// A cell with N open exits still has an unused way out while visits < N, so:
-//   unvisited    - never reached; this direction immediately enters new ground.
-//   explored     - reached, but at least one exit is still unused; this direction can lead back to
-//                  the frontier where forward exploration resumes.
-//   backtracking - visited exactly as many times as it has exits; this direction is exhausted,
-//                  cannot lead to the destination, and should not be chosen.
-//   oscillating  - visited more often than it has exits; the player crossed back into exhausted
-//                  ground and is wasting limited moves instead of progressing toward the destination.
+/**
+ * cellVisitStatus answers "what should I do about this cell next?" rather than the weaker "has anyone
+ * been here". It is the model-facing preprocessing of TraversalHistoryEntry.visitCount, which is never
+ * exposed itself: handing over the raw tally would invite the model to re-derive this threshold and
+ * get it wrong, when the decision is the only part it needs.
+ *
+ * A cell with N open exits still has an unused way out while visits < N, so:
+ *   unvisited    - never reached; this direction immediately enters new ground.
+ *   explored     - reached, but at least one exit is still unused; this direction can lead back to
+ *                  the frontier where forward exploration resumes.
+ *   backtracking - visited exactly as many times as it has exits; this direction is exhausted,
+ *                  cannot lead to the destination, and should not be chosen.
+ *   oscillating  - visited more often than it has exits; the player crossed back into exhausted
+ *                  ground and is wasting limited moves instead of progressing toward the destination.
+ */
 export function cellVisitStatus(entry: TraversalHistoryEntry | undefined): VisitStatus {
   if (!entry) {
     return "unvisited"
@@ -491,11 +517,13 @@ export function cellVisitStatus(entry: TraversalHistoryEntry | undefined): Visit
   return entry.visitCount === entry.openMoves.length ? "backtracking" : "oscillating"
 }
 
-// resolvedOpenMoves maps each open exit to the adjacent logical cell it reaches. openMoves are fixed
-// when the maze is generated and never change during the round; only the derived visitStatus changes
-// as visits accumulate. Each recorded cell owns its visitCount, and the move only tells us which
-// adjacent cell to look up. The precomputed map keeps those lookups O(1) and saves the model from
-// re-deriving adjacency through row/col arithmetic.
+/**
+ * resolvedOpenMoves maps each open exit to the adjacent logical cell it reaches. openMoves are fixed
+ * when the maze is generated and never change during the round; only the derived visitStatus changes
+ * as visits accumulate. Each recorded cell owns its visitCount, and the move only tells us which
+ * adjacent cell to look up. The precomputed map keeps those lookups O(1) and saves the model from
+ * re-deriving adjacency through row/col arithmetic.
+ */
 function resolvedOpenMoves(
   entry: TraversalHistoryEntry,
   visitedCellEntries: Map<string, TraversalHistoryEntry>,
@@ -512,7 +540,9 @@ function resolvedOpenMoves(
   )
 }
 
-// isWithinManhattanDistance checks whether a logical cell belongs inside the local context window.
+/**
+ * isWithinManhattanDistance checks whether a logical cell belongs inside the local context window.
+ */
 function isWithinManhattanDistance(
   first: CellCoordinate,
   second: CellCoordinate,
@@ -521,10 +551,12 @@ function isWithinManhattanDistance(
   return (Math.abs(first.row - second.row) + Math.abs(first.col - second.col)) <= manhattanDistance
 }
 
-// buildAgentToolHandlers binds an already-frozen state snapshot (see snapshotAgentState,
-// agent/state-snapshot.ts - also used for turn logging elsewhere, not tool-specific despite the
-// name of this function) to the context tools for this request. Takes the snapshot itself, not
-// State, so it never has to decide when to (re)read live state - that decision belongs to the caller.
+/**
+ * buildAgentToolHandlers binds an already-frozen state snapshot (see snapshotAgentState,
+ * agent/state-snapshot.ts - also used for turn logging elsewhere, not tool-specific despite the
+ * name of this function) to the context tools for this request. Takes the snapshot itself, not
+ * State, so it never has to decide when to (re)read live state - that decision belongs to the caller.
+ */
 export function buildAgentToolHandlers(
   snapshot: AgentStateSnapshot,
   lastActionResult: MazeActionResult | null,

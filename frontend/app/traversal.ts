@@ -28,7 +28,9 @@ export const MOVE_ACTIONS = Object.keys(MOVE_DELTAS) as MoveAction[]
 // --- Coordinate geometry ---
 // Converting between the two position spaces: logical cells and rendered maze-grid points.
 
-// cellCoordinateFromGridPoint converts one rendered maze-grid point into a logical cell position.
+/**
+ * cellCoordinateFromGridPoint converts one rendered maze-grid point into a logical cell position.
+ */
 export function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoordinate {
   return {
     row: Math.floor((position.y - 1) / maze.renderCellStep),
@@ -36,7 +38,9 @@ export function cellCoordinateFromGridPoint(position: RenderGridPoint): CellCoor
   }
 }
 
-// gridPointFromCellCoordinate expands a logical cell position back into rendered maze-grid space.
+/**
+ * gridPointFromCellCoordinate expands a logical cell position back into rendered maze-grid space.
+ */
 export function gridPointFromCellCoordinate(cell: CellCoordinate): RenderGridPoint {
   return {
     x: cell.col * maze.renderCellStep + 1,
@@ -44,7 +48,9 @@ export function gridPointFromCellCoordinate(cell: CellCoordinate): RenderGridPoi
   }
 }
 
-// mazeCellKey builds a stable string key for deduplicating logical maze cells.
+/**
+ * mazeCellKey builds a stable string key for deduplicating logical maze cells.
+ */
 export function mazeCellKey(cell: CellCoordinate): string {
   return `${cell.row}:${cell.col}`
 }
@@ -72,7 +78,9 @@ function isRenderGridPoint(value: unknown): value is RenderGridPoint {
   )
 }
 
-// isCellCoordinate validates one zero-based logical cell coordinate.
+/**
+ * isCellCoordinate validates one zero-based logical cell coordinate.
+ */
 export function isCellCoordinate(value: unknown): value is CellCoordinate {
   if (
     typeof value !== "object" ||
@@ -96,7 +104,9 @@ export function isCellCoordinate(value: unknown): value is CellCoordinate {
   )
 }
 
-// cloneCellCoordinate copies one logical maze-cell coordinate.
+/**
+ * cloneCellCoordinate copies one logical maze-cell coordinate.
+ */
 export function cloneCellCoordinate(cell: CellCoordinate): CellCoordinate {
   return {
     row: cell.row,
@@ -104,7 +114,9 @@ export function cloneCellCoordinate(cell: CellCoordinate): CellCoordinate {
   }
 }
 
-// cloneRenderGridPoint copies one rendered-grid coordinate.
+/**
+ * cloneRenderGridPoint copies one rendered-grid coordinate.
+ */
 export function cloneRenderGridPoint(point: RenderGridPoint): RenderGridPoint {
   return {
     x: point.x,
@@ -114,7 +126,9 @@ export function cloneRenderGridPoint(point: RenderGridPoint): RenderGridPoint {
 
 // --- Maze dimensions ---
 
-// createMazeDimensions appends the logical cell area to a validated maze shape.
+/**
+ * createMazeDimensions appends the logical cell area to a validated maze shape.
+ */
 export function createMazeDimensions(dimensions: BaseDimensions): MazeDimensions {
   return {
     numCols: dimensions.numCols,
@@ -123,7 +137,9 @@ export function createMazeDimensions(dimensions: BaseDimensions): MazeDimensions
   }
 }
 
-// cloneMazeDimensions copies maze measurements before they cross storage/runtime boundaries.
+/**
+ * cloneMazeDimensions copies maze measurements before they cross storage/runtime boundaries.
+ */
 export function cloneMazeDimensions(dimensions: MazeDimensions): MazeDimensions {
   return createMazeDimensions(dimensions)
 }
@@ -131,17 +147,23 @@ export function cloneMazeDimensions(dimensions: MazeDimensions): MazeDimensions 
 // --- Wall style ---
 // Aesthetic wall cycling and maze grid operations.
 
-// getWallCharacters resolves the glyph set for the requested traversal wall weight.
+/**
+ * getWallCharacters resolves the glyph set for the requested traversal wall weight.
+ */
 function getWallCharacters(weight: WallWeight): [string, string, string] {
   return maze.walls[weight]
 }
 
-// isWallWeight validates numeric wall styles restored from storage or tests.
+/**
+ * isWallWeight validates numeric wall styles restored from storage or tests.
+ */
 export function isWallWeight(value: number): value is WallWeight {
   return WALL_WEIGHTS.includes(value as WallWeight)
 }
 
-// nextWallWeight advances to the next supported wall style and wraps at the end.
+/**
+ * nextWallWeight advances to the next supported wall style and wraps at the end.
+ */
 export function nextWallWeight(weight: WallWeight): WallWeight {
   const index = WALL_WEIGHTS.indexOf(weight)
   if (index === -1) {
@@ -150,7 +172,9 @@ export function nextWallWeight(weight: WallWeight): WallWeight {
   return WALL_WEIGHTS[(index + 1) % WALL_WEIGHTS.length]
 }
 
-// reweightMaze swaps wall glyphs without disturbing already-open path segments.
+/**
+ * reweightMaze swaps wall glyphs without disturbing already-open path segments.
+ */
 export function reweightMaze(
   data: string[][],
   currentWeight: WallWeight,
@@ -166,7 +190,9 @@ export function reweightMaze(
   return data.map((row) => row.map((cell) => replacements.get(cell) ?? cell))
 }
 
-// cloneMazeRows copies the mutable rendered maze table one row at a time.
+/**
+ * cloneMazeRows copies the mutable rendered maze table one row at a time.
+ */
 export function cloneMazeRows(mazeRows: string[][]): string[][] {
   return mazeRows.map((row) => [...row])
 }
@@ -174,12 +200,16 @@ export function cloneMazeRows(mazeRows: string[][]): string[][] {
 // --- Maze traversability ---
 // Determining which cells and directions are passable.
 
-// isSpaceFound treats any space-prefixed segment as traversable path.
+/**
+ * isSpaceFound treats any space-prefixed segment as traversable path.
+ */
 export function isSpaceFound(item: string): boolean {
   return item.length > 0 && item.charCodeAt(0) === 32
 }
 
-// isTraversableGridPoint verifies that a rendered-grid point still lands on open path.
+/**
+ * isTraversableGridPoint verifies that a rendered-grid point still lands on open path.
+ */
 export function isTraversableGridPoint(
   data: string[][],
   position: RenderGridPoint,
@@ -196,8 +226,10 @@ export function isTraversableGridPoint(
   return isSpaceFound(data[y][x])
 }
 
-// isWallProbeOpen reports whether the rendered wall cell one step in direction (dr, dc) from
-// grid point (y, x) is traversable. Performs array bounds checking so callers need not.
+/**
+ * isWallProbeOpen reports whether the rendered wall cell one step in direction (dr, dc) from
+ * grid point (y, x) is traversable. Performs array bounds checking so callers need not.
+ */
 function isWallProbeOpen(mazeData: string[][], y: number, x: number, dr: number, dc: number): boolean {
   const probeY = y + dr
   const probeX = x + dc
@@ -210,8 +242,10 @@ function isWallProbeOpen(mazeData: string[][], y: number, x: number, dr: number,
   )
 }
 
-// openMovesFromCell returns the passable exits from a logical cell by probing the rendered maze wall.
-// Returns an empty array when maze data is unavailable (e.g. in unit tests without a generated maze).
+/**
+ * openMovesFromCell returns the passable exits from a logical cell by probing the rendered maze wall.
+ * Returns an empty array when maze data is unavailable (e.g. in unit tests without a generated maze).
+ */
 export function openMovesFromCell(
   mazeData: string[][] | null,
   cell: CellCoordinate,
@@ -228,7 +262,9 @@ export function openMovesFromCell(
 
 // --- Move vocabulary and player movement ---
 
-// isMoveAction reports whether one semantic action is a traversable maze move.
+/**
+ * isMoveAction reports whether one semantic action is a traversable maze move.
+ */
 export function isMoveAction(
   action: MazeAction,
 ): action is Extract<MazeAction, { type: MoveAction }> {
@@ -244,7 +280,9 @@ export type ResolvedPlayerMove =
       visitedBefore: boolean
     }
 
-// resolvePlayerMove applies the shared movement rules without mutating game state.
+/**
+ * resolvePlayerMove applies the shared movement rules without mutating game state.
+ */
 export function resolvePlayerMove(
   state: State,
   action: MoveAction,
@@ -284,7 +322,9 @@ export function resolvePlayerMove(
 // --- Traversal history ---
 // Recording, querying, and cloning the ordered sequence of player cell visits.
 
-// isTraversalHistoryEntry validates one named visit record restored from storage.
+/**
+ * isTraversalHistoryEntry validates one named visit record restored from storage.
+ */
 export function isTraversalHistoryEntry(value: unknown): value is TraversalHistoryEntry {
   if (
     !isCellCoordinate(value) ||
@@ -306,7 +346,9 @@ export function isTraversalHistoryEntry(value: unknown): value is TraversalHisto
   return (value.openMoves as unknown[]).every((m) => typeof m === "string" && Object.hasOwn(MOVE_DELTAS, m))
 }
 
-// traversalHistoryEntry records one logical-cell visit for the player who made the move.
+/**
+ * traversalHistoryEntry records one logical-cell visit for the player who made the move.
+ */
 export function traversalHistoryEntry(
   cell: CellCoordinate,
   playerName: string,
@@ -316,15 +358,19 @@ export function traversalHistoryEntry(
     ...cell,
     playerName,
     openMoves: openMovesFromCell(mazeData, cell),
-    // Creating the entry is itself the first visit, so the count starts at 1 rather than 0.
+    /**
+     * Creating the entry is itself the first visit, so the count starts at 1 rather than 0.
+     */
     visitCount: 1,
   }
 }
 
-// findTraversalHistoryEntry returns the single entry recording a cell, or undefined when the cell has
-// never been reached. One entry per cell is an invariant (see TraversalHistoryEntry), so callers that
-// need to bump visitCount can locate it here rather than scanning once to test membership and again
-// to mutate.
+/**
+ * findTraversalHistoryEntry returns the single entry recording a cell, or undefined when the cell has
+ * never been reached. One entry per cell is an invariant (see TraversalHistoryEntry), so callers that
+ * need to bump visitCount can locate it here rather than scanning once to test membership and again
+ * to mutate.
+ */
 export function findTraversalHistoryEntry(
   traversalHistory: TraversalHistoryEntry[],
   cell: CellCoordinate,
@@ -333,7 +379,9 @@ export function findTraversalHistoryEntry(
   return traversalHistory.find((visitedCell) => mazeCellKey(visitedCell) === cellKey)
 }
 
-// traversalHistoryIncludes reports whether the ordered visit history already contains a cell.
+/**
+ * traversalHistoryIncludes reports whether the ordered visit history already contains a cell.
+ */
 export function traversalHistoryIncludes(
   traversalHistory: TraversalHistoryEntry[],
   cell: CellCoordinate,
@@ -341,7 +389,9 @@ export function traversalHistoryIncludes(
   return findTraversalHistoryEntry(traversalHistory, cell) !== undefined
 }
 
-// cloneTraversalHistory preserves first-visit order while detaching callers from shared entries.
+/**
+ * cloneTraversalHistory preserves first-visit order while detaching callers from shared entries.
+ */
 export function cloneTraversalHistory(
   history: TraversalHistoryEntry[],
 ): TraversalHistoryEntry[] {
@@ -354,9 +404,11 @@ export function cloneTraversalHistory(
   }))
 }
 
-// cloneMazeActionResult detaches the previous replay outcome before it crosses storage/runtime
-// boundaries. Each new outcome overwrites the old one, so preserving stale object references would
-// make the persisted round look mutable from whichever caller still holds the original result.
+/**
+ * cloneMazeActionResult detaches the previous replay outcome before it crosses storage/runtime
+ * boundaries. Each new outcome overwrites the old one, so preserving stale object references would
+ * make the persisted round look mutable from whichever caller still holds the original result.
+ */
 export function cloneMazeActionResult(
   result: MazeActionResult | null | undefined,
 ): MazeActionResult | null {
@@ -378,7 +430,9 @@ export function cloneMazeActionResult(
   }
 }
 
-// startCellFromTraversalHistory derives the persisted start cell from the first chronological visit.
+/**
+ * startCellFromTraversalHistory derives the persisted start cell from the first chronological visit.
+ */
 export function startCellFromTraversalHistory(
   history: TraversalHistoryEntry[],
 ): CellCoordinate | null {
@@ -412,7 +466,9 @@ function isValidMazeActionResult(value: unknown): value is MazeActionResult {
   )
 }
 
-// isValidPersistedRound verifies that a restored round is internally consistent.
+/**
+ * isValidPersistedRound verifies that a restored round is internally consistent.
+ */
 export function isValidPersistedRound(snapshot: PersistedRound): boolean {
   // Reject impossible round metadata before trusting nested maze data.
   if (

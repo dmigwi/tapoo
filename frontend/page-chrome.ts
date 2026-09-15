@@ -11,7 +11,9 @@ import {
   wideChromeClass,
 } from "./app/viewport"
 
-// configValue resolves a dotted CONFIG path and rejects missing segments early.
+/**
+ * configValue resolves a dotted CONFIG path and rejects missing segments early.
+ */
 function configValue(path: string): unknown {
   return path
     .split(".")
@@ -28,7 +30,9 @@ function configValue(path: string): unknown {
     }, CONFIG)
 }
 
-// configText resolves a visible text entry from CONFIG and rejects non-string keys early.
+/**
+ * configText resolves a visible text entry from CONFIG and rejects non-string keys early.
+ */
 function configText(key: string): string {
   const value = configValue(key)
   if (typeof value !== "string") {
@@ -38,7 +42,9 @@ function configText(key: string): string {
   return value
 }
 
-// configDisplayText also permits finite numeric CONFIG values for visible informational copy.
+/**
+ * configDisplayText also permits finite numeric CONFIG values for visible informational copy.
+ */
 function configDisplayText(key: string): string {
   const value = configValue(key)
   if (typeof value === "string") {
@@ -51,8 +57,10 @@ function configDisplayText(key: string): string {
   throw new Error(`missing display config entry: ${key}`)
 }
 
-// configInputValue permits string and finite numeric CONFIG values for form defaults. Numbers stay
-// unlocalized so <input type="number"> receives a browser-parseable value.
+/**
+ * configInputValue permits string and finite numeric CONFIG values for form defaults. Numbers stay
+ * unlocalized so <input type="number"> receives a browser-parseable value.
+ */
 function configInputValue(key: string): string {
   const value = configValue(key)
   if (typeof value === "string") {
@@ -65,7 +73,9 @@ function configInputValue(key: string): string {
   throw new Error(`missing input config entry: ${key}`)
 }
 
-// applyConfigAttribute copies CONFIG-backed text into matching DOM attributes.
+/**
+ * applyConfigAttribute copies CONFIG-backed text into matching DOM attributes.
+ */
 function applyConfigAttribute(
   selector: string,
   attributeName: "content" | "textContent" | "aria-label" | "data-tooltip",
@@ -88,7 +98,9 @@ function applyConfigAttribute(
   }
 }
 
-// applyDocumentTitle keeps the live document title aligned with page metadata.
+/**
+ * applyDocumentTitle keeps the live document title aligned with page metadata.
+ */
 function applyDocumentTitle(): void {
   const titleElement = document.querySelector("title[data-config-key]")
   if (!(titleElement instanceof HTMLTitleElement)) {
@@ -105,14 +117,16 @@ function applyDocumentTitle(): void {
   document.title = value
 }
 
-// RELATIVE_AGE_UNITS runs largest first. A unit is only used once its count reaches 2, so "1 min"
-// and "1 mon" never appear - the age is spelled in the smaller unit instead ("90 secs", not
-// "1 min"). That rule, not the unit list, is what sets the footer's worst case: a unit starting at
-// 2 means the one below it must run to 119, making "119 secs" and "119 mins" the longest strings
-// this can produce. The footer is sized for those, never for a short example like "11 mons".
-//
-// Months and years are the usual approximations (30 and 365 days). Nothing here needs calendar
-// accuracy - the exact instant is in the title and the datetime attribute.
+/**
+ * RELATIVE_AGE_UNITS runs largest first. A unit is only used once its count reaches 2, so "1 min"
+ * and "1 mon" never appear - the age is spelled in the smaller unit instead ("90 secs", not
+ * "1 min"). That rule, not the unit list, is what sets the footer's worst case: a unit starting at
+ * 2 means the one below it must run to 119, making "119 secs" and "119 mins" the longest strings
+ * this can produce. The footer is sized for those, never for a short example like "11 mons".
+ *
+ * Months and years are the usual approximations (30 and 365 days). Nothing here needs calendar
+ * accuracy - the exact instant is in the title and the datetime attribute.
+ */
 const RELATIVE_AGE_UNITS: ReadonlyArray<{ label: string; seconds: number }> = [
   { label: "yrs", seconds: 365 * 24 * 60 * 60 },
   { label: "mons", seconds: 30 * 24 * 60 * 60 },
@@ -121,7 +135,9 @@ const RELATIVE_AGE_UNITS: ReadonlyArray<{ label: string; seconds: number }> = [
   { label: "mins", seconds: 60 },
 ]
 
-// relativeAge describes how long ago sinceMs was, in the compact units the footer has room for.
+/**
+ * relativeAge describes how long ago sinceMs was, in the compact units the footer has room for.
+ */
 export function relativeAge(sinceMs: number, nowMs: number): string {
   // Exported, so callers other than applyPageVersion can reach it. A non-finite input would
   // otherwise propagate through every branch below and render as "NaN secs".
@@ -143,7 +159,9 @@ export function relativeAge(sinceMs: number, nowMs: number): string {
   return `${elapsedSeconds} ${elapsedSeconds === 1 ? "sec" : "secs"}`
 }
 
-// applyPageVersion keeps shared page chrome in sync with the configured copyright text.
+/**
+ * applyPageVersion keeps shared page chrome in sync with the configured copyright text.
+ */
 export function applyPageVersion(): void {
   // The age only renders where the template asked for it. A template edited to drop {updated}
   // would otherwise show its own literal text in a <time> element that still carries a real
@@ -164,8 +182,10 @@ export function applyPageVersion(): void {
   }
 }
 
-// footerPart wraps one unbreakable run of footer copy. Rendering the footer as separate runs keeps
-// any wrap between them rather than inside one - a single string breaks wherever it happens to fit.
+/**
+ * footerPart wraps one unbreakable run of footer copy. Rendering the footer as separate runs keeps
+ * any wrap between them rather than inside one - a single string breaks wherever it happens to fit.
+ */
 function footerPart(text: string): HTMLSpanElement {
   const part = document.createElement("span")
   part.className = "page-footer__part"
@@ -173,8 +193,10 @@ function footerPart(text: string): HTMLSpanElement {
   return part
 }
 
-// updatedTime renders the age as a <time>, so the precise instant the visible text approximates
-// stays available to crawlers, to assistive tech, and on hover - none of which costs footer width.
+/**
+ * updatedTime renders the age as a <time>, so the precise instant the visible text approximates
+ * stays available to crawlers, to assistive tech, and on hover - none of which costs footer width.
+ */
 function updatedTime(text: string): HTMLTimeElement {
   const element = document.createElement("time")
   element.className = "page-footer__part"
@@ -185,7 +207,9 @@ function updatedTime(text: string): HTMLTimeElement {
   return element
 }
 
-// applyPageText hydrates shared static copy such as labels and meta descriptions.
+/**
+ * applyPageText hydrates shared static copy such as labels and meta descriptions.
+ */
 export function applyPageText(): void {
   applyDocumentTitle()
   applyConfigAttribute("[data-config-text]", "textContent")
@@ -218,12 +242,16 @@ export function applyPageText(): void {
     })
 }
 
-// initTopMenus keeps shared top-bar menus expanded on wide screens and collapsible on compact ones.
+/**
+ * initTopMenus keeps shared top-bar menus expanded on wide screens and collapsible on compact ones.
+ */
 export function initTopMenus(): void {
   const menus = Array.from(document.querySelectorAll<HTMLDetailsElement>("details.top-menu"))
   let compactMode = false
 
-  // syncChromeMode exposes the shared compact/wide page state to CSS for every page.
+  /**
+   * syncChromeMode exposes the shared compact/wide page state to CSS for every page.
+   */
   function syncChromeMode(): void {
     compactMode = isCompactViewport()
     document.documentElement.classList.toggle(compactChromeClass, compactMode)
@@ -236,12 +264,16 @@ export function initTopMenus(): void {
     return
   }
 
-  // closeMenu hides one details menu without duplicating attribute writes.
+  /**
+   * closeMenu hides one details menu without duplicating attribute writes.
+   */
   function closeMenu(menu: HTMLDetailsElement): void {
     menu.open = false
   }
 
-  // syncMenuMode expands menus on wide screens and collapses them on compact ones.
+  /**
+   * syncMenuMode expands menus on wide screens and collapses them on compact ones.
+   */
   function syncMenuMode(): void {
     syncChromeMode()
     for (const menu of menus) {
@@ -249,7 +281,9 @@ export function initTopMenus(): void {
     }
   }
 
-  // closeOtherMenus preserves a single open menu in compact mode.
+  /**
+   * closeOtherMenus preserves a single open menu in compact mode.
+   */
   function closeOtherMenus(activeMenu: HTMLDetailsElement): void {
     for (const menu of menus) {
       if (menu !== activeMenu) {
@@ -266,7 +300,17 @@ export function initTopMenus(): void {
     })
   }
 
+  // Where the last press began. A browser sends click to the nearest element containing both the press
+  // and the release, so a drag that starts inside an open menu and ends outside it arrives as a click
+  // outside - without this, selecting text in a menu and letting go past its edge closed the menu.
+  let pressStartedAt: Node | null = null
+  document.addEventListener("mousedown", (event: MouseEvent) => {
+    pressStartedAt = event.target instanceof Node ? event.target : null
+  })
+
   document.addEventListener("click", (event: MouseEvent) => {
+    const pressedAt = pressStartedAt
+    pressStartedAt = null
     if (!compactMode) {
       return
     }
@@ -277,14 +321,16 @@ export function initTopMenus(): void {
     }
 
     for (const menu of menus) {
-      if (menu.open && !menu.contains(target)) {
+      const pressBeganInside = pressedAt !== null && menu.contains(pressedAt)
+      if (menu.open && !menu.contains(target) && !pressBeganInside) {
         closeMenu(menu)
       }
     }
   })
 
   document.addEventListener("keydown", (event: KeyboardEvent) => {
-    if (!compactMode || event.key !== "Escape") {
+    // Not mid-composition: Escape there cancels an input method's half-typed word, not the menu.
+    if (!compactMode || event.key !== "Escape" || event.isComposing) {
       return
     }
 

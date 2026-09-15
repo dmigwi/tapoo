@@ -9,14 +9,18 @@ import { requireAcknowledgement } from "./app/consent-gates"
 import { applyPageText, applyPageVersion, initTopMenus } from "./page-chrome"
 import type { Elements, MazeActionControl, MazeControlModeName } from "./app/types"
 
-// pageControlMode chooses the MazeActionControl implementation declared by the page shell.
+/**
+ * pageControlMode chooses the MazeActionControl implementation declared by the page shell.
+ */
 function pageControlMode(elements: Elements): MazeActionControl {
   return pageModeName() === CONFIG.runtime.controlModes.agentApi
     ? createAgentMode(elements)
     : createInteractiveMode(elements)
 }
 
-// pageModeName reads the control mode from the page dataset, defaulting to interactive.
+/**
+ * pageModeName reads the control mode from the page dataset, defaulting to interactive.
+ */
 function pageModeName(): MazeControlModeName {
   const agentApiMode = CONFIG.runtime.controlModes.agentApi
   return document.body.dataset.tapooControlMode === agentApiMode ? agentApiMode : CONFIG.runtime.controlModes.interactive
@@ -58,11 +62,13 @@ try {
     // until startGame runs, which is what the gate actually holds back.
     prepareTerminalAppForBootstrap()
 
-    // initTapooLogs opens the agent-api log stream, but it still waits with the rest:
-    // nothing reads or creates log storage until every acknowledgement resolves.
-    //
-    // startGame can run later from a click handler, outside this block's try/catch. Keeping the
-    // promise catch here gives gated and ungated startup the same placeholder fallback.
+    /**
+     * initTapooLogs opens the agent-api log stream, but it still waits with the rest:
+     * nothing reads or creates log storage until every acknowledgement resolves.
+     *
+     * startGame can run later from a click handler, outside this block's try/catch. Keeping the
+     * promise catch here gives gated and ungated startup the same placeholder fallback.
+     */
     const startGame = (): void => {
       void initTapooLogs()
         .then(() => {

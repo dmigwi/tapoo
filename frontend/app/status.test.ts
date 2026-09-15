@@ -294,8 +294,8 @@ describe("canShowRestart", () => {
     })
   })
 
-  // Reset Progress always restarts at level 1 (restartGame in game.ts), so too-small only offers a
-  // way out when there's a lower level to fall back to.
+  // Reset Progress reopens at state.restartLevel (restartGame in game.ts), never below level 1, so
+  // too-small only offers a way out when there's a lower level to fall back to.
   it("offers restart from too-small only when a lower level exists", () => {
     expect(canShowRestart("too-small", 1)).toBe(false)
     expect(canShowRestart("too-small", 2)).toBe(true)

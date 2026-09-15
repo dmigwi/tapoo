@@ -16,21 +16,24 @@ import type {
 
 const { generation, maze: mazeConfig, scoring } = CONFIG
 
-// PRNGGenerator is the shape getPRNGInt and any drop-in replacement must satisfy: a bounded random
-// integer in [0, limit). generateMaze/getStartPosition/chooseNextCell all default to getPRNGInt but
-// accept one of these explicitly so tests can substitute a seeded, deterministic generator (e.g. an
-// xorshift128 or PCG32 implementation living in the test file) instead of fighting crypto.getRandomValues
-// output directly. Production code must never pass one - the default is what keeps maze layouts
-// genuinely unpredictable there.
+/**
+ * PRNGGenerator is the shape getPRNGInt and any drop-in replacement must satisfy: a bounded random
+ * integer in [0, limit). generateMaze/getStartPosition/chooseNextCell all default to getPRNGInt but
+ * accept one of these explicitly so tests can substitute a seeded, deterministic generator (e.g. an
+ * xorshift128 or PCG32 implementation living in the test file) instead of fighting crypto.getRandomValues
+ * output directly. Production code must never pass one - the default is what keeps maze layouts
+ * genuinely unpredictable there.
+ */
 export type PRNGGenerator = (limit: number) => number
 
-// getPRNGInt returns a bounded, cryptographically random integer in [0, limit) for maze generation
-// - callers use it as an array index, a probability threshold, or a cell number, depending on the
-// call site. Using
-// crypto.getRandomValues rather than Math.random keeps maze layouts genuinely unpredictable -
-// worthwhile even for a game, since a guessable layout would blunt the challenge, and it means
-// no swap is needed later if the project grows into a context where that unpredictability
-// becomes a real security property rather than just a gameplay one.
+/**
+ * getPRNGInt returns a bounded, cryptographically random integer in [0, limit) for maze
+ * generation - callers use it as an array index, a probability threshold, or a cell number,
+ * depending on the call site. Using crypto.getRandomValues rather than Math.random keeps maze
+ * layouts genuinely unpredictable - worthwhile even for a game, since a guessable layout would
+ * blunt the challenge, and it means no swap is needed later if the project grows into a context
+ * where that unpredictability becomes a real security property rather than just a gameplay one.
+ */
 function getPRNGInt(limit: number): number {
   if (limit <= 0) {
     return 0
@@ -51,23 +54,31 @@ function getPRNGInt(limit: number): number {
   return value % limit
 }
 
-// absInt normalizes signed values when comparing candidate dimensions.
+/**
+ * absInt normalizes signed values when comparing candidate dimensions.
+ */
 function absInt(value: number): number {
   return value < 0 ? -value : value
 }
 
-// getWallCharacters resolves the glyph set for the requested wall weight.
+/**
+ * getWallCharacters resolves the glyph set for the requested wall weight.
+ */
 function getWallCharacters(weight: WallWeight): [string, string, string] {
   return mazeConfig.walls[weight]
 }
 
-// generateMazeArea turns a level number into the target maze area. Exported so the benchmark can
-// find which level a case belongs to using this function rather than restating seed and diff.
+/**
+ * generateMazeArea turns a level number into the target maze area. Exported so the benchmark can
+ * find which level a case belongs to using this function rather than restating seed and diff.
+ */
 export function generateMazeArea(level: number): number {
   return level * generation.diff + generation.seed
 }
 
-// appendFittingDimensions records factor pairs that still fit the viewport.
+/**
+ * appendFittingDimensions records factor pairs that still fit the viewport.
+ */
 function appendFittingDimensions(
   candidates: BaseDimensions[],
   numCols: number,
@@ -96,7 +107,9 @@ function appendFittingDimensions(
   return candidates
 }
 
-// fittingDimensionsForArea enumerates all viewport-safe factor pairs for an area.
+/**
+ * fittingDimensionsForArea enumerates all viewport-safe factor pairs for an area.
+ */
 function fittingDimensionsForArea(
   area: number,
   terminalSize: BaseDimensions,
@@ -118,7 +131,9 @@ function fittingDimensionsForArea(
   return candidates
 }
 
-// aspectMismatchScore measures how far a candidate is from the viewport aspect ratio.
+/**
+ * aspectMismatchScore measures how far a candidate is from the viewport aspect ratio.
+ */
 function aspectMismatchScore(
   candidate: BaseDimensions,
   terminalSize: BaseDimensions,
@@ -128,7 +143,9 @@ function aspectMismatchScore(
   )
 }
 
-// isPreferredMazeDimensions ranks one candidate against the current best fit.
+/**
+ * isPreferredMazeDimensions ranks one candidate against the current best fit.
+ */
 function isPreferredMazeDimensions(
   candidate: BaseDimensions,
   currentBest: BaseDimensions,
@@ -152,7 +169,9 @@ function isPreferredMazeDimensions(
   return false
 }
 
-// chooseBestMazeDimensions picks the most balanced candidate for the viewport.
+/**
+ * chooseBestMazeDimensions picks the most balanced candidate for the viewport.
+ */
 function chooseBestMazeDimensions(
   candidates: BaseDimensions[],
   terminalSize: BaseDimensions,
@@ -168,7 +187,9 @@ function chooseBestMazeDimensions(
   return best
 }
 
-// resolveMazeArea keeps isolated bad factor pairs playable without borrowing the next level.
+/**
+ * resolveMazeArea keeps isolated bad factor pairs playable without borrowing the next level.
+ */
 function resolveMazeArea(
   level: number,
   terminalSize: BaseDimensions,
@@ -208,7 +229,9 @@ function resolveMazeArea(
   return null
 }
 
-// getMazeDimensions finds the best playable dimensions for a level and viewport.
+/**
+ * getMazeDimensions finds the best playable dimensions for a level and viewport.
+ */
 export function getMazeDimensions(
   level: number,
   terminalSize: BaseDimensions,
@@ -222,7 +245,9 @@ export function getMazeDimensions(
   return { ...createMazeDimensions(selected), level }
 }
 
-// createPlayingField builds the initial fully-walled maze grid.
+/**
+ * createPlayingField builds the initial fully-walled maze grid.
+ */
 function createPlayingField(
   dimensions: BaseDimensions,
   weight: WallWeight,
@@ -255,7 +280,9 @@ function createPlayingField(
   return data
 }
 
-// getCellAddress maps a cell number to its wall and center coordinates.
+/**
+ * getCellAddress maps a cell number to its wall and center coordinates.
+ */
 function getCellAddress(
   dimensions: MazeDimensions,
   cellNo: number,
@@ -280,7 +307,9 @@ function getCellAddress(
   }
 }
 
-// getCellNeighbors returns the adjacent cell numbers around one cell.
+/**
+ * getCellNeighbors returns the adjacent cell numbers around one cell.
+ */
 function getCellNeighbors(
   dimensions: MazeDimensions,
   cellNo: number,
@@ -316,7 +345,9 @@ function getCellNeighbors(
   return neighbors
 }
 
-// countNeighbors counts how many edges a cell exposes to the grid.
+/**
+ * countNeighbors counts how many edges a cell exposes to the grid.
+ */
 function countNeighbors(neighbors: CellNeighbors): number {
   let count = 0
 
@@ -339,7 +370,9 @@ function countNeighbors(neighbors: CellNeighbors): number {
   return count
 }
 
-// getPresentNeighbors filters neighboring cells down to the unvisited options.
+/**
+ * getPresentNeighbors filters neighboring cells down to the unvisited options.
+ */
 function getPresentNeighbors(
   dimensions: MazeDimensions,
   cellNo: number,
@@ -367,9 +400,11 @@ function getPresentNeighbors(
   return present
 }
 
-// countPresentNeighbors reports how many of a cell's neighbors are still unvisited. The
-// least-neighbors bias calls this once per candidate on every generation step and only needs the
-// count, so it avoids the intermediate array getPresentNeighbors would allocate.
+/**
+ * countPresentNeighbors reports how many of a cell's neighbors are still unvisited. The
+ * least-neighbors bias calls this once per candidate on every generation step and only needs the
+ * count, so it avoids the intermediate array getPresentNeighbors would allocate.
+ */
 function countPresentNeighbors(
   dimensions: MazeDimensions,
   cellNo: number,
@@ -397,9 +432,11 @@ function countPresentNeighbors(
   return count
 }
 
-// getNavigationProfile maps maze area into the same smooth difficulty curve used
-// by the Go runtime. Smaller mazes keep longer corridors, while larger mazes
-// tighten the limits until they reach the hardest supported profile.
+/**
+ * getNavigationProfile maps maze area into the same smooth difficulty curve used
+ * by the Go runtime. Smaller mazes keep longer corridors, while larger mazes
+ * tighten the limits until they reach the hardest supported profile.
+ */
 export function getNavigationProfile(
   dimensions: MazeDimensions,
 ): NavigationProfile {
@@ -419,7 +456,9 @@ export function getNavigationProfile(
   }
 }
 
-// navigationDifficultyFactor normalizes maze area into a 0..1 difficulty value.
+/**
+ * navigationDifficultyFactor normalizes maze area into a 0..1 difficulty value.
+ */
 function navigationDifficultyFactor(area: number): number {
   if (area <= generation.navigation.friendlyMaxArea) {
     return 0
@@ -435,7 +474,9 @@ function navigationDifficultyFactor(area: number): number {
   return Math.sqrt(normalizedArea)
 }
 
-// interpolateNavigationValue blends between the friendly and hardest profile values.
+/**
+ * interpolateNavigationValue blends between the friendly and hardest profile values.
+ */
 function interpolateNavigationValue(
   friendly: number,
   hardest: number,
@@ -444,7 +485,9 @@ function interpolateNavigationValue(
   return Math.round(friendly + (hardest - friendly) * difficultyFactor)
 }
 
-// directionBetween converts two adjacent cells into a movement direction.
+/**
+ * directionBetween converts two adjacent cells into a movement direction.
+ */
 function directionBetween(
   dimensions: MazeDimensions,
   currentCell: number,
@@ -466,7 +509,9 @@ function directionBetween(
   }
 }
 
-// backtrackToBranch rewinds the carved path until an unvisited branch is found.
+/**
+ * backtrackToBranch rewinds the carved path until an unvisited branch is found.
+ */
 function backtrackToBranch(
   dimensions: MazeDimensions,
   path: PathStep[],
@@ -486,7 +531,9 @@ function backtrackToBranch(
   throw new Error("maze generation failed: no branch with unvisited neighbors found")
 }
 
-// chooseNextCell applies the navigation profile to the next branch decision.
+/**
+ * chooseNextCell applies the navigation profile to the next branch decision.
+ */
 function chooseNextCell(
   dimensions: MazeDimensions,
   neighbors: number[],
@@ -542,7 +589,9 @@ function chooseNextCell(
   return choices[generator(choices.length)]
 }
 
-// getStartPosition prefers an edge cell so the opening feels less uniform.
+/**
+ * getStartPosition prefers an edge cell so the opening feels less uniform.
+ */
 function getStartPosition(dimensions: MazeDimensions, generator: PRNGGenerator = getPRNGInt): number {
   while (true) {
     const randomCellNo = generator(dimensions.area) + 1
@@ -552,7 +601,9 @@ function getStartPosition(dimensions: MazeDimensions, generator: PRNGGenerator =
   }
 }
 
-// createPath removes the wall segment between two connected cells.
+/**
+ * createPath removes the wall segment between two connected cells.
+ */
 function createPath(
   dimensions: MazeDimensions,
   maze: string[][],
@@ -584,7 +635,9 @@ function createPath(
   }
 }
 
-// replaceChar swaps a junction glyph only when the vertical path stays open.
+/**
+ * replaceChar swaps a junction glyph only when the vertical path stays open.
+ */
 function replaceChar(
   dimensions: MazeDimensions,
   point: RenderGridPoint,
@@ -623,7 +676,9 @@ function replaceChar(
   }
 }
 
-// optimizeMaze softens eligible vertical joints after the maze is carved.
+/**
+ * optimizeMaze softens eligible vertical joints after the maze is carved.
+ */
 function optimizeMaze(
   dimensions: MazeDimensions,
   weight: WallWeight,
@@ -642,21 +697,23 @@ function optimizeMaze(
   }
 }
 
-// generateMaze carves the maze, then returns the grid plus start and target positions.
-//
-// The target is deliberately chosen as the single farthest cell from the start, by tree
-// distance, across the entire maze - not an arbitrary or independently-random pick. Because a
-// perfect maze is a spanning tree, and `path` here always mirrors the exact tree-path from
-// `startCell` to whichever cell the DFS currently stands on, tracking `path.length`'s running
-// maximum re-derives every cell's true distance from the start as it's first visited. The
-// classic graph-theory guarantee for trees is that the farthest node from any fixed point is
-// always an endpoint of the tree's longest possible path (its diameter) - so `startCell` and
-// `finalCell` are always as far apart as the maze's shape allows, regardless of where the
-// randomly-chosen `startCell` happens to land.
-// profileOverride carves under a caller-supplied profile instead of the one getNavigationProfile
-// derives from area. Gameplay always omits it; it exists for measurement, since the profile is a
-// pure function of area and nothing else can hold the grid fixed while moving a knob - which is what
-// separates a knob's effect from the grid's own.
+/**
+ * generateMaze carves the maze, then returns the grid plus start and target positions.
+ *
+ * The target is deliberately chosen as the single farthest cell from the start, by tree
+ * distance, across the entire maze - not an arbitrary or independently-random pick. Because a
+ * perfect maze is a spanning tree, and `path` here always mirrors the exact tree-path from
+ * `startCell` to whichever cell the DFS currently stands on, tracking `path.length`'s running
+ * maximum re-derives every cell's true distance from the start as it's first visited. The
+ * classic graph-theory guarantee for trees is that the farthest node from any fixed point is
+ * always an endpoint of the tree's longest possible path (its diameter) - so `startCell` and
+ * `finalCell` are always as far apart as the maze's shape allows, regardless of where the
+ * randomly-chosen `startCell` happens to land.
+ * profileOverride carves under a caller-supplied profile instead of the one getNavigationProfile
+ * derives from area. Gameplay always omits it; it exists for measurement, since the profile is a
+ * pure function of area and nothing else can hold the grid fixed while moving a knob - which is what
+ * separates a knob's effect from the grid's own.
+ */
 export function generateMaze(
   dimensions: LevelDimensions,
   weight: WallWeight,

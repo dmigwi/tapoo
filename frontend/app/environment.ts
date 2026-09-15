@@ -28,7 +28,9 @@ type UserAgentRule = {
   pattern: RegExp
 }
 
-// Most specific first: Edge and Opera both claim Chrome, and Chrome claims Safari.
+/**
+ * Most specific first: Edge and Opera both claim Chrome, and Chrome claims Safari.
+ */
 const BROWSER_RULES: readonly UserAgentRule[] = [
   { name: "Edge", pattern: /\b(?:Edg|EdgA|EdgiOS)\/(\d+[\d.]*)/ },
   { name: "Opera", pattern: /\b(?:OPR|OPiOS)\/(\d+[\d.]*)/ },
@@ -39,7 +41,9 @@ const BROWSER_RULES: readonly UserAgentRule[] = [
   { name: "Safari", pattern: /\bVersion\/(\d+[\d.]*)\s+(?:Mobile\/\S+\s+)?Safari\// },
 ]
 
-// Android before Linux (an Android UA says "Linux"), and the iOS devices before macOS.
+/**
+ * Android before Linux (an Android UA says "Linux"), and the iOS devices before macOS.
+ */
 const OS_RULES: readonly UserAgentRule[] = [
   { name: "Windows", pattern: /Windows NT/ },
   { name: "Android", pattern: /\bAndroid\b/ },
@@ -49,8 +53,10 @@ const OS_RULES: readonly UserAgentRule[] = [
   { name: "Linux", pattern: /\bLinux\b/ },
 ]
 
-// UNKNOWN_BROWSER is recorded rather than an empty string or the raw agent: a log that cannot name
-// the browser should say so, not leave a reader guessing whether the field was never written.
+/**
+ * UNKNOWN_BROWSER is recorded rather than an empty string or the raw agent: a log that cannot name
+ * the browser should say so, not leave a reader guessing whether the field was never written.
+ */
 const UNKNOWN_BROWSER = "Unknown browser"
 
 export function fetchDeviceInfo(userAgent: string): string {
@@ -65,10 +71,12 @@ export function fetchDeviceInfo(userAgent: string): string {
   return operatingSystem ? `${browser} on ${operatingSystem}` : browser
 }
 
-// fetchPlatformInfo names the page the build was served from: origin and pathname, never href.
-// A query string or fragment is no part of the address a reader needs to find the build, and this
-// value lands in a file that gets published, so anything incidental a link carried into the session
-// would travel with it.
+/**
+ * fetchPlatformInfo names the page the build was served from: origin and pathname, never href.
+ * A query string or fragment is no part of the address a reader needs to find the build, and this
+ * value lands in a file that gets published, so anything incidental a link carried into the session
+ * would travel with it.
+ */
 export function fetchPlatformInfo(location: Pick<Location, "origin" | "pathname">): string {
   return `${location.origin}${location.pathname}`
 }

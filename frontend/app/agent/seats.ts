@@ -6,17 +6,23 @@ const { agentConfig } = CONFIG
 const middleTrimMarker = "..."
 export const emptyAgentSeatLabel = "+"
 
-// agentSeatIds lists every fixed numeric seat id in display order.
+/**
+ * agentSeatIds lists every fixed numeric seat id in display order.
+ */
 export function agentSeatIds(): number[] {
   return Array.from({ length: agentConfig.maxSeats }, (_, index) => index + 1)
 }
 
-// isAgentSeatId accepts only integer seat ids inside the configured seat range.
+/**
+ * isAgentSeatId accepts only integer seat ids inside the configured seat range.
+ */
 export function isAgentSeatId(seatId: number): boolean {
   return Number.isInteger(seatId) && seatId >= 1 && seatId <= agentConfig.maxSeats
 }
 
-// agentSeatIdFromDataset parses DOM string values back into internal numeric seat ids.
+/**
+ * agentSeatIdFromDataset parses DOM string values back into internal numeric seat ids.
+ */
 export function agentSeatIdFromDataset(value: string | undefined): number | null {
   if (!value) {
     return null
@@ -26,12 +32,16 @@ export function agentSeatIdFromDataset(value: string | undefined): number | null
   return isAgentSeatId(seatId) && String(seatId) === value ? seatId : null
 }
 
-// agentSeatDatasetValue serializes a valid seat id for DOM data attributes.
+/**
+ * agentSeatDatasetValue serializes a valid seat id for DOM data attributes.
+ */
 export function agentSeatDatasetValue(seatId: number): string {
   return String(seatId)
 }
 
-// agentSeatLabel formats occupied seats as stable two-character display tokens.
+/**
+ * agentSeatLabel formats occupied seats as stable two-character display tokens.
+ */
 export function agentSeatLabel(seatId: number): string {
   if (seatId > 9) {
     return String(seatId)
@@ -39,12 +49,16 @@ export function agentSeatLabel(seatId: number): string {
   return `0${seatId}`
 }
 
-// agentSeatAddLabel describes the action available from an empty roster seat.
+/**
+ * agentSeatAddLabel describes the action available from an empty roster seat.
+ */
 export function agentSeatAddLabel(seatId: number): string {
   return seatTemplate(agentConfig.addSeatLabelTemplate, seatId)
 }
 
-// agentSeatManageLabel describes the non-destructive edit dialog opened from an occupied seat.
+/**
+ * agentSeatManageLabel describes the non-destructive edit dialog opened from an occupied seat.
+ */
 export function agentSeatManageLabel(
   agent: AgentApiSeatConfig,
   traversalHistory: TraversalHistoryEntry[] = [],
@@ -52,7 +66,9 @@ export function agentSeatManageLabel(
   return seatTemplate(agentConfig.manageSeatLabelTemplate, agent, traversalHistory)
 }
 
-// activeAgentSeatLabel identifies the currently selected agent without implying it can be edited.
+/**
+ * activeAgentSeatLabel identifies the currently selected agent without implying it can be edited.
+ */
 export function activeAgentSeatLabel(
   agent: AgentApiSeatConfig,
   traversalHistory: TraversalHistoryEntry[] = [],
@@ -60,7 +76,9 @@ export function activeAgentSeatLabel(
   return seatTemplate(agentConfig.activeSeatLabelTemplate, agent, traversalHistory)
 }
 
-// seatTemplate applies the shared seat placeholders while keeping user-facing copy in CONFIG.
+/**
+ * seatTemplate applies the shared seat placeholders while keeping user-facing copy in CONFIG.
+ */
 function seatTemplate(
   template: string,
   seat: AgentApiSeatConfig | number,
@@ -76,7 +94,9 @@ function seatTemplate(
     .replace("{seat}", agentSeatLabel(seatId))
 }
 
-// compactAgentModelLabel keeps long model names readable in tight dialog titles.
+/**
+ * compactAgentModelLabel keeps long model names readable in tight dialog titles.
+ */
 function compactAgentModelLabel(model: string): string {
   if (model.length <= agentConfig.maxModelDisplayLength) {
     return model
@@ -89,7 +109,9 @@ function compactAgentModelLabel(model: string): string {
   return `${model.slice(0, leadingCharacters)}${middleTrimMarker}${model.slice(-trailingCharacters)}`
 }
 
-// buildAgentSeats returns fixed slots; occupied seats carry an agent, empty seats carry null.
+/**
+ * buildAgentSeats returns fixed slots; occupied seats carry an agent, empty seats carry null.
+ */
 export function buildAgentSeats(agents: AgentApiSeatConfig[]): AgentSeat[] {
   const configsBySeat = new Map(agents.map((agent) => [agent.seatId, agent]))
 
@@ -99,7 +121,9 @@ export function buildAgentSeats(agents: AgentApiSeatConfig[]): AgentSeat[] {
   }))
 }
 
-// renderAgentSeatRoster owns the seat DOM shape so agent mode only coordinates behavior.
+/**
+ * renderAgentSeatRoster owns the seat DOM shape so agent mode only coordinates behavior.
+ */
 export function renderAgentSeatRoster(
   roster: HTMLElement | undefined,
   agents: AgentApiSeatConfig[],

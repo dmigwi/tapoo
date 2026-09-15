@@ -40,38 +40,50 @@ import type {
   MazeDimensions,
 } from "../types"
 
-// AgentChatResponse is the shape every provider adapter's readMessage normalizes its raw payload
-// into, so the loop below stays provider-neutral past this one point.
+/**
+ * AgentChatResponse is the shape every provider adapter's readMessage normalizes its raw payload
+ * into, so the loop below stays provider-neutral past this one point.
+ */
 type AgentChatResponse = {
   message?: AgentChatMessage
 }
 
 type RequestAgentPredictionInput = {
-  // The only state this turn ever reads - no separate raw State is threaded alongside it. Built
-  // once by the caller (control/agent-api.ts's requestNextAgentTurn), before the first of possibly
-  // several attempts this turn makes (including a connection-error retry, separated by a real
-  // backoff delay) - never rebuilt here, so every attempt sees the exact same frozen values no
-  // matter how much wall-clock time passes between them. See snapshotAgentState.
+  /**
+   * The only state this turn ever reads - no separate raw State is threaded alongside it. Built
+   * once by the caller (control/agent-api.ts's requestNextAgentTurn), before the first of possibly
+   * several attempts this turn makes (including a connection-error retry, separated by a real
+   * backoff delay) - never rebuilt here, so every attempt sees the exact same frozen values no
+   * matter how much wall-clock time passes between them. See snapshotAgentState.
+   */
   stateSnapshot: AgentStateSnapshot
-  // Pre-encoded static maze diagnostics for the level's first request. Kept separate from
-  // stateSnapshot because context tools do not need the raw or encoded maze grid.
+  /**
+   * Pre-encoded static maze diagnostics for the level's first request. Kept separate from
+   * stateSnapshot because context tools do not need the raw or encoded maze grid.
+   */
   encodedMazeForLevelStart: EncodedMazeForLevelStart | null
   timeoutMs: number
-  // Delay applied before each provider request after the first within one turn. The caller passes
-  // the same provider-facing request interval used between agent turns, keeping one rate-limit
-  // policy for both fresh turns and tool-call follow-up requests.
+  /**
+   * Delay applied before each provider request after the first within one turn. The caller passes
+   * the same provider-facing request interval used between agent turns, keeping one rate-limit
+   * policy for both fresh turns and tool-call follow-up requests.
+   */
   requestIntervalMs: number
   agent: AgentApiSeatConfig
   lastActionResult: MazeActionResult | null
-  // Live read of whether the round is still running - deliberately a callback, not a value off
-  // stateSnapshot, which is frozen at turn start and so can never report a round that stopped
-  // mid-turn. A turn can span several provider requests and minutes of wall clock; anything that
-  // halts the round in that window (a pause, a restart, a level change) must stop the remaining
-  // requests rather than let them land on a game that has moved on.
+  /**
+   * Live read of whether the round is still running - deliberately a callback, not a value off
+   * stateSnapshot, which is frozen at turn start and so can never report a round that stopped
+   * mid-turn. A turn can span several provider requests and minutes of wall clock; anything that
+   * halts the round in that window (a pause, a restart, a level change) must stop the remaining
+   * requests rather than let them land on a game that has moved on.
+   */
   isRoundRunning: () => boolean
 }
 
-// sleep resolves after delayMs - used only to pace consecutive provider requests within one turn.
+/**
+ * sleep resolves after delayMs - used only to pace consecutive provider requests within one turn.
+ */
 function sleep(delayMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, delayMs))
 }
@@ -80,17 +92,21 @@ type AgentChatTurnResult =
   | { ok: true; response: AgentChatResponse }
   | AgentPredictionFailure
 
-// ToolServicingResult distinguishes a hallucinated/unknown tool call - the model's own fault,
-// reported as malformed-response - from a handler throwing, which is a bug in our own tool
-// implementation and stays a network-error.
+/**
+ * ToolServicingResult distinguishes a hallucinated/unknown tool call - the model's own fault,
+ * reported as malformed-response - from a handler throwing, which is a bug in our own tool
+ * implementation and stays a network-error.
+ */
 type ToolServicingResult =
   | { ok: true; messages: AgentChatMessage[] }
   | { ok: false; reason: "unknown-tool" | "handler-error" }
 
 
-// AgentMode labels the current provider-request phase for diagnostics.
-// "tools" offers remaining context tools, "predict" asks for moves after all tools were used,
-// and "warned" follows an all-duplicate tool-call response.
+/**
+ * AgentMode labels the current provider-request phase for diagnostics.
+ * "tools" offers remaining context tools, "predict" asks for moves after all tools were used,
+ * and "warned" follows an all-duplicate tool-call response.
+ */
 type AgentMode = "predict" | "tools" | "warned"
 
 export type EncodedMazeForLevelStart = EncodedMaze & {
@@ -119,7 +135,9 @@ function logAgentLevelStarted(
   })
 }
 
-// buildToolResultMessages executes requested tools and converts their values into chat messages.
+/**
+ * buildToolResultMessages executes requested tools and converts their values into chat messages.
+ */
 async function buildToolResultMessages(
   toolCalls: AgentToolCall[],
   toolHandlers: AgentToolHandlers,
@@ -152,8 +170,10 @@ async function buildToolResultMessages(
   return { ok: true, messages: toolMessages }
 }
 
-// requestChatTurn sends one provider-compatible chat request while keeping wire details local -
-// the actual body/headers/response shape is entirely the chosen provider adapter's concern.
+/**
+ * requestChatTurn sends one provider-compatible chat request while keeping wire details local -
+ * the actual body/headers/response shape is entirely the chosen provider adapter's concern.
+ */
 async function requestChatTurn(
   agent: AgentApiSeatConfig,
   messages: AgentChatMessage[],
@@ -256,7 +276,9 @@ async function requestChatTurn(
   return { ok: true, response: { message: adapter.readMessage(rawResponseBody) } }
 }
 
-// requestPredictionWithAbort hides request construction, timeout control, and tool-call servicing.
+/**
+ * requestPredictionWithAbort hides request construction, timeout control, and tool-call servicing.
+ */
 export function requestPredictionWithAbort({
   lastActionResult,
   stateSnapshot,
@@ -270,11 +292,13 @@ export function requestPredictionWithAbort({
   let activeController: AbortController | null = null
   let wasExpectedAbort = false
 
-  // shouldStopRequesting answers the one question both in-loop checkpoints ask: is there any
-  // reason not to send another provider request? A caller abort and a round that stopped under us
-  // are the same situation - lifecycle cleanup, not a provider failure - so a stopped round is
-  // promoted to an expected abort here, cancelling anything in flight. That keeps every later
-  // check, including the catch below, on the single wasExpectedAbort flag.
+  /**
+   * shouldStopRequesting answers the one question both in-loop checkpoints ask: is there any
+   * reason not to send another provider request? A caller abort and a round that stopped under us
+   * are the same situation - lifecycle cleanup, not a provider failure - so a stopped round is
+   * promoted to an expected abort here, cancelling anything in flight. That keeps every later
+   * check, including the catch below, on the single wasExpectedAbort flag.
+   */
   const shouldStopRequesting = (): boolean => {
     if (wasExpectedAbort) {
       return true
@@ -300,8 +324,10 @@ export function requestPredictionWithAbort({
   // produced it.
   setTapooLogContext(stateSnapshot)
 
-  // Each provider request gets its own timeout; one agent turn may make several requests while
-  // servicing tool calls before the final move prediction arrives.
+  /**
+   * Each provider request gets its own timeout; one agent turn may make several requests while
+   * servicing tool calls before the final move prediction arrives.
+   */
   const requestChatTurnWithTimeout = async (
     messages: AgentChatMessage[],
     tools: AgentToolDefinition[],
@@ -480,12 +506,14 @@ export function requestPredictionWithAbort({
           return { ok: true, moves }
         }
 
-        // Split this response into tool calls that need servicing and duplicate calls that
-        // already have results, so only genuinely new work gets a payload - duplicates get a
-        // reminder naming them instead, without blocking whatever new calls came with them.
-        // Calls with an unrecognized or missing name are treated as "new" (not a known
-        // duplicate) so buildToolResultMessages still surfaces them as a servicing failure
-        // rather than letting them vanish from both buckets.
+        /**
+         * Split this response into tool calls that need servicing and duplicate calls that
+         * already have results, so only genuinely new work gets a payload - duplicates get a
+         * reminder naming them instead, without blocking whatever new calls came with them.
+         * Calls with an unrecognized or missing name are treated as "new" (not a known
+         * duplicate) so buildToolResultMessages still surfaces them as a servicing failure
+         * rather than letting them vanish from both buckets.
+         */
         const isKnownDuplicate = (tc: AgentToolCall) =>
           tc.function?.name !== undefined && calledToolNames.has(tc.function.name)
 
@@ -591,11 +619,13 @@ export function requestPredictionWithAbort({
         reason: "connection-error",
         diagnostic: {
           message: "Request failed before a valid response.",
-          // String(error) rather than the raw caught value: Error/DOMException instances (fetch's
-          // TypeError, an aborted signal's AbortError) serialize to "{}" via JSON.stringify - their
-          // name/message are non-enumerable own properties - so logging the value as-is would
-          // silently discard exactly the detail this diagnostic exists to capture. String() covers
-          // any thrown shape uniformly via its own toString(), without special-casing by type.
+          /**
+           * String(error) rather than the raw caught value: Error/DOMException instances (fetch's
+           * TypeError, an aborted signal's AbortError) serialize to "{}" via JSON.stringify - their
+           * name/message are non-enumerable own properties - so logging the value as-is would
+           * silently discard exactly the detail this diagnostic exists to capture. String() covers
+           * any thrown shape uniformly via its own toString(), without special-casing by type.
+           */
           details: { endpoint: endpointLabel(agent.endpoint), error: String(error) },
         },
       }

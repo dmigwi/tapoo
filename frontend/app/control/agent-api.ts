@@ -33,20 +33,26 @@ const {
 
 type RejectedAgentResponseReason = "malformed-response" | "token-limit-exhaustion"
 
-// isRejectedAgentResponseReason groups failures that keep their distinct status but share the
-// fixed unusable-response penalty and warning-level diagnostics.
+/**
+ * isRejectedAgentResponseReason groups failures that keep their distinct status but share the
+ * fixed unusable-response penalty and warning-level diagnostics.
+ */
 function isRejectedAgentResponseReason(
   reason: AgentPredictionFailure["reason"],
 ): reason is RejectedAgentResponseReason {
   return reason === "malformed-response" || reason === "token-limit-exhaustion"
 }
 
-// sleep resolves after delayMs - used only for the connection-error retry backoff below.
+/**
+ * sleep resolves after delayMs - used only for the connection-error retry backoff below.
+ */
 function sleep(delayMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, delayMs))
 }
 
-// mergeReplayResult reapplies replay metadata without duplicating live game state.
+/**
+ * mergeReplayResult reapplies replay metadata without duplicating live game state.
+ */
 function mergeReplayResult(
   actionResult: MazeActionResult | null,
   overrides: Partial<MazeActionResult>,
@@ -97,7 +103,9 @@ function encodeMazeForLevelStart(state: State): EncodedMazeForLevelStart | null 
   }
 }
 
-// handleAgentTurnLoop owns the HTTP polling cycle used by the agent-api control mode.
+/**
+ * handleAgentTurnLoop owns the HTTP polling cycle used by the agent-api control mode.
+ */
 export function handleAgentTurnLoop({
   __elements,
   __commitAgentTurn,
@@ -116,13 +124,19 @@ export function handleAgentTurnLoop({
   let lastActionResult: MazeActionResult | null = null
   let agentCursor = 0
 
-  // activeActionResult returns only the most recent replay metadata.
+  /**
+   * activeActionResult returns only the most recent replay metadata.
+   */
   const activeActionResult = (): MazeActionResult | null => lastActionResult
 
-  // hasEnabledAgents checks whether polling can produce work before waiting for a timeout.
+  /**
+   * hasEnabledAgents checks whether polling can produce work before waiting for a timeout.
+   */
   const hasEnabledAgents = (): boolean => __readAgentConfigs().some((agent) => agent.enabled)
 
-  // nextAgent rotates through all enabled agents configured for the shared maze.
+  /**
+   * nextAgent rotates through all enabled agents configured for the shared maze.
+   */
   const nextAgent = (): AgentApiSeatConfig | null => {
     const enabledAgents = __readAgentConfigs().filter((agent) => agent.enabled)
     if (enabledAgents.length === 0) {
@@ -134,7 +148,9 @@ export function handleAgentTurnLoop({
     return selectedAgent
   }
 
-  // awaitAgent immediately moves the game into its no-agent state without spending score.
+  /**
+   * awaitAgent immediately moves the game into its no-agent state without spending score.
+   */
   const awaitAgent = (logTransition = true): boolean => {
     if (hasEnabledAgents()) {
       return false
@@ -153,26 +169,30 @@ export function handleAgentTurnLoop({
     return true
   }
 
-  // agentTurnCountMismatch catches configs that claim to belong to this exact round (matching
-  // gameLevel + cumulativeRoundCount - see State.turnCount's comment for why that pair is a safe
-  // fingerprint) but disagree with the round's completed turn count; old configs from other rounds
-  // are allowed to reset lazily instead of tripping this. A mismatch here means the agent's stored
-  // view and the live round have genuinely diverged for the exact round they both claim to be in -
-  // not a rare transient blip - so it cannot be reconciled by patching a counter: the round's history
-  // up to this point is no longer trustworthy input for the model. Deliberately takes live State, not
-  // the turn's stateSnapshot: this check runs before a turn's request is even attempted, so it isn't
-  // "building/sending the request" - the one thing stateSnapshot exists for - and it must see the
-  // round exactly as it is right now, not a view captured for a different purpose.
+  /**
+   * agentTurnCountMismatch catches configs that claim to belong to this exact round (matching
+   * gameLevel + cumulativeRoundCount - see State.turnCount's comment for why that pair is a safe
+   * fingerprint) but disagree with the round's completed turn count; old configs from other rounds
+   * are allowed to reset lazily instead of tripping this. A mismatch here means the agent's stored
+   * view and the live round have genuinely diverged for the exact round they both claim to be in -
+   * not a rare transient blip - so it cannot be reconciled by patching a counter: the round's history
+   * up to this point is no longer trustworthy input for the model. Deliberately takes live State, not
+   * the turn's stateSnapshot: this check runs before a turn's request is even attempted, so it isn't
+   * "building/sending the request" - the one thing stateSnapshot exists for - and it must see the
+   * round exactly as it is right now, not a view captured for a different purpose.
+   */
   const agentTurnCountMismatch = (agent: AgentApiSeatConfig, currentState: State): boolean =>
     agent.gameLevel === currentState.level &&
     agent.cumulativeRoundCount === currentState.cumulativeRoundCount &&
     (agent.levelTurnCount ?? 0) !== currentState.turnCount
 
-  // resetAfterAgentStateMismatch is deliberately a full restart, not a lighter correction: once the
-  // fingerprint check above fails, there is no way to know which side actually diverged or why, so
-  // patching one counter to match the other risks quietly feeding the model turn context assembled
-  // from a different game output than the one it's reasoning about. A restart is the only response
-  // that guarantees that never happens.
+  /**
+   * resetAfterAgentStateMismatch is deliberately a full restart, not a lighter correction: once the
+   * fingerprint check above fails, there is no way to know which side actually diverged or why, so
+   * patching one counter to match the other risks quietly feeding the model turn context assembled
+   * from a different game output than the one it's reasoning about. A restart is the only response
+   * that guarantees that never happens.
+   */
   const resetAfterAgentStateMismatch = (agent: AgentApiSeatConfig, currentState: State): void => {
     logTapooRecordEntry(runtime.controlModes.agentApi, "error", "Agent turn count mismatch; resetting game state.", {
       seatId: agent.seatId,
@@ -186,7 +206,9 @@ export function handleAgentTurnLoop({
     __dispatch({ type: "restart" }, { playerName: runtime.interactivePlayerName })
   }
 
-  // clearScheduledTurn stops any queued request cycle.
+  /**
+   * clearScheduledTurn stops any queued request cycle.
+   */
   const clearScheduledTurn = (): void => {
     if (scheduledTurn === null) {
       return
@@ -196,26 +218,32 @@ export function handleAgentTurnLoop({
     scheduledTurn = null
   }
 
-  // stopPolling clears both queued and active work so callers can reset the loop in one step.
+  /**
+   * stopPolling clears both queued and active work so callers can reset the loop in one step.
+   */
   const stopPolling = (): void => {
     clearScheduledTurn()
     activeRequest?.abort()
     activeRequest = null
   }
 
-  // shouldPollAgent only keeps the replay loop alive while the live round is actively running. This
-  // is deliberately a live read, not the turn's frozen stateSnapshot: it's consulted at several
-  // points across a turn's async lifetime (before starting, after a connection-error retry's real
-  // backoff delay, after the turn's own work finishes) and by the poller's own public
-  // __shouldPollAgent, and must see a status change (e.g. the round ending) the instant it happens,
-  // not whatever the status was back when the current turn's snapshot was taken.
+  /**
+   * shouldPollAgent only keeps the replay loop alive while the live round is actively running. This
+   * is deliberately a live read, not the turn's frozen stateSnapshot: it's consulted at several
+   * points across a turn's async lifetime (before starting, after a connection-error retry's real
+   * backoff delay, after the turn's own work finishes) and by the poller's own public
+   * __shouldPollAgent, and must see a status change (e.g. the round ending) the instant it happens,
+   * not whatever the status was back when the current turn's snapshot was taken.
+   */
   const shouldPollAgent = (): boolean => attached && isRunningStatus(__readState().status)
 
   const defaultAgentRequestIntervalMs = (): number =>
     timing.defaultAgentApiRequestIntervalSeconds * 1_000
 
-  // notifyRoundCompletion invokes final-state callbacks only after score decay and replay metadata
-  // have been committed, so diagnostics receive the same state the UI is about to show.
+  /**
+   * notifyRoundCompletion invokes final-state callbacks only after score decay and replay metadata
+   * have been committed, so diagnostics receive the same state the UI is about to show.
+   */
   const notifyRoundCompletion = (
     agent: AgentApiSeatConfig,
     playerStatus: AgentPlayerStatus,
@@ -247,7 +275,9 @@ export function handleAgentTurnLoop({
     predictionStatus: "empty-prediction" as const,
   }
 
-  // playerStatusFor scopes traversal speed to the agent that just acted, never the whole team.
+  /**
+   * playerStatusFor scopes traversal speed to the agent that just acted, never the whole team.
+   */
   const playerStatusFor = (agent: AgentApiSeatConfig, currentState: State): AgentPlayerStatus => {
     const { playerUniqueCellsVisited, decayUnitsCharged } = getTraversalSpeedMetrics(
       currentState.traversalHistory,
@@ -260,7 +290,9 @@ export function handleAgentTurnLoop({
     }
   }
 
-  // recordAgentNetworkError disables failed agents and records the no-score-decay network state.
+  /**
+   * recordAgentNetworkError disables failed agents and records the no-score-decay network state.
+   */
   const recordAgentNetworkError = (agent: AgentApiSeatConfig | null): void => {
     if (!agent) {
       return
@@ -287,11 +319,13 @@ export function handleAgentTurnLoop({
     awaitAgent(false)
   }
 
-  // recordRejectedAgentResponse spends the fixed mistake decay without replaying any move. The
-  // status keeps malformed output distinct from a token-limit exhaustion, while both retain the
-  // same scoring consequence because neither produced a usable prediction. Agent stats are recorded
-  // with the next turn count before committing so a terminal turn's summary can use that post-turn
-  // agent status immediately.
+  /**
+   * recordRejectedAgentResponse spends the fixed mistake decay without replaying any move. The
+   * status keeps malformed output distinct from a token-limit exhaustion, while both retain the
+   * same scoring consequence because neither produced a usable prediction. Agent stats are recorded
+   * with the next turn count before committing so a terminal turn's summary can use that post-turn
+   * agent status immediately.
+   */
   const recordRejectedAgentResponse = (
     agent: AgentApiSeatConfig,
     lastMoveStatus: RejectedAgentResponseReason,
@@ -345,12 +379,14 @@ export function handleAgentTurnLoop({
     notifyRoundCompletion(updatedAgent, playerStatus, nextResult)
   }
 
-  // applyPredictionFailureConsequence dispatches a failure's game effect. caller-abort means
-  // polling already stopped, so it gets none. Kept separate from recordPredictionFailure below
-  // because the connection-error retry needs to apply this consequence on its own, once the retry
-  // is abandoned - by which point the diagnostic was already logged and must not be logged again.
-  // No stateSnapshot here: neither branch reads it (recordRejectedAgentResponse reads live state
-  // itself, after committing - see its own comment for why).
+  /**
+   * applyPredictionFailureConsequence dispatches a failure's game effect. caller-abort means
+   * polling already stopped, so it gets none. Kept separate from recordPredictionFailure below
+   * because the connection-error retry needs to apply this consequence on its own, once the retry
+   * is abandoned - by which point the diagnostic was already logged and must not be logged again.
+   * No stateSnapshot here: neither branch reads it (recordRejectedAgentResponse reads live state
+   * itself, after committing - see its own comment for why).
+   */
   const applyPredictionFailureConsequence = (
     agent: AgentApiSeatConfig,
     failure: AgentPredictionFailure,
@@ -367,10 +403,12 @@ export function handleAgentTurnLoop({
     recordAgentNetworkError(agent)
   }
 
-  // recordPredictionFailure is the single place a failure's diagnostic gets logged. It also applies
-  // the matching game consequence immediately, unless deferConsequence is set - used by the
-  // connection-error retry to log the failure up front while the consequence waits on the retry's
-  // outcome; that consequence is then applied later via applyPredictionFailureConsequence directly.
+  /**
+   * recordPredictionFailure is the single place a failure's diagnostic gets logged. It also applies
+   * the matching game consequence immediately, unless deferConsequence is set - used by the
+   * connection-error retry to log the failure up front while the consequence waits on the retry's
+   * outcome; that consequence is then applied later via applyPredictionFailureConsequence directly.
+   */
   const recordPredictionFailure = (
     agent: AgentApiSeatConfig,
     failure: AgentPredictionFailure,
@@ -395,9 +433,11 @@ export function handleAgentTurnLoop({
     }
   }
 
-  // scheduleNextAgentTurn starts/resumes immediately, then delays internal loop continuations. No
-  // stateSnapshot here - a new turn's snapshot doesn't exist until requestNextAgentTurn takes one
-  // fresh, at the start of that specific turn; this only ever decides whether/when to begin one.
+  /**
+   * scheduleNextAgentTurn starts/resumes immediately, then delays internal loop continuations. No
+   * stateSnapshot here - a new turn's snapshot doesn't exist until requestNextAgentTurn takes one
+   * fresh, at the start of that specific turn; this only ever decides whether/when to begin one.
+   */
   const scheduleNextAgentTurn = (
     delayMs = defaultAgentRequestIntervalMs(),
     isDelay = false,
@@ -422,13 +462,15 @@ export function handleAgentTurnLoop({
     }, delayMs)
   }
 
-  // requestAgentPrediction builds and awaits one provider request for the given agent, tracking it
-  // as the currently active request so stopPolling can still abort it mid-flight. Takes the
-  // snapshot rather than building it itself - requestNextAgentTurn takes it exactly once per turn,
-  // before the first of possibly several attempts (including a connection-error retry, separated by
-  // a real backoff delay), and threads it through every attempt. Rebuilding it here could hand a
-  // later attempt a different view than the one the turn started with, even though nothing about
-  // the outcome of a failed attempt should have changed it.
+  /**
+   * requestAgentPrediction builds and awaits one provider request for the given agent, tracking it
+   * as the currently active request so stopPolling can still abort it mid-flight. Takes the
+   * snapshot rather than building it itself - requestNextAgentTurn takes it exactly once per turn,
+   * before the first of possibly several attempts (including a connection-error retry, separated by
+   * a real backoff delay), and threads it through every attempt. Rebuilding it here could hand a
+   * later attempt a different view than the one the turn started with, even though nothing about
+   * the outcome of a failed attempt should have changed it.
+   */
   const requestAgentPrediction = (
     agent: AgentApiSeatConfig,
     stateSnapshot: AgentStateSnapshot,
@@ -450,17 +492,19 @@ export function handleAgentTurnLoop({
     return predictionRequest.promise
   }
 
-  // requestAgentPredictionWithRetry gives a connection-error exactly one retry, after a short
-  // backoff, before the caller treats it as final. connection-error is deliberately narrow (see
-  // AgentPredictionFailureReason's comment): it means the connection itself failed - a reset, a
-  // dropped socket, a DNS hiccup, a timeout abort - before any HTTP response arrived at all, the
-  // one shape a retry is actually likely to fix (see the "TypeError: Failed to fetch" investigation
-  // this exists for). Nothing else is retried here: a plain network-error (a non-OK HTTP status, a
-  // missing message body, a Tapoo-side tool-handler bug, an unrecognized provider) means the
-  // provider already answered or the problem is on our own side, neither of which a blind retry
-  // fixes - a non-OK status in particular (e.g. a 429) can get worse from an immediate retry.
-  // malformed-response and caller-abort are never retried either: a malformed response is the
-  // model's own mistake, and a caller-abort means polling already stopped.
+  /**
+   * requestAgentPredictionWithRetry gives a connection-error exactly one retry, after a short
+   * backoff, before the caller treats it as final. connection-error is deliberately narrow (see
+   * AgentPredictionFailureReason's comment): it means the connection itself failed - a reset, a
+   * dropped socket, a DNS hiccup, a timeout abort - before any HTTP response arrived at all, the
+   * one shape a retry is actually likely to fix (see the "TypeError: Failed to fetch" investigation
+   * this exists for). Nothing else is retried here: a plain network-error (a non-OK HTTP status, a
+   * missing message body, a Tapoo-side tool-handler bug, an unrecognized provider) means the
+   * provider already answered or the problem is on our own side, neither of which a blind retry
+   * fixes - a non-OK status in particular (e.g. a 429) can get worse from an immediate retry.
+   * malformed-response and caller-abort are never retried either: a malformed response is the
+   * model's own mistake, and a caller-abort means polling already stopped.
+   */
   const requestAgentPredictionWithRetry = async (
     agent: AgentApiSeatConfig,
     stateSnapshot: AgentStateSnapshot,
@@ -501,11 +545,13 @@ export function handleAgentTurnLoop({
     return retryAttempt
   }
 
-  // requestNextAgentTurn asks the next enabled agent for moves, then replays only successful
-  // predictions here. This function itself is the real once-per-turn boundary - unlike
-  // handleAgentTurnLoop, which runs once for this poller's whole lifetime, this runs fresh for
-  // every turn (it reschedules itself via scheduleNextAgentTurn in the finally block below), so it's
-  // the right place to take the turn's stateSnapshot, not a level any higher.
+  /**
+   * requestNextAgentTurn asks the next enabled agent for moves, then replays only successful
+   * predictions here. This function itself is the real once-per-turn boundary - unlike
+   * handleAgentTurnLoop, which runs once for this poller's whole lifetime, this runs fresh for
+   * every turn (it reschedules itself via scheduleNextAgentTurn in the finally block below), so it's
+   * the right place to take the turn's stateSnapshot, not a level any higher.
+   */
   const requestNextAgentTurn = async (
     nextDelayMs = defaultAgentRequestIntervalMs(),
   ): Promise<void> => {
@@ -626,7 +672,7 @@ export function handleAgentTurnLoop({
       //     flat, no base - 2. Deliberately tied with partial success, not cheaper: standing in
       //     place costs exactly as much as a wrong guess after some real progress, so there's no
       //     incentive to play it safe with a single speculative move instead of a longer one.
-      //     recordMalformedAgentResponse's agentMalformedPenaltyDecayUnits stays the costliest
+      //     recordRejectedAgentResponse's agentMalformedPenaltyDecayUnits stays the costliest
       //     outcome of all at 3, since a protocol violation is worse than any gameplay mistake.
       const chargedMovesCount = appliedMoveCount > 0
         ? (agentBaseDecayUnits + invalidMovesPenalty)
@@ -706,7 +752,9 @@ export function handleAgentTurnLoop({
   }
 
   return {
-    // External callers can tune delay duration for tests, but cannot force delayed mode.
+    /**
+     * External callers can tune delay duration for tests, but cannot force delayed mode.
+     */
     __scheduleNextAgentTurn(delayMs) {
       scheduleNextAgentTurn(delayMs)
     },
