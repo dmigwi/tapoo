@@ -12,15 +12,19 @@ import type {
 
 type AgentPredictionPayload = { moves?: unknown }
 
-// endpointLabel keeps diagnostics readable while avoiding noisy query strings.
+/**
+ * endpointLabel keeps diagnostics readable while avoiding noisy query strings.
+ */
 export function endpointLabel(endpoint: URL): string {
   return `${endpoint.origin}${endpoint.pathname}`
 }
 
-// parseExtraHeaders turns an agent's raw "Key: Value" textarea input into a headers object. Each
-// line is one header; a line with no ":" or an empty key is skipped rather than throwing, since
-// this runs on every request and a stray blank line or typo shouldn't fail the whole turn. Only
-// the first ":" splits key from value, so a value that itself contains one (e.g. a URL) survives.
+/**
+ * parseExtraHeaders turns an agent's raw "Key: Value" textarea input into a headers object. Each
+ * line is one header; a line with no ":" or an empty key is skipped rather than throwing, since
+ * this runs on every request and a stray blank line or typo shouldn't fail the whole turn. Only
+ * the first ":" splits key from value, so a value that itself contains one (e.g. a URL) survives.
+ */
 export function parseExtraHeaders(raw: string | undefined): Record<string, string> {
   if (!raw) {
     return {}
@@ -43,24 +47,32 @@ export function parseExtraHeaders(raw: string | undefined): Record<string, strin
   return headers
 }
 
-// stripMarkdownFence removes optional ```json or ``` wrappers that models add despite instructions.
+/**
+ * stripMarkdownFence removes optional ```json or ``` wrappers that models add despite instructions.
+ */
 function stripMarkdownFence(content: string): string {
   return content.replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/s, "$1").trim()
 }
 
-// extractFencedJson finds a fenced JSON block even when prose surrounds it.
+/**
+ * extractFencedJson finds a fenced JSON block even when prose surrounds it.
+ */
 function extractFencedJson(content: string): string | null {
   const match = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/s)
   return match ? match[1].trim() : null
 }
 
-// extractEmbeddedJson uses the final object-looking segment when a model prefixes reasoning.
+/**
+ * extractEmbeddedJson uses the final object-looking segment when a model prefixes reasoning.
+ */
 function extractEmbeddedJson(content: string): string | null {
   const start = content.lastIndexOf("{")
   return start === -1 ? null : content.slice(start).trim()
 }
 
-// parseAgentPrediction extracts the single supported prediction payload from final model content.
+/**
+ * parseAgentPrediction extracts the single supported prediction payload from final model content.
+ */
 export function parseAgentPrediction(content: string | undefined): MoveAction[] | null {
   if (!content) {
     return null
@@ -86,7 +98,9 @@ export function parseAgentPrediction(content: string | undefined): MoveAction[] 
   return null
 }
 
-// normalizeToolArguments accepts object arguments and provider variants that encode them as JSON.
+/**
+ * normalizeToolArguments accepts object arguments and provider variants that encode them as JSON.
+ */
 export function normalizeToolArguments(args: unknown): unknown {
   if (typeof args !== "string") {
     return args ?? {}
@@ -99,33 +113,17 @@ export function normalizeToolArguments(args: unknown): unknown {
   }
 }
 
-// serializeToolResult keeps all tool responses in the string form expected by chat APIs.
+/**
+ * serializeToolResult keeps all tool responses in the string form expected by chat APIs.
+ */
 export function serializeToolResult(result: unknown): string {
   return typeof result === "string" ? result : JSON.stringify(result)
 }
 
-// compactLoggedToolResult rewrites a get_maze_structure result into the smallest form that still
-// reconstructs the original exactly. get_maze_structure is by far the largest thing a turn logs -
-// ~8 KB at the 41-entry maximum the historyWindowRadius allows - and the accumulated tool results
-// are re-sent on every follow-up request in a turn, so the same history lands in the log two or
-// three times over. sessionStorage is capped by the browser and shared with the round snapshot, so a
-// log that outgrows it used to take the session's record down with it.
-//
-// Three changes, each reversing by arithmetic or by counting rather than by inference:
-//   - openMoves becomes [[move, visitStatus], ...]. Each neighbour's row/col is the entry's own cell
-//     plus that move's delta, so the coordinates are recomputed rather than stored. An array of
-//     pairs rather than an object keeps the ordering explicit and reads the same in any language.
-//   - every cell becomes [row, col]. Notation only; nothing is dropped.
-//   - cellType goes. dead-end/corridor/junction is the openMoves count, and target-cell is a compare
-//     against destinationCell, which is still in the payload. start-cell alone needs the level's
-//     start position, which the level-start maze entry already records.
-//
-// The model still receives the expanded form: it is given the coordinates precisely so it does not
-// have to do this arithmetic. This is the logged copy alone, and previewLoggedMessage checksums the
-// original so any reconstruction can be proved byte-identical rather than merely plausible.
-//
-// Anything unparseable, or shaped differently from what is expected, is returned untouched rather
-// than guessed at - a tool result that cannot be read is still evidence of what was sent.
+/**
+ * The shape of a get_maze_structure tool result as compactLoggedToolResult reads it. Every field is
+ * optional: a result shaped any other way is returned untouched rather than guessed at.
+ */
 type LoggedMazeStructure = {
   currentCell?: { row: number; col: number }
   filteredTraversalHistory?: {
@@ -139,6 +137,30 @@ function compactCell(cell: { row: number; col: number } | undefined): [number, n
   return cell ? [cell.row, cell.col] : undefined
 }
 
+/**
+ * compactLoggedToolResult rewrites a get_maze_structure result into the smallest form that still
+ * reconstructs the original exactly. get_maze_structure is by far the largest thing a turn logs -
+ * ~8 KB at the 41-entry maximum the historyWindowRadius allows - and the accumulated tool results
+ * are re-sent on every follow-up request in a turn, so the same history lands in the log two or
+ * three times over. sessionStorage is capped by the browser and shared with the round snapshot, so a
+ * log that outgrows it used to take the session's record down with it.
+ *
+ * Three changes, each reversing by arithmetic or by counting rather than by inference:
+ *   - openMoves becomes [[move, visitStatus], ...]. Each neighbour's row/col is the entry's own cell
+ *     plus that move's delta, so the coordinates are recomputed rather than stored. An array of
+ *     pairs rather than an object keeps the ordering explicit and reads the same in any language.
+ *   - every cell becomes [row, col]. Notation only; nothing is dropped.
+ *   - cellType goes. dead-end/corridor/junction is the openMoves count, and target-cell is a compare
+ *     against destinationCell, which is still in the payload. start-cell alone needs the level's
+ *     start position, which the level-start maze entry already records.
+ *
+ * The model still receives the expanded form: it is given the coordinates precisely so it does not
+ * have to do this arithmetic. This is the logged copy alone, and previewLoggedMessage checksums the
+ * original so any reconstruction can be proved byte-identical rather than merely plausible.
+ *
+ * Anything unparseable, or shaped differently from what is expected, is returned untouched rather
+ * than guessed at - a tool result that cannot be read is still evidence of what was sent.
+ */
 function compactLoggedToolResult(content: string | undefined): string | undefined {
   if (!content || !content.includes("\"filteredTraversalHistory\"")) {
     return content
@@ -169,14 +191,16 @@ function compactLoggedToolResult(content: string | undefined): string | undefine
   }
 }
 
-// previewLoggedMessage trims only static prompt messages; request-specific context stays intact. The
-// checksum is computed from the original, untrimmed content, so it stays stable across both the
-// keepFull and preview cases and lets a downloaded log prove the content didn't drift mid-experiment
-// or between games.
-//
-// Tool results are compacted rather than trimmed - see compactLoggedToolResult. They are the largest
-// thing a turn writes, but they are also the record of what the model was actually shown, so the
-// entries stay and only the fields a replay can regenerate are dropped.
+/**
+ * previewLoggedMessage trims only static prompt messages; request-specific context stays intact. The
+ * checksum is computed from the original, untrimmed content, so it stays stable across both the
+ * keepFull and preview cases and lets a downloaded log prove the content didn't drift mid-experiment
+ * or between games.
+ *
+ * Tool results are compacted rather than trimmed - see compactLoggedToolResult. They are the largest
+ * thing a turn writes, but they are also the record of what the model was actually shown, so the
+ * entries stay and only the fields a replay can regenerate are dropped.
+ */
 export function previewLoggedMessage(
   message: AgentChatMessage,
   keepFull: boolean,
@@ -207,8 +231,10 @@ export function previewLoggedMessage(
   }
 }
 
-// previewLoggedTool trims repeated tool descriptions while preserving short tool names. Same checksum
-// rationale as previewLoggedMessage above.
+/**
+ * previewLoggedTool trims repeated tool descriptions while preserving short tool names. Same checksum
+ * rationale as previewLoggedMessage above.
+ */
 export function previewLoggedTool(
   tool: object,
   keepFull: boolean,

@@ -4,7 +4,9 @@ import type { BaseDimensions, Elements } from "./types"
 const { viewport } = CONFIG
 const missingRequiredElementTemplate = "missing required element: {id}"
 
-// mustElement fetches a required terminal node and fails fast when it is missing.
+/**
+ * mustElement fetches a required terminal node and fails fast when it is missing.
+ */
 function mustElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id)
   if (!(element instanceof HTMLElement)) {
@@ -14,7 +16,9 @@ function mustElement<T extends HTMLElement>(id: string): T {
   return element as T
 }
 
-// hasTerminalElements checks whether the current page actually hosts the terminal UI.
+/**
+ * hasTerminalElements checks whether the current page actually hosts the terminal UI.
+ */
 function hasTerminalElements(): boolean {
   return (
     document.getElementById("terminal-app") instanceof HTMLElement &&
@@ -26,7 +30,9 @@ function hasTerminalElements(): boolean {
   )
 }
 
-// getGameElements gathers the DOM handles used by the runtime and renderer.
+/**
+ * getGameElements gathers the DOM handles used by the runtime and renderer.
+ */
 export function getGameElements(): Elements | null {
   if (!hasTerminalElements()) {
     return null
@@ -100,9 +106,11 @@ export function getGameElements(): Elements | null {
   }
 }
 
-// terminalCharacterColumns reports the raw number of monospace characters that fit across the
-// terminal's current rendered width - real per-character metrics, not the maze-cell-adjusted
-// numCols getTerminalSize below derives from this same measurement.
+/**
+ * terminalCharacterColumns reports the raw number of monospace characters that fit across the
+ * terminal's current rendered width - real per-character metrics, not the maze-cell-adjusted
+ * numCols getTerminalSize below derives from this same measurement.
+ */
 export function terminalCharacterColumns(elements: Elements): number {
   const rect = elements.body.getBoundingClientRect()
   const sampleRect = elements.measure.getBoundingClientRect()
@@ -110,16 +118,18 @@ export function terminalCharacterColumns(elements: Elements): number {
   return Math.floor(rect.width / charWidth)
 }
 
-// isBelowMinimumViewport is the single test the app answers "is this viewport too small to show
-// anything useful" with. It takes the measurement itself rather than accepting width and height from
-// a caller: two callers could otherwise measure different things - the body, the screen, the visual
-// viewport - and disagree about the same window. One reading, one answer.
-//
-// It lives here rather than beside the other status predicates because it reads the DOM, which is
-// what this module is for; status.ts stays free of it and can be reasoned about without a document.
-//
-// Either dimension failing is enough. A window can be wide and only a few lines tall - a desktop
-// browser dragged short, or a phone in landscape with the keyboard up - and a maze needs both.
+/**
+ * isBelowMinimumViewport is the single test the app answers "is this viewport too small to show
+ * anything useful" with. It takes the measurement itself rather than accepting width and height from
+ * a caller: two callers could otherwise measure different things - the body, the screen, the visual
+ * viewport - and disagree about the same window. One reading, one answer.
+ *
+ * It lives here rather than beside the other status predicates because it reads the DOM, which is
+ * what this module is for; status.ts stays free of it and can be reasoned about without a document.
+ *
+ * Either dimension failing is enough. A window can be wide and only a few lines tall - a desktop
+ * browser dragged short, or a phone in landscape with the keyboard up - and a maze needs both.
+ */
 export function isBelowMinimumViewport(elements: Elements): boolean {
   const { width, height } = elements.body.getBoundingClientRect()
   // An unmeasured element reports zeros - before first layout, or while detached - and that is not
@@ -133,7 +143,9 @@ export function isBelowMinimumViewport(elements: Elements): boolean {
   return width < viewport.minSupportedWidth || height < viewport.minSupportedHeight
 }
 
-// getTerminalSize converts DOM measurements into logical maze dimensions.
+/**
+ * getTerminalSize converts DOM measurements into logical maze dimensions.
+ */
 export function getTerminalSize(elements: Elements): BaseDimensions {
   const rect = elements.body.getBoundingClientRect()
   const screenStyle = window.getComputedStyle(elements.screen)

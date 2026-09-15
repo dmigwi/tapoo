@@ -1,7 +1,9 @@
 import { isBelowMinimumViewport } from "../dom"
 import type { Elements, MazeAction, SessionAction } from "../types"
 
-// SessionMazeAction keeps the shared browser-only session actions grouped together.
+/**
+ * SessionMazeAction keeps the shared browser-only session actions grouped together.
+ */
 export type SessionMazeAction = Extract<MazeAction, { type: SessionAction }>
 
 type ButtonBinding = {
@@ -20,7 +22,9 @@ type ReleaseActionBindingsOptions = {
   __setKeydownHandler: (handler: ((event: KeyboardEvent) => void) | null) => void
 }
 
-// releaseAllActionBindings clears every listener owned by the active control mode.
+/**
+ * releaseAllActionBindings clears every listener owned by the active control mode.
+ */
 export function releaseAllActionBindings({
   __attached,
   __buttonBindings,
@@ -49,21 +53,25 @@ export function releaseAllActionBindings({
   __onAfterRelease?.()
 }
 
-// acceptsGameControls answers whether human input should reach the game at all. Two conditions, both
-// about whether the player can see what they would be acting on:
-//
-//   - the terminal app must hold focus, so typing in an agent form is not read as a game shortcut;
-//   - the viewport must be at least the supported minimum, because below it the zoom placeholder
-//     covers the screen. That cover is opaque: without this, every touch button underneath stays
-//     clickable and every shortcut still moves a player nobody can see, on a maze nobody can read.
-//
-// Shared by both control modes rather than repeated in each keydown handler, so a mode cannot be
-// given input rules the other does not have.
+/**
+ * acceptsGameControls answers whether human input should reach the game at all. Two conditions, both
+ * about whether the player can see what they would be acting on:
+ *
+ *   - the terminal app must hold focus, so typing in an agent form is not read as a game shortcut;
+ *   - the viewport must be at least the supported minimum, because below it the zoom placeholder
+ *     covers the screen. That cover is opaque: without this, every touch button underneath stays
+ *     clickable and every shortcut still moves a player nobody can see, on a maze nobody can read.
+ *
+ * Shared by both control modes rather than repeated in each keydown handler, so a mode cannot be
+ * given input rules the other does not have.
+ */
 export function acceptsGameControls(elements: Elements): boolean {
   return isMazeControlFocused(elements) && !isBelowMinimumViewport(elements)
 }
 
-// isMazeControlFocused keeps human keyboard/button controls scoped to the terminal app.
+/**
+ * isMazeControlFocused keeps human keyboard/button controls scoped to the terminal app.
+ */
 export function isMazeControlFocused(elements: Elements): boolean {
   if (!elements.app.isConnected) {
     return true
@@ -73,12 +81,14 @@ export function isMazeControlFocused(elements: Elements): boolean {
   return activeElement === elements.app || elements.app.contains(activeElement)
 }
 
-// sessionActionFromKeyboardEvent translates shared keyboard shortcuts into session actions.
-//
-// Session actions are one-shot, so an auto-repeating held key is not read as a stream of them: holding
-// Space would otherwise rewrite the persisted state on every repeat. (Movement keys are mapped
-// elsewhere and keep repeating - holding an arrow to keep moving is the point.) Enter, Space and
-// Escape count only when pressed alone, so Shift+Enter or Ctrl+Space is never a game command.
+/**
+ * Translates shared keyboard shortcuts into session actions.
+ *
+ * Session actions are one-shot, so an auto-repeating held key is not read as a stream of them:
+ * holding Space would otherwise rewrite the persisted state on every repeat. (Movement keys are
+ * mapped elsewhere and keep repeating - holding an arrow to keep moving is the point.) Enter, Space
+ * and Escape count only when pressed alone, so Shift+Enter or Ctrl+Space is never a game command.
+ */
 export function sessionActionFromKeyboardEvent(
   event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey"> &
     Partial<Pick<KeyboardEvent, "altKey" | "shiftKey" | "code" | "repeat">>,
@@ -98,7 +108,8 @@ export function sessionActionFromKeyboardEvent(
     return { type: "cycle-walls" }
   }
 
-  const unmodified = !event.ctrlKey && !event.metaKey && event.altKey !== true && event.shiftKey !== true
+  const unmodified =
+    !event.ctrlKey && !event.metaKey && event.altKey !== true && event.shiftKey !== true
   if (!unmodified) {
     return null
   }
@@ -114,11 +125,16 @@ export function sessionActionFromKeyboardEvent(
   return null
 }
 
-// shortcutLetter names the letter a shortcut was pressed on. The key's own label wins whenever it is a
-// Latin letter, so Dvorak and AZERTY users press Ctrl+B where their B is. Only when the label is not a
-// Latin letter does the physical key decide: on a Cyrillic layout the B key's label is "и", and macOS
-// Option can turn R into "®" - matched on the label alone, those shortcuts would never fire.
-function shortcutLetter(event: Pick<KeyboardEvent, "key"> & Partial<Pick<KeyboardEvent, "code">>): string {
+/**
+ * shortcutLetter names the letter a shortcut was pressed on. The key's own label wins whenever it
+ * is a Latin letter, so Dvorak and AZERTY users press Ctrl+B where their B is. Only when the label
+ * is not a Latin letter does the physical key decide: on a Cyrillic layout the B key's label is
+ * "и", and macOS Option can turn R into "®" - matched on the label alone, those shortcuts would
+ * never fire.
+ */
+function shortcutLetter(
+  event: Pick<KeyboardEvent, "key"> & Partial<Pick<KeyboardEvent, "code">>,
+): string {
   const label = event.key.toLowerCase()
   if (/^[a-z]$/.test(label)) {
     return label
@@ -128,7 +144,9 @@ function shortcutLetter(event: Pick<KeyboardEvent, "key"> & Partial<Pick<Keyboar
   return physical ? physical[1].toLowerCase() : label
 }
 
-// sessionActionFromButton translates shared touch-action buttons into session actions.
+/**
+ * sessionActionFromButton translates shared touch-action buttons into session actions.
+ */
 export function sessionActionFromButton(
   dataset: DOMStringMap,
 ): SessionMazeAction | null {
@@ -146,28 +164,32 @@ export function sessionActionFromButton(
   }
 }
 
-// isComposingKeyEvent reports a key press that belongs to an input method's in-progress composition
-// (Japanese, Chinese, Korean and similar input). Browsers still deliver those keydowns to page
-// listeners: Escape there cancels a half-typed word and Enter commits one, and neither is meant for the
-// page.
-//
-// Three signals, because no single one covers every browser. isComposing is the standard one, and
-// Chrome also reports key "Process". keyCode 229 is kept on purpose despite keyCode being deprecated:
-// Safari ends the composition before dispatching the keydown for the key that ended it, so that event
-// arrives with isComposing false and key "Escape" or "Enter", and 229 is the only mark it still carries.
-// Dropping it would let Escape close - and reset - the agent form in Safari again.
+/**
+ * Reports a key press that belongs to an input method's in-progress composition (Japanese, Chinese,
+ * Korean and similar input). Browsers still deliver those keydowns to page listeners: Escape there
+ * cancels a half-typed word and Enter commits one, and neither is meant for the page.
+ *
+ * Three signals, because no single one covers every browser. `isComposing` is the standard one, and
+ * Chrome also reports `key` "Process". `keyCode` 229 is kept on purpose despite `keyCode` being
+ * deprecated: Safari ends the composition before dispatching the keydown for the key that ended it,
+ * so that event arrives with `isComposing` false and `key` "Escape" or "Enter", and 229 is the only
+ * mark it still carries. Dropping it would let Escape close - and reset - the agent form in Safari
+ * again.
+ */
 export function isComposingKeyEvent(
   event: Pick<KeyboardEvent, "key"> & Partial<Pick<KeyboardEvent, "isComposing" | "keyCode">>,
 ): boolean {
   return event.isComposing === true || event.key === "Process" || event.keyCode === 229
 }
 
-// keyboardEventBelongsToTarget answers whether a key press is for the focused element rather than for
-// the game: composition keys always are; text fields keep every key; and buttons, links and <summary>
-// keep the keys that activate them. Only Enter and Space for those - a focused button claiming every
-// key would stop the arrows moving the player after a touch button was clicked with a mouse. Without
-// the activation rule, Enter on a focused Save button ran the game's "proceed" and cancelled the click,
-// resuming the paused round behind the form instead of saving it.
+/**
+ * Answers whether a key press is for the focused element rather than for the game: composition keys
+ * always are; text fields keep every key; and buttons, links and `<summary>` keep the keys that
+ * activate them. Only Enter and Space for those - a focused button claiming every key would stop
+ * the arrows moving the player after a touch button was clicked with a mouse. Without the
+ * activation rule, Enter on a focused Save button ran the game's "proceed" and cancelled the click,
+ * resuming the paused round behind the form instead of saving it.
+ */
 export function keyboardEventBelongsToTarget(event: KeyboardEvent): boolean {
   if (isComposingKeyEvent(event) || isFormControlTarget(event.target)) {
     return true
@@ -176,7 +198,9 @@ export function keyboardEventBelongsToTarget(event: KeyboardEvent): boolean {
   return isActivationTarget(event.target) && (event.key === "Enter" || event.key === " ")
 }
 
-// isActivationTarget identifies elements a keyboard user presses with Enter or Space.
+/**
+ * isActivationTarget identifies elements a keyboard user presses with Enter or Space.
+ */
 function isActivationTarget(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLButtonElement ||
@@ -185,7 +209,9 @@ function isActivationTarget(target: EventTarget | null): boolean {
   )
 }
 
-// isFormControlTarget identifies editable controls whose keystrokes should not become game shortcuts.
+/**
+ * isFormControlTarget identifies editable controls whose keystrokes should not become game shortcuts.
+ */
 export function isFormControlTarget(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLInputElement ||

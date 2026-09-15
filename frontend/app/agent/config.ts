@@ -19,17 +19,21 @@ type AgentRequestIntervalInput = {
   requestIntervalSeconds?: number
 }
 
-// EXTRA_HEADER_NAME_PATTERN matches a valid HTTP header field name per RFC 7230's token grammar:
-// visible ASCII, no whitespace, none of the separator characters a real header name never
-// contains. Catches a typo (a stray space, a colon typed into the key itself) at submit time
-// rather than letting it reach fetch(), which throws a much less legible error mid-turn.
+/**
+ * EXTRA_HEADER_NAME_PATTERN matches a valid HTTP header field name per RFC 7230's token grammar:
+ * visible ASCII, no whitespace, none of the separator characters a real header name never
+ * contains. Catches a typo (a stray space, a colon typed into the key itself) at submit time
+ * rather than letting it reach fetch(), which throws a much less legible error mid-turn.
+ */
 const EXTRA_HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 
-// extraHeaderKeysFrom reads only the keys out of the same raw "Key: Value" per line text
-// parseExtraHeaders (agent/protocol.ts) parses at request time. Duplicated in miniature here
-// rather than imported, so this leaf module doesn't pull in protocol.ts's heavier dependency
-// chain (logs.ts, traversal.ts) just for form validation - storage.ts imports this file cheaply
-// and has no reason to inherit that.
+/**
+ * extraHeaderKeysFrom reads only the keys out of the same raw "Key: Value" per line text
+ * parseExtraHeaders (agent/protocol.ts) parses at request time. Duplicated in miniature here
+ * rather than imported, so this leaf module doesn't pull in protocol.ts's heavier dependency
+ * chain (logs.ts, traversal.ts) just for form validation - storage.ts imports this file cheaply
+ * and has no reason to inherit that.
+ */
 function extraHeaderKeysFrom(raw: string): string[] {
   return raw
     .split("\n")
@@ -40,23 +44,31 @@ function extraHeaderKeysFrom(raw: string): string[] {
     .filter((key) => key.length > 0)
 }
 
-// AGENT_API_PROVIDERS keeps provider iteration ordered and type-safe, the same role WALL_WEIGHTS
-// plays for wall styles (config.ts) - derived from the same object the dropdown's option labels come
-// from, so the two can never fall out of sync.
+/**
+ * AGENT_API_PROVIDERS keeps provider iteration ordered and type-safe, the same role WALL_WEIGHTS
+ * plays for wall styles (config.ts) - derived from the same object the dropdown's option labels come
+ * from, so the two can never fall out of sync.
+ */
 export const AGENT_API_PROVIDERS = Object.keys(agentConfig.providerLabels) as AgentApiProvider[]
 
-// isAgentApiProvider validates a provider restored from storage or read from the form.
+/**
+ * isAgentApiProvider validates a provider restored from storage or read from the form.
+ */
 export function isAgentApiProvider(value: unknown): value is AgentApiProvider {
   return typeof value === "string" && AGENT_API_PROVIDERS.includes(value as AgentApiProvider)
 }
 
-// AGENT_REASONING_EFFORTS lists the full shared vocabulary across all three providers - see
-// AGENT_API_PROVIDERS above for why this is derived rather than hand-listed.
+/**
+ * AGENT_REASONING_EFFORTS lists the full shared vocabulary across all three providers - see
+ * AGENT_API_PROVIDERS above for why this is derived rather than hand-listed.
+ */
 export const AGENT_REASONING_EFFORTS = Object.keys(agentConfig.reasoningEffortLabels) as AgentReasoningEffort[]
 
-// isAgentReasoningEffort validates a value restored from storage or read from the form against the
-// full shared vocabulary - not yet against any one provider's narrower subset. Callers that need
-// the provider-scoped check should also test membership in agentConfig.reasoningEffortOptions[api].
+/**
+ * isAgentReasoningEffort validates a value restored from storage or read from the form against the
+ * full shared vocabulary - not yet against any one provider's narrower subset. Callers that need
+ * the provider-scoped check should also test membership in agentConfig.reasoningEffortOptions[api].
+ */
 export function isAgentReasoningEffort(value: unknown): value is AgentReasoningEffort {
   return typeof value === "string" && AGENT_REASONING_EFFORTS.includes(value as AgentReasoningEffort)
 }
@@ -65,8 +77,10 @@ export function defaultAgentApiRequestIntervalSeconds(): number {
   return CONFIG.timing.defaultAgentApiRequestIntervalSeconds
 }
 
-// hasValidAgentPlayerName enforces the compact player-name range shared by the config form and
-// storage normalization, so a name rejected at submit time is the same one rejected on load.
+/**
+ * hasValidAgentPlayerName enforces the compact player-name range shared by the config form and
+ * storage normalization, so a name rejected at submit time is the same one rejected on load.
+ */
 export function hasValidAgentPlayerName(playerName: string): boolean {
   return (
     playerName.length >= agentConfig.playerNameMinLength &&
@@ -95,12 +109,14 @@ export function agentRequestIntervalMs(input: AgentRequestIntervalInput): number
   return agentRequestIntervalSeconds(input) * 1_000
 }
 
-// describeProviderHttpFailure augments a raw HTTP status with the small amount of agent-provider
-// interpretation that repeated logs have proven useful. It stays here so request code does not
-// need to know provider-specific failure patterns or operational quirks. Classified on status
-// alone: response bodies for these failures vary too much by provider to match reliably (e.g. the
-// 429 body Tapoo has actually seen for a capacity-exhaustion case was the same generic
-// "Rate limit exceeded" text as an ordinary rate limit).
+/**
+ * describeProviderHttpFailure augments a raw HTTP status with the small amount of agent-provider
+ * interpretation that repeated logs have proven useful. It stays here so request code does not
+ * need to know provider-specific failure patterns or operational quirks. Classified on status
+ * alone: response bodies for these failures vary too much by provider to match reliably (e.g. the
+ * 429 body Tapoo has actually seen for a capacity-exhaustion case was the same generic
+ * "Rate limit exceeded" text as an ordinary rate limit).
+ */
 export function describeProviderHttpFailure(status: number): string | undefined {
   switch (status) {
     case 400:
@@ -131,7 +147,9 @@ export function describeProviderHttpFailure(status: number): string | undefined 
   }
 }
 
-// normalizeAgentEndpoint makes host:port shorthand usable by browser fetch while keeping HTTP(S) explicit.
+/**
+ * normalizeAgentEndpoint makes host:port shorthand usable by browser fetch while keeping HTTP(S) explicit.
+ */
 export function normalizeAgentEndpoint(endpoint: string): URL | null {
   const trimmedEndpoint = endpoint.trim()
   const hostPortEndpoint =/^(localhost|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)(?:\/.*)?$/i.test(trimmedEndpoint)
@@ -150,16 +168,20 @@ export function normalizeAgentEndpoint(endpoint: string): URL | null {
   }
 }
 
-// isValidAgentEndpoint accepts HTTP(S) URLs plus host:port shorthand such as localhost:5000/move -
-// but only once a real request path is included. A bare host or host:port normalizes to a URL
-// whose pathname is just "/", which is never a real provider route, so it is rejected here rather
-// than silently guessed at submit time: the user must type the actual path themselves.
+/**
+ * isValidAgentEndpoint accepts HTTP(S) URLs plus host:port shorthand such as localhost:5000/move -
+ * but only once a real request path is included. A bare host or host:port normalizes to a URL
+ * whose pathname is just "/", which is never a real provider route, so it is rejected here rather
+ * than silently guessed at submit time: the user must type the actual path themselves.
+ */
 export function isValidAgentEndpoint(endpoint: string): boolean {
   const normalized = normalizeAgentEndpoint(endpoint)
   return normalized !== null && normalized.pathname !== "/"
 }
 
-// agentConfigValidationError returns the first user-facing validation error for the add-agent form.
+/**
+ * agentConfigValidationError returns the first user-facing validation error for the add-agent form.
+ */
 export function agentConfigValidationError({
   endpoint,
   existingAgents,

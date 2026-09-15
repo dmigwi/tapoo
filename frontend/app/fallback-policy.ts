@@ -1,15 +1,23 @@
 import { logTapooRecordEntry } from "./logs"
 import type { MazeControlModeName } from "./types"
 
-// PlaceholderArtErrorPolicy describes stable failures that should replace the terminal view.
+/**
+ * PlaceholderArtErrorPolicy describes stable failures that should replace the terminal view.
+ */
 type PlaceholderArtErrorPolicy = {
-  // messagePrefix matches developer/invariant errors without depending on full stack text.
+  /**
+   * messagePrefix matches developer/invariant errors without depending on full stack text.
+   */
   messagePrefix: string
-  // reason documents why refresh is not expected to resolve this failure.
+  /**
+   * reason documents why refresh is not expected to resolve this failure.
+   */
   reason: string
 }
 
-// PLACEHOLDER_ART_ERROR_POLICY gives known fallback failures a precise console explanation.
+/**
+ * PLACEHOLDER_ART_ERROR_POLICY gives known fallback failures a precise console explanation.
+ */
 const PLACEHOLDER_ART_ERROR_POLICY: readonly PlaceholderArtErrorPolicy[] = [
   {
     messagePrefix: "missing config entry:",
@@ -32,7 +40,9 @@ const PLACEHOLDER_ART_ERROR_POLICY: readonly PlaceholderArtErrorPolicy[] = [
 const unknownFallbackReason =
   "An unexpected runtime Error reached the page shell; showing fallback placeholder."
 
-// placeholderArtErrorPolicy resolves the exact known reason behind a fallback decision.
+/**
+ * placeholderArtErrorPolicy resolves the exact known reason behind a fallback decision.
+ */
 function placeholderArtErrorPolicy(error: Error): PlaceholderArtErrorPolicy | null {
   return (
     PLACEHOLDER_ART_ERROR_POLICY.find(({ messagePrefix }) =>
@@ -41,13 +51,17 @@ function placeholderArtErrorPolicy(error: Error): PlaceholderArtErrorPolicy | nu
   )
 }
 
-// logPlaceholderFallback records the original Error so production debugging keeps the stack trace.
+/**
+ * logPlaceholderFallback records the original Error so production debugging keeps the stack trace.
+ */
 function logPlaceholderFallback(modeName: MazeControlModeName, error: Error): void {
   const reason = placeholderArtErrorPolicy(error)?.reason ?? unknownFallbackReason
   logTapooRecordEntry(modeName, "error", reason, error)
 }
 
-// showPageView keeps terminal and placeholder visibility mutually exclusive.
+/**
+ * showPageView keeps terminal and placeholder visibility mutually exclusive.
+ */
 function showPageView(view: "terminal" | "placeholder"): void {
   const terminalApp = document.getElementById("terminal-app")
   const placeholder = document.getElementById("placeholder-art")
@@ -64,12 +78,16 @@ function showPageView(view: "terminal" | "placeholder"): void {
   }
 }
 
-// prepareTerminalAppForBootstrap makes the checked terminal visible before bootstrap focuses it.
+/**
+ * prepareTerminalAppForBootstrap makes the checked terminal visible before bootstrap focuses it.
+ */
 export function prepareTerminalAppForBootstrap(): void {
   showPageView("terminal")
 }
 
-// showPlaceholderArt swaps the terminal for the generic fallback only after unrecoverable Errors.
+/**
+ * showPlaceholderArt swaps the terminal for the generic fallback only after unrecoverable Errors.
+ */
 export function showPlaceholderArt(modeName: MazeControlModeName, error: unknown): void {
   if (!(error instanceof Error)) {
     return

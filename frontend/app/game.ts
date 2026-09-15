@@ -93,8 +93,10 @@ type RuntimeRoundState = {
 const state: State = {
   controlMode: runtime.controlModes.interactive,
   level: runtime.defaultRestartLevel,
-  // Replaced during bootstrap by whatever this session already chose; the config default only
-  // applies until then, and on a session that has never set one.
+  /**
+   * Replaced during bootstrap by whatever this session already chose; the config default only
+   * applies until then, and on a session that has never set one.
+   */
   restartLevel: runtime.defaultRestartLevel,
   maze: null,
   mazeDimensions: null,
@@ -119,18 +121,24 @@ const state: State = {
 }
 
 let scheduledRoundPersist: number | null = null
-// activeControlMode keeps the currently mounted MazeActionControl so feedback and rebinding stay in sync.
+/**
+ * activeControlMode keeps the currently mounted MazeActionControl so feedback and rebinding stay in sync.
+ */
 let activeControlMode: MazeActionControl | null = null
 let runtimeElements: Elements | null = null
 
-// loadPersistedSnapshotWithFallbacks prefers stored state and only applies fallbacks when storage is missing or invalid.
+/**
+ * loadPersistedSnapshotWithFallbacks prefers stored state and only applies fallbacks when storage is missing or invalid.
+ */
 function loadPersistedSnapshotWithFallbacks(
   mode: MazeControlModeName,
 ): PersistedSnapshot {
   return loadPersistedSnapshot(mode, state.restartLevel, WALL_WEIGHTS[0], isWallWeight)
 }
 
-// calculateRoundScore resolves authoritative score updates for gameplay state changes.
+/**
+ * calculateRoundScore resolves authoritative score updates for gameplay state changes.
+ */
 function calculateRoundScore(totalCells: number): number {
   if (isInteractiveMode(state.controlMode)) {
     // Interactive scoring must come from elapsed clock time; without a clock, preserve score.
@@ -148,7 +156,9 @@ function calculateRoundScore(totalCells: number): number {
   return calculateScoreAfterDecay(totalCells, state.scoreDecayUnits)
 }
 
-// restoreClock reconstructs a live clock from persisted remaining time.
+/**
+ * restoreClock reconstructs a live clock from persisted remaining time.
+ */
 function restoreClock(totalCells: number, remainingMs: number): GameClock {
   // interactiveDecayIntervalPerCellMs sizes score decay for interactive mode; for agent-api mode
   // the clock only exists to drive the destination blink animation (see clock.blink()), which
@@ -162,20 +172,24 @@ function restoreClock(totalCells: number, remainingMs: number): GameClock {
   return clock
 }
 
-// awaitingAgentWhenBlocked carries one bit of the status a block replaced. Blocking overwrites
-// state.status, and the recovery that redraws the round runs on a later resize event with no other
-// record of what was interrupted. Only the agent-api wait is worth keeping: every other interrupted
-// status resolves to the same pause once the round itself has been replaced, but that wait is the
-// difference between an overlay that names the missing seat and one that offers a resume the mode
-// cannot honour. Only ever read while the status is still blocked, which only blockLevel produces,
-// so it cannot be consulted after it has gone stale.
+/**
+ * awaitingAgentWhenBlocked carries one bit of the status a block replaced. Blocking overwrites
+ * state.status, and the recovery that redraws the round runs on a later resize event with no other
+ * record of what was interrupted. Only the agent-api wait is worth keeping: every other interrupted
+ * status resolves to the same pause once the round itself has been replaced, but that wait is the
+ * difference between an overlay that names the missing seat and one that offers a resume the mode
+ * cannot honour. Only ever read while the status is still blocked, which only blockLevel produces,
+ * so it cannot be consulted after it has gone stale.
+ */
 let awaitingAgentWhenBlocked = false
 
-// blockLevel marks a level unplayable in the current browser environment - the viewport is too small,
-// or fallback log storage is capped - without touching the round behind it.
-//
-// The clock is paused rather than dropped, so score stops decaying while play is impossible but the
-// remaining time is still there when the round resumes.
+/**
+ * blockLevel marks a level unplayable in the current browser environment - the viewport is too small,
+ * or fallback log storage is capped - without touching the round behind it.
+ *
+ * The clock is paused rather than dropped, so score stops decaying while play is impossible but the
+ * remaining time is still there when the round resumes.
+ */
 function blockLevel(level: number, status: "too-small" | "storage-limit"): void {
   awaitingAgentWhenBlocked = isAwaitAgentStatus(state.status)
   state.status = status
@@ -191,7 +205,9 @@ function agentLevelExceedsFallbackStorage(level: number): boolean {
   )
 }
 
-// persistedRoundFitsViewport checks whether a saved round still fits the viewport.
+/**
+ * persistedRoundFitsViewport checks whether a saved round still fits the viewport.
+ */
 function persistedRoundFitsViewport(snapshot: PersistedRound): boolean {
   return viewportFitStatus(
     snapshot.mazeDimensions,
@@ -199,7 +215,9 @@ function persistedRoundFitsViewport(snapshot: PersistedRound): boolean {
   ) === "fits"
 }
 
-// cancelScheduledRoundPersist stops any deferred round persistence job.
+/**
+ * cancelScheduledRoundPersist stops any deferred round persistence job.
+ */
 function cancelScheduledRoundPersist(): void {
   if (scheduledRoundPersist === null) {
     return
@@ -209,23 +227,25 @@ function cancelScheduledRoundPersist(): void {
   scheduledRoundPersist = null
 }
 
-// persistNow flushes the current round and optionally includes long-lived progress preferences.
-//
-// The "round" and "state" scopes write to two browser stores with different survival guarantees,
-// and level/wallWeight deliberately live in both:
-//   - sessionStorage (saveActiveRoundSnapshot, always written) holds the exact state of the
-//     currently active round - maze, traversal history, positions, score, level, wallWeight - so
-//     a same-tab refresh can restore it. It's wiped when the tab/browser closes.
-//   - localStorage (saveGameProgress, "state" scope only) holds just level and wallWeight as
-//     durable defaults for the *next* round, since sessionStorage won't survive closing the
-//     browser or the round finishing (win/loss clears its snapshot).
-// "round" is used for frequent per-move writes (cheap, sessionStorage only); "state" is used for
-// checkpoints worth syncing to the durable copy too - level changes, wins, wall-weight cycling,
-// pause/exit. This keeps the two copies from ever drifting apart. At boot (bootstrapGame), the
-// localStorage values are only ever used as the fallback when no valid sessionStorage round
-// exists to resume - removing either copy would break a real case: closing the browser (loses
-// sessionStorage) or a same-tab refresh mid-round (needs a self-contained round snapshot without
-// reaching into a separate store).
+/**
+ * persistNow flushes the current round and optionally includes long-lived progress preferences.
+ *
+ * The "round" and "state" scopes write to two browser stores with different survival guarantees,
+ * and level/wallWeight deliberately live in both:
+ *   - sessionStorage (saveActiveRoundSnapshot, always written) holds the exact state of the
+ *     currently active round - maze, traversal history, positions, score, level, wallWeight - so
+ *     a same-tab refresh can restore it. It's wiped when the tab/browser closes.
+ *   - localStorage (saveGameProgress, "state" scope only) holds just level and wallWeight as
+ *     durable defaults for the *next* round, since sessionStorage won't survive closing the
+ *     browser or the round finishing (win/loss clears its snapshot).
+ * "round" is used for frequent per-move writes (cheap, sessionStorage only); "state" is used for
+ * checkpoints worth syncing to the durable copy too - level changes, wins, wall-weight cycling,
+ * pause/exit. This keeps the two copies from ever drifting apart. At boot (bootstrapGame), the
+ * localStorage values are only ever used as the fallback when no valid sessionStorage round
+ * exists to resume - removing either copy would break a real case: closing the browser (loses
+ * sessionStorage) or a same-tab refresh mid-round (needs a self-contained round snapshot without
+ * reaching into a separate store).
+ */
 function persistNow(scope: PersistenceScope): void {
   cancelScheduledRoundPersist()
   if (scope === "state") {
@@ -234,23 +254,29 @@ function persistNow(scope: PersistenceScope): void {
   saveActiveRoundSnapshot(state.controlMode, state)
 }
 
-// persistProgressOnly saves durable preferences without replacing the restorable round snapshot.
+/**
+ * persistProgressOnly saves durable preferences without replacing the restorable round snapshot.
+ */
 function persistProgressOnly(): void {
   cancelScheduledRoundPersist()
   saveGameProgress(state.controlMode, state)
 }
 
-// lastReportedInvariant suppresses repeat entries: renderState runs on the blink cadence, so an
-// unfixed violation would otherwise append several entries a second and bury the gameplay history
-// it sits beside.
+/**
+ * lastReportedInvariant suppresses repeat entries: renderState runs on the blink cadence, so an
+ * unfixed violation would otherwise append several entries a second and bury the gameplay history
+ * it sits beside.
+ */
 let lastReportedInvariant: string | null = null
 
-// reportStateInvariant records an impossible status/state combination without interrupting play.
-// Throwing was the alternative, but renderState runs on the blink interval and nothing in game.ts
-// catches, so the error would reach the global handler in tapoo.ts and swap the whole game for
-// placeholder art - turning a recoverable inconsistency into a lost round, which matters most
-// during unattended agent runs. Logging instead keeps the violation beside the gameplay it came
-// from in the downloadable log, and stateInvariantError stays directly asserted in status.test.ts.
+/**
+ * reportStateInvariant records an impossible status/state combination without interrupting play.
+ * Throwing was the alternative, but renderState runs on the blink interval and nothing in game.ts
+ * catches, so the error would reach the global handler in tapoo.ts and swap the whole game for
+ * placeholder art - turning a recoverable inconsistency into a lost round, which matters most
+ * during unattended agent runs. Logging instead keeps the violation beside the gameplay it came
+ * from in the downloadable log, and stateInvariantError stays directly asserted in status.test.ts.
+ */
 function reportStateInvariant(): void {
   const invariantError = stateInvariantError(state)
   if (invariantError === lastReportedInvariant) {
@@ -267,7 +293,9 @@ function reportStateInvariant(): void {
   }
 }
 
-// renderState pushes the current game state into the terminal-like renderer.
+/**
+ * renderState pushes the current game state into the terminal-like renderer.
+ */
 function renderState(): void {
   if (!runtimeElements) {
     return
@@ -277,8 +305,10 @@ function renderState(): void {
   render(runtimeElements, state, activeControlMode?.readCurrentPlayer?.() ?? null)
 }
 
-// scheduleRoundPersistence debounces in-progress interactive move snapshots so rapid key repeats
-// write the latest round once instead of persisting every valid step immediately.
+/**
+ * scheduleRoundPersistence debounces in-progress interactive move snapshots so rapid key repeats
+ * write the latest round once instead of persisting every valid step immediately.
+ */
 function scheduleRoundPersistence(): void {
   cancelScheduledRoundPersist()
   scheduledRoundPersist = window.setTimeout(() => {
@@ -287,7 +317,9 @@ function scheduleRoundPersistence(): void {
   }, timing.persistenceDebounceMs)
 }
 
-// applyRuntimeRoundState installs the maze data shared by restored and newly generated rounds.
+/**
+ * applyRuntimeRoundState installs the maze data shared by restored and newly generated rounds.
+ */
 function applyRuntimeRoundState(roundState: RuntimeRoundState): void {
   state.level = roundState.level
   state.mazeDimensions = cloneMazeDimensions(roundState.mazeDimensions)
@@ -298,7 +330,9 @@ function applyRuntimeRoundState(roundState: RuntimeRoundState): void {
   state.finalPosition = cloneRenderGridPoint(roundState.finalPosition)
 }
 
-// noValidRoundExists restores a valid persisted round; true means startup must create a new maze.
+/**
+ * noValidRoundExists restores a valid persisted round; true means startup must create a new maze.
+ */
 function noValidRoundExists(snapshot: PersistedRound | null): boolean {
   if (!runtimeElements || !snapshot) {
     return true
@@ -323,17 +357,21 @@ function noValidRoundExists(snapshot: PersistedRound | null): boolean {
   return false
 }
 
-// restoredRestartLevel keeps a corrupt or absent stored floor from reaching state. It is validated
-// here rather than in isValidPersistedRound because a bad value must not discard an otherwise good
-// round - and because startRound raises every round to this floor, so an implausible one would make
-// the game unplayable rather than merely wrong.
+/**
+ * restoredRestartLevel keeps a corrupt or absent stored floor from reaching state. It is validated
+ * here rather than in isValidPersistedRound because a bad value must not discard an otherwise good
+ * round - and because startRound raises every round to this floor, so an implausible one would make
+ * the game unplayable rather than merely wrong.
+ */
 function restoredRestartLevel(level: number | undefined): number {
   return typeof level === "number" && Number.isInteger(level) && level >= 1
     ? level
     : runtime.defaultRestartLevel
 }
 
-// restoreValidPersistedRound rebuilds runtime state from a snapshot that already passed validation.
+/**
+ * restoreValidPersistedRound rebuilds runtime state from a snapshot that already passed validation.
+ */
 function restoreValidPersistedRound(snapshot: PersistedRound): void {
   // Ahead of the viewport bail-out below: the floor applies to whatever round opens next, including
   // the one a too-small viewport will ask for.
@@ -405,7 +443,9 @@ function restoreValidPersistedRound(snapshot: PersistedRound): void {
   // Only a paused round offers a resume; running needs none and await-agent has its own path.
 }
 
-// startRoundWithDimensions initializes a round after viewport-safe dimensions have been selected.
+/**
+ * startRoundWithDimensions initializes a round after viewport-safe dimensions have been selected.
+ */
 function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): boolean {
   const round = generateMaze(dimensions, state.wallWeight)
   const startCell = cellCoordinateFromGridPoint(round.startPosition)
@@ -445,7 +485,9 @@ function startRoundWithDimensions(dimensions: LevelDimensions, persist = true): 
   return true
 }
 
-// startRound generates and initializes a fresh round for the requested level.
+/**
+ * startRound generates and initializes a fresh round for the requested level.
+ */
 function startRound(requestedLevel: number, persist = true): boolean {
   if (!runtimeElements) {
     return false
@@ -479,7 +521,9 @@ function startRound(requestedLevel: number, persist = true): boolean {
   return startRoundWithDimensions(dimensions, persist)
 }
 
-// redrawRoundForViewport reshapes the current level when its existing dimensions no longer fit.
+/**
+ * redrawRoundForViewport reshapes the current level when its existing dimensions no longer fit.
+ */
 function redrawRoundForViewport(level: number): boolean {
   if (!runtimeElements) {
     return false
@@ -530,7 +574,9 @@ function redrawRoundForViewport(level: number): boolean {
   return true
 }
 
-// restartGame clears persisted progress and restarts from the configured opening level.
+/**
+ * restartGame clears persisted progress and restarts from the configured opening level.
+ */
 function restartGame(): boolean {
   cancelScheduledRoundPersist()
   clearPersistedSnapshot(state.controlMode)
@@ -545,13 +591,15 @@ function restartGame(): boolean {
   return startRound(state.restartLevel, false)
 }
 
-// setRestartLevel moves the floor every round opens at or above, returning whether it changed.
-//
-// It does not stop the round, and does not need to: every overlay that can reach this pauses a
-// running game when it opens (pauseIfRunning in control/agent.ts), so by the time a level is
-// applied the round is already stopped. Pausing again here would be a second owner of the same
-// rule, and pausing on apply would leave the score decaying for as long as the dialog stayed open -
-// which is the case the overlay-level pause exists to cover.
+/**
+ * setRestartLevel moves the floor every round opens at or above, returning whether it changed.
+ *
+ * It does not stop the round, and does not need to: every overlay that can reach this pauses a
+ * running game when it opens (pauseIfRunning in control/agent.ts), so by the time a level is
+ * applied the round is already stopped. Pausing again here would be a second owner of the same
+ * rule, and pausing on apply would leave the score decaying for as long as the dialog stayed open -
+ * which is the case the overlay-level pause exists to cover.
+ */
 function setRestartLevel(level: number): boolean {
   if (!Number.isInteger(level) || level < 1 || level === state.restartLevel) {
     return false
@@ -564,7 +612,9 @@ function setRestartLevel(level: number): boolean {
   return true
 }
 
-// resumeOrProceed resumes a pause or advances from a finished round.
+/**
+ * resumeOrProceed resumes a pause or advances from a finished round.
+ */
 function resumeOrProceed(): boolean {
   if (isAwaitAgentStatus(state.status) && isAgentApiMode(state.controlMode)) {
     state.clock?.resume()
@@ -591,7 +641,9 @@ function resumeOrProceed(): boolean {
   return false
 }
 
-// awaitAgent pauses agent-api play before any HTTP agent has been explicitly enabled.
+/**
+ * awaitAgent pauses agent-api play before any HTTP agent has been explicitly enabled.
+ */
 function awaitAgent(): boolean {
   if (!isAgentApiMode(state.controlMode) || !isRunningStatus(state.status)) {
     return false
@@ -603,7 +655,9 @@ function awaitAgent(): boolean {
   return true
 }
 
-// pauseGame freezes the current round while preserving it for resume.
+/**
+ * pauseGame freezes the current round while preserving it for resume.
+ */
 function pauseGame(): boolean {
   if (!canTrackDestinationVisibility(state)) {
     return false
@@ -615,7 +669,9 @@ function pauseGame(): boolean {
   return true
 }
 
-// cycleWallWeight swaps the live maze walls to the next supported weight.
+/**
+ * cycleWallWeight swaps the live maze walls to the next supported weight.
+ */
 function cycleWallWeight(): boolean {
   const nextWeight = nextWallWeight(state.wallWeight)
 
@@ -628,7 +684,9 @@ function cycleWallWeight(): boolean {
   return true
 }
 
-// movePlayer applies a resolved move step and keeps the game-side mutation boundary defensive.
+/**
+ * movePlayer applies a resolved move step and keeps the game-side mutation boundary defensive.
+ */
 function movePlayer(moveEvaluation: ResolvedPlayerMove, playerName: string): void {
   if (!moveEvaluation.canMove) {
     return
@@ -649,7 +707,9 @@ function movePlayer(moveEvaluation: ResolvedPlayerMove, playerName: string): voi
   )
 }
 
-// dispatchControl gives the shared control layer the game-owned effects needed to run actions.
+/**
+ * dispatchControl gives the shared control layer the game-owned effects needed to run actions.
+ */
 function dispatchControl(
   action: MazeAction,
   options: MazeActionDispatchOptions,
@@ -681,11 +741,13 @@ function dispatchControl(
   return result
 }
 
-// handleResize revalidates the active or persisted round against the viewport. Also treated as
-// too-small: pinch-zoom past viewport.pinchZoomTooCloseScale. Pinch-zoom never changes
-// getBoundingClientRect()/layout viewport size (viewportFitStatus's only inputs), so it's invisible
-// to that check on its own - window.visualViewport.scale is what actually reports it, and its
-// resize event already drives this same handler.
+/**
+ * handleResize revalidates the active or persisted round against the viewport. Also treated as
+ * too-small: pinch-zoom past viewport.pinchZoomTooCloseScale. Pinch-zoom never changes
+ * getBoundingClientRect()/layout viewport size (viewportFitStatus's only inputs), so it's invisible
+ * to that check on its own - window.visualViewport.scale is what actually reports it, and its
+ * resize event already drives this same handler.
+ */
 function handleResize(): void {
   if (!runtimeElements) {
     return
@@ -738,7 +800,9 @@ function handleResize(): void {
   renderState()
 }
 
-// bootstrapGame wires the runtime, restores persistence, and starts the first render.
+/**
+ * bootstrapGame wires the runtime, restores persistence, and starts the first render.
+ */
 export function bootstrapGame(
   // controlMode is the page-selected MazeActionControl that supplies the active input behavior.
   controlMode: MazeActionControl,
@@ -782,7 +846,9 @@ export function bootstrapGame(
   }
   renderState()
 
-  // readState exposes the live game state so context tools can derive fresh facts on demand.
+  /**
+   * readState exposes the live game state so context tools can derive fresh facts on demand.
+   */
   const readState = (): State => state
 
   const commitTurnDeps = {

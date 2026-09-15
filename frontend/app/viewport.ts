@@ -5,7 +5,9 @@ const { viewport } = CONFIG
 export const compactChromeClass = "page-chrome--compact"
 export const wideChromeClass = "page-chrome--wide"
 
-// compactViewportMediaQueries returns the shared breakpoint queries used by page chrome and render.
+/**
+ * compactViewportMediaQueries returns the shared breakpoint queries used by page chrome and render.
+ */
 export function compactViewportMediaQueries(): string[] {
   return [
     `(max-width: ${viewport.compactWidth}px)`,
@@ -13,7 +15,9 @@ export function compactViewportMediaQueries(): string[] {
   ]
 }
 
-// viewportSizeCandidates collects browser-level measurements for compact decisions.
+/**
+ * viewportSizeCandidates collects browser-level measurements for compact decisions.
+ */
 export function viewportSizeCandidates(): {
   heightCandidates: number[]
   widthCandidates: number[]
@@ -39,14 +43,18 @@ export function viewportSizeCandidates(): {
   }
 }
 
-// viewportWidth reports the narrowest live browser width used for layout-capacity decisions.
+/**
+ * viewportWidth reports the narrowest live browser width used for layout-capacity decisions.
+ */
 export function viewportWidth(): number {
   const { widthCandidates } = viewportSizeCandidates()
 
   return widthCandidates.length > 0 ? Math.min(...widthCandidates) : Number.POSITIVE_INFINITY
 }
 
-// fittingColumnCount reports how many fixed-width items can fit without changing their size.
+/**
+ * fittingColumnCount reports how many fixed-width items can fit without changing their size.
+ */
 export function fittingColumnCount({
   availableItemCount,
   gap,
@@ -65,7 +73,9 @@ export function fittingColumnCount({
   return Math.max(1, Math.min(availableItemCount, fittingColumns))
 }
 
-// cssPixelValue reads a CSS pixel custom property for UI layout helpers.
+/**
+ * cssPixelValue reads a CSS pixel custom property for UI layout helpers.
+ */
 export function cssPixelValue(
   element: HTMLElement,
   propertyName: string,
@@ -80,7 +90,9 @@ export function cssPixelValue(
   return Number.isFinite(value) ? value : 0
 }
 
-// fittingTouchActionColumnCount reports how many visible touch action buttons fit on one row.
+/**
+ * fittingTouchActionColumnCount reports how many visible touch action buttons fit on one row.
+ */
 export function fittingTouchActionColumnCount(
   touchControls: HTMLElement,
   visibleButtons: number,
@@ -93,7 +105,9 @@ export function fittingTouchActionColumnCount(
   })
 }
 
-// isCompactViewport is the single compact-mode decision shared across the browser UI.
+/**
+ * isCompactViewport is the single compact-mode decision shared across the browser UI.
+ */
 export function isCompactViewport(): boolean {
   const compactMedia = compactViewportMediaQueries().some(
     (query) => window.matchMedia(query).matches,
@@ -142,7 +156,9 @@ export function isCompactViewport(): boolean {
   return compactMedia || compactWidth || compactHeight || compactChromePressure
 }
 
-// observeCompactViewportChanges wires all shared compact breakpoint transitions to one callback.
+/**
+ * observeCompactViewportChanges wires all shared compact breakpoint transitions to one callback.
+ */
 export function observeCompactViewportChanges(onChange: () => void): () => void {
   const queryLists = compactViewportMediaQueries().map((query) => window.matchMedia(query))
 

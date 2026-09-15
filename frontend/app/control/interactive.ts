@@ -18,7 +18,9 @@ import { CONFIG } from "../config"
 
 const { runtime } = CONFIG
 
-// KEY_TO_MOVE_ACTION maps browser arrow-key events into semantic movement commands.
+/**
+ * KEY_TO_MOVE_ACTION maps browser arrow-key events into semantic movement commands.
+ */
 const KEY_TO_MOVE_ACTION: Partial<Record<string, MoveAction>> = {
   ArrowLeft: "MoveLeft",
   ArrowRight: "MoveRight",
@@ -26,7 +28,9 @@ const KEY_TO_MOVE_ACTION: Partial<Record<string, MoveAction>> = {
   ArrowDown: "MoveDown",
 }
 
-// createInteractiveMode builds the interactive MazeActionControl used by the main game page.
+/**
+ * createInteractiveMode builds the interactive MazeActionControl used by the main game page.
+ */
 export function createInteractiveMode(
   elements: Elements,
 ): MazeActionControl {
@@ -38,12 +42,16 @@ export function createInteractiveMode(
     __onClick: () => void
   }> = []
 
-  // focusApp keeps keyboard input anchored to the terminal root after button taps.
+  /**
+   * focusApp keeps keyboard input anchored to the terminal root after button taps.
+   */
   const focusApp = (): void => {
     elements.app.focus()
   }
 
-  // releaseBindings removes any listeners registered by the last active dispatch binding.
+  /**
+   * releaseBindings removes any listeners registered by the last active dispatch binding.
+   */
   const releaseBindings = (): void => {
     releaseAllActionBindings({
       __attached: attached,
@@ -61,7 +69,9 @@ export function createInteractiveMode(
     })
   }
 
-  // handleButtonClick resolves one button press into a semantic runtime command.
+  /**
+   * handleButtonClick resolves one button press into a semantic runtime command.
+   */
   const handleButtonClick = (
     button: HTMLButtonElement,
     dispatch: MazeActionDispatch,
@@ -93,11 +103,13 @@ export function createInteractiveMode(
     dispatch(action, { playerName: runtime.interactivePlayerName })
   }
 
-  // handleKeydown routes keyboard gestures through the same command vocabulary. The agent-config
-  // form and delete dialog live inside elements.app's DOM subtree even in interactive mode, so
-  // focus alone would treat typing in them (e.g. a space in a player name) as a
-  // game shortcut - Space/Escape would pause the round mid-edit. isFormControlTarget excludes
-  // those editable targets first, mirroring the same guard in agent.ts's keydown handler.
+  /**
+   * handleKeydown routes keyboard gestures through the same command vocabulary. The agent-config
+   * form and delete dialog live inside elements.app's DOM subtree even in interactive mode, so
+   * focus alone would treat typing in them (e.g. a space in a player name) as a
+   * game shortcut - Space/Escape would pause the round mid-edit. isFormControlTarget excludes
+   * those editable targets first, mirroring the same guard in agent.ts's keydown handler.
+   */
   const handleKeydown = (
     event: KeyboardEvent,
     dispatch: MazeActionDispatch,
@@ -136,7 +148,9 @@ export function createInteractiveMode(
     dispatch(action, { playerName: runtime.interactivePlayerName })
   }
 
-  // bindControlButtons attaches one shared button-handler path to top-menu and touch controls.
+  /**
+   * bindControlButtons attaches one shared button-handler path to top-menu and touch controls.
+   */
   const bindControlButtons = (
     buttons: HTMLButtonElement[],
     dispatch: MazeActionDispatch,
@@ -153,10 +167,14 @@ export function createInteractiveMode(
   }
 
   return {
-    // This MazeActionControl exposes the interactive mode name, binds browser inputs, and ignores stored feedback.
-    // name lets the runtime identify which MazeActionControl implementation is active.
+    /**
+     * This MazeActionControl exposes the interactive mode name, binds browser inputs, and ignores stored feedback.
+     * name lets the runtime identify which MazeActionControl implementation is active.
+     */
     name: runtime.controlModes.interactive,
-    // bindActionDispatch connects browser keyboard and button events to the shared action dispatcher.
+    /**
+     * bindActionDispatch connects browser keyboard and button events to the shared action dispatcher.
+     */
     bindActionDispatch(dispatch, readState, commitTurn) {
       boundReadState = readState
       // Start from a clean slate so rebinding never depends on whatever was attached before.
@@ -173,18 +191,26 @@ export function createInteractiveMode(
       elements.app.addEventListener("click", focusApp)
       attached = true
     },
-    // readLastActionResult stays empty here because interactive users already get visual feedback.
+    /**
+     * readLastActionResult stays empty here because interactive users already get visual feedback.
+     */
     readLastActionResult() {
       return null
     },
-    // recordActionResult is a no-op because the interactive mode does not retain replay results.
+    /**
+     * recordActionResult is a no-op because the interactive mode does not retain replay results.
+     */
     recordActionResult(actionResult: MazeActionResult) {
       // Interactive controls already provide immediate visual feedback in the game view.
       void actionResult
     },
-    // clearActionResult is a no-op because interactive mode never stores replay results.
+    /**
+     * clearActionResult is a no-op because interactive mode never stores replay results.
+     */
     clearActionResult() {},
-    // readCurrentPlayer returns a static interactive player name.
+    /**
+     * readCurrentPlayer returns a static interactive player name.
+     */
     readCurrentPlayer(): string | null {
       const state = boundReadState?.()
       if (!state?.clock) {

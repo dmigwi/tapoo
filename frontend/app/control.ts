@@ -19,16 +19,20 @@ import type {
   State,
 } from "./types"
 
-// normalizeSubmittedMoves returns the replayed commands as submitted. The entries used to carry an
-// "<index>:" prefix, which duplicated information the array position already holds and gave the
-// report a second shape for a move - one a model mistook for what had actually been sent, deciding
-// a turn had failed because the prefix was part of the submission. Nothing indexes by the string
-// any more: lastReplayStartIndex and lastAppliedMoveIndex point into this array directly.
+/**
+ * normalizeSubmittedMoves returns the replayed commands as submitted. The entries used to carry an
+ * "<index>:" prefix, which duplicated information the array position already holds and gave the
+ * report a second shape for a move - one a model mistook for what had actually been sent, deciding
+ * a turn had failed because the prefix was part of the submission. Nothing indexes by the string
+ * any more: lastReplayStartIndex and lastAppliedMoveIndex point into this array directly.
+ */
 function normalizeSubmittedMoves(moves: MoveAction[]): string[] {
   return [...moves]
 }
 
-// buildMazeActionResult stores only the replay details that are not already available on State.
+/**
+ * buildMazeActionResult stores only the replay details that are not already available on State.
+ */
 export function buildMazeActionResult(
   playerName: string,
   overrides: Partial<MazeActionResult> = {},
@@ -39,7 +43,9 @@ export function buildMazeActionResult(
   }
 }
 
-// mergeMazeActionResult reapplies replay details while preserving cloned submitted move arrays.
+/**
+ * mergeMazeActionResult reapplies replay details while preserving cloned submitted move arrays.
+ */
 export function mergeMazeActionResult(
   actionResult: MazeActionResult | null,
   overrides: Partial<MazeActionResult> = {},
@@ -67,7 +73,9 @@ type MazeActionHandlers = {
   recordActionResult: (actionResult: MazeActionResult) => void
 }
 
-// buildReplayState records the result of one replay step without duplicating live State fields.
+/**
+ * buildReplayState records the result of one replay step without duplicating live State fields.
+ */
 function buildReplayState(
   playerName: string,
   command: MoveAction,
@@ -88,7 +96,9 @@ function buildReplayState(
   })
 }
 
-// executeActionWithFeedback classifies one requested command and returns feedback when supported.
+/**
+ * executeActionWithFeedback classifies one requested command and returns feedback when supported.
+ */
 export function executeActionWithFeedback(
   action: MazeAction,
   playerName: string,
@@ -115,7 +125,9 @@ export function executeActionWithFeedback(
   return actionResult
 }
 
-// executeMazeAction maps one semantic action to the runtime effect owned by game.ts.
+/**
+ * executeMazeAction maps one semantic action to the runtime effect owned by game.ts.
+ */
 export function executeMazeAction(
   action: MazeAction,
   playerName: string,
@@ -149,7 +161,9 @@ export function executeMazeAction(
   }
 }
 
-// dispatchMazeAction keeps feedback decisions in the shared control layer.
+/**
+ * dispatchMazeAction keeps feedback decisions in the shared control layer.
+ */
 export function dispatchMazeAction(
   action: MazeAction,
   options: MazeActionDispatchOptions,

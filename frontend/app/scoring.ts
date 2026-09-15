@@ -35,18 +35,24 @@ type WinScoreResult = {
   winSummary: string
 }
 
-// calculateMaxScore returns the full score budget for one maze before any decay applies.
+/**
+ * calculateMaxScore returns the full score budget for one maze before any decay applies.
+ */
 export function calculateMaxScore(totalCells: number): number {
   return totalCells * scoring.budgetMultiplier
 }
 
-// calculateElapsedDecayUnits converts elapsed wall-clock time into the decay units charged so far
-// for an interactive round - the same raw figure calculateElapsedScore subtracts from the max score.
+/**
+ * calculateElapsedDecayUnits converts elapsed wall-clock time into the decay units charged so far
+ * for an interactive round - the same raw figure calculateElapsedScore subtracts from the max score.
+ */
 export function calculateElapsedDecayUnits(elapsedMs: number, decayIntervalPerCellMs: number): number {
   return Math.floor((elapsedMs * timing.scoreDecayRate) / decayIntervalPerCellMs)
 }
 
-// calculateElapsedScore converts elapsed time into the remaining score for an interactive round.
+/**
+ * calculateElapsedScore converts elapsed time into the remaining score for an interactive round.
+ */
 export function calculateElapsedScore(
   totalCells: number,
   elapsedMs: number,
@@ -58,7 +64,9 @@ export function calculateElapsedScore(
   return Math.max(0, maxScore - elapsedDecayUnits)
 }
 
-// calculateScoreAfterDecay converts explicit score-decay units into the remaining agent-api score.
+/**
+ * calculateScoreAfterDecay converts explicit score-decay units into the remaining agent-api score.
+ */
 export function calculateScoreAfterDecay(
   totalCells: number,
   scoreDecayUnits: number,
@@ -67,7 +75,9 @@ export function calculateScoreAfterDecay(
   return Math.max(0, maxScore - scoreDecayUnits * timing.scoreDecayRate)
 }
 
-// calculateScoreRetentionUnits normalizes a score into fixed-point retention units.
+/**
+ * calculateScoreRetentionUnits normalizes a score into fixed-point retention units.
+ */
 export function calculateScoreRetentionUnits(
   totalCells: number,
   score: number,
@@ -85,10 +95,12 @@ export function calculateScoreRetentionUnits(
   return clampRetentionUnits(roundedRetentionUnits)
 }
 
-// formatTraversalSpeedLabel renders the speed a round actually achieved together with the
-// classification it earned, e.g. "3.1230x (Trailblazer)". Only an achieved speed carries a
-// classification or the "x" - a delta between two rounds is a difference, not a pace, so deltas stay
-// bare numbers: "0.5000x faster" would read as a multiplier, when 1.5000x to 2.0000x is 1.33 times.
+/**
+ * formatTraversalSpeedLabel renders the speed a round actually achieved together with the
+ * classification it earned, e.g. "3.1230x (Trailblazer)". Only an achieved speed carries a
+ * classification or the "x" - a delta between two rounds is a difference, not a pace, so deltas stay
+ * bare numbers: "0.5000x faster" would read as a multiplier, when 1.5000x to 2.0000x is 1.33 times.
+ */
 function formatTraversalSpeedLabel(traversalSpeedUnits: number): string {
   const speedClass = resolveTraversalSpeedClass(traversalSpeedUnits)
   const speedValue = traversalSpeedUnitsToDisplay(traversalSpeedUnits)
@@ -96,7 +108,9 @@ function formatTraversalSpeedLabel(traversalSpeedUnits: number): string {
   return `${speedValue} (${capitalize(speedClass)})`
 }
 
-// retentionUnitsToDisplayPercent converts fixed-point retention units into UI percentage text.
+/**
+ * retentionUnitsToDisplayPercent converts fixed-point retention units into UI percentage text.
+ */
 export function retentionUnitsToDisplayPercent(retentionUnits: number): number {
   const displayedPercent = Math.round(
     (retentionUnits * scoring.percentScale) /
@@ -106,7 +120,9 @@ export function retentionUnitsToDisplayPercent(retentionUnits: number): number {
   return Math.max(0, Math.min(scoring.percentScale, displayedPercent))
 }
 
-// retentionUnitDeltaToDurationMs projects retention differences onto one round's duration.
+/**
+ * retentionUnitDeltaToDurationMs projects retention differences onto one round's duration.
+ */
 export function retentionUnitDeltaToDurationMs(
   deltaRetentionUnits: number,
   levelDurationMs: number,
@@ -117,7 +133,9 @@ export function retentionUnitDeltaToDurationMs(
   )
 }
 
-// buildWinSummary assembles the final score-retention summary shown after an interactive win.
+/**
+ * buildWinSummary assembles the final score-retention summary shown after an interactive win.
+ */
 export function buildWinSummary(
   currentRetentionUnits: number,
   lastAttemptRetentionUnits: number | null,
@@ -130,7 +148,9 @@ export function buildWinSummary(
   return replaceWinSummaryDelta(template, previous.delta, best.delta)
 }
 
-// buildAgentWinSummary assembles the traversal-speed summary shown after an agent-api win.
+/**
+ * buildAgentWinSummary assembles the traversal-speed summary shown after an agent-api win.
+ */
 export function buildAgentWinSummary(
   currentSpeedUnits: number,
   lastWinTraversalSpeedUnits: number | null,
@@ -146,7 +166,9 @@ export function buildAgentWinSummary(
   return `${formatTraversalSpeedLabel(currentSpeedUnits)} - ${comparison}`
 }
 
-// resolveWinScore converts one completed round into the summary and stored win metrics.
+/**
+ * resolveWinScore converts one completed round into the summary and stored win metrics.
+ */
 export function resolveWinScore(input: WinScoreInput): WinScoreResult {
   // Retention is normalized first so different maze sizes can be compared consistently.
   const currentRetentionUnits = calculateScoreRetentionUnits(input.totalCells, input.score)
@@ -187,12 +209,16 @@ export function resolveWinScore(input: WinScoreInput): WinScoreResult {
   }
 }
 
-// clampRetentionUnits keeps restored or calculated retention inside the supported fixed-point range.
+/**
+ * clampRetentionUnits keeps restored or calculated retention inside the supported fixed-point range.
+ */
 function clampRetentionUnits(retentionUnits: number): number {
   return Math.max( 0,  Math.min(scoring.retentionFullScaleUnits, retentionUnits))
 }
 
-// selectBestRetentionUnits preserves the highest normalized score retention seen so far.
+/**
+ * selectBestRetentionUnits preserves the highest normalized score retention seen so far.
+ */
 function selectBestRetentionUnits(
   currentRetentionUnits: number,
   bestWinRetentionUnits: number | null,
@@ -204,8 +230,10 @@ function selectBestRetentionUnits(
   return bestWinRetentionUnits
 }
 
-// selectBestAgentSpeedUnits preserves the highest solved traversal speed seen so far. Note the
-// direction: the request count this replaced was better when lower, speed is better when higher.
+/**
+ * selectBestAgentSpeedUnits preserves the highest solved traversal speed seen so far. Note the
+ * direction: the request count this replaced was better when lower, speed is better when higher.
+ */
 function selectBestAgentSpeedUnits(
   currentSpeedUnits: number,
   bestWinTraversalSpeedUnits: number | null,
@@ -217,7 +245,9 @@ function selectBestAgentSpeedUnits(
   return bestWinTraversalSpeedUnits
 }
 
-// formatWinSummaryDuration renders elapsed deltas with compact time units.
+/**
+ * formatWinSummaryDuration renders elapsed deltas with compact time units.
+ */
 function formatWinSummaryDuration(durationMs: number): string {
   if (durationMs < 60_000) {
     return `${(durationMs / 1000).toFixed(2)}s`
@@ -230,7 +260,9 @@ function formatWinSummaryDuration(durationMs: number): string {
   return `${(durationMs / 3_600_000).toFixed(2)}h`
 }
 
-// formatWinSummaryRetentionUnitDelta projects retention differences back into time.
+/**
+ * formatWinSummaryRetentionUnitDelta projects retention differences back into time.
+ */
 function formatWinSummaryRetentionUnitDelta(
   deltaRetentionUnits: number,
   levelDurationMs: number,
@@ -239,7 +271,9 @@ function formatWinSummaryRetentionUnitDelta(
   return formatWinSummaryDuration(deltaMs)
 }
 
-// compareWinSummaryPrevious compares the current win against the last attempt.
+/**
+ * compareWinSummaryPrevious compares the current win against the last attempt.
+ */
 function compareWinSummaryPrevious(
   currentRetentionUnits: number,
   lastAttemptRetentionUnits: number | null,
@@ -272,7 +306,9 @@ function compareWinSummaryPrevious(
   return { comparison: "matched", delta: "" }
 }
 
-// compareWinSummaryBest compares the current win against the best retained score.
+/**
+ * compareWinSummaryBest compares the current win against the best retained score.
+ */
 function compareWinSummaryBest(
   currentRetentionUnits: number,
   bestWinRetentionUnits: number | null,
@@ -298,7 +334,9 @@ function compareWinSummaryBest(
   return { comparison: "matched-best", delta: "" }
 }
 
-// replaceWinSummaryDelta fills the selected summary template with its deltas.
+/**
+ * replaceWinSummaryDelta fills the selected summary template with its deltas.
+ */
 function replaceWinSummaryDelta(
   template: string,
   delta: string,
@@ -307,7 +345,9 @@ function replaceWinSummaryDelta(
   return template.replace("{delta}", delta).replace("{bestDelta}", bestDelta)
 }
 
-// selectWinSummaryTemplate picks the right summary copy for the comparison result.
+/**
+ * selectWinSummaryTemplate picks the right summary copy for the comparison result.
+ */
 function selectWinSummaryTemplate(
   previousComparison: WinSummaryPreviousComparison,
   bestComparison: WinSummaryBestComparison,
@@ -335,7 +375,9 @@ function selectWinSummaryTemplate(
   return selectBestComparisonTemplate(templates, bestComparison)
 }
 
-// compareAgentSpeedPrevious compares the current solved round against the previous solved speed.
+/**
+ * compareAgentSpeedPrevious compares the current solved round against the previous solved speed.
+ */
 function compareAgentSpeedPrevious(
   currentSpeedUnits: number,
   lastWinTraversalSpeedUnits: number | null,
@@ -361,7 +403,9 @@ function compareAgentSpeedPrevious(
   return { comparison: "matched", delta: "" }
 }
 
-// compareAgentSpeedBest compares the current solved round against the best solved speed.
+/**
+ * compareAgentSpeedBest compares the current solved round against the best solved speed.
+ */
 function compareAgentSpeedBest(
   currentSpeedUnits: number,
   bestWinTraversalSpeedUnits: number | null,
@@ -380,7 +424,9 @@ function compareAgentSpeedBest(
   return { comparison: "matched-best", delta: "" }
 }
 
-// selectAgentWinSummaryTemplate chooses the request-count summary shown after an agent-api win.
+/**
+ * selectAgentWinSummaryTemplate chooses the traversal-speed summary shown after an agent-api win.
+ */
 function selectAgentWinSummaryTemplate(
   previousComparison: AgentSpeedPreviousComparison,
   bestComparison: AgentSpeedBestComparison,
@@ -407,7 +453,9 @@ function selectAgentWinSummaryTemplate(
   return selectBestComparisonTemplate(templates, bestComparison)
 }
 
-// selectBestComparisonTemplate resolves the shared new/matched/behind-best template group.
+/**
+ * selectBestComparisonTemplate resolves the shared new/matched/behind-best template group.
+ */
 function selectBestComparisonTemplate(
   templates: SummaryComparisonTemplates,
   bestComparison: WinSummaryBestComparison | AgentSpeedBestComparison,

@@ -43,7 +43,9 @@ type PersistableProgressState = PersistedGameSetup & PersistedWinMetrics
 
 // Shared storage helpers.
 
-// storageKey namespaces browser persistence by mode and schema version so stale payloads are ignored.
+/**
+ * storageKey namespaces browser persistence by mode and schema version so stale payloads are ignored.
+ */
 export function storageKey(
   modeName: MazeControlModeName,
   suffix: string,
@@ -51,32 +53,40 @@ export function storageKey(
   return `tapoo.v${storageConfig.version}.${modeName}.${suffix}`
 }
 
-// tabStorageKey is storageKey without the mode segment, for the few values a browser tab owns as a
-// whole rather than per control mode. The log session id is the only one: a tab is one session even
-// if the player navigates between the interactive and agent-api pages within it, and the mode is
-// recorded on each entry instead, so entries stay partitioned by (session, mode) without the session
-// itself splitting in two.
+/**
+ * tabStorageKey is storageKey without the mode segment, for the few values a browser tab owns as a
+ * whole rather than per control mode. The log session id is the only one: a tab is one session even
+ * if the player navigates between the interactive and agent-api pages within it, and the mode is
+ * recorded on each entry instead, so entries stay partitioned by (session, mode) without the session
+ * itself splitting in two.
+ */
 export function tabStorageKey(suffix: string): string {
   return `tapoo.v${storageConfig.version}.${suffix}`
 }
 
-// StaleStorageSummary describes what an older schema version left behind, in the only terms that
-// can be established without reading it: how many keys exist and which versions wrote them.
+/**
+ * StaleStorageSummary describes what an older schema version left behind, in the only terms that
+ * can be established without reading it: how many keys exist and which versions wrote them.
+ */
 export type StaleStorageSummary = {
   versions: string[]
   itemCount: number
 }
 
-// STALE_STORAGE_KEY_VERSION captures the version segment of a Tapoo key. The version is itself
-// dotted (4.82), so the segment is matched as digits-and-dots up to the mode name rather than by
-// splitting on "." - which would read "tapoo.v4.82.agent-api.agentConfigs" as version "4".
+/**
+ * STALE_STORAGE_KEY_VERSION captures the version segment of a Tapoo key. The version is itself
+ * dotted (4.82), so the segment is matched as digits-and-dots up to the mode name rather than by
+ * splitting on "." - which would read "tapoo.v4.82.agent-api.agentConfigs" as version "4".
+ */
 const STALE_STORAGE_KEY_VERSION = /^tapoo\.v(\d+(?:\.\d+)*)\./
 
-// staleStorageKeys lists the keys a previous schema version wrote, without touching their values.
-// Everything downstream - the count, the version list, the deletion - is derived from key names
-// alone: a payload written under an older schema must never be decoded by this build, because
-// interpreting it against current validators is the migration hazard the versioning exists to
-// avoid.
+/**
+ * staleStorageKeys lists the keys a previous schema version wrote, without touching their values.
+ * Everything downstream - the count, the version list, the deletion - is derived from key names
+ * alone: a payload written under an older schema must never be decoded by this build, because
+ * interpreting it against current validators is the migration hazard the versioning exists to
+ * avoid.
+ */
 function staleStorageKeys(storage: Storage): string[] {
   const currentPrefix = `tapoo.v${storageConfig.version}.`
   const staleKeys: string[] = []
@@ -91,9 +101,11 @@ function staleStorageKeys(storage: Storage): string[] {
   return staleKeys
 }
 
-// readStaleStorageKeys tolerates a storage object that throws on access at all, which is what a
-// browser in private mode or with site data blocked does - there, "no stale data" is the only
-// answer available, and the same best-effort posture the rest of this file takes.
+/**
+ * readStaleStorageKeys tolerates a storage object that throws on access at all, which is what a
+ * browser in private mode or with site data blocked does - there, "no stale data" is the only
+ * answer available, and the same best-effort posture the rest of this file takes.
+ */
 function readStaleStorageKeys(readStorage: () => Storage): string[] {
   try {
     return staleStorageKeys(readStorage())
@@ -102,8 +114,10 @@ function readStaleStorageKeys(readStorage: () => Storage): string[] {
   }
 }
 
-// staleStorageSummary reports what clearStaleStorageVersions would remove, so the user can be told
-// what they are agreeing to before it happens rather than after.
+/**
+ * staleStorageSummary reports what clearStaleStorageVersions would remove, so the user can be told
+ * what they are agreeing to before it happens rather than after.
+ */
 export function staleStorageSummary(): StaleStorageSummary {
   const staleKeys = [
     ...readStaleStorageKeys(() => window.localStorage),
@@ -124,16 +138,20 @@ export function staleStorageSummary(): StaleStorageSummary {
   }
 }
 
-// removeStaleStorageEntries clears old versioned Tapoo keys without touching current-version data.
+/**
+ * removeStaleStorageEntries clears old versioned Tapoo keys without touching current-version data.
+ */
 function removeStaleStorageEntries(storage: Storage): void {
   for (const key of staleStorageKeys(storage)) {
     storage.removeItem(key)
   }
 }
 
-// clearStaleStorageVersions discards obsolete browser storage versions. It is deliberately NOT
-// called during startup: deletion happens only after the user acknowledges it (see tapoo.ts), so
-// an upgrade can never silently destroy stored agent credentials or progress.
+/**
+ * clearStaleStorageVersions discards obsolete browser storage versions. It is deliberately NOT
+ * called during startup: deletion happens only after the user acknowledges it (see tapoo.ts), so
+ * an upgrade can never silently destroy stored agent credentials or progress.
+ */
 export function clearStaleStorageVersions(): void {
   try {
     removeStaleStorageEntries(window.localStorage)
@@ -148,7 +166,9 @@ export function clearStaleStorageVersions(): void {
   }
 }
 
-// toBase64 converts raw bytes into a storage-safe browser string.
+/**
+ * toBase64 converts raw bytes into a storage-safe browser string.
+ */
 function toBase64(payloadBytes: Uint8Array): string {
   let binaryPayload = ""
 
@@ -159,7 +179,9 @@ function toBase64(payloadBytes: Uint8Array): string {
   return window.btoa(binaryPayload)
 }
 
-// fromBase64 decodes stored browser payloads back into raw bytes.
+/**
+ * fromBase64 decodes stored browser payloads back into raw bytes.
+ */
 function fromBase64(encodedPayload: string): Uint8Array | null {
   try {
     const binaryPayload = window.atob(encodedPayload)
@@ -171,7 +193,9 @@ function fromBase64(encodedPayload: string): Uint8Array | null {
   }
 }
 
-// xorStoredPayload applies the lightweight reversible obfuscation used for browser storage.
+/**
+ * xorStoredPayload applies the lightweight reversible obfuscation used for browser storage.
+ */
 function xorStoredPayload(payloadBytes: Uint8Array): Uint8Array {
   const passphraseBytes = new TextEncoder().encode(STORE_BLEND_KEY)
   const encodedBytes = new Uint8Array(payloadBytes.length)
@@ -184,14 +208,18 @@ function xorStoredPayload(payloadBytes: Uint8Array): Uint8Array {
   return encodedBytes
 }
 
-// encodeStoredPayload serializes and obfuscates values before persistence.
+/**
+ * encodeStoredPayload serializes and obfuscates values before persistence.
+ */
 export function encodeStoredPayload(value: unknown): string {
   const jsonPayload = JSON.stringify(value)
   const payloadBytes = new TextEncoder().encode(jsonPayload)
   return `${STORE_ENCODING_PREFIX}${toBase64(xorStoredPayload(payloadBytes))}`
 }
 
-// decodeStoredPayload reverses the browser storage encoding back into JSON.
+/**
+ * decodeStoredPayload reverses the browser storage encoding back into JSON.
+ */
 export function decodeStoredPayload<T>(encodedPayload: string): T | null {
   const payloadBytes = encodedPayload.startsWith(STORE_ENCODING_PREFIX)
     ? (() => {
@@ -219,7 +247,9 @@ export function decodeStoredPayload<T>(encodedPayload: string): T | null {
 
 // Agent API localStorage configuration persistence.
 
-// normalizeAgentApiConfig validates persisted data and restores endpoint as a URL object.
+/**
+ * normalizeAgentApiConfig validates persisted data and restores endpoint as a URL object.
+ */
 function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   if (
     typeof value !== "object" ||
@@ -233,7 +263,7 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
 
   // api is deliberately not part of the required-key gate above: a record persisted before this
   // field existed must still load, not be dropped. An absent or unrecognized value coerces to
-  // "ollama" (validAgentApiProvider), the same self-healing shape validWallWeightPreference uses -
+  // "ollama" (isAgentApiProvider), the same self-healing shape validWallWeightPreference uses -
   // the very next savePersistedAgentApiConfigs call then backfills it into storage for free.
   const apiValue = "api" in value ? value.api : undefined
   const api = isAgentApiProvider(apiValue) ? apiValue : "ollama"
@@ -313,7 +343,9 @@ function normalizeAgentApiConfig(value: unknown): AgentApiConfig | null {
   return null
 }
 
-// normalizeAgentApiConfigs keeps valid fixed-seat occupants without reassigning seat ids.
+/**
+ * normalizeAgentApiConfigs keeps valid fixed-seat occupants without reassigning seat ids.
+ */
 function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
   if (!Array.isArray(configs)) {
     return []
@@ -347,7 +379,9 @@ function normalizeAgentApiConfigs(configs: unknown): AgentApiConfig[] {
   return normalizedConfigs.sort((left, right) => left.seatId - right.seatId)
 }
 
-// loadPersistedAgentApiConfigs restores the configurable HTTP agents for agent-api mode.
+/**
+ * loadPersistedAgentApiConfigs restores the configurable HTTP agents for agent-api mode.
+ */
 export function loadPersistedAgentApiConfigs(): AgentApiConfig[] {
   try {
     const storedConfigs = window.localStorage.getItem(
@@ -374,7 +408,9 @@ export function loadPersistedAgentApiConfigs(): AgentApiConfig[] {
   }
 }
 
-// savePersistedAgentApiConfigs stores configured HTTP agents separately from game progress.
+/**
+ * savePersistedAgentApiConfigs stores configured HTTP agents separately from game progress.
+ */
 export function savePersistedAgentApiConfigs(configs: AgentApiConfig[]): void {
   try {
     window.localStorage.setItem(
@@ -386,11 +422,15 @@ export function savePersistedAgentApiConfigs(configs: AgentApiConfig[]): void {
   }
 }
 
-// AgentSessionIdentity is the pair that names one concrete agent instance: which seat it sits in,
-// and which occupant of that seat it is. Every write into sessionStorage is keyed by both.
+/**
+ * AgentSessionIdentity is the pair that names one concrete agent instance: which seat it sits in,
+ * and which occupant of that seat it is. Every write into sessionStorage is keyed by both.
+ */
 type AgentSessionIdentity = Pick<AgentApiConfig, "seatId" | "sessionId">
 
-// disableAgentApiConfigForNetworkError marks one transport-failing agent ineligible for this session.
+/**
+ * disableAgentApiConfigForNetworkError marks one transport-failing agent ineligible for this session.
+ */
 export function disableAgentApiConfigForNetworkError(failedAgent: AgentSessionIdentity): void {
   savePersistedAgentSessionMetrics(
     upsertAgentSessionMetric(loadPersistedAgentSessionMetrics(), failedAgent, (stat) => ({
@@ -404,10 +444,12 @@ export function disableAgentApiConfigForNetworkError(failedAgent: AgentSessionId
 
 // Agent API sessionStorage metric persistence.
 
-// upsertAgentSessionMetric applies edit to this seat's row, creating one if the seat has none.
-// Rows filed under the same seat id by a previous occupant are dropped rather than edited: they
-// describe an agent that no longer exists, and inheriting them is exactly the cross-tab leak
-// sessionId was added to close.
+/**
+ * upsertAgentSessionMetric applies edit to this seat's row, creating one if the seat has none.
+ * Rows filed under the same seat id by a previous occupant are dropped rather than edited: they
+ * describe an agent that no longer exists, and inheriting them is exactly the cross-tab leak
+ * sessionId was added to close.
+ */
 function upsertAgentSessionMetric(
   stats: AgentApiSessionMetrics[],
   agent: AgentSessionIdentity,
@@ -509,13 +551,15 @@ function loadPersistedAgentSessionMetrics(): AgentApiSessionMetrics[] {
   }
 }
 
-// Returns false when the write did not land. Most storage here is best-effort, but this payload is
-// not: levelTurnCount is one half of the (level, cumulativeRoundCount, turnCount) fingerprint whose
-// other half lives in memory as State.turnCount. Swallowing a failure here froze the persisted half
-// while the in-memory half kept advancing, which the agent-api loop then read as a genuine
-// divergence and answered with a full restart - wiping the round, the preferences and the session's
-// log. sessionStorage is shared with the Tapoo log, which grows every turn, so the quota that
-// triggers this is reached by ordinary long play rather than by anything the player did.
+/**
+ * Returns false when the write did not land. Most storage here is best-effort, but this payload is
+ * not: levelTurnCount is one half of the (level, cumulativeRoundCount, turnCount) fingerprint whose
+ * other half lives in memory as State.turnCount. Swallowing a failure here froze the persisted half
+ * while the in-memory half kept advancing, which the agent-api loop then read as a genuine
+ * divergence and answered with a full restart - wiping the round, the preferences and the session's
+ * log. sessionStorage is shared with the Tapoo log, which grows every turn, so the quota that
+ * triggers this is reached by ordinary long play rather than by anything the player did.
+ */
 function savePersistedAgentSessionMetrics(stats: AgentApiSessionMetrics[]): boolean {
   try {
     window.sessionStorage.setItem(
@@ -558,9 +602,11 @@ function mergeAgentSessionMetrics(configs: AgentApiConfig[]): AgentApiSeatConfig
   return runtimeConfigs
 }
 
-// resetAgentSessionAvailability starts or replaces this tab's volatile state for one seat. It is
-// used when a user creates a fresh agent in a seat, so stale counters from an earlier occupant do
-// not leak into the new runtime view.
+/**
+ * resetAgentSessionAvailability starts or replaces this tab's volatile state for one seat. It is
+ * used when a user creates a fresh agent in a seat, so stale counters from an earlier occupant do
+ * not leak into the new runtime view.
+ */
 export function resetAgentSessionAvailability(
   agent: AgentSessionIdentity,
   enabled: boolean,
@@ -569,8 +615,10 @@ export function resetAgentSessionAvailability(
   savePersistedAgentSessionMetrics([...existingStats, { seatId: agent.seatId, sessionId: agent.sessionId, enabled }])
 }
 
-// updateAgentSessionAvailability edits only this tab's enabled/disabled state while preserving any
-// current-round counters that belong to the same seat.
+/**
+ * updateAgentSessionAvailability edits only this tab's enabled/disabled state while preserving any
+ * current-round counters that belong to the same seat.
+ */
 export function updateAgentSessionAvailability(
   agent: AgentSessionIdentity,
   enabled: boolean,
@@ -587,15 +635,19 @@ export function updateAgentSessionAvailability(
   )
 }
 
-// clearAgentSessionMetrics removes this tab's volatile state for a deleted seat, preventing a later
-// occupant of the same seat id from inheriting stale availability or round counters.
+/**
+ * clearAgentSessionMetrics removes this tab's volatile state for a deleted seat, preventing a later
+ * occupant of the same seat id from inheriting stale availability or round counters.
+ */
 export function clearAgentSessionMetrics(seatId: number): void {
   savePersistedAgentSessionMetrics(
     loadPersistedAgentSessionMetrics().filter((stat) => stat.seatId !== seatId),
   )
 }
 
-// loadAgentApiSeatConfigs overlays this tab's session metrics onto durable agent configs.
+/**
+ * loadAgentApiSeatConfigs overlays this tab's session metrics onto durable agent configs.
+ */
 export function loadAgentApiSeatConfigs(): AgentApiSeatConfig[] {
   return mergeAgentSessionMetrics(loadPersistedAgentApiConfigs())
 }
@@ -609,8 +661,10 @@ function isSameAgentRoundAttempt(
     agent.cumulativeRoundCount === cumulativeRoundCount
 }
 
-// agentForCurrentRound returns an agent view whose volatile counters belong to this tab/round.
-// It does not persist by itself; turn commits and fresh-round setup own those writes.
+/**
+ * agentForCurrentRound returns an agent view whose volatile counters belong to this tab/round.
+ * It does not persist by itself; turn commits and fresh-round setup own those writes.
+ */
 export function agentForCurrentRound(
   agent: AgentApiSeatConfig,
   level: number,
@@ -631,28 +685,30 @@ export function agentForCurrentRound(
   }
 }
 
-// recordAgentTurnStats persists one agent's post-turn counters. levelTurnCount is synchronized to
-// the round's completed turn count for every agent in the current attempt - a staleness signal only,
-// not a per-agent count - while turnCount and decayUnitsCharged are each accumulated only for the
-// agent that actually played, because neither State.turnCount nor state.scoreDecayUnits is split by
-// seat: the former counts every agent's turns together, the latter is shared spend with no
-// attribution to any individual agent.
-//
-// gameLevel and cumulativeRoundCount are required in the isSameAttempt check below - do not
-// simplify this to cumulativeRoundCount alone. Reasoning:
-//   - Level alone can't tell a retry of the same level apart from continuing it, hence
-//     cumulativeRoundCount.
-//   - cumulativeRoundCount alone looks sufficient (it's a strictly increasing, never-reused
-//     counter within one continuous session) but is NOT safe across a "Reset Progress":
-//     clearPersistedSnapshot never touches the separate agentConfigs storage namespace, so an
-//     agent's stored gameLevel/cumulativeRoundCount survive a reset untouched, while
-//     state.cumulativeRoundCount restarts from 0 on the next page load (no persisted round to
-//     restore it from). A later session can therefore legitimately reach the same
-//     cumulativeRoundCount value an old, unrelated agent record already holds. gameLevel is
-//     what catches that collision, since the new round's level will almost never match the
-//     stale record's level. Dropping gameLevel would let a post-reset session silently inherit
-//     stale decayUnitsCharged from a prior session, corrupting the traversal speed an agent
-//     is scored against.
+/**
+ * recordAgentTurnStats persists one agent's post-turn counters. levelTurnCount is synchronized to
+ * the round's completed turn count for every agent in the current attempt - a staleness signal only,
+ * not a per-agent count - while turnCount and decayUnitsCharged are each accumulated only for the
+ * agent that actually played, because neither State.turnCount nor state.scoreDecayUnits is split by
+ * seat: the former counts every agent's turns together, the latter is shared spend with no
+ * attribution to any individual agent.
+ *
+ * gameLevel and cumulativeRoundCount are required in the isSameAttempt check below - do not
+ * simplify this to cumulativeRoundCount alone. Reasoning:
+ *   - Level alone can't tell a retry of the same level apart from continuing it, hence
+ *     cumulativeRoundCount.
+ *   - cumulativeRoundCount alone looks sufficient (it's a strictly increasing, never-reused
+ *     counter within one continuous session) but is NOT safe across a "Reset Progress":
+ *     clearPersistedSnapshot never touches the separate agentConfigs storage namespace, so an
+ *     agent's stored gameLevel/cumulativeRoundCount survive a reset untouched, while
+ *     state.cumulativeRoundCount restarts from 0 on the next page load (no persisted round to
+ *     restore it from). A later session can therefore legitimately reach the same
+ *     cumulativeRoundCount value an old, unrelated agent record already holds. gameLevel is
+ *     what catches that collision, since the new round's level will almost never match the
+ *     stale record's level. Dropping gameLevel would let a post-reset session silently inherit
+ *     stale decayUnitsCharged from a prior session, corrupting the traversal speed an agent
+ *     is scored against.
+ */
 export function recordAgentTurnStats(
   turnAgent: AgentApiSeatConfig,
   level: number,
@@ -711,10 +767,12 @@ export function recordAgentTurnStats(
   return { agent: updatedAgent, persisted }
 }
 
-// resetAgentRoundStats rebinds every configured agent to a fresh round with zeroed per-round
-// counters. Agent configs live in a separate storage namespace from game progress, so without this
-// explicit reset a new level can briefly inherit stale turnCount/decayUnitsCharged until the first
-// commit of the round overwrites them.
+/**
+ * resetAgentRoundStats rebinds every configured agent to a fresh round with zeroed per-round
+ * counters. Agent configs live in a separate storage namespace from game progress, so without this
+ * explicit reset a new level can briefly inherit stale turnCount/decayUnitsCharged until the first
+ * commit of the round overwrites them.
+ */
 export function resetAgentRoundStats(
   level: number,
   cumulativeRoundCount: number,
@@ -734,14 +792,18 @@ export function resetAgentRoundStats(
 
 // Game progress preference persistence.
 
-// validLevelPreference keeps invalid or stale setup data from escaping storage.
+/**
+ * validLevelPreference keeps invalid or stale setup data from escaping storage.
+ */
 function validLevelPreference(value: unknown, defaultLevel: number): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1
     ? value
     : defaultLevel
 }
 
-// validWallWeightPreference keeps wall weights inside the currently supported set.
+/**
+ * validWallWeightPreference keeps wall weights inside the currently supported set.
+ */
 function validWallWeightPreference(
   value: unknown,
   defaultWeight: WallWeight,
@@ -750,11 +812,13 @@ function validWallWeightPreference(
   return typeof value === "number" && isWallWeight(value) ? value : defaultWeight
 }
 
-// validWinMetricPair restores a last/best win metric pair together or not at all. Every writer
-// sets both at once - resolveWinScore always returns both, a reset clears both - so a half-restored
-// pair is a state gameplay can never produce. Keeping restore atomic means "no previous record"
-// always implies "no best record" too, which is what lets the summary treat a first result as a
-// new record without needing to describe a last-attempt-missing-but-best-present case.
+/**
+ * validWinMetricPair restores a last/best win metric pair together or not at all. Every writer
+ * sets both at once - resolveWinScore always returns both, a reset clears both - so a half-restored
+ * pair is a state gameplay can never produce. Keeping restore atomic means "no previous record"
+ * always implies "no best record" too, which is what lets the summary treat a first result as a
+ * new record without needing to describe a last-attempt-missing-but-best-present case.
+ */
 function validWinMetricPair<LastKey extends string, BestKey extends string>(
   lastKey: LastKey,
   bestKey: BestKey,
@@ -772,7 +836,9 @@ function validWinMetricPair<LastKey extends string, BestKey extends string>(
   } as Record<LastKey | BestKey, number | null>
 }
 
-// validRetentionUnitsPreference restores fixed-point retention units within the configured scale.
+/**
+ * validRetentionUnitsPreference restores fixed-point retention units within the configured scale.
+ */
 function validRetentionUnitsPreference(value: unknown): number | null {
   return typeof value === "number" &&
     Number.isFinite(value) &&
@@ -782,16 +848,20 @@ function validRetentionUnitsPreference(value: unknown): number | null {
     : null
 }
 
-// validTraversalSpeedPreference restores stored traversal speed records. Zero is a legitimate
-// stored value here, unlike the request counter this replaced: a round can finish having covered
-// no new ground on its final charged units, so the floor is 0 rather than 1.
+/**
+ * validTraversalSpeedPreference restores stored traversal speed records. Zero is a legitimate
+ * stored value here, unlike the request counter this replaced: a round can finish having covered
+ * no new ground on its final charged units, so the floor is 0 rather than 1.
+ */
 function validTraversalSpeedPreference(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) && value >= 0
     ? value
     : null
 }
 
-// savePreferences persists the long-lived browser preferences in local storage.
+/**
+ * savePreferences persists the long-lived browser preferences in local storage.
+ */
 function savePreferences(
   modeName: MazeControlModeName,
   preferences: PersistedPreferences,
@@ -821,7 +891,9 @@ function savePreferences(
   }
 }
 
-// loadPreferences restores browser preferences while validating their value ranges.
+/**
+ * loadPreferences restores browser preferences while validating their value ranges.
+ */
 function loadPreferences(
   modeName: MazeControlModeName,
   defaultLevel: number,
@@ -878,14 +950,16 @@ function loadPreferences(
   }
 }
 
-// saveGameProgress writes long-lived localStorage progress from the live game state.
-//
-// gameSetup and winMetrics stay in localStorage deliberately, and are the one part of a round that
-// tabs are meant to share. Agent availability and per-round counters moved to sessionStorage so two
-// tabs can run separate games at once (see AgentApiSessionMetrics), but moving progress there too
-// would isolate exactly what is worth comparing: the whole point of running a second game is to
-// measure it against the first, and a best retention or traversal speed locked inside the tab that
-// set it is a score nothing can be judged against.
+/**
+ * saveGameProgress writes long-lived localStorage progress from the live game state.
+ *
+ * gameSetup and winMetrics stay in localStorage deliberately, and are the one part of a round that
+ * tabs are meant to share. Agent availability and per-round counters moved to sessionStorage so two
+ * tabs can run separate games at once (see AgentApiSessionMetrics), but moving progress there too
+ * would isolate exactly what is worth comparing: the whole point of running a second game is to
+ * measure it against the first, and a best retention or traversal speed locked inside the tab that
+ * set it is a score nothing can be judged against.
+ */
 export function saveGameProgress(
   modeName: MazeControlModeName,
   state: PersistableProgressState,
@@ -902,7 +976,9 @@ export function saveGameProgress(
 
 // Active round persistence.
 
-// buildRoundSnapshot extracts the restorable round state from the live runtime.
+/**
+ * buildRoundSnapshot extracts the restorable round state from the live runtime.
+ */
 function buildRoundSnapshot(state: State): PersistedRound | null {
   if (!hasActiveRoundState(state) || !canPersistRoundStatus(state.status)) {
     return null
@@ -938,7 +1014,9 @@ function buildRoundSnapshot(state: State): PersistedRound | null {
   }
 }
 
-// saveRound persists the short-lived active round in session storage.
+/**
+ * saveRound persists the short-lived active round in session storage.
+ */
 function saveRound(
   modeName: MazeControlModeName,
   round: PersistedRound | null,
@@ -958,7 +1036,9 @@ function saveRound(
   }
 }
 
-// loadRound restores the current round snapshot and clears corrupt or stale payloads.
+/**
+ * loadRound restores the current round snapshot and clears corrupt or stale payloads.
+ */
 function loadRound(modeName: MazeControlModeName): PersistedRound | null {
   let rawSnapshot: string | null
 
@@ -981,7 +1061,9 @@ function loadRound(modeName: MazeControlModeName): PersistedRound | null {
   return snapshot
 }
 
-// saveActiveRoundSnapshot writes the short-lived sessionStorage round snapshot.
+/**
+ * saveActiveRoundSnapshot writes the short-lived sessionStorage round snapshot.
+ */
 export function saveActiveRoundSnapshot(
   modeName: MazeControlModeName,
   state: State,
@@ -992,14 +1074,18 @@ export function saveActiveRoundSnapshot(
   saveRound(modeName, buildRoundSnapshot(state))
 }
 
-// clearPersistedRound drops only the short-lived active round snapshot.
+/**
+ * clearPersistedRound drops only the short-lived active round snapshot.
+ */
 export function clearPersistedRound(modeName: MazeControlModeName): void {
   saveRound(modeName, null)
 }
 
 // Combined progress and round persistence.
 
-// loadPersistedSnapshot restores both browser preferences and the active round.
+/**
+ * loadPersistedSnapshot restores both browser preferences and the active round.
+ */
 export function loadPersistedSnapshot(
   modeName: MazeControlModeName,
   defaultLevel: number,
@@ -1019,14 +1105,16 @@ export function loadPersistedSnapshot(
   }
 }
 
-// clearPersistedSnapshot clears both long-lived preferences and the active round.
-//
-// It does NOT clear the log, and must not: this runs from restartGame, which the agent-api loop
-// triggers by itself on a turn-count mismatch. That path logs why it is restarting and then restarts
-// - so clearing here erased the one entry explaining the reset, along with every entry leading up to
-// it, leaving a wiped session with no record of what happened. The log is a record of the session,
-// not part of the game state a reset owns. Only tapooResetLogs clears it, and only the Tapoo logs
-// reset button calls that.
+/**
+ * clearPersistedSnapshot clears both long-lived preferences and the active round.
+ *
+ * It does NOT clear the log, and must not: this runs from restartGame, which the agent-api loop
+ * triggers by itself on a turn-count mismatch. That path logs why it is restarting and then restarts
+ * - so clearing here erased the one entry explaining the reset, along with every entry leading up to
+ * it, leaving a wiped session with no record of what happened. The log is a record of the session,
+ * not part of the game state a reset owns. Only tapooResetLogs clears it, and only the Tapoo logs
+ * reset button calls that.
+ */
 export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   try {
     window.localStorage.removeItem(
@@ -1044,12 +1132,14 @@ export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
 
 // --- Privacy acknowledgement ---
 
-// IndexedDB outlives the tab, so logs kept there sit on disk until something deletes them - unlike
-// the sessionStorage backend, which the browser cleared on close. That is a change in what Tapoo
-// retains about a play session, so it is gated behind an explicit acknowledgement recorded in
-// localStorage: durable on purpose, since asking once per tab would train the answer out of meaning
-// anything. A blocked read reports "not acknowledged" and the gate shows again, which errs toward
-// asking twice rather than storing without consent.
+/**
+ * IndexedDB outlives the tab, so logs kept there sit on disk until something deletes them - unlike
+ * the sessionStorage backend, which the browser cleared on close. That is a change in what Tapoo
+ * retains about a play session, so it is gated behind an explicit acknowledgement recorded in
+ * localStorage: durable on purpose, since asking once per tab would train the answer out of meaning
+ * anything. A blocked read reports "not acknowledged" and the gate shows again, which errs toward
+ * asking twice rather than storing without consent.
+ */
 export function privacyPolicyAcknowledged(): boolean {
   try {
     return window.localStorage.getItem(STORE_PRIVACY_ACK) === "true"
@@ -1058,9 +1148,11 @@ export function privacyPolicyAcknowledged(): boolean {
   }
 }
 
-// Recorded only after the gate is accepted. A failed write means the gate reappears next load; it
-// must never fail open, because the acknowledgement is the only thing separating durable logging
-// from logging the player did not agree to.
+/**
+ * Recorded only after the gate is accepted. A failed write means the gate reappears next load; it
+ * must never fail open, because the acknowledgement is the only thing separating durable logging
+ * from logging the player did not agree to.
+ */
 export function savePrivacyPolicyAcknowledgement(): void {
   try {
     window.localStorage.setItem(STORE_PRIVACY_ACK, "true")
@@ -1072,7 +1164,9 @@ export function savePrivacyPolicyAcknowledgement(): void {
 // Tapoo log persistence. Logs are scoped to the browser tab session: they survive page reloads
 // within the same tab but are discarded when the tab closes or tapooResetLogs is called.
 
-// loadTapooLog restores buffered log entries that survived a page reload within the same tab.
+/**
+ * loadTapooLog restores buffered log entries that survived a page reload within the same tab.
+ */
 export function loadTapooLog<T>(modeName: MazeControlModeName): T[] {
   try {
     const stored = window.sessionStorage.getItem(
@@ -1084,8 +1178,10 @@ export function loadTapooLog<T>(modeName: MazeControlModeName): T[] {
   }
 }
 
-// saveTapooLog writes an arbitrary set of log entries to sessionStorage; used internally and
-// when restoring a known snapshot (e.g. after filtering or migration).
+/**
+ * saveTapooLog writes an arbitrary set of log entries to sessionStorage; used internally and
+ * when restoring a known snapshot (e.g. after filtering or migration).
+ */
 export function saveTapooLog(modeName: MazeControlModeName, entries: unknown[]): void {
   try {
     window.sessionStorage.setItem(
@@ -1097,16 +1193,20 @@ export function saveTapooLog(modeName: MazeControlModeName, entries: unknown[]):
   }
 }
 
-// appendTapooLogEntry reads the existing persisted entries, appends one new entry, and writes
-// the result back. Only the count is kept in memory; the full payload lives in sessionStorage.
+/**
+ * appendTapooLogEntry reads the existing persisted entries, appends one new entry, and writes
+ * the result back. Only the count is kept in memory; the full payload lives in sessionStorage.
+ */
 export function appendTapooLogEntry(modeName: MazeControlModeName, entry: unknown): void {
   saveTapooLog(modeName, [...loadTapooLog<unknown>(modeName), entry])
 }
 
-// clearTapooLog removes the persisted log snapshot from sessionStorage. tapooResetLogs is its only
-// caller, and the Tapoo logs reset button is that function's only caller in turn - no game action
-// reaches this, so a round can never take the session's record down with it.
-// so a deliberate reset clears both the in-memory buffer and its sessionStorage copy.
+/**
+ * clearTapooLog removes the persisted log snapshot from sessionStorage. tapooResetLogs is its only
+ * caller, and the Tapoo logs reset button is that function's only caller in turn - no game action
+ * reaches this, so a round can never take the session's record down with it.
+ * so a deliberate reset clears both the in-memory buffer and its sessionStorage copy.
+ */
 export function clearTapooLog(modeName: MazeControlModeName): void {
   try {
     window.sessionStorage.removeItem(

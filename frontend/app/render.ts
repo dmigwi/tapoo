@@ -26,25 +26,31 @@ import { fittingTouchActionColumnCount, isCompactViewport } from "./viewport"
 
 const { maze, messages } = CONFIG
 
-// COMPACT_STATUS_MAX_LENGTH is a character ceiling kept under the ~57-character budget documented
-// above CONFIG.messages in config.ts (the longest compact-viewport string already in use there),
-// leaving a small margin. A player label that would push the running-status line past it gets
-// ellipsis-trimmed to whatever room is left.
+/**
+ * COMPACT_STATUS_MAX_LENGTH is a character ceiling kept under the ~57-character budget documented
+ * above CONFIG.messages in config.ts (the longest compact-viewport string already in use there),
+ * leaving a small margin. A player label that would push the running-status line past it gets
+ * ellipsis-trimmed to whatever room is left.
+ */
 const COMPACT_STATUS_MAX_LENGTH = 55
 
-// PLAYER_LABEL_TRIM_MARKER marks the dropped middle section of an over-length player label -
-// mirrors compactAgentModelLabel's middleTrimMarker (agent/seats.ts), the same technique this
-// function reuses for a different fixed-width field (a long model name there, a long player label
-// here).
+/**
+ * PLAYER_LABEL_TRIM_MARKER marks the dropped middle section of an over-length player label -
+ * mirrors compactAgentModelLabel's middleTrimMarker (agent/seats.ts), the same technique this
+ * function reuses for a different fixed-width field (a long model name there, a long player label
+ * here).
+ */
 const PLAYER_LABEL_TRIM_MARKER = "…"
 
-// fitPlayerSegmentToWidth trims a ready-made player label down to whatever room remains after the
-// rest of the compact status line (everything from CONFIG.messages.runningStatus other than the
-// label itself), so a long agent/player name can never overflow the character budget every other
-// compact string in CONFIG.messages already stays within. Uses the same middle-truncation
-// compactAgentModelLabel (agent/seats.ts) applies to long model names - roughly half the
-// available width kept from the front, half from the back, with the middle dropped behind a
-// single marker - rather than a rule that has to know the label's internal shape.
+/**
+ * fitPlayerSegmentToWidth trims a ready-made player label down to whatever room remains after the
+ * rest of the compact status line (everything from CONFIG.messages.runningStatus other than the
+ * label itself), so a long agent/player name can never overflow the character budget every other
+ * compact string in CONFIG.messages already stays within. Uses the same middle-truncation
+ * compactAgentModelLabel (agent/seats.ts) applies to long model names - roughly half the
+ * available width kept from the front, half from the back, with the middle dropped behind a
+ * single marker - rather than a rule that has to know the label's internal shape.
+ */
 export function fitPlayerSegmentToWidth(playerLabel: string, remainderLength: number): string {
   const available = COMPACT_STATUS_MAX_LENGTH - remainderLength
 
@@ -63,7 +69,9 @@ export function fitPlayerSegmentToWidth(playerLabel: string, remainderLength: nu
   return `${playerLabel.slice(0, leadingCharacters)}${PLAYER_LABEL_TRIM_MARKER}${playerLabel.slice(-trailingCharacters)}`
 }
 
-// escapeHtml protects text rows before they are written as HTML.
+/**
+ * escapeHtml protects text rows before they are written as HTML.
+ */
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -71,12 +79,16 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
 }
 
-// leftPad offsets maze rows so the browser view mirrors the terminal layout.
+/**
+ * leftPad offsets maze rows so the browser view mirrors the terminal layout.
+ */
 function leftPad(value: string, padding: number): string {
   return `${" ".repeat(Math.max(0, padding))}${value}`
 }
 
-// padLine keeps overlay-cleared maze rows aligned to a fixed width.
+/**
+ * padLine keeps overlay-cleared maze rows aligned to a fixed width.
+ */
 function padLine(value: string, width: number): string {
   if (value.length >= width) {
     return value
@@ -85,7 +97,9 @@ function padLine(value: string, width: number): string {
   return `${value}${" ".repeat(width - value.length)}`
 }
 
-// replaceAt swaps a single visible marker into an already-built maze row.
+/**
+ * replaceAt swaps a single visible marker into an already-built maze row.
+ */
 function replaceAt(line: string, index: number, char: string): string {
   if (index < 0 || index >= line.length) {
     return line
@@ -94,11 +108,13 @@ function replaceAt(line: string, index: number, char: string): string {
   return `${line.slice(0, index)}${char}${line.slice(index + 1)}`
 }
 
-// statusText selects the running-status footer copy for the current display size. currentPlayerLabel
-// is a ready-made "{name} the {Class}({rate})" string supplied by whichever control mode is active
-// (see MazeActionControl.readCurrentPlayer) - this function only decides whether it fits, and drops
-// the entire "Player: {player}   " lead-in (whatever literal text/spacing surrounds {player} in
-// CONFIG.messages.runningStatus) when there's no player to show, rather than leaving a bare "Player:".
+/**
+ * statusText selects the running-status footer copy for the current display size. currentPlayerLabel
+ * is a ready-made "{name} the {Class}({rate})" string supplied by whichever control mode is active
+ * (see MazeActionControl.readCurrentPlayer) - this function only decides whether it fits, and drops
+ * the entire "Player: {player}   " lead-in (whatever literal text/spacing surrounds {player} in
+ * CONFIG.messages.runningStatus) when there's no player to show, rather than leaving a bare "Player:".
+ */
 function statusText(state: State, currentPlayerLabel: string | null): string {
   const template = displayText(
     isAgentApiMode(state.controlMode)
@@ -128,12 +144,16 @@ function statusText(state: State, currentPlayerLabel: string | null): string {
   return `${beforePlayer}${label}${afterPlayer}`
 }
 
-// displayText picks the wide or compact copy variant for the currently available display room.
+/**
+ * displayText picks the wide or compact copy variant for the currently available display room.
+ */
 function displayText(message: DisplayMsg): string {
   return isCompactViewport() ? message.compact : message.wide
 }
 
-// navigationText picks the control-mode and viewport-specific navigation hint.
+/**
+ * navigationText picks the control-mode and viewport-specific navigation hint.
+ */
 function navigationText(state: State): string {
   const navigation = isAgentApiMode(state.controlMode)
     ? messages.navigation.agentApi
@@ -142,7 +162,9 @@ function navigationText(state: State): string {
   return displayText(navigation)
 }
 
-// centeredTextRow creates one centered text line for the rendered screen model.
+/**
+ * centeredTextRow creates one centered text line for the rendered screen model.
+ */
 function centeredTextRow(text: string, className = "screen-text"): ScreenLine {
   return {
     kind: "text",
@@ -151,7 +173,9 @@ function centeredTextRow(text: string, className = "screen-text"): ScreenLine {
   }
 }
 
-// emptyTextRow creates a spacer line while preserving the renderer's line model.
+/**
+ * emptyTextRow creates a spacer line while preserving the renderer's line model.
+ */
 function emptyTextRow(): ScreenLine {
   return {
     kind: "text",
@@ -160,19 +184,23 @@ function emptyTextRow(): ScreenLine {
   }
 }
 
-// rowsWithSpacer inserts blank lines before each supplied row for terminal-style spacing.
+/**
+ * rowsWithSpacer inserts blank lines before each supplied row for terminal-style spacing.
+ */
 function rowsWithSpacer(...rows: ScreenLine[]): ScreenLine[] {
   return rows.flatMap((row) => [emptyTextRow(), row])
 }
 
-// tooSmallRows builds the viewport warning shown when the maze no longer fits. The action line must
-// only offer Reset Progress when canShowRestart agrees it would help (updateTouchControls hides the
-// button itself on the same condition) - level 1 has no smaller level to fall back to, so promising
-// it there would be a control with no button behind it.
-//
-// The offer is also mode-specific: the restart level is only reachable from the agent-api page's
-// settings dialog, so only that mode is told to lower it - and there it is the more reliable fix,
-// since Reset Progress reopens at that same floor.
+/**
+ * tooSmallRows builds the viewport warning shown when the maze no longer fits. The action line must
+ * only offer Reset Progress when canShowRestart agrees it would help (updateTouchControls hides the
+ * button itself on the same condition) - level 1 has no smaller level to fall back to, so promising
+ * it there would be a control with no button behind it.
+ *
+ * The offer is also mode-specific: the restart level is only reachable from the agent-api page's
+ * settings dialog, so only that mode is told to lower it - and there it is the more reliable fix,
+ * since Reset Progress reopens at that same floor.
+ */
 function tooSmallRows(state: State): ScreenLine[] {
   const withReset = isAgentApiMode(state.controlMode)
     ? messages.tooSmallActionMessageWithReset.agentApi
@@ -190,7 +218,9 @@ function tooSmallRows(state: State): ScreenLine[] {
   ]
 }
 
-// buildMazeLines merges the maze grid with the visited trail, current player, and target markers.
+/**
+ * buildMazeLines merges the maze grid with the visited trail, current player, and target markers.
+ */
 function buildMazeLines(state: State): string[] {
   if (!state.maze) {
     return []
@@ -228,7 +258,9 @@ function buildMazeLines(state: State): string[] {
   return lines.map((line) => leftPad(line, maze.leftPadding))
 }
 
-// renderMarkedLine wraps one maze row in span markup for colorized rendering.
+/**
+ * renderMarkedLine wraps one maze row in span markup for colorized rendering.
+ */
 function renderMarkedLine(rawLine: string): string {
   let html = ""
 
@@ -249,14 +281,18 @@ function renderMarkedLine(rawLine: string): string {
   return `<span class="maze-row">${html}</span>`
 }
 
-// renderTextLine converts a text row into HTML while preserving spacing.
+/**
+ * renderTextLine converts a text row into HTML while preserving spacing.
+ */
 function renderTextLine(value: string, className = "screen-text"): string {
   const html =
     value === "" ? "&nbsp;" : escapeHtml(value).replaceAll(" ", "&nbsp;")
   return `<span class="${className}">${html}</span>`
 }
 
-// scorePercent converts stored or fallback score retention units into the displayed percentage.
+/**
+ * scorePercent converts stored or fallback score retention units into the displayed percentage.
+ */
 function scorePercent(state: State): number {
   if (state.lastAttemptRetentionUnits !== null) {
     return retentionUnitsToDisplayPercent(state.lastAttemptRetentionUnits)
@@ -270,7 +306,9 @@ function scorePercent(state: State): number {
   return retentionUnitsToDisplayPercent(fallbackRetentionUnits)
 }
 
-// overlayRows builds the centered pause, win, loss, or too-small overlay lines.
+/**
+ * overlayRows builds the centered pause, win, loss, or too-small overlay lines.
+ */
 function overlayRows(state: State): ScreenLine[] {
   if (isAwaitAgentStatus(state.status) && isAgentApiMode(state.controlMode)) {
     return [
@@ -328,7 +366,9 @@ function overlayRows(state: State): ScreenLine[] {
   return []
 }
 
-// applyOverlayToMaze clears the maze center area and drops the overlay into it.
+/**
+ * applyOverlayToMaze clears the maze center area and drops the overlay into it.
+ */
 function applyOverlayToMaze(
   elements: Elements,
   state: State,
@@ -367,7 +407,9 @@ function applyOverlayToMaze(
   return screenMaze
 }
 
-// buildScreenLines assembles the final screen model for the current state.
+/**
+ * buildScreenLines assembles the final screen model for the current state.
+ */
 function buildScreenLines(
   elements: Elements,
   state: State,
@@ -399,7 +441,9 @@ function buildScreenLines(
   return lines
 }
 
-// updateTouchControls shows only the touch controls that make sense for the current state.
+/**
+ * updateTouchControls shows only the touch controls that make sense for the current state.
+ */
 function updateTouchControls(elements: Elements, state: State): void {
   // Nothing is offered under the placeholder. Status alone does not settle this: too-small still
   // shows Reset Progress above level 1, which is the right offer on a merely undersized window but
@@ -456,7 +500,9 @@ function updateTouchControls(elements: Elements, state: State): void {
   )
 }
 
-// updateTopMenuControls disables page-level actions that are unavailable in the current game state.
+/**
+ * updateTopMenuControls disables page-level actions that are unavailable in the current game state.
+ */
 function updateTopMenuControls(elements: Elements, state: State): void {
   const disableAgentConfig = isAgentApiMode(state.controlMode) && isRunningStatus(state.status)
 
@@ -467,7 +513,9 @@ function updateTopMenuControls(elements: Elements, state: State): void {
   })
 }
 
-// updateAgentConfigForm keeps the agent setup overlay available only outside active agent play.
+/**
+ * updateAgentConfigForm keeps the agent setup overlay available only outside active agent play.
+ */
 function updateAgentConfigForm(elements: Elements, state: State): void {
   if (!elements.agentConfigForm && !elements.agentManageDialog) {
     return
@@ -486,15 +534,17 @@ function updateAgentConfigForm(elements: Elements, state: State): void {
   elements.body.classList.remove("terminal-body--agent-form-active")
 }
 
-// updateZoomPlaceholder swaps to the same artwork placeholder-art.html uses standalone once the
-// viewport is narrower than the layout supports. The too-small status text is still built into
-// screenLines like any other content and sits underneath; the placeholder covers it because below
-// this width #terminal-screen (white-space: pre, overflow: hidden) clips rather than wraps, so what
-// shows is a truncated sentence rather than a message.
-//
-// The threshold is a width, not a string. It used to ask whether tooSmallMessage in particular would
-// fit, which tied the switch-over point to the wording of one line - rewording it moved the
-// threshold, and the line measured was not the longest one on that screen anyway.
+/**
+ * updateZoomPlaceholder swaps to the same artwork placeholder-art.html uses standalone once the
+ * viewport is narrower than the layout supports. The too-small status text is still built into
+ * screenLines like any other content and sits underneath; the placeholder covers it because below
+ * this width #terminal-screen (white-space: pre, overflow: hidden) clips rather than wraps, so what
+ * shows is a truncated sentence rather than a message.
+ *
+ * The threshold is a width, not a string. It used to ask whether tooSmallMessage in particular would
+ * fit, which tied the switch-over point to the wording of one line - rewording it moved the
+ * threshold, and the line measured was not the longest one on that screen anyway.
+ */
 function updateZoomPlaceholder(elements: Elements, state: State): void {
   // Not gated on status. A viewport below the supported minimum cannot show a maze or a message in
   // any state, and pairing this with too-small alone left storage-limit uncovered: that screen kept
@@ -525,7 +575,9 @@ function updateZoomPlaceholder(elements: Elements, state: State): void {
   }
 }
 
-// render turns the current state into HTML and syncs the floating controls.
+/**
+ * render turns the current state into HTML and syncs the floating controls.
+ */
 export function render(
   elements: Elements,
   state: State,

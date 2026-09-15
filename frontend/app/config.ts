@@ -8,52 +8,69 @@ import type {
 declare const __TAPOO_BUILD_YEAR__: number
 declare const __TAPOO_BUILD_DATE__: string
 
-// NAVIGATION_FRIENDLY_PROFILE defines the easiest, least-branching settings for small mazes.
+/**
+ * NAVIGATION_FRIENDLY_PROFILE defines the easiest, least-branching settings for small mazes.
+ */
 const NAVIGATION_FRIENDLY_PROFILE: NavigationProfile = {
   __maxCorridorLength: 10,
   __leastNeighborsBias: 100,
 }
 
-// NAVIGATION_HARDEST_PROFILE defines the tightest, most-branching supported profile.
+/**
+ * NAVIGATION_HARDEST_PROFILE defines the tightest, most-branching supported profile.
+ */
 const NAVIGATION_HARDEST_PROFILE: NavigationProfile = {
   __maxCorridorLength: 3,
   __leastNeighborsBias: 0,
 }
 
-// VERSION_MAJOR is the semantic major version for the browser SPA runtime.
+/**
+ * VERSION_MAJOR is the semantic major version for the browser SPA runtime.
+ */
 const VERSION_MAJOR = 2
 
-// VERSION_MINOR is the semantic minor version for the browser SPA runtime.
+/**
+ * VERSION_MINOR is the semantic minor version for the browser SPA runtime.
+ */
 const VERSION_MINOR = 6
 
-// VERSION_PATCH is the semantic patch version for the browser SPA runtime.
+/**
+ * VERSION_PATCH is the semantic patch version for the browser SPA runtime.
+ */
 const VERSION_PATCH = 2
 
-// APP_VERSION is kept private because only the composed page copyright text is rendered.
+/**
+ * APP_VERSION is kept private because only the composed page copyright text is rendered.
+ */
 export const APP_VERSION = `${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}`
 
-// BUILD_YEAR is injected by esbuild for production and falls back only for local test imports.
+/**
+ * BUILD_YEAR is injected by esbuild for production and falls back only for local test imports.
+ */
 const BUILD_YEAR =
   typeof __TAPOO_BUILD_YEAR__ === "number"
     ? __TAPOO_BUILD_YEAR__
     : new Date().getFullYear()
 
-// BUILD_DATE is the deployment instant, injected by esbuild from the same value build-html.mjs
-// stamps into JSON-LD's dateModified, so the footer and the structured data always name one
-// moment. The footer shows only the date half; the time is what keeps two deploys on the same day
-// distinguishable in structured data.
-// Parsed, not merely type-checked: everything downstream treats this as a real instant - the
-// footer subtracts it from now, <time datetime> publishes it, and JSON-LD's dateModified mirrors
-// it. A string that is not a date would surface as "NaN secs ago" rather than as a build error,
-// so an unparseable value is discarded here and never reaches any of them.
+/**
+ * BUILD_DATE is the deployment instant, injected by esbuild from the same value build-html.mjs
+ * stamps into JSON-LD's dateModified, so the footer and the structured data always name one
+ * moment. The footer shows only the date half; the time is what keeps two deploys on the same day
+ * distinguishable in structured data.
+ * Parsed, not merely type-checked: everything downstream treats this as a real instant - the
+ * footer subtracts it from now, <time datetime> publishes it, and JSON-LD's dateModified mirrors
+ * it. A string that is not a date would surface as "NaN secs ago" rather than as a build error,
+ * so an unparseable value is discarded here and never reaches any of them.
+ */
 const BUILD_DATE =
   typeof __TAPOO_BUILD_DATE__ === "string" && Number.isFinite(Date.parse(__TAPOO_BUILD_DATE__))
     ? __TAPOO_BUILD_DATE__
     : new Date().toISOString()
 
-// CONFIG centralizes browser-facing copy together with generation and layout constants.
+/**
+ * CONFIG centralizes browser-facing copy together with generation and layout constants.
+ */
 export const CONFIG: AppConfig = {
-  // Shared branding used by both HTML pages and the footer version tag.
   chrome: {
     appName: "Tapoo",
     appSubtitle: "maze runner (hide & seek)",
@@ -62,13 +79,10 @@ export const CONFIG: AppConfig = {
     // characters for the whole line, and the word "updated" alone costs a fifth of them - it is
     // carried by pageUpdatedTitleTemplate below instead, where it costs nothing.
     pageUpdatedTemplate: "({updated} ago)",
-    // Shown on hover and read out to assistive tech, so the exact instant stays reachable from the
-    // page rather than only from its structured data.
     pageUpdatedTitleTemplate: "Last updated {updated}",
     contactLabel: "Contact",
     privacyLabel: "Privacy Policy",
   },
-  // Per-page labels and metadata consumed by static page chrome.
   pages: {
     game: {
       documentTitle: "Tapoo Maze Runner | Game",
@@ -111,12 +125,10 @@ export const CONFIG: AppConfig = {
       pageLabel: "404",
     },
   },
-  // Runtime text shown inside the terminal view and overlay states.
   // Compact-viewport status strings should stay at or under ~57 characters (the longest existing
   // compact string here) - there is no JS-side wrapping/truncation for this text, only CSS
   // overflow:hidden, so longer strings risk being clipped.
   messages: {
-    // Navigation hints are view-specific so keyboard bindings never leak into compact touch views.
     navigation: {
       interactive: {
         wide:
@@ -151,11 +163,8 @@ export const CONFIG: AppConfig = {
       compact: "Use edge seats to add/manage agents. Tap Proceed.",
     },
     tooSmallMessage: "Level {level} needs more screen room!",
-    // Reset Progress only ever restarts at level 1 (restartGame, game.ts) - offering it while
-    // already too-small at level 1 would just redraw the same maze into the same too-small state,
-    // so canShowRestart (status.ts) hides that touch button there. tooSmallActionMessage is the
-    // base case that's always true; tooSmallActionMessageWithReset adds the option only for the
-    // case canShowRestart actually allows it - see tooSmallRows (render.ts) for the selection.
+    // No mention of Reset Progress: this line only shows where a reset cannot help (at level 1 -
+    // see canShowRestart in status.ts), so the only fix left to name is more screen room.
     tooSmallActionMessage: "Make more screen room on zoom out.",
     // Both stay short: this text only ever appears on a viewport already too small for the maze,
     // where a longer sentence is the first thing to be clipped. The agent-api line drops the
@@ -175,10 +184,9 @@ export const CONFIG: AppConfig = {
     storageLimitActionMessage:
       "This browser session can play agent levels up to {maxLevel} with fallback storage. "+
       "Use a browser/device with IndexedDB storage to play higher levels.",
-    // Split by mode, like navigation above it. {turn} is State.turnCount, which only
-    // commitAgentApiTurn increments and which returns early outside agent-api - so an interactive
-    // round rendered a permanent "Turn: 0". The field is not merely uninteresting there, it is
-    // never anything else.
+    // No {turn} in the interactive copy: {turn} is State.turnCount, which only commitAgentApiTurn
+    // increments and which returns early outside agent-api - so an interactive round rendered a
+    // permanent "Turn: 0". The field is not merely uninteresting there, it is never anything else.
     //
     // Interactive's wide and compact copy are identical on purpose: Turn was the only segment
     // compact dropped, so with it gone there is nothing left to shed at the narrow size.
@@ -194,7 +202,6 @@ export const CONFIG: AppConfig = {
     },
     highScoreTemplate:
       "Final Level {level} Scores:  {score} ({percent}% retention)",
-    // Win-summary variants are selected from scoring.ts after comparing retention metrics.
     winSummary: {
       noPrevious: "New scores retention record",
       fasterPrevious: {
@@ -232,7 +239,6 @@ export const CONFIG: AppConfig = {
       },
     },
   },
-  // Touch-control labels used by the browser action pad.
   controls: {
     touch: {
       wallsLabel: "Walls",
@@ -241,7 +247,6 @@ export const CONFIG: AppConfig = {
       resetProgressLabel: "Reset Progress",
     },
   },
-  // System settings copy, shown by the palette's settings dialog.
   systemSettings: {
     // Named for the mode it is opened from, so a setting that only governs this mode's play never
     // reads as global. {mode} is filled from runtime.displayLabels at open time, not at build
@@ -254,7 +259,6 @@ export const CONFIG: AppConfig = {
     applyLabel: "Apply",
     invalidRestartLevelMessage: "Restart level must be a whole number of 1 or more.",
   },
-  // Agent configuration copy is only used by the agent-api overlay form.
   agentConfig: {
     title: "New Agent",
     newAgentLabel: "New Agent",
@@ -369,7 +373,6 @@ export const CONFIG: AppConfig = {
     deleteMessageTemplate: "Delete now?",
     updateConfirmLabel: "Apply Changes",
   },
-  // Prompt preview copy, used only by the agent-api prompt overlay.
   promptPreview: {
     openLabel: "View Prompts",
     title: "Agent Request Prompts",
@@ -391,7 +394,6 @@ export const CONFIG: AppConfig = {
     duplicateToolCallHeading: "Duplicate tool call warning! (sample: a repeated get_maze_structure {} call)",
     tokenLimitExhaustionHeading: "Token limit exhaustion warning! (sample: the configured token cap reached)",
   },
-  // Maze glyphs and geometry shared by generation, traversal, and rendering.
   maze: {
     playerMarker: "▓",
     visitedCellMarker: "░",
@@ -409,7 +411,6 @@ export const CONFIG: AppConfig = {
     leftPadding: 3, // Visual spaces added before each rendered maze row.
     minMazeSideCells: 5, // Smallest allowed logical cells per maze side.
   },
-  // Maze-generation tuning controls level growth and navigation difficulty.
   generation: {
     seed: 60,
     diff: 10,
@@ -420,7 +421,6 @@ export const CONFIG: AppConfig = {
       friendlyProfile: NAVIGATION_FRIENDLY_PROFILE,
     },
   },
-  // Score math controls maximum round score and retained-score percentages.
   scoring: {
     percentScale: 100,
     budgetMultiplier: 100,
@@ -431,21 +431,12 @@ export const CONFIG: AppConfig = {
     agentMalformedPenaltyDecayUnits: 3,      // Flat charge for a malformed/protocol-violation response - costlier than any gameplay mistake.
     traversalSpeedScaleUnits: 10_000, // 4dp Scales the traversal speed ratio as its display precision.
   },
-  // Timing values drive UI redraws, persistence debounce, score decay, and slower agent-api pacing.
   timing: {
     persistenceDebounceMs: 250,
     blinkIntervalMs: 700,
     scoreDecayRate: 100,
-    // Also sizes agent-api mode's clock, which only exists there to drive the destination blink
-    // animation (see restoreClock's comment in game.ts) - agent-api score decay comes from
-    // scoreDecayUnits, not this figure.
     interactiveDecayIntervalPerCellMs: 1_000, // Translates to 1sec
-    // Default whole-second request interval shown in the agent form. Agent configs store this same
-    // second-level precision and convert to milliseconds only when scheduling timers.
     defaultAgentApiRequestIntervalSeconds: 30,
-    // Per provider request, not per turn: a turn issues several rounds, so a whole turn can take a
-    // multiple of this (see the request-count derivation in agent/request.ts). Per-request by
-    // design - a provider that stops responding is caught on the first round regardless.
     agentApiResponseTimeoutMs: 300_000,           // Translates to 5min
     // Kept short deliberately: this backs the one-shot connection-error retry (see
     // requestAgentPredictionWithRetry in control/agent-api.ts) for transient connection drops/
@@ -453,7 +444,6 @@ export const CONFIG: AppConfig = {
     // the agent sit idle for a failure mode a second attempt is unlikely to fix anyway.
     agentApiConnectionErrorRetryDelayMs: 60_000,      // Translates to 1min
   },
-  // Viewport thresholds translate measured DOM space into logical maze room.
   viewport: {
     minSupportedWidth: 350,
     minSupportedHeight: 475,
@@ -464,31 +454,18 @@ export const CONFIG: AppConfig = {
     terminalWidthInset: 10,
     terminalWidthScale: 2,
     terminalSampleWidth: 10,
-    // Pinch-zoom is a pure visual magnification - it never changes getBoundingClientRect()/layout
-    // viewport size, so viewportFitStatus (which measures exactly that) can never detect it on its
-    // own. window.visualViewport.scale is the direct signal instead: 1.0 is unzoomed, and this is
-    // the factor above which the visible area is treated as too small to responsibly play - the
-    // same too-small/placeholder-art path a genuinely small window already uses, since neither the
-    // maze nor the touch controls can be trusted to stay reachable past this point.
     pinchZoomTooCloseScale: 1.2,
   },
-  // Runtime settings back persistence validation and agent-mode bootstrapping.
   runtime: {
     controlModes: {
       agentApi: "agent-api",
       interactive: "interactive",
     },
-    // Human-facing names for the control modes above, kept beside them rather than inside whichever
-    // feature happens to render one first. controlModes carries the wire/storage identifiers; these
-    // are what a person should read.
+    // Kept beside controlModes rather than inside whichever feature happens to render one first.
     displayLabels: {
       agentApi: "Agent-API",
       interactive: "Interactive",
     },
-    // The level a game opens on before anyone has chosen otherwise. It seeds State.restartLevel,
-    // which is what every entry point actually reads, so they can never disagree about where a
-    // game begins. State.restartLevel is memory-only, so this is also where each page load starts
-    // again - changing it moves the opening level for everyone.
     defaultRestartLevel: 1,
     storage: {
       version: 5.2,
@@ -497,16 +474,10 @@ export const CONFIG: AppConfig = {
         winMetrics: "winMetrics",
         sessionMetrics: "agentSessionMetrics",
         agentConfigs: "agentConfigs",
-        // Web Storage key suffixes. tapooLog is the fallback log backend's key; logSessionId is the
-        // tab session id, which is not mode-scoped - see tabStorageKey in storage.ts.
         tapooLog: "tapooLog",
         logSessionId: "tapooLogSessionId",
       },
       log: {
-        // IndexedDB names, kept apart from the Web Storage suffixes above because they address a
-        // different namespace: these are object stores and indexes inside the log database, not keys
-        // in a storage area. Each store owns the index labels built on its records, and each index
-        // name doubles as the keyPath field stored on that record (storage-logs.ts).
         stores: {
           logEntries: {
             label: "logEntries",
@@ -524,18 +495,17 @@ export const CONFIG: AppConfig = {
     },
     promptWarningPrefix: "Warning:",
     interactivePlayerName: "Self",
-    // The deployed site's own base URL - canonical links, Open Graph/sitemap URLs, and robots.txt
-    // are all derived from this single value at build time, so redeploying to a different host is
-    // a one-line change here rather than a hunt through scripts/build-html.mjs.
+    // Redeploying to a different host is a one-line change here rather than a hunt through
+    // scripts/build-html.mjs: canonical links, Open Graph/sitemap URLs and robots.txt are all
+    // derived from this value at build time.
     siteUrl: "https://dmigwi.github.io/tapoo/",
-    // Feeds structured-data author attribution only (scripts/build-html.mjs) - kept separate from
-    // contact-link.html's own hardcoded href since that template isn't run through render()'s
-    // token substitution, and a personal profile URL changing is not a realistic drift risk.
+    // Kept separate from contact-link.html's own hardcoded href since that template isn't run
+    // through render()'s token substitution, and a personal profile URL changing is not a realistic
+    // drift risk.
     author: {
       name: "Daniel Migwi",
       profileUrl: "https://www.linkedin.com/in/migwi-ndungu/",
     },
-    // Provider request limits and agent-facing traversal guidance.
     modelConfig: {
       // Ollama's num_ctx, sent as a fixed value on every request rather than scaled by maze area:
       // filteredTraversalHistory is capped by manhattanDistance regardless of maze size, and
@@ -543,11 +513,10 @@ export const CONFIG: AppConfig = {
       // payload size does not grow with the maze. Ollama's own default is too small for the
       // prompt anyway, and it answers 500 rather than truncating.
       contextWindowFloor: 4000,
-      // Model-facing local context radius - how far back into traversal history get_maze_structure
-      // looks. Deliberately independent of suggestedMovesPerTurnRange below: one bounds what the
-      // model can see, the other suggests how many moves to batch per turn, and scaling batch size
-      // off the maze-area-derived navigation profile (the old behavior) coupled two unrelated
-      // concerns for no real benefit.
+      // Deliberately independent of suggestedMovesPerTurnRange below: one bounds what the model can
+      // see, the other suggests how many moves to batch per turn, and scaling batch size off the
+      // maze-area-derived navigation profile (the old behavior) coupled two unrelated concerns for
+      // no real benefit.
       manhattanDistance: 4, // Simulation corridor-run distribution: p50=1, p75=2, p90=3, p95=4.
       // A static range rather than a single number that shrank with maze area: observed batching
       // accuracy drops off sharply past the 2nd predicted move, so min is the safer, lower-confidence
@@ -564,96 +533,118 @@ export const CONFIG: AppConfig = {
   },
 }
 
-// INFO_GATE_NOTICES collects every blocking acknowledgement Tapoo can raise, keyed by what it is
-// about. One entry today; the shape is a map so a second gate does not have to restructure this.
+/**
+ * INFO_GATE_NOTICES collects every blocking acknowledgement Tapoo can raise, keyed by what it is
+ * about. One entry today; the shape is a map so a second gate does not have to restructure this.
+ */
 export const INFO_GATE_NOTICES = {
-  // Shown once per browser profile, before Tapoo stores anything of its own. Deliberately about all
-  // of it - progress, agent seat configuration and gameplay logs - rather than about one storage
-  // mechanism: the acknowledgement is that data is kept on this device at all, which stays true if
-  // the backend behind it ever changes again.
+  /**
+   * Shown once per browser profile, before Tapoo stores anything of its own. Deliberately about all
+   * of it - progress, agent seat configuration and gameplay logs - rather than about one storage
+   * mechanism: the acknowledgement is that data is kept on this device at all, which stays true if
+   * the backend behind it ever changes again.
+   */
   privacyPolicy: {
     title: "Tapoo stores data on this device!",
     acknowledgement:
       "Tapoo keeps your level progress, agent-seat configuration and gameplay logs in this "+
       "browser's storage, where you can download or clear them with game controls.",
     detail: "Confirm you have read the Privacy Policy.",
-    // Relative, so it resolves under whatever path the site is served from - the build writes
-    // privacy.html beside the terminal pages rather than at a fixed absolute URL.
+    /**
+     * Relative, so it resolves under whatever path the site is served from - the build writes
+     * privacy.html beside the terminal pages rather than at a fixed absolute URL.
+     */
     link: {
       href: "privacy.html",
       label: "Privacy Policy",
     },
     proceedLabel: "I have read the Privacy Policy",
   },
-  // Shown before anything an older storage schema left behind is deleted.
+  /**
+   * Shown before anything an older storage schema left behind is deleted.
+   */
   staleStorage: {
     title: "Incompatible old Tapoo data detected!",
     acknowledgement:
       "The current version of Tapoo uses an updated persistence format. "+
       "Proceeding, removes all old data; including any saved agent " +
       "configuration and game progress. This cannot be undone!",
-    // {versions} arrives carrying its own noun ("version (4.81)" / "versions (4.81, 4.82)"),
-    // because only the caller knows how many there are. Putting the word here instead duplicates
-    // it - the template cannot pluralise.
+    /**
+     * {versions} arrives carrying its own noun ("version (4.81)" / "versions (4.81, 4.82)"),
+     * because only the caller knows how many there are. Putting the word here instead duplicates
+     * it - the template cannot pluralise.
+     */
     detailTemplate: "- {items} with storage {versions}.",
     proceedLabel: "Proceed",
   },
 } satisfies Record<string, InfoGateNotice>
 
-// PAGE_COPYRIGHT_TEXT is the fully composed footer text shared by static browser pages.
+/**
+ * PAGE_COPYRIGHT_TEXT is the fully composed footer text shared by static browser pages.
+ */
 export const PAGE_COPYRIGHT_TEXT = CONFIG.chrome.pageVersionTemplate
   .replace("{version}", APP_VERSION)
   .replace("{year}", String(BUILD_YEAR))
 
-// PAGE_UPDATED_TEXT names the deployment this page was built from, to the minute - enough to tell
-// two same-day deploys apart, which a calendar day alone cannot. Seconds are dropped: they do not
-// settle any question a footer is read to answer, and JSON-LD's dateModified keeps the full
-// timestamp for anything that needs the exact instant.
-//
-// Reformatted out of BUILD_DATE's ISO form (2026-08-25T15:01:37Z) by slicing rather than by
-// rebuilding a Date, so what is shown is literally part of the same string stamped into the
-// structured data - no timezone conversion can drift between the two. UTC is stated explicitly
-// because the reader's timezone is unknown and an unlabelled wall-clock time invites a wrong guess.
-// PAGE_UPDATED_AT is the deployment instant in full ISO form, for <time datetime> - the same
-// string JSON-LD's dateModified carries, so the machine-readable value on the page and in the
-// structured data cannot drift apart.
+/**
+ * PAGE_UPDATED_AT is the deployment instant in full ISO form, for <time datetime> - the same
+ * string JSON-LD's dateModified carries, so the machine-readable value on the page and in the
+ * structured data cannot drift apart.
+ */
 export const PAGE_UPDATED_AT = BUILD_DATE
 
-// PAGE_UPDATED_TITLE spells the instant out for hover and assistive tech. Minutes, not seconds:
-// enough to separate two same-day deploys, which is the only question the exact time answers here.
+/**
+ * PAGE_UPDATED_TITLE spells the instant out for hover and assistive tech. Minutes, not seconds:
+ * enough to separate two same-day deploys, which is the only question the exact time answers here.
+ *
+ * Reformatted out of BUILD_DATE's ISO form (2026-08-25T15:01:37Z) by slicing rather than by
+ * rebuilding a Date, so what is shown is literally part of the same string stamped into the
+ * structured data - no timezone conversion can drift between the two. UTC is stated explicitly
+ * because the reader's timezone is unknown and an unlabelled wall-clock time invites a wrong guess.
+ */
 export const PAGE_UPDATED_TITLE = CONFIG.chrome.pageUpdatedTitleTemplate
   .replace("{updated}", `${BUILD_DATE.slice(0, 16).replace("T", " ")} UTC`)
 
-// WALL_WEIGHTS keeps wall-style iteration ordered and type-safe for traversal helpers.
+/**
+ * WALL_WEIGHTS keeps wall-style iteration ordered and type-safe for traversal helpers.
+ */
 export const WALL_WEIGHTS = Object.keys(CONFIG.maze.walls)
   .map((weight) => Number(weight))
   .sort((left, right) => left - right) as WallWeight[]
 
 export const STORE_PRIVACY_ACK = "tapoo.PrivacyAcknowledged.v1"
 
-// logDatabaseName is the one place the database-name pattern is written. Deliberately not exported:
-// a namer that takes any version is a way to address any database, and only two names are ever
-// legitimate - the current one and an older one being deleted. Both are exported below with the
-// version they may name already decided, so nothing outside this file chooses one.
+/**
+ * logDatabaseName is the one place the database-name pattern is written. Deliberately not exported:
+ * a namer that takes any version is a way to address any database, and only two names are ever
+ * legitimate - the current one and an older one being deleted. Both are exported below with the
+ * version they may name already decided, so nothing outside this file chooses one.
+ */
 function logDatabaseName(version: string | number): string {
   return `tapoo.v${version}.logs`
 }
 
-// The log database this build opens. Tied to the configured storage version, so it cannot be pointed
-// somewhere else by a caller.
+/**
+ * The log database this build opens. Tied to the configured storage version, so it cannot be pointed
+ * somewhere else by a caller.
+ */
 export const STORE_DB_NAME = logDatabaseName(CONFIG.runtime.storage.version)
 
-// staleTapooLogDatabaseName names a log database an older schema version left behind, and null for
-// the current one. The name is the only handle IndexedDB offers for deleting a database, so the
-// sweep has to build one - but it builds it from versions parsed out of leftover storage keys, and a
-// bad parse there would otherwise hand it the live log's name. The guard is what makes that
-// unreachable rather than merely unlikely.
+/**
+ * staleTapooLogDatabaseName names a log database an older schema version left behind, and null for
+ * the current one. The name is the only handle IndexedDB offers for deleting a database, so the
+ * sweep has to build one - but it builds it from versions parsed out of leftover storage keys, and a
+ * bad parse there would otherwise hand it the live log's name. The guard is what makes that
+ * unreachable rather than merely unlikely.
+ */
 export function staleTapooLogDatabaseName(version: string): string | null {
   const name = logDatabaseName(version)
   return name === STORE_DB_NAME ? null : name
 }
 
-// STORE_ENCODING_PREFIX marks the storage schema version embedded in every encoded payload.
+/**
+ * STORE_ENCODING_PREFIX marks the storage schema version embedded in every encoded payload.
+ */
 export const STORE_ENCODING_PREFIX = `tapoo:v${CONFIG.runtime.storage.version}:`
 export const STORE_BLEND_KEY = ["tapoo:web/vault", "key|spa.persist"].join(`  
   `)

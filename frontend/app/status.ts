@@ -12,7 +12,9 @@ import type {
 
 const { controlModes } = CONFIG.runtime
 
-// ViewportFitStatus classifies whether the maze fits or which viewport axis blocks it.
+/**
+ * ViewportFitStatus classifies whether the maze fits or which viewport axis blocks it.
+ */
 export type ViewportFitStatus =
   | "fits"
   | "too-small-length"
@@ -21,21 +23,27 @@ export type ViewportFitStatus =
 
 export type TooSmallStatus = "too-small" | Exclude<ViewportFitStatus, "fits">
 
-// isAgentApiMode identifies the browser mode where maze traversal comes from configured agents.
+/**
+ * isAgentApiMode identifies the browser mode where maze traversal comes from configured agents.
+ */
 export function isAgentApiMode(
   modeName: MazeControlModeName,
 ): modeName is "agent-api" {
   return modeName === controlModes.agentApi
 }
 
-// isInteractiveMode identifies the human-controlled browser mode.
+/**
+ * isInteractiveMode identifies the human-controlled browser mode.
+ */
 export function isInteractiveMode(
   modeName: MazeControlModeName,
 ): modeName is "interactive" {
   return modeName === controlModes.interactive
 }
 
-// viewportFitStatus classifies which axis blocks the current maze from fitting.
+/**
+ * viewportFitStatus classifies which axis blocks the current maze from fitting.
+ */
 export function viewportFitStatus(
   dimensions: BaseDimensions | null,
   terminalSize: BaseDimensions | null,
@@ -66,53 +74,69 @@ export function viewportFitStatus(
   return "fits"
 }
 
-// isAwaitAgentStatus identifies agent-api play before any enabled agent exists.
+/**
+ * isAwaitAgentStatus identifies agent-api play before any enabled agent exists.
+ */
 export function isAwaitAgentStatus(
   status: GameStatus,
 ): status is "await-agent" {
   return status === "await-agent"
 }
 
-// isStorageLimitStatus identifies the runtime-only state shown when fallback storage cannot safely
-// support the requested agent level.
+/**
+ * isStorageLimitStatus identifies the runtime-only state shown when fallback storage cannot safely
+ * support the requested agent level.
+ */
 export function isStorageLimitStatus(
   status: GameStatus,
 ): status is "storage-limit" {
   return status === "storage-limit"
 }
 
-// isRunningStatus narrows a status value to the active gameplay state.
+/**
+ * isRunningStatus narrows a status value to the active gameplay state.
+ */
 export function isRunningStatus(
   status: GameStatus,
 ): status is "running" {
   return status === "running"
 }
 
-// isPausedStatus narrows a status value to the resumable pause state.
+/**
+ * isPausedStatus narrows a status value to the resumable pause state.
+ */
 export function isPausedStatus(
   status: GameStatus,
 ): status is "paused" {
   return status === "paused"
 }
 
-// isWonStatus narrows a status value to the successful end-of-round state.
+/**
+ * isWonStatus narrows a status value to the successful end-of-round state.
+ */
 export function isWonStatus(status: GameStatus): status is "won" {
   return status === "won"
 }
 
-// isLostStatus narrows a status value to the failed end-of-round state.
+/**
+ * isLostStatus narrows a status value to the failed end-of-round state.
+ */
 export function isLostStatus(status: GameStatus): status is "lost" {
   return status === "lost"
 }
 
-// isSuccessfulMoveStatus identifies replay outcomes where a move actually advanced into a cell.
+/**
+ * isSuccessfulMoveStatus identifies replay outcomes where a move actually advanced into a cell.
+ */
 export function isSuccessfulMoveStatus(
   status: MoveStatus | undefined,
 ): status is "applied" | "reached-target" {
   return status === "applied" || status === "reached-target"
 }
 
-// isValidGridPointEqual returns true only when both positions exist and point to the same grid cell.
+/**
+ * isValidGridPointEqual returns true only when both positions exist and point to the same grid cell.
+ */
 export function isValidGridPointEqual(
   player: RenderGridPoint | null,
   target: RenderGridPoint | null,
@@ -124,20 +148,26 @@ export function isValidGridPointEqual(
   return player.x === target.x && player.y === target.y
 }
 
-// hasReachedTarget reads the live maze position without mutating status, so move replay and
-// turn finalization can answer the same question without depending on commit timing.
+/**
+ * hasReachedTarget reads the live maze position without mutating status, so move replay and
+ * turn finalization can answer the same question without depending on commit timing.
+ */
 export function hasReachedTarget(state: State): boolean {
   return isValidGridPointEqual(state.playerPosition, state.finalPosition)
 }
 
-// canTrackDestinationVisibility identifies active rounds whose clock can drive target visibility.
+/**
+ * canTrackDestinationVisibility identifies active rounds whose clock can drive target visibility.
+ */
 export function canTrackDestinationVisibility(
   state: State,
 ): state is State & { clock: NonNullable<State["clock"]> } {
   return isRunningStatus(state.status) && state.clock !== null
 }
 
-// isTooSmallStatus identifies both rendered and internal viewport-too-small states.
+/**
+ * isTooSmallStatus identifies both rendered and internal viewport-too-small states.
+ */
 export function isTooSmallStatus(
   status: GameStatus | ViewportFitStatus,
 ): status is TooSmallStatus {
@@ -149,16 +179,20 @@ export function isTooSmallStatus(
   )
 }
 
-// isFinishedStatus groups the terminal win/loss states together.
+/**
+ * isFinishedStatus groups the terminal win/loss states together.
+ */
 export function isFinishedStatus(
   status: GameStatus,
 ): status is "won" | "lost" {
   return isWonStatus(status) || isLostStatus(status)
 }
 
-// canProceedStatus marks a settled round: a maze exists but is not advancing, so the player owes
-// it a decision. The three compound checks below are each written as this set plus or minus what
-// makes them differ, so the shared membership is stated once here - widening this widens them all.
+/**
+ * canProceedStatus marks a settled round: a maze exists but is not advancing, so the player owes
+ * it a decision. The three compound checks below are each written as this set plus or minus what
+ * makes them differ, so the shared membership is stated once here - widening this widens them all.
+ */
 export function canProceedStatus(status: GameStatus): boolean {
   return (
     isAwaitAgentStatus(status) ||
@@ -167,10 +201,12 @@ export function canProceedStatus(status: GameStatus): boolean {
   )
 }
 
-// canPersistRoundStatus accepts everything canProceedStatus does, plus running, since a live round
-// has to survive a reload too. Its return type claims every status it accepts is a
-// PersistedGameStatus, and that claim is only true while canProceedStatus itself stays within that
-// union. TypeScript never checks a type predicate's body, so status.test.ts enforces the claim.
+/**
+ * canPersistRoundStatus accepts everything canProceedStatus does, plus running, since a live round
+ * has to survive a reload too. Its return type claims every status it accepts is a
+ * PersistedGameStatus, and that claim is only true while canProceedStatus itself stays within that
+ * union. TypeScript never checks a type predicate's body, so status.test.ts enforces the claim.
+ */
 export function canPersistRoundStatus(
   status: GameStatus,
 ): status is PersistedGameStatus {
@@ -179,16 +215,21 @@ export function canPersistRoundStatus(
   )
 }
 
-// canShowWallsStatus accepts exactly what canProceedStatus does: reweighting redraws the maze,
-// which is only safe while nothing is moving through it.
+/**
+ * canShowWallsStatus accepts exactly what canProceedStatus does: reweighting redraws the maze,
+ * which is only safe while nothing is moving through it.
+ */
 export function canShowWallsStatus(status: GameStatus): boolean {
   return canProceedStatus(status)
 }
 
-// canShowRestart accepts everything canProceedStatus does, plus too-small when there's a lower level
-// to fall back to. Reset Progress always restarts at level 1 (restartGame in game.ts), so offering it
-// while already too-small at level 1 would just redraw the same maze into the same too-small state -
-// there's no smaller level left to make room.
+/**
+ * canShowRestart accepts everything canProceedStatus does, plus too-small when there's a lower
+ * level to fall back to. Reset Progress reopens at state.restartLevel (restartGame in game.ts),
+ * which is never below level 1 - so while already too-small at level 1 a reset can only redraw the
+ * same maze, or a larger one, into the same too-small state. There's no smaller level left to make
+ * room.
+ */
 export function canShowRestart(status: GameStatus, level: number): boolean {
   if (isTooSmallStatus(status)) {
     return level > 1
@@ -197,9 +238,11 @@ export function canShowRestart(status: GameStatus, level: number): boolean {
   return canProceedStatus(status)
 }
 
-// ActiveRoundState is State with every field a live round needs proven present, so callers guarded by
-// hasActiveRoundState can read them without repeating the null checks. traversalHistory stays a plain
-// array here: a type cannot express "non-empty", so that half of the guard is a runtime claim only.
+/**
+ * ActiveRoundState is State with every field a live round needs proven present, so callers guarded by
+ * hasActiveRoundState can read them without repeating the null checks. traversalHistory stays a plain
+ * array here: a type cannot express "non-empty", so that half of the guard is a runtime claim only.
+ */
 export type ActiveRoundState = State & {
   mazeDimensions: MazeDimensions
   maze: string[][]
@@ -208,7 +251,9 @@ export type ActiveRoundState = State & {
   finalPosition: RenderGridPoint
 }
 
-// hasActiveRoundState reports whether a round holds enough state to be drawn, moved through, or saved.
+/**
+ * hasActiveRoundState reports whether a round holds enough state to be drawn, moved through, or saved.
+ */
 export function hasActiveRoundState(state: State): state is ActiveRoundState {
   return (
     state.mazeDimensions !== null &&
@@ -220,7 +265,9 @@ export function hasActiveRoundState(state: State): state is ActiveRoundState {
   )
 }
 
-// stateInvariantError reports impossible status/state combinations before rendering or persistence.
+/**
+ * stateInvariantError reports impossible status/state combinations before rendering or persistence.
+ */
 export function stateInvariantError(state: State): string | null {
   // Paused status must freeze time too; otherwise a paused screen would keep burning score.
   if (isPausedStatus(state.status) && !state.clock?.isPaused) {
