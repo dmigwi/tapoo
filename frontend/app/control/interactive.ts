@@ -8,8 +8,8 @@ import type {
 } from "../types"
 import { isSuccessfulMoveStatus } from "../status"
 import {
-  isFormControlTarget,
   acceptsGameControls,
+  keyboardEventBelongsToTarget,
   releaseAllActionBindings,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
@@ -103,7 +103,9 @@ export function createInteractiveMode(
     dispatch: MazeActionDispatch,
     commitTurn: (chargedMovesCount?: number) => void,
   ): void => {
-    if (isFormControlTarget(event.target)) {
+    // Composition keys, text fields, and a focused button's Enter/Space all belong to the element,
+    // not the game - see keyboardEventBelongsToTarget.
+    if (keyboardEventBelongsToTarget(event)) {
       return
     }
 

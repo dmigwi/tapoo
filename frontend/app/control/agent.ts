@@ -37,8 +37,9 @@ import {
   renderAgentSeatRoster,
 } from "../agent/seats"
 import {
-  isFormControlTarget,
   acceptsGameControls,
+  isComposingKeyEvent,
+  keyboardEventBelongsToTarget,
   releaseAllActionBindings,
   sessionActionFromButton,
   sessionActionFromKeyboardEvent,
@@ -129,6 +130,7 @@ export function createAgentMode(
   let agentFormCloseHandler: (() => void) | null = null
   let agentFormSubmitHandler: ((event: Event) => void) | null = null
   let agentFormOuterClickHandler: ((event: MouseEvent) => void) | null = null
+  let agentFormOuterMouseDownHandler: ((event: MouseEvent) => void) | null = null
   let releaseLogSubscription: (() => void) | null = null
   let lastActionResult: MazeActionResult | null = null
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null
@@ -231,6 +233,10 @@ export function createAgentMode(
         if (agentFormOuterClickHandler) {
           elements.body.removeEventListener("click", agentFormOuterClickHandler)
           agentFormOuterClickHandler = null
+        }
+        if (agentFormOuterMouseDownHandler) {
+          elements.body.removeEventListener("mousedown", agentFormOuterMouseDownHandler)
+          agentFormOuterMouseDownHandler = null
         }
       },
       __removeAppFocus: () => {
@@ -1113,11 +1119,23 @@ export function createAgentMode(
 
         // Only one overlay is ever open at a time (openAgentConfigForm/openAgentManageDialog each
         // close the other), so whichever one closeActiveAgentOverlay finds open is the right one.
+        //
+        // A press has to both start and end on the dimmed area. A browser sends click to the nearest
+        // element containing both the press and the release, so selecting text in a field and letting
+        // go past the form's edge arrives as a click on body - and closed the form, discarding what was
+        // typed. Where the press began is the only thing that tells that drag from a real click.
+        let outerPressStartedOnBody = false
+        agentFormOuterMouseDownHandler = (event: MouseEvent): void => {
+          outerPressStartedOnBody = event.target === elements.body
+        }
         agentFormOuterClickHandler = (event: MouseEvent): void => {
-          if (event.target === elements.body) {
+          const pressedOnBackdrop = outerPressStartedOnBody && event.target === elements.body
+          outerPressStartedOnBody = false
+          if (pressedOnBackdrop) {
             closeActiveAgentOverlay()
           }
         }
+        elements.body.addEventListener("mousedown", agentFormOuterMouseDownHandler)
         elements.body.addEventListener("click", agentFormOuterClickHandler)
       }
 
@@ -1238,10 +1256,10 @@ export function createAgentMode(
         return false
       }
 
-      // handleFormControlKeydown intercepts keys inside form fields so they keep normal typing
-      // behavior instead of falling through to global session shortcuts.
+      // handleFormControlKeydown keeps keys meant for the focused element - typing in a field, a
+      // composition, or Enter/Space on a button - from falling through to global session shortcuts.
       const handleFormControlKeydown = (event: KeyboardEvent): boolean => {
-        return isFormControlTarget(event.target)
+        return keyboardEventBelongsToTarget(event)
       }
 
       // Human-owned session controls stay on the no-feedback path in agent-api mode.
@@ -1277,6 +1295,12 @@ export function createAgentMode(
 
       // keydownHandler routes global keyboard shortcuts while yielding control to open overlays.
       keydownHandler = (event: KeyboardEvent): void => {
+        // Composition keys belong to the input method before anything else here: Escape mid-composition
+        // cancels a half-typed word, and reading it as "close the overlay" also reset every field.
+        if (isComposingKeyEvent(event)) {
+          return
+        }
+
         // Escape closes whichever agent overlay is open, regardless of which element inside it
         // currently holds focus (an input, a button, or otherwise).
         if (event.key === "Escape" && closeActiveAgentOverlay()) {
@@ -1286,6 +1310,12 @@ export function createAgentMode(
 
         // Global shortcuts are ignored while the user is typing inside agent forms.
         if (handleFormControlKeydown(event)) {
+          return
+        }
+
+        // The round sits paused behind an open overlay, and a session shortcut there acts on a game the
+        // player cannot see - Enter would resume it behind the form.
+        if (isAgentConfigFormOpen() || isAgentManageDialogOpen() || isSystemSettingsOpen()) {
           return
         }
 

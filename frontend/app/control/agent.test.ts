@@ -2149,6 +2149,8 @@ describe("agent control mode", () => {
     )
 
     clickAddSeat(elements, "2")
+    // A real click on the backdrop is a press and a release on it, in that order.
+    elements.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
     elements.body.dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     )
@@ -2157,6 +2159,124 @@ describe("agent control mode", () => {
     expect(
       elements.body.classList.contains("terminal-body--agent-form-active"),
     ).toBe(false)
+  })
+
+  it("keeps the agent form open when a text selection is dragged past its edge", () => {
+    // Selecting in a field and releasing beyond the form arrives as a click on body - the nearest
+    // element containing both the press and the release - and used to close the form, discarding
+    // what was typed.
+    const elements = createAgentFormElements()
+    vi.stubGlobal("fetch", vi.fn())
+    // As on the page, the form sits inside the dimmed body, so a press in a field reaches its listener.
+    elements.body.append(elements.app)
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      vi.fn(),
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+      testGameControls(),
+    )
+
+    clickAddSeat(elements, "2")
+    elements.agentConfigEndpoint.value = "http://localhost:11434/api/chat"
+    // A stale press on the backdrop that never became a click must not carry into the drag.
+    elements.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
+    elements.agentConfigEndpoint.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
+    elements.body.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+
+    expect(elements.agentConfigForm?.hidden).toBe(false)
+    expect(elements.agentConfigEndpoint.value).toBe("http://localhost:11434/api/chat")
+  })
+
+  it("keeps the agent form and its input when Escape cancels an input method composition", () => {
+    // Escape mid-composition cancels a half-typed word. Read as "close the overlay" it also ran
+    // form.reset(), clearing the endpoint, credential and headers.
+    const elements = createAgentFormElements()
+    const dispatch = vi.fn()
+    vi.stubGlobal("fetch", vi.fn())
+    document.body.append(elements.app)
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+      testGameControls(),
+    )
+
+    clickAddSeat(elements, "2")
+    elements.agentConfigEndpoint.value = "http://localhost:11434/api/chat"
+    const escape = new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true, cancelable: true })
+    if (!escape.isComposing) {
+      // Not every DOM implementation honours isComposing in the init dictionary.
+      Object.defineProperty(escape, "isComposing", { value: true })
+    }
+    elements.agentConfigEndpoint.dispatchEvent(escape)
+
+    expect(elements.agentConfigForm?.hidden).toBe(false)
+    expect(elements.agentConfigEndpoint.value).toBe("http://localhost:11434/api/chat")
+    expect(dispatch).not.toHaveBeenCalled()
+    elements.app.remove()
+  })
+
+  it("lets a focused button keep Enter instead of running the game's proceed", () => {
+    const elements = createAgentFormElements()
+    const dispatch = vi.fn()
+    vi.stubGlobal("fetch", vi.fn())
+    document.body.append(elements.app)
+    const button = document.createElement("button")
+    elements.app.append(button)
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+      testGameControls(),
+    )
+
+    button.focus()
+    const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+    button.dispatchEvent(enter)
+
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(enter.defaultPrevented).toBe(false)
+
+    // The same key from the terminal itself is still the game's proceed.
+    elements.app.focus()
+    elements.app.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    expect(dispatch).toHaveBeenCalledWith({ type: "proceed" }, expect.anything())
+    elements.app.remove()
+  })
+
+  it("runs no session shortcut while an agent overlay is open", () => {
+    // The round sits paused behind an open overlay; Enter used to resume it behind the form.
+    const elements = createAgentFormElements()
+    const dispatch = vi.fn()
+    vi.stubGlobal("fetch", vi.fn())
+    document.body.append(elements.app)
+
+    const mode = createTestAgentMode(elements)
+    mode.bindActionDispatch(
+      dispatch,
+      vi.fn(() => createControlFixture({ status: "await-agent" })),
+      vi.fn(() => createControlFixture()),
+      testGameControls(),
+    )
+
+    clickAddSeat(elements, "2")
+    // Focus inside the terminal, so only the open overlay stands between the key and the game.
+    elements.app.focus()
+    elements.agentConfigForm?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    expect(dispatch).not.toHaveBeenCalled()
+
+    // With the form closed, the same key reaches the game again.
+    elements.agentConfigClose?.click()
+    elements.app.focus()
+    elements.app.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    expect(dispatch).toHaveBeenCalledWith({ type: "proceed" }, expect.anything())
+    elements.app.remove()
   })
 
   it("persists a newly configured agent from an empty seat", () => {

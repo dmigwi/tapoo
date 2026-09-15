@@ -266,7 +266,17 @@ export function initTopMenus(): void {
     })
   }
 
+  // Where the last press began. A browser sends click to the nearest element containing both the press
+  // and the release, so a drag that starts inside an open menu and ends outside it arrives as a click
+  // outside - without this, selecting text in a menu and letting go past its edge closed the menu.
+  let pressStartedAt: Node | null = null
+  document.addEventListener("mousedown", (event: MouseEvent) => {
+    pressStartedAt = event.target instanceof Node ? event.target : null
+  })
+
   document.addEventListener("click", (event: MouseEvent) => {
+    const pressedAt = pressStartedAt
+    pressStartedAt = null
     if (!compactMode) {
       return
     }
@@ -277,14 +287,16 @@ export function initTopMenus(): void {
     }
 
     for (const menu of menus) {
-      if (menu.open && !menu.contains(target)) {
+      const pressBeganInside = pressedAt !== null && menu.contains(pressedAt)
+      if (menu.open && !menu.contains(target) && !pressBeganInside) {
         closeMenu(menu)
       }
     }
   })
 
   document.addEventListener("keydown", (event: KeyboardEvent) => {
-    if (!compactMode || event.key !== "Escape") {
+    // Not mid-composition: Escape there cancels an input method's half-typed word, not the menu.
+    if (!compactMode || event.key !== "Escape" || event.isComposing) {
       return
     }
 

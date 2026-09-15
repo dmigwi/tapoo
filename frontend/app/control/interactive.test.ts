@@ -340,6 +340,51 @@ describe("interactive control mode", () => {
     expect(dispatch).toHaveBeenCalledWith({ type: "pause" }, { playerName: "Self" })
   })
 
+  it("lets a focused button keep Enter and Space, while arrow keys still move the player", () => {
+    // Buttons inside the terminal app are focusable, and Enter or Space on one must press it. Read as
+    // game shortcuts they dispatched proceed or pause and cancelled the button's own click.
+    const nestedButton = document.createElement("button")
+    const elements = {
+      app: document.createElement("div"),
+      body: document.createElement("div"),
+      controls: [],
+      measure: document.createElement("div"),
+      screen: document.createElement("div"),
+      touchButtons: [],
+      touchControls: document.createElement("div"),
+      zoomPlaceholder: document.createElement("div"),
+      infoGate: document.createElement("div"),
+      infoGateTitle: document.createElement("strong"),
+      infoGateMessage: document.createElement("p"),
+      infoGateDetail: document.createElement("p"),
+      infoGateLink: document.createElement("a"),
+      infoGateProceed: document.createElement("button"),
+    }
+    elements.app.tabIndex = 0
+    elements.app.append(nestedButton)
+    document.body.append(elements.app)
+    const dispatch = vi.fn()
+
+    const mode = createInteractiveMode(elements)
+    mode.bindActionDispatch(dispatch, vi.fn(() => createState()), vi.fn(), testGameControls())
+
+    nestedButton.focus()
+    const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+    const space = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true })
+    nestedButton.dispatchEvent(enter)
+    nestedButton.dispatchEvent(space)
+
+    expect(dispatch).not.toHaveBeenCalled()
+    // Not cancelled, so the browser still delivers the button's own click.
+    expect(enter.defaultPrevented).toBe(false)
+    expect(space.defaultPrevented).toBe(false)
+
+    // A button keeps only its activation keys: the arrows still reach the game.
+    nestedButton.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
+    expect(dispatch).toHaveBeenCalledWith({ type: "MoveRight" }, expect.objectContaining({ wantFeedback: true }))
+    elements.app.remove()
+  })
+
   it("rebinds controls without keeping stale listeners alive", () => {
     const elements = {
       app: document.createElement("div"),

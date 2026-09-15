@@ -1,9 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type * as PageConfig from "./app/config"
+import type * as ViewportModule from "./app/viewport"
 
 import { CONFIG, PAGE_COPYRIGHT_TEXT, PAGE_UPDATED_AT } from "./app/config"
-import { applyPageText, applyPageVersion, relativeAge } from "./page-chrome"
+import { applyPageText, applyPageVersion, initTopMenus, relativeAge } from "./page-chrome"
+
+// Compact mode is a layout measurement jsdom cannot make, so the menu tests force it. Everything else
+// in the module is the real implementation.
+vi.mock("./app/viewport", async (importOriginal) => ({
+  ...(await importOriginal<typeof ViewportModule>()),
+  isCompactViewport: vi.fn(() => true),
+  observeCompactViewportChanges: vi.fn(),
+}))
 
 // Page-chrome tests call the focused hydration functions directly; tapoo.ts owns runtime startup.
 describe("page chrome data-config-value hydration", () => {
@@ -222,5 +231,50 @@ describe("applyPageVersion", () => {
     const runs = [...host.querySelectorAll(".page-footer__part")].map((run) => run.textContent)
     expect(runs).toHaveLength(2)
     expect(runs[0]).toBe(PAGE_COPYRIGHT_TEXT)
+  })
+})
+
+describe("compact top menus", () => {
+  // openCompactMenu builds one menu with a link inside and some page content outside it, then opens it.
+  function openCompactMenu(): { menu: HTMLDetailsElement; item: HTMLAnchorElement; outside: HTMLElement } {
+    document.body.innerHTML =
+      '<details class="top-menu"><summary>Menu</summary><a href="#item">Item</a></details><p>page</p>'
+    initTopMenus()
+    const menu = document.querySelector<HTMLDetailsElement>("details.top-menu")
+    const item = document.querySelector<HTMLAnchorElement>("details.top-menu a")
+    const outside = document.querySelector<HTMLElement>("p")
+    if (!menu || !item || !outside) {
+      throw new Error("expected the menu fixture")
+    }
+    menu.open = true
+    return { menu, item, outside }
+  }
+
+  it("keeps an open menu when a drag that began inside it ends outside", () => {
+    const { menu, item, outside } = openCompactMenu()
+
+    item.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
+    // The release lands outside: the browser sends the click to the nearest element holding both.
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    expect(menu.open).toBe(true)
+
+    // A real click outside still closes it.
+    outside.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
+    outside.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    expect(menu.open).toBe(false)
+  })
+
+  it("leaves an open menu alone on Escape mid-composition, and closes it on a plain Escape", () => {
+    const { menu } = openCompactMenu()
+
+    const composing = new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true })
+    if (!composing.isComposing) {
+      Object.defineProperty(composing, "isComposing", { value: true })
+    }
+    document.dispatchEvent(composing)
+    expect(menu.open).toBe(true)
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    expect(menu.open).toBe(false)
   })
 })
