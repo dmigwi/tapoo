@@ -989,8 +989,9 @@ export function createAgentMode(
               return
             }
 
-            // setRestartLevel stops the round in progress, so the dialog closes onto a game that
-            // has already halted rather than one still decaying behind it.
+            // The round is already halted here: opening the gear paused it (pauseIfRunning in
+            // openSystemSettings), so the dialog closes onto a stopped game rather than one still
+            // decaying behind it. setRestartLevel itself only moves the floor.
             gameControls.setRestartLevel(restartLevel)
             closeSystemSettings()
             renderAgentRoster()

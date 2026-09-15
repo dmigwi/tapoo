@@ -232,17 +232,19 @@ function cancelScheduledRoundPersist(): void {
  *
  * The "round" and "state" scopes write to two browser stores with different survival guarantees,
  * and level/wallWeight deliberately live in both:
- *   - sessionStorage (saveActiveRoundSnapshot, always written) holds the exact state of the
- *     currently active round - maze, traversal history, positions, score, level, wallWeight - so
- *     a same-tab refresh can restore it. It's wiped when the tab/browser closes.
- *   - localStorage (saveGameProgress, "state" scope only) holds just level and wallWeight as
- *     durable defaults for the *next* round, since sessionStorage won't survive closing the
- *     browser or the round finishing (win/loss clears its snapshot).
+ *
+ * - sessionStorage (saveActiveRoundSnapshot, always written) holds the exact state of the currently
+ *   active round - maze, traversal history, positions, score, level, wallWeight - so a same-tab
+ *   refresh can restore it. It's wiped when the tab/browser closes.
+ * - localStorage (saveGameProgress, "state" scope only) holds just level and wallWeight as durable
+ *   defaults for the *next* round, since sessionStorage won't survive closing the browser or the
+ *   round finishing (win/loss clears its snapshot).
+ *
  * "round" is used for frequent per-move writes (cheap, sessionStorage only); "state" is used for
  * checkpoints worth syncing to the durable copy too - level changes, wins, wall-weight cycling,
  * pause/exit. This keeps the two copies from ever drifting apart. At boot (bootstrapGame), the
- * localStorage values are only ever used as the fallback when no valid sessionStorage round
- * exists to resume - removing either copy would break a real case: closing the browser (loses
+ * localStorage values are only ever used as the fallback when no valid sessionStorage round exists
+ * to resume - removing either copy would break a real case: closing the browser (loses
  * sessionStorage) or a same-tab refresh mid-round (needs a self-contained round snapshot without
  * reaching into a separate store).
  */

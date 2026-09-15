@@ -142,17 +142,18 @@ function compactCell(cell: { row: number; col: number } | undefined): [number, n
  * reconstructs the original exactly. get_maze_structure is by far the largest thing a turn logs -
  * ~8 KB at the 41-entry maximum the historyWindowRadius allows - and the accumulated tool results
  * are re-sent on every follow-up request in a turn, so the same history lands in the log two or
- * three times over. sessionStorage is capped by the browser and shared with the round snapshot, so a
- * log that outgrows it used to take the session's record down with it.
+ * three times over. sessionStorage is capped by the browser and shared with the round snapshot, so
+ * a log that outgrows it used to take the session's record down with it.
  *
  * Three changes, each reversing by arithmetic or by counting rather than by inference:
- *   - openMoves becomes [[move, visitStatus], ...]. Each neighbour's row/col is the entry's own cell
- *     plus that move's delta, so the coordinates are recomputed rather than stored. An array of
- *     pairs rather than an object keeps the ordering explicit and reads the same in any language.
- *   - every cell becomes [row, col]. Notation only; nothing is dropped.
- *   - cellType goes. dead-end/corridor/junction is the openMoves count, and target-cell is a compare
- *     against destinationCell, which is still in the payload. start-cell alone needs the level's
- *     start position, which the level-start maze entry already records.
+ *
+ * - openMoves becomes [[move, visitStatus], ...]. Each neighbour's row/col is the entry's own cell
+ *   plus that move's delta, so the coordinates are recomputed rather than stored. An array of pairs
+ *   rather than an object keeps the ordering explicit and reads the same in any language.
+ * - every cell becomes [row, col]. Notation only; nothing is dropped.
+ * - cellType goes. dead-end/corridor/junction is the openMoves count, and target-cell is a compare
+ *   against destinationCell, which is still in the payload. start-cell alone needs the level's
+ *   start position, which the level-start maze entry already records.
  *
  * The model still receives the expanded form: it is given the coordinates precisely so it does not
  * have to do this arithmetic. This is the logged copy alone, and previewLoggedMessage checksums the

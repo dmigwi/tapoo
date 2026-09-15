@@ -27,13 +27,12 @@ const { generation, maze: mazeConfig, scoring } = CONFIG
 export type PRNGGenerator = (limit: number) => number
 
 /**
- * getPRNGInt returns a bounded, cryptographically random integer in [0, limit) for maze generation
- * - callers use it as an array index, a probability threshold, or a cell number, depending on the
- * call site. Using
- * crypto.getRandomValues rather than Math.random keeps maze layouts genuinely unpredictable -
- * worthwhile even for a game, since a guessable layout would blunt the challenge, and it means
- * no swap is needed later if the project grows into a context where that unpredictability
- * becomes a real security property rather than just a gameplay one.
+ * getPRNGInt returns a bounded, cryptographically random integer in [0, limit) for maze
+ * generation - callers use it as an array index, a probability threshold, or a cell number,
+ * depending on the call site. Using crypto.getRandomValues rather than Math.random keeps maze
+ * layouts genuinely unpredictable - worthwhile even for a game, since a guessable layout would
+ * blunt the challenge, and it means no swap is needed later if the project grows into a context
+ * where that unpredictability becomes a real security property rather than just a gameplay one.
  */
 function getPRNGInt(limit: number): number {
   if (limit <= 0) {

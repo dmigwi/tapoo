@@ -687,27 +687,27 @@ export function agentForCurrentRound(
 
 /**
  * recordAgentTurnStats persists one agent's post-turn counters. levelTurnCount is synchronized to
- * the round's completed turn count for every agent in the current attempt - a staleness signal only,
- * not a per-agent count - while turnCount and decayUnitsCharged are each accumulated only for the
- * agent that actually played, because neither State.turnCount nor state.scoreDecayUnits is split by
- * seat: the former counts every agent's turns together, the latter is shared spend with no
+ * the round's completed turn count for every agent in the current attempt - a staleness signal
+ * only, not a per-agent count - while turnCount and decayUnitsCharged are each accumulated only for
+ * the agent that actually played, because neither State.turnCount nor state.scoreDecayUnits is
+ * split by seat: the former counts every agent's turns together, the latter is shared spend with no
  * attribution to any individual agent.
  *
  * gameLevel and cumulativeRoundCount are required in the isSameAttempt check below - do not
  * simplify this to cumulativeRoundCount alone. Reasoning:
- *   - Level alone can't tell a retry of the same level apart from continuing it, hence
- *     cumulativeRoundCount.
- *   - cumulativeRoundCount alone looks sufficient (it's a strictly increasing, never-reused
- *     counter within one continuous session) but is NOT safe across a "Reset Progress":
- *     clearPersistedSnapshot never touches the separate agentConfigs storage namespace, so an
- *     agent's stored gameLevel/cumulativeRoundCount survive a reset untouched, while
- *     state.cumulativeRoundCount restarts from 0 on the next page load (no persisted round to
- *     restore it from). A later session can therefore legitimately reach the same
- *     cumulativeRoundCount value an old, unrelated agent record already holds. gameLevel is
- *     what catches that collision, since the new round's level will almost never match the
- *     stale record's level. Dropping gameLevel would let a post-reset session silently inherit
- *     stale decayUnitsCharged from a prior session, corrupting the traversal speed an agent
- *     is scored against.
+ *
+ * - Level alone can't tell a retry of the same level apart from continuing it, hence
+ *   cumulativeRoundCount.
+ * - cumulativeRoundCount alone looks sufficient (it's a strictly increasing, never-reused counter
+ *   within one continuous session) but is NOT safe across a "Reset Progress":
+ *   clearPersistedSnapshot never touches the separate agentConfigs storage namespace, so an agent's
+ *   stored gameLevel/cumulativeRoundCount survive a reset untouched, while
+ *   state.cumulativeRoundCount restarts from 0 on the next page load (no persisted round to restore
+ *   it from). A later session can therefore legitimately reach the same cumulativeRoundCount value
+ *   an old, unrelated agent record already holds. gameLevel is what catches that collision, since
+ *   the new round's level will almost never match the stale record's level. Dropping gameLevel
+ *   would let a post-reset session silently inherit stale decayUnitsCharged from a prior session,
+ *   corrupting the traversal speed an agent is scored against.
  */
 export function recordAgentTurnStats(
   turnAgent: AgentApiSeatConfig,
@@ -1109,11 +1109,11 @@ export function loadPersistedSnapshot(
  * clearPersistedSnapshot clears both long-lived preferences and the active round.
  *
  * It does NOT clear the log, and must not: this runs from restartGame, which the agent-api loop
- * triggers by itself on a turn-count mismatch. That path logs why it is restarting and then restarts
- * - so clearing here erased the one entry explaining the reset, along with every entry leading up to
- * it, leaving a wiped session with no record of what happened. The log is a record of the session,
- * not part of the game state a reset owns. Only tapooResetLogs clears it, and only the Tapoo logs
- * reset button calls that.
+ * triggers by itself on a turn-count mismatch. That path logs why it is restarting and then
+ * restarts - so clearing here erased the one entry explaining the reset, along with every entry
+ * leading up to it, leaving a wiped session with no record of what happened. The log is a record of
+ * the session, not part of the game state a reset owns. Only tapooResetLogs clears it, and only the
+ * Tapoo logs reset button calls that.
  */
 export function clearPersistedSnapshot(modeName: MazeControlModeName): void {
   try {
@@ -1205,7 +1205,6 @@ export function appendTapooLogEntry(modeName: MazeControlModeName, entry: unknow
  * clearTapooLog removes the persisted log snapshot from sessionStorage. tapooResetLogs is its only
  * caller, and the Tapoo logs reset button is that function's only caller in turn - no game action
  * reaches this, so a round can never take the session's record down with it.
- * so a deliberate reset clears both the in-memory buffer and its sessionStorage copy.
  */
 export function clearTapooLog(modeName: MazeControlModeName): void {
   try {

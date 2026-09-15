@@ -79,12 +79,12 @@ export function currentTapooLogSessionId(): string {
 // --- IndexedDB plumbing ---
 
 /**
- * Presence, not usability: a browser can expose window.indexedDB and still refuse to open a database
- * - private windows, blocked site data, and storage-partitioned third-party contexts all do. So this
- * only decides whether opening is worth attempting; the backend is not settled until openIndexedDb
- * resolves, which is why callers check its result rather than this. The one caller that treats this
- * as final is appendTapooLogStoreFallbackEntrySynchronously, which cannot await an open at all and
- * needs an answer before deciding whether the synchronous path applies.
+ * Presence, not usability: a browser can expose window.indexedDB and still refuse to open a
+ * database - private windows, blocked site data, and storage-partitioned third-party contexts all
+ * do. So this only decides whether opening is worth attempting; the backend is not settled until
+ * openIndexedDb resolves, which is why callers check its result rather than this. The one caller
+ * that treats this as final is appendTapooLogStoreFallbackEntrySynchronously, which cannot await an
+ * open at all and needs an answer before deciding whether the synchronous path applies.
  */
 function hasIndexedDb(): boolean {
   return window.indexedDB !== undefined && window.indexedDB !== null
@@ -151,11 +151,12 @@ function invalidateIndexedDbConnection(): void {
  * Opens the log database once per page and caches the promise, so concurrent callers share one
  * connection rather than racing separate open requests.
  *
- * Every failure path resolves null rather than rejecting: no IndexedDB, a refused open, or a version
- * change blocked by another tab all mean the same thing to a caller - use the fallback. Logging must
- * never throw into the game loop, so an unusable database degrades the backend instead of failing
- * the turn that tried to log. backend is set here because this is the only place that learns which
- * one is actually live.
+ * Every failure path resolves null rather than rejecting: no IndexedDB, a refused open, or a
+ * version change blocked by another tab all mean the same thing to a caller - use the fallback.
+ * Logging must never throw into the game loop, so an unusable database degrades the backend instead
+ * of failing the turn that tried to log. backend becomes indexed-db only here, because this is the
+ * only place that learns an open actually succeeded; every other write only ever drops it back to
+ * session-storage.
  */
 function openIndexedDb(): Promise<IDBDatabase | null> {
   if (!hasIndexedDb()) {

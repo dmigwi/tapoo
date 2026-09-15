@@ -481,7 +481,7 @@ describe("buildAgentPersonaPrompt", () => {
     expect(description).not.toContain("holding the 1.0000 baseline")
   })
 
-  // Traversal speed is first visits over decay units spent - a spend-efficiency ratio, and one that
+  // Traversal speed is first visits over decay units spent - a ratio of new ground to cost, and one that
   // says nothing authoritative about "gaining" anything. Nothing in this game credits an agent for
   // a cell: score only decays (scoring.ts subtracts units from maxScore). Every branch therefore
   // states the measured ratio and stops there, rather than describing a return.

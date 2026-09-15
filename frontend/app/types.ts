@@ -763,8 +763,9 @@ export type AgentPlayerStatus = {
  */
 export type GameControls = {
   /**
-   * Moves the floor every round opens at or above, returning whether it changed. Stops the round
-   * in progress first - see setRestartLevel in game.ts.
+   * Moves the floor every round opens at or above, returning whether it changed. It does not stop
+   * the round: the overlays that can reach it pause a running game when they open - see
+   * setRestartLevel in game.ts.
    */
   setRestartLevel: (level: number) => boolean
 }
@@ -971,17 +972,19 @@ export type SummaryComparisonTemplates = {
  * LogLevel classifies the severity of a Tapoo log entry for filtering and analysis. For an
  * agent-api provider response specifically (see request.ts/control/agent-api.ts), the three levels
  * map onto AgentPredictionResult like this:
- *   info  - a successful request/response round-trip with a validly-formatted output. This covers
- *           "Agent request.", "Agent response.", and a round's final "Agent level won/lost." entry
- *           - the batch of moves it carried may still include invalid ones (a wall hit stops
- *           replay), since that is a maze-navigation outcome, not a wire-format problem.
- *   warn  - reason: "malformed-response" or "token-limit-exhaustion". The model's own recoverable
- *           mistake (unparseable JSON, a hallucinated tool call, ignoring a duplicate-call warning,
- *           or exhausting the token cap without a prediction) - Tapoo charges the fixed mistake
- *           penalty after any eligible retry is exhausted and keeps the agent enabled.
- *   error - reason: "network-error". The provider/infrastructure itself failed (HTTP failure,
- *           timeout, fetch exception) rather than the model producing bad output. No penalty is
- *           charged for this - see recordAgentNetworkError - and the agent is disabled instead.
+ *
+ * - `info` - a successful request/response round-trip with a validly-formatted output. This covers
+ *   "Agent request.", "Agent response.", and a round's final "Agent level won/lost." entry - the
+ *   batch of moves it carried may still include invalid ones (a wall hit stops replay), since that
+ *   is a maze-navigation outcome, not a wire-format problem.
+ * - `warn` - reason: "malformed-response" or "token-limit-exhaustion". The model's own recoverable
+ *   mistake (unparseable JSON, a hallucinated tool call, ignoring a duplicate-call warning, or
+ *   exhausting the token cap without a prediction) - Tapoo charges the fixed mistake penalty after
+ *   any eligible retry is exhausted and keeps the agent enabled.
+ * - `error` - reason: "network-error". The provider/infrastructure itself failed (HTTP failure,
+ *   timeout, fetch exception) rather than the model producing bad output. No penalty is charged for
+ *   this - see recordAgentNetworkError - and the agent is disabled instead.
+ *
  * "error" is also used outside the agent-api response path, for internal invariant violations
  * (game.ts) and fallback-policy failures unrelated to any specific agent's response.
  */
@@ -1227,8 +1230,8 @@ export type AppConfig = {
   systemSettings: {
     /**
      * Named for the mode it is opened from, so a setting that only governs this mode's play never
-     * reads as global. {mode} is filled from runtime.displayLabels at open time, not at build time
-     * - which is also why this title carries no data-config-key in the markup.
+     * reads as global. {mode} is filled from runtime.displayLabels at open time, not at build
+     * time - which is also why this title carries no data-config-key in the markup.
      */
     title: string
     restartLevelLabel: string
@@ -1434,8 +1437,9 @@ export type AppConfig = {
     /**
      * The level a game opens on before anyone has chosen otherwise. It seeds State.restartLevel,
      * which is what every entry point actually reads, so they can never disagree about where a game
-     * begins. State.restartLevel is memory-only, so this is also where each page load starts again
-     * - changing it moves the opening level for everyone.
+     * begins. State.restartLevel is carried in the tab's round snapshot, so a same-tab reload keeps
+     * a chosen floor; a new tab, or a load with no round to restore, starts from this value again -
+     * changing it moves the opening level for everyone.
      */
     defaultRestartLevel: number
     storage: {
