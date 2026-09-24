@@ -1,19 +1,316 @@
-# Tapoo
+<p align="center">
+  <a href="https://dmigwi.github.io/tapoo/"><img alt="Tapoo - AI agent behavior profiler" src="public/images/og-image.png" width="400" style="max-width: 100%; height: auto;" /></a>
+</p>
+
 [![TypeScript Version](https://img.shields.io/badge/TypeScript-6.0.3+-blue.svg)](http://www.typescriptlang.org/)
 [![Go Version](https://img.shields.io/badge/go-1.25+-00ADD8.svg)](https://go.dev/)
 [![Go CI](https://github.com/dmigwi/tapoo/actions/workflows/go.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/go.yml)
 [![Page Deployment](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml/badge.svg)](https://github.com/dmigwi/tapoo/actions/workflows/pages.yml)
 
-Tapoo is an AI agent behavior profiler built as a maze runner hide-and-seek game. Two interfaces
-share one codebase: a browser SPA, where a configured AI agent plays the maze and what it does is
-recorded, and a Go terminal game with the same terminal-inspired feel. Profiling is browser-only -
-the terminal build is the game by itself. Its companion
-[Tapoo Oracle](https://github.com/dmigwi/tapoo-oracle) application analyzes exported AI-agent
-gameplay logs against the Tapoo Agentic Behavior Rubric.
+# Can your AI model survive its own mistakes?
 
-**Objective:** _Guide the blue player to the red destination before the score drops to zero._
+Model releases lead with their highest achievements, but almost none document how a model performs
+when a prompt is incomplete or ambiguous, or what it does once its own errors start piling up.
+Tapoo is a behaviour profiler built for exactly that: it puts a model under structured uncertainty,
+records every decision it makes, and builds a profile - a fingerprint of observed capabilities and
+violations - of how it copes.
 
-## Quick Start
+**Survival is computed.** Every turn is charged against a fixed budget; batching several correct
+moves into one turn earns part of that budget back; and a model survives its own mistakes
+exactly when what its batching earns covers what its errors cost. When it does not, the run is
+already unwinnable at any pace ever observed, with budget still in hand - and Tapoo names the turn.
+
+**Try it live, in your browser - nothing to install:**
+
+- **Tapoo** - [dmigwi.github.io/tapoo](https://dmigwi.github.io/tapoo/): configure a model on the
+  [agents page](https://dmigwi.github.io/tapoo/agents.html), let it run, and download its log.
+  Every prompt it receives is published on the [prompts page](https://dmigwi.github.io/tapoo/prompts.html).
+- **Tapoo Oracle** - [dmigwi.github.io/tapoo-oracle](https://dmigwi.github.io/tapoo-oracle/): load
+  a log and get its profile against the Tapoo Agentic Behavior Rubric
+  ([source](https://github.com/dmigwi/tapoo-oracle)).
+
+Tapoo runs entirely in your browser, with no Tapoo server behind it. Logs stay on your device: what
+leaves it is the context each turn sends to the model endpoint you configure, and a credential goes
+only to the endpoint it was entered for.
+
+## How it works
+
+### The uncertainty
+
+The model is given a navigation challenge: find a target cell in a randomly generated maze. The maze
+has no cycles, exactly one success path that never changes once the maze is generated, and a
+variable number of dead-end branches. The model is never handed the full layout at once: each turn
+describes only the neighbourhood around it, so any wider map is one the model pieces together
+across turns. Beyond its own position, the target's position, the maze's dimensions and its traversal
+speed (below), each turn provides the model with the following information:
+
+- its cell visit history, capped to within a Manhattan distance of 4 (the `manhattanDistance` setting)
+- the outcome of its previous prediction
+- the open exits from its current cell to the connected neighbouring cells
+
+From that, it must derive its next moves: at least 1, with 2-4 suggested and no upper limit. Moves
+are applied in order until the first invalid one - a wall or out of bounds. There is no judge model
+and no self-reported success; every move is checked against the maze.
+
+Every move after the first is a bet. The open exits make the first move certain; each one after it
+has to be deduced from context, and the odds of simply guessing right collapse - 33.33% for the
+second, 11.11% for the third, 3.70% for the fourth, and so on. The only way to beat those odds is to
+build a correct map of the surroundings from the context information given via the tool calls.
+
+### Why playing safe doesn't work
+
+**Playing safe** means submitting one move per turn - the only move the model can be certain of, since
+the current cell's open exits name it. It never guesses, so it never hits a wall. It also never
+covers more than one cell for the decay unit that turn costs.
+
+- The model starts with a budget of decay units equal to the number of cells in the maze. If the
+  budget runs out before the target is located, the challenge is failed.
+- A dead-end branch usually gives itself away only near its end, and walking back out costs as much
+  as walking in - so every branch explored eats into a budget of about one unit per cell.
+
+Each model is told its **traversal speed** - the new cells it was first to reach, divided by the decay
+units it was charged - and what it says about its chances of finishing: below 1.0000x is a
+_backtracker_, exactly 1.0000x a _navigator_, and above 1.0000x a _trailblazer_ - the class with the
+strongest margin for surviving its own mistakes.
+
+The Oracle decomposes that rate into three factors: route efficiency (new cells per applied move),
+batching (applied moves per turn), and accuracy (turns per decay unit). Their product is the rate the
+counted turns give, which is why a report shows it as an approximation of the stated speed. Route
+efficiency and accuracy can only be lost, never gained, so batching is the one factor that can carry
+the rate above 1.0000x: a flawless single-move agent cannot pass it.
+
+Speed is the rate view of a run. Quantifying survival, below, is the budget view of the same turns -
+and the batching factor there is the same `b`, so the two decompositions share their middle term
+rather than competing.
+
+### The profile
+
+Batching forces every model to act on its own reading of an uncertain map. Some build an accurate
+picture and batch confidently; some hallucinate walls or openings and act on them; some become so
+conservative they run out of budget. [Tapoo Oracle](https://dmigwi.github.io/tapoo-oracle/) scores
+the exported log against a rubric of capabilities and violations, kept separate rather than
+collapsed into a single scalar. A "no" means "not observed in this run", not "incapable". Runs are
+stochastic and every maze is unique, so a profile is a pattern across many attempts, not a verdict
+from one run.
+
+### Quantifying survival
+
+Every turn ends in exactly one state. The model chooses the moves, the maze decides which apply, and
+the charge follows from that outcome:
+
+| State | Condition | Charge |
+| --- | --- | --- |
+| **progress** | all moves applied, at least one new cell entered | 1 decay unit |
+| **no progress** | all moves applied, no new cell entered | 1 decay unit |
+| **partial failure** | some moves applied, then one refused | 2 decay units |
+| **refusal** | the first submitted move was invalid | 2 decay units |
+| **empty** | no usable prediction replayed | 3 decay units |
+
+Two consequences drive everything else. **A no-progress turn charges exactly what clean progress
+charges**, so standing still is invisible to every other check: not a violation, no error debt, and it
+looks like success. And **a clean turn charges 1 decay unit however far it travels**, which is what
+makes batching valuable and retreating out of a dead end affordable.
+
+One charge, two opposite meanings. A no-progress turn is a **retreat** when every cell it entered
+reads `backtracking` or `explored` - legitimate, and required by the prompt once a dead end is
+confirmed - and an **oscillation** when a cell reads `oscillating`, which is a rubric violation. The
+budget cannot tell them apart; `visitStatus` can, and any rate that pools them reports a violation
+where there was compliance.
+
+The split separates runs that a pooled rate would call identical. Of DeepSeek's 301 no-progress
+turns, 294 are oscillations and 7 retreats. The earlier level 1 loss is the mirror image: 59
+retreats, not one oscillation - it lost while doing exactly what the prompt asks of it.
+
+### The survival identity
+
+Six figures, all read from one run's own log:
+
+| Symbol | Meaning |
+| --- | --- |
+| `A` | budget - decay units available, equal to the maze's cell count |
+| `D` | decay units actually charged |
+| `turns` | prediction cycles completed |
+| `moves` | applied moves - every replayed step that landed |
+| `p` | error debt - `D - turns`, what invalid moves and malformed responses cost |
+| `b` | batch depth - `moves / turns` |
+
+Three more are recomputed every turn:
+
+| Symbol | Meaning |
+| --- | --- |
+| `U` | unvisited route cells - success-path cells not yet entered; only ever decreases |
+| `u` | decay units left |
+| `dist` | tree distance - moves along the only route from the current cell to the target, including the retrace out of any dead end it stands in; never less than `U` |
+
+A run finishes exactly when the budget covers what it spent:
+
+```
+moves / b  +  p  <=  A
+
+headroom(b)  =  A - moves/b - p        decay units left when the run ends
+```
+
+Headroom is not a property of the run alone: the same route and the same errors give a different
+figure at every batch depth, so it means nothing quoted without its `b`. Subtracting `D` from `A` at
+the achieved depth splits it into three terms that each name a different cause:
+
+```
+headroom  =  (A - moves)   +   (moves - turns)   -      p
+              route slack       batch credit       error debt
+```
+
+| Term | Measures | Sign |
+| --- | --- | --- |
+| **route slack** | decay units for cells never walked - maze shape plus route-finding skill | either |
+| **batch credit** | decay units saved by covering several cells for one charge; zero at `b = 1` | `>= 0` |
+| **error debt** | decay units lost to invalid moves and malformed responses | `>= 0` |
+
+**A model survives its own mistakes when route slack plus batch credit covers its error debt.**
+
+### Required batch depth
+
+Setting `headroom(b) = 0` gives the depth a run needed to survive what its route cost and its errors
+spent:
+
+```
+b_min  =  moves / (A - p)
+```
+
+| Run | moves | error debt | b required | b achieved | margin |
+| --- | --- | --- | --- | --- | --- |
+| GLM-5.3, level 54 | 615 | 117 | 1.273 | **1.723** | +0.450 |
+| Gemma4, level 54 | 602 | 9 | 1.019 | **1.246** | +0.227 |
+| Gemma4, level 1 | 68 | 0 | 0.971 | **1.015** | +0.044 |
+
+Applied moves are counted from the replay, including each run's deciding turn - which the log never
+reports directly, since a turn's outcome arrives with the next turn's tool calls and a winning turn
+has no successor. It is recovered by replaying that last prediction against the maze.
+
+`b_min < 1` means batching was never needed. That is true only of the level 1 run, whose 70-unit
+budget covered a 69-move route. Both level 54 winners had to batch. Holding each run's route and
+errors fixed and sweeping `b`:
+
+```
+                route slack   batch credit   error debt   headroom
+GLM-5.3 L54         -15           258           117         +126   won
+  at b = 1          -15             0           117         -132   would have lost
+
+Gemma4 L54           -2           119             9         +108   won
+  at b = 1           -2             0             9          -11   would have lost
+
+Gemma4 L1             2             1             0           +3   won
+  at b = 1            2             0             0           +2   would still have won
+```
+
+GLM-5.3 spent 117 decay units on mistakes and earned 258 of batch credit that paid for them. Gemma4
+at level 54 spent 9 and still needed 119, because its route cost two units more than the maze has
+cells. Only at level 1, on a corridor with no branches to explore, did a model finish without
+batching at all. That is the claim stated per run, in decay units, and falsifiable: not "batching is
+good", but *this model's errors cost this much and its batching earned that much, so it survived by
+the difference*.
+
+Route slack is negative on every level 54 run: each walked more steps than the maze has cells,
+because a dead end costs two steps per cell - one in, one out - and batching is what buys those
+steps back.
+
+### The point of no return
+
+Batching into new ground and batching a retreat are bounded by different things. Pooled across all
+2,184 turns of the eight runs profiled so far, new cells entered per turn:
+
+```
+new cells   0      1     2    3   4   >4
+turns     562   1409   189   21   3    0
+```
+
+The first new cell is free - the current cell's `openMoves` names it. A second requires knowing the
+exits of a cell the model has never stood in, and those are never stated; they can only be deduced. A
+visited neighbour's `openMoves` says which walls that neighbour does *not* have, and the gaps narrow
+what the unvisited cell can be. Each further new cell pushes that elimination one cell deeper, and
+the only evidence for it is visited cells inside the history window - so the chain of certain moves
+cannot outrun the window's reach. At a Manhattan distance of 4 it runs out after about four layers,
+which is where the distribution stops.
+
+A retreat has no such bound: the window can hold 25 visited cells whose exits are already known, so
+Kimi K3 applied 7 moves in one turn to enter a single new cell.
+
+Two constants follow, both observations with dates on them rather than properties of the game:
+
+| Constant | Value | Where it comes from | Raise it when |
+| --- | --- | --- | --- |
+| new cells one turn can break | `4` | the highest seen in 2,184 turns, and the window explains why | a run shows 5 |
+| fastest pace ever sustained | `1.52` | best 50-turn rolling average of new cells per turn, held by GLM-5.3 | a run sustains more |
+
+Neither is structural. The response schema sets `minItems: 1` with no maximum, so a longer batch is
+permitted, and a chain forced by boundary walls could in principle deduce a fifth new cell.
+
+So a verdict must count **new route cells**, never distance travelled. At turn `t`:
+
+```
+U > 4u   =>   unwinnable
+```
+
+`U` falls by at most 4 per turn and `u` falls by at least 1, so `U/4 - u` can never decrease. **Once
+true, always true** - monotone by construction rather than by luck, and verified on every turn of all
+eight runs.
+
+| Run | fires | U at fire | decay left | Outcome |
+| --- | --- | --- | --- | --- |
+| Apertus-v1.5-70B, level 1 | turn 34 of 41 | 54 | 13 | lost |
+| Gemma4, level 1 (earlier build) | turn 51 of 63 | 50 | 12 | lost |
+| all others | never | - | - | 4 won, 2 stopped |
+
+Everything that fires earlier is a warning, because none of it is monotone:
+
+| Signal | Claim | Fires: Apertus / earlier L1 / DeepSeek |
+| --- | --- | --- |
+| `dist > u` | caution alone no longer suffices | 8 / 15 / 190 |
+| `U > 1.52u` | beyond the fastest new-cell pace ever sustained | 21 / 31 / 354 |
+| `dist > b*u` | beyond this run's own demonstrated pace | 19 / 19 / **105** |
+| `U > 4u` | beyond any new-cell pace ever observed | 34 / 51 / never |
+
+The per-run pace fires earliest on DeepSeek, at turn 105 with 70% of its budget unspent, and flags no
+winner. It stays a warning because `b` is a running mean that can rise.
+
+Eight runs is an observation, not a threshold, and both losses were 70-cell corridor mazes with zero
+route slack while three of the wins were level 54 - maze shape is confounded with outcome. The verdict
+also needs the decoded maze, so it is available to a reader after the run, never to the model during
+it.
+
+## Sample profiles
+
+Every run behind the figures above. Each model name opens its live Oracle report; error debt is
+`D - turns` and decay left is `A - D`, both exact from the log. The app version and maze are listed
+because the same model under a different build or maze area is a different experiment - three Gemma4
+runs appear here across three versions. Rows are ordered by app version.
+
+| Model | App | Level (maze) | Turns | Error debt | Decay left | Outcome |
+| --- | --- | --- | --- | --- | --- | --- |
+| [Gemma4](https://dmigwi.github.io/tapoo-oracle/r/AmdpdGxhYi5jb20vYXBpL3Y0L3Byb2plY3RzLzg2NDEzMTQyL3JlcG9zaXRvcnkvZmlsZXMvdGFwb28tdjIuNC44LWFnZW50LWFwaS1sb2dzLTE3ODc4MTkwOTcuanNvbi9yYXf4Ag) | v2.4.8 | 1 (10x7, 70) | 63 | 7 | 0 | lost |
+| [GLM-5.3](https://dmigwi.github.io/tapoo-oracle/r/AGRtaWd3aS8BEKq0c37Q6ioyFF3LwEpE_IwvcmF3LwEU-PPCJc3BJzZKGYIdg5IjL28KPHIvdGFwb28tdjIuNS4xLWFnZW50LWFwaS1sb2dzLTE3ODgwMjM1NDMtZ2xtLTUuMy5qc29uXK4) | v2.5.1 | 54 (25x24, 600) | 357 | 117 | 126 | completed |
+| [Gemma4](https://dmigwi.github.io/tapoo-oracle/r/AGRtaWd3aS8BEEpsa72wptbFAXQsth5o0CgvcmF3LwEUkAXQT98r6gDQrjuvqGY6mZ65G1svdGFwb28tdjIuNS4xLWFnZW50LWFwaS1sb2dzLTE3ODgwMjM1MTctZ2VtbWE0Lmpzb25PIg) | v2.5.1 | 54 (25x24, 600) | 483 | 9 | 108 | completed |
+| [GLM-5.1](https://dmigwi.github.io/tapoo-oracle/r/AGRtaWd3aS8BELChL-KeLPEI_vlaHAYDFTIvcmF3LwEUzxpghV6XeBTDjBYcF1Xvl4erHzEvdGFwb28tdjIuNS4xLWFnZW50LWFwaS1sb2dzLTE3ODgwNzEyNjgtZ2xtLTUuMS5qc29ud8Y) | v2.5.1 | 54 (25x24, 600) | 473 | 111 | 16 | completed |
+| [Kimi K3](https://dmigwi.github.io/tapoo-oracle/r/AGRtaWd3aS8BEMu4TYKMRX6FBQpIh8YyzdwvcmF3LwEU3D6C-jZrvLYCVJm9bbM4wxBQkAUvdGFwb28tdjIuNS4xLWFnZW50LWFwaS1sb2dzLTE3ODgwNzE1OTEta2ltaS1rMy5qc29uzdo) | v2.5.1 | 54 (25x24, 600) | 329 | 22 | 249 * | stopped - stalled 80 turns |
+| [DeepSeek v4 Pro](https://dmigwi.github.io/tapoo-oracle/r/AGRtaWd3aS8BEAwRLyf4RUq_ZIJa2M08ZrUvcmF3LwEUCyWgg1-xfxJKmZE5plyWUQDii4wvdGFwb28tdjIuNS4xLWFnZW50LWFwaS1sb2dzLTE3ODgwMjM1MjUtZGVlcHNlZWstdjQtcHJvLmpzb25YEw) | v2.5.1 | 54 (25x24, 600) | 379 | 16 | 205 * | stopped - oscillating |
+| [Gemma4](https://dmigwi.github.io/tapoo-oracle/r/AmdpdGxhYi5jb20vYXBpL3Y0L3Byb2plY3RzLzg2NDEzMTQyL3JlcG9zaXRvcnkvZmlsZXMvdGFwb28tdjIuNi4xLWFnZW50LWFwaS1sb2dzLTE3ODkyNDAzNTctZ2VtbWE0LWxldmVsMS5qc29uL3Jhd6cH) | v2.6.1 | 1 (10x7, 70) | 67 | 0 | 3 | completed |
+| [Apertus-v1.5-70B](https://dmigwi.github.io/tapoo-oracle/r/AmdpdGxhYi5jb20vYXBpL3Y0L3Byb2plY3RzLzg2NDEzMTQyL3JlcG9zaXRvcnkvZmlsZXMvdGFwb28tbG9ncy1zY2hlbWE1LjItdjIuNi4yLTE3ODk0MDg0MDE2OTUuanNvbi9yYXfPrw) | v2.6.2 | 1 (10x7, 70) | 41 | 29 | 0 | lost |
+
+\* position at the halt; the run had not ended.
+
+The error-debt column is where the framework earns its keep. DeepSeek and Kimi K3 carried debts of
+16 and 22 decay units, lower than either GLM run, and neither finished; GLM-5.3 carried 117, the
+highest of any run, and finished first, because its batch credit of 187 more than covered them. What
+ended the two stalled runs was not mistakes but turns that bought no new ground. Every model that
+completed level 54 was still a backtracker; none reached 1.0000x.
+
+Only the Apertus run carries an entries checksum, which exports gained in v2.6.2. The five level 54
+logs (v2.5.1) and the two earlier level 1 runs (v2.4.8 and v2.6.1) predate it, so the Oracle verifies
+nothing on them.
+
+## Run it yourself
+
+The live site above is the quickest way in. Tapoo also runs locally, and ships a Go terminal build of
+the maze without agent profiling - profiling is browser-only.
 
 ### Terminal
 
@@ -56,6 +353,8 @@ Then open `http://localhost:5500/`.
 <details>
 <summary><strong>Gameplay And Controls</strong></summary>
 
+**Objective:** _Guide the blue player to the red destination before the score drops to zero._
+
 Tapoo increases maze area as levels rise. Progress continues until the current terminal window or browser viewport can no longer fit the next maze cleanly.
 
 ### Terminal controls
@@ -77,13 +376,12 @@ Tapoo increases maze area as levels rise. Progress continues until the current t
 <details>
 <summary><strong>Highlights</strong></summary>
 
-- Terminal-first maze gameplay
-- Browser SPA with the same black-and-green terminal feel
+- AI model behaviour profiling under structured uncertainty, against Ollama, OpenAI-compatible, and Anthropic APIs, with up to 5 agent seats
+- Capability and violation profiles through the companion [Tapoo Oracle](https://github.com/dmigwi/tapoo-oracle) application
+- Browser SPA with a black-and-green terminal feel, plus a Go terminal build of the maze
 - Adjustable wall weights with live cycling during play
 - Per-level scoring and progression
 - Pause, resume, retry, and next-level flow
-- HTTP-driven AI agent play against Ollama, OpenAI-compatible, and Anthropic APIs, with up to 6 (configurable) agent seats
-- Agent behavior analysis through the companion [Tapoo Oracle](https://github.com/dmigwi/tapoo-oracle) application
 - Best-effort persistence for terminal and browser sessions
 - Manual GitHub Pages deployment for the web build
 - Go and TypeScript test coverage in CI
@@ -93,7 +391,7 @@ Tapoo increases maze area as levels rise. Progress continues until the current t
 <details>
 <summary><strong>Browser App</strong></summary>
 
-The browser build emits versioned JS/CSS bundles under [public/js](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/public/js) and [public/css](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/public/css), then serves the SPA from [public/index.html](/Users/dmigwi/theSecretCoder/App/Golang/src/github.com/dmigwi/tapoo/public/index.html).
+The browser build emits versioned JS/CSS bundles under `public/js` and `public/css`, then serves the SPA from `public/index.html`. These are build output and are not committed.
 
 This compiles [frontend/tapoo.ts](/frontend/tapoo.ts) with `esbuild` into a minified browser bundle.
 
@@ -130,7 +428,7 @@ docker run --rm -it -p 5500:80 tapoo
 <details>
 <summary><strong>AI Agents</strong></summary>
 
-Instead of (or alongside) a human player, up to 6 agent seats can each be configured to play the maze by calling an HTTP chat-completions endpoint every turn.
+Instead of (or alongside) a human player, up to 5 agent seats can each be configured to play the maze by calling an HTTP chat-completions endpoint every turn.
 
 ### Supported providers
 
@@ -222,7 +520,7 @@ make docker-run
 
 ### Benchmarks
 
-Go and TypeScript carve mazes independently from different random sources, so [parity-harness/bench-report.mjs](/parity-harness/bench-report.mjs) runs both ports' benchmark suites ([maze/bench](/maze/bench) and [frontend/bench](/frontend/bench)) and checks that the two generators produce identical per-sample maze structures rather than merely eyeballing the numbers. A flagged case means a reproducible behavioral gap between the ports, not just run-to-run noise.
+Go and TypeScript each carve mazes with their own generator, so [parity-harness/bench-report.mjs](/parity-harness/bench-report.mjs) runs both ports' benchmark suites ([maze/bench](/maze/bench) and [frontend/bench](/frontend/bench)) from one shared PRNG seed and checks that the two generators produce identical per-sample maze structures rather than merely eyeballing the numbers. A flagged case means a reproducible behavioral gap between the ports, not just run-to-run noise.
 
 ```bash
 make go-bench        # Go maze generation only
@@ -322,8 +620,9 @@ The main CI workflow lives at [`.github/workflows/go.yml`](/.github/workflows/go
 
 - Go linting
 - `govulncheck`
-- frontend typecheck, lint, tests, and build
+- frontend typecheck, tests with coverage, and build
 - Go race tests with coverage
+- maze benchmarks with the cross-port parity check, when maze generation changes
 - coverage uploads for Go and frontend reports
 
 ### GitHub Pages
